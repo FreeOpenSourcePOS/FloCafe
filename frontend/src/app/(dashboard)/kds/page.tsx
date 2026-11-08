@@ -8,6 +8,7 @@ import { KdsLoginForm } from '@/components/kds/KdsLoginForm';
 import { KdsWorkspace } from '@/components/kds/KdsWorkspace';
 import { useKdsConnection } from '@/hooks/useKdsConnection';
 import { useSyncServerLanguage } from '@/lib/i18n';
+import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
 import type { KdsViewMode } from '@/hooks/useKdsView';
 
@@ -16,20 +17,25 @@ function useKdsEnabledCheck(): boolean | null {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
-    api.get('/settings/kds_enabled')
+    api
+      .get('/settings/kds_enabled')
       .then((res) => {
         if (cancelled) return;
         const value = res.data?.setting?.value;
         setEnabled(value === 'true' ? true : value === 'false' ? false : null);
       })
-      .catch(() => { if (!cancelled) setEnabled(null); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setEnabled(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   return enabled;
 }
 
 // Fetches KDS default view from main API (port 3001) instead of standalone server.
-function useDashboardKdsDefault(): KdsViewMode | null {
+function useDashboardKdsDefault(userId?: string | null): KdsViewMode | null {
   const [view, setView] = useState<KdsViewMode | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -37,13 +43,13 @@ function useDashboardKdsDefault(): KdsViewMode | null {
       .get('/settings/kds')
       .then(({ data }) => {
         if (cancelled) return;
-        setView(data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs');
+        setView(data?.kds_default_view === 'tabs' ? 'tabs' : 'kanban');
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
   return view;
 }
 
@@ -54,7 +60,19 @@ export default function KdsPage() {
   // Stay idle until the feature is confirmed on: a disabled KDS refuses the
   // /kds upgrade with 404, which only logs handshake failures.
   const conn = useKdsConnection({ api, enabled: kdsEnabled === true });
-  const kdsDefaultView = useDashboardKdsDefault();
+  const kdsDefaultView = useDashboardKdsDefault(conn.user?.id);
+
+  useEffect(() => {
+    if (
+      conn.user &&
+      !useAuthStore.getState().user &&
+      typeof window !== 'undefined' &&
+      Boolean(window.localStorage.getItem('token')) &&
+      Boolean(window.localStorage.getItem('tenant'))
+    ) {
+      useAuthStore.getState().loadFromStorage();
+    }
+  }, [conn.user]);
 
   if (kdsEnabled === null) {
     return (
@@ -68,9 +86,7 @@ export default function KdsPage() {
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-3 text-center px-6">
         <ChefHat size={40} className="text-gray-300" />
         <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
-        <p className="text-sm text-gray-500 max-w-sm">
-          {t('disabledHintDashboard')}
-        </p>
+        <p className="text-sm text-gray-500 max-w-sm">{t('disabledHintDashboard')}</p>
         <Link href="/settings?tab=kds" className="text-sm text-brand hover:underline mt-1">
           {t('goToSettings')}
         </Link>

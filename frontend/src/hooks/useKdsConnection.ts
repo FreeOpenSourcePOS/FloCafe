@@ -165,6 +165,7 @@ export interface UseKdsConnectionEndpoints {
   orders?: string;
   /** Path template containing a literal `:itemId` placeholder, e.g. '/kds/items/:itemId/status'. */
   itemStatus?: string;
+  view?: string;
 }
 
 export interface UseKdsConnectionOptions {
@@ -198,6 +199,7 @@ export interface UseKdsConnectionResult {
     status: KitchenStatus,
     opts?: { silent?: boolean; expectedStatus?: KitchenStatus },
   ) => Promise<boolean>;
+  persistViewMode?: (view: 'tabs' | 'kanban') => void;
   ConfirmDialog: ReactNode;
 }
 
@@ -205,6 +207,7 @@ const LOGIN_ENDPOINT = '/auth/login';
 const ME_ENDPOINT = '/auth/me';
 const ORDERS_ENDPOINT = '/kitchen/orders';
 const ITEM_STATUS_ENDPOINT = '/order-items/:itemId/status';
+const VIEW_ENDPOINT = '/kds/view';
 const KDS_AUTH_BLOCKED_KEY = 'flocafe:kds-auth-blocked';
 
 function isKdsAuthBlocked(): boolean {
@@ -234,6 +237,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const logoutPath = endpoints?.logout ?? '/auth/logout';
   const ordersPath = endpoints?.orders ?? ORDERS_ENDPOINT;
   const itemStatusPath = endpoints?.itemStatus ?? ITEM_STATUS_ENDPOINT;
+  const viewPath = endpoints?.view ?? VIEW_ENDPOINT;
   const t = useTranslations('kds');
   const tNav = useTranslations('nav');
   const { confirm, ConfirmDialog } = useConfirm();
@@ -705,6 +709,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
         setUser(loggedInUser);
         window.localStorage.setItem('token', token);
+        if (Array.isArray(data.tenants) && data.tenants.length > 0) {
+          try {
+            window.localStorage.setItem('user', JSON.stringify(data.user));
+            if (!window.localStorage.getItem('tenant')) {
+              window.localStorage.setItem('tenant', JSON.stringify(data.tenants[0]));
+            }
+          } catch {}
+        }
         tryWebSocket(token);
       } catch {
         if (generation !== sessionGenerationRef.current) return;
@@ -749,6 +761,16 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     setConnectionMode(null);
     window.localStorage.removeItem('token');
   }, [api, confirm, logoutPath, stopRestPolling, tNav, user]);
+
+  const persistViewMode = useCallback(
+    (view: 'tabs' | 'kanban') => {
+      if (!enabled || kdsDisabledRef.current) return;
+      if (typeof api.put === 'function') {
+        void api.put(viewPath, { kds_default_view: view }).catch(() => {});
+      }
+    },
+    [api, enabled, viewPath],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -853,6 +875,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     handleLogin,
     handleLogout,
     updateItemStatus,
+    persistViewMode,
     ConfirmDialog,
   };
 }

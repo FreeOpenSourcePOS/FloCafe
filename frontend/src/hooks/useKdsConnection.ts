@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import type { AxiosInstance } from 'axios';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
-import { parseLoginFailure } from '@/lib/login-errors';
+import { parseLoginFailure } from '../lib/login-errors';
 
 // Exponential backoff for KDS WebSocket reconnects (1s to 30s)
 // preventing server hammering during outages.

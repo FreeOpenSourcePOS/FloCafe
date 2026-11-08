@@ -74,7 +74,7 @@ function LoginContent() {
   const [selectedPinUser, setSelectedPinUser] = useState<PinPickerUser | null>(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
-  const [signInMode, setSignInMode] = useState<'pin' | 'password'>('pin');
+  const [signInMode, setSignInMode] = useState<'pin' | 'password' | null>(null);
   const tSupport = useTranslations('support');
 
   useEffect(() => {
@@ -290,7 +290,9 @@ function LoginContent() {
   }
 
   const activeSignInMode =
-    pinUsers.length > 0 && signInMode === 'pin' && !email && !password ? 'pin' : 'password';
+    pinUsers.length > 0 && (signInMode ?? 'pin') === 'pin' && !email && !password
+      ? 'pin'
+      : 'password';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
@@ -530,6 +532,7 @@ function LoginContent() {
                     type="email"
                     autoComplete="email"
                     value={email}
+                    onFocus={() => setSignInMode('password')}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={t('emailPlaceholder')}
                     dir="ltr"
@@ -544,6 +547,7 @@ function LoginContent() {
                       type={showPassword ? 'text' : 'password'}
                       autoComplete="current-password"
                       value={password}
+                      onFocus={() => setSignInMode('password')}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t('passwordPlaceholder')}
                       className="pe-10"

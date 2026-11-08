@@ -206,7 +206,7 @@ export default function ServerStandalonePage() {
   const [selectedPinUser, setSelectedPinUser] = useState<PinUser | null>(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
-  const [signInMode, setSignInMode] = useState<'pin' | 'password'>('password');
+  const [signInMode, setSignInMode] = useState<'pin' | 'password' | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [regional, setRegional] = useState<ServerAppInfo | null>(null);
@@ -443,9 +443,6 @@ export default function ServerStandalonePage() {
       .then((res) => {
         if (!cancelled && Array.isArray(res.data?.users)) {
           setPinUsers(res.data.users);
-          if (res.data.users.length > 0) {
-            setSignInMode('pin');
-          }
         }
       })
       .catch(() => {
@@ -1296,7 +1293,10 @@ export default function ServerStandalonePage() {
   }
 
   if (!user) {
-    const activeSignInMode = pinUsers.length > 0 ? signInMode : 'password';
+    const activeSignInMode =
+      pinUsers.length > 0 && (signInMode ?? 'pin') === 'pin' && !email && !password
+        ? 'pin'
+        : 'password';
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm">
@@ -1320,6 +1320,8 @@ export default function ServerStandalonePage() {
                 data-testid="signin-mode-pin"
                 onClick={() => {
                   setSignInMode('pin');
+                  setEmail('');
+                  setPassword('');
                   setPinError('');
                 }}
                 className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
@@ -1517,6 +1519,7 @@ export default function ServerStandalonePage() {
             <form onSubmit={handleLogin} className="space-y-3">
               <input
                 value={email}
+                onFocus={() => setSignInMode('password')}
                 onChange={(event) => setEmail(event.target.value)}
                 type="email"
                 dir="ltr"
@@ -1526,6 +1529,7 @@ export default function ServerStandalonePage() {
               />
               <input
                 value={password}
+                onFocus={() => setSignInMode('password')}
                 onChange={(event) => setPassword(event.target.value)}
                 type="password"
                 placeholder={tAuth('password')}

@@ -84,21 +84,29 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338 / #1516)', () => {
   });
 
   test.afterAll(async ({ request }) => {
+    const freshOwnerAuth = () => ({
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+      'Content-Type': 'application/json',
+    });
     try {
-      await request.put(`${BASE}/api/staff/e2e-owner`, {
-        headers: ownerHeaders,
-        data: { pin: null },
-      });
       if (cashierId) {
-        await request.delete(`${BASE}/api/staff/${cashierId}`, {
-          headers: ownerHeaders,
+        await request.put(`${BASE}/api/staff/${cashierId}`, {
+          headers: freshOwnerAuth(),
+          data: { pin: null },
+        });
+        await request.post(`${BASE}/api/staff/${cashierId}/deactivate`, {
+          headers: freshOwnerAuth(),
         });
       }
       if (tableId) {
         await request.delete(`${BASE}/api/tables/${tableId}`, {
-          headers: ownerHeaders,
+          headers: freshOwnerAuth(),
         });
       }
+      await request.put(`${BASE}/api/staff/e2e-owner`, {
+        headers: freshOwnerAuth(),
+        data: { pin: null },
+      });
     } catch {
       // Ignore cleanup errors
     }

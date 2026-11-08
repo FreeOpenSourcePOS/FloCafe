@@ -19,7 +19,13 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
   const [selectedPinUser, setSelectedPinUser] = useState<KdsPinUser | null>(null);
   const [pin, setPin] = useState('');
 
-  const activeSignInMode = pinUsers.length > 0 ? (signInMode ?? 'pin') : 'password';
+  const activeSignInMode =
+    pinUsers.length > 0 &&
+    (signInMode ?? 'pin') === 'pin' &&
+    !conn.loginEmail &&
+    !conn.loginPassword
+      ? 'pin'
+      : 'password';
 
   const appendPinDigit = (digit: string) => {
     conn.setLoginError?.('');
@@ -70,6 +76,8 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
               data-testid="signin-mode-pin"
               onClick={() => {
                 setSignInMode('pin');
+                conn.setLoginEmail('');
+                conn.setLoginPassword('');
                 conn.setLoginError?.('');
               }}
               className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
@@ -287,6 +295,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 data-testid="kds-login-email"
                 type="email"
                 value={conn.loginEmail}
+                onFocus={() => setSignInMode('password')}
                 onChange={(e) => conn.setLoginEmail(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                 placeholder="chef@flo.local"
@@ -306,6 +315,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 data-testid="kds-login-password"
                 type="password"
                 value={conn.loginPassword}
+                onFocus={() => setSignInMode('password')}
                 onChange={(e) => conn.setLoginPassword(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                 placeholder="••••••••"

@@ -30,7 +30,15 @@ export function gross(net: number): number {
 }
 
 export async function login(page: Page, role: Role = 'owner'): Promise<void> {
+  const pinUsersFetched = page
+    .waitForResponse((res) => res.url().includes('/api/auth/pin-users'), { timeout: 5_000 })
+    .catch(() => null);
   await page.goto(`${E2E_BASE_URL}/auth/login`);
+  await pinUsersFetched;
+  const passwordTab = page.getByTestId('signin-mode-password');
+  if (await passwordTab.isVisible()) {
+    await passwordTab.click();
+  }
   await page.locator('#email').fill(SEEDED_USER[role].email);
   await page.locator('#password').fill(PASSWORD);
   await page.locator('button[type="submit"]').click();

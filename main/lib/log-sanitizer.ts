@@ -1,6 +1,6 @@
 const JWT_TOKEN_RE = /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 
-const AUTH_HEADER_RE = /(authorization\s*["']?\s*[:=]\s*["']?(?:bearer|basic)\s+)[^\s"',;}\]]+/gi;
+const AUTH_HEADER_RE = /(\bauthorization["']?\s*[:=]\s*["']?(?:bearer|basic)\s+)[^\s"',;}\]]+/gi;
 
 const BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
 
@@ -11,7 +11,7 @@ const SENSITIVE_KEY_PATTERN =
   'x-master-pin|master_pin|masterPin|new_password|current_password|password|new_pin|current_pin|pin|cloud_api_key|cloudApiKey|cloud_device_secret|cloudDeviceSecret|jwt_secret|jwtSecret|access_token|accessToken|refresh_token|refreshToken|id_token|idToken|client_secret|clientSecret|oauth_token|oauthToken|recovery_token|recoveryToken|pairing_token|pairingToken|display_token|displayToken';
 
 const QUOTED_KEY_VALUE_RE = new RegExp(
-  `(["']?(?:${SENSITIVE_KEY_PATTERN})["']?\\s*[:=]\\s*)(["'])(?:\\\\.|(?!\\2)[^\\\\])*\\2`,
+  `(\\b(?:${SENSITIVE_KEY_PATTERN})\\b["']?\\s*[:=]\\s*)(["'])(?:\\\\.|(?!\\2)[^\\\\])*\\2`,
   'gi',
 );
 

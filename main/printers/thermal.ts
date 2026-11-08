@@ -4981,13 +4981,15 @@ export const NETWORK_PRINT_CHUNK_DELAY_MS = 10;
 
 function expandPrinterIpv6Groups(ip: string): number[] | null {
   let text = ip.toLowerCase();
-  const dotted = text.match(/^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/);
-  if (dotted) {
-    const octets = dotted[2].split('.').map(Number);
-    if (octets.some((n) => n > 255)) return null;
-    const hi = ((octets[0] << 8) | octets[1]).toString(16);
-    const lo = ((octets[2] << 8) | octets[3]).toString(16);
-    text = `${dotted[1]}${hi}:${lo}`;
+  const lastColon = text.lastIndexOf(':');
+  if (lastColon !== -1 && text.includes('.', lastColon + 1)) {
+    const octets = text.slice(lastColon + 1).split('.');
+    if (octets.length !== 4 || octets.some((part) => !/^\d{1,3}$/.test(part))) return null;
+    const nums = octets.map(Number);
+    if (nums.some((n) => n > 255)) return null;
+    const hi = ((nums[0] << 8) | nums[1]).toString(16);
+    const lo = ((nums[2] << 8) | nums[3]).toString(16);
+    text = `${text.slice(0, lastColon + 1)}${hi}:${lo}`;
   }
   const halves = text.split('::');
   if (halves.length > 2) return null;
@@ -5045,7 +5047,15 @@ export function validateNetworkPrinterTarget(rawHost: string, port: number): str
     return 'Invalid printer host or IP address';
   }
 
-  const host = unbracketed.toLowerCase().replace(/\.+$/, '');
+  const lowerHost = unbracketed.toLowerCase();
+  let hostEnd = lowerHost.length;
+  while (hostEnd > 0 && lowerHost.charCodeAt(hostEnd - 1) === 46) {
+    hostEnd -= 1;
+  }
+  const host = lowerHost.slice(0, hostEnd);
+  if (!host) {
+    return 'Invalid printer host or IP address';
+  }
   if (host === 'metadata.google.internal' || host === 'metadata' || host === 'instance-data') {
     return 'Printer address cannot target a cloud metadata service';
   }

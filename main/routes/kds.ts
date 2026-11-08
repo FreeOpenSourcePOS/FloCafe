@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   completeSettledReleasedOrderIfServed,
@@ -81,7 +82,14 @@ router.use('/pairing', requireKdsEnabledOr404);
 
 router.use(requirePermission('kitchen.use'));
 
-router.put('/view', requireKdsEnabled, (req: Request, res: Response) => {
+const kdsViewWriteRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.put('/view', kdsViewWriteRateLimit, requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const view = req.body?.kds_default_view ?? req.body?.view;
     if (!['tabs', 'kanban'].includes(view)) {

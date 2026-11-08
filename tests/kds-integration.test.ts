@@ -422,7 +422,10 @@ async function run() {
 
     // Verify standalone KDS view persistence and default/preserved view behavior before revoking permission
     const defaultInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
-    assert(defaultInfoRes.status === 200, 'Public info endpoint returns 200 for default view check');
+    assert(
+      defaultInfoRes.status === 200,
+      'Public info endpoint returns 200 for default view check',
+    );
     assert(
       defaultInfoRes.body.kds_default_view === 'kanban',
       'Fresh DB migration seeds kds_default_view = kanban on standalone /api/kds/info',
@@ -432,7 +435,10 @@ async function run() {
       .put('/api/kds/view')
       .set('Authorization', `Bearer ${token}`)
       .send({ kds_default_view: 'tabs' });
-    assert(putTabsRes.status === 200, 'Standalone PUT /api/kds/view succeeds for authenticated chef');
+    assert(
+      putTabsRes.status === 200,
+      'Standalone PUT /api/kds/view succeeds for authenticated chef',
+    );
     assert(
       putTabsRes.body.kds_default_view === 'tabs',
       'Standalone PUT /api/kds/view returns updated kds_default_view = tabs',
@@ -448,7 +454,10 @@ async function run() {
       .put('/api/kds/view')
       .set('Authorization', `Bearer ${token}`)
       .send({ kds_default_view: 'invalid' });
-    assert(invalidViewRes.status === 400, 'Standalone PUT /api/kds/view rejects invalid view with 400');
+    assert(
+      invalidViewRes.status === 400,
+      'Standalone PUT /api/kds/view rejects invalid view with 400',
+    );
 
     db.prepare("DELETE FROM settings WHERE key = 'kds_default_view'").run();
     const fallbackInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');

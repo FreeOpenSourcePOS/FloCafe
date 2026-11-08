@@ -538,7 +538,9 @@ function LoginContent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center">
-              <DropdownMenuItem onClick={() => window.setTimeout(() => setTicketDialogOpen(true), 0)}>
+              <DropdownMenuItem
+                onClick={() => window.setTimeout(() => setTicketDialogOpen(true), 0)}
+              >
                 <Ticket className="size-4" />
                 {tSupport('menuSubmitTicket')}
               </DropdownMenuItem>

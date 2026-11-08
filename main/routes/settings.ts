@@ -730,6 +730,7 @@ router.put('/discount', requirePermission('settings.manage'), (req: Request, res
 // Mirrors KDS default view for the dashboard settings page.
 router.get(
   '/kds',
+  settingsReadRateLimit,
   requireAnyPermission('settings.view', 'kitchen.use'),
   (_req: Request, res: Response) => {
     try {
@@ -747,6 +748,7 @@ router.get(
 
 router.put(
   '/kds',
+  settingsWriteRateLimit,
   requireAnyPermission('settings.manage', 'kitchen.use'),
   (req: Request, res: Response) => {
     try {

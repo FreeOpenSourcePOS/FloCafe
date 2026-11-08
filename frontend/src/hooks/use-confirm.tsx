@@ -11,25 +11,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { clearStaleBodyPointerEvents } from '@/lib/utils';
 
-const OPEN_MODAL_SELECTOR =
-  '[data-slot="dialog-content"][data-state="open"], [data-slot="dropdown-menu-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"], [data-slot="drawer-content"][data-state="open"]';
-
-export function clearStaleBodyPointerEvents(): void {
-  if (
-    typeof document === 'undefined' ||
-    !document.body?.style ||
-    document.body.style.pointerEvents !== 'none'
-  ) {
-    return;
-  }
-  const hasOpenModal =
-    typeof document.querySelector === 'function' &&
-    Boolean(document.querySelector(OPEN_MODAL_SELECTOR));
-  if (!hasOpenModal) {
-    document.body.style.pointerEvents = '';
-  }
-}
+export { clearStaleBodyPointerEvents };
 
 interface ConfirmState {
   open: boolean;

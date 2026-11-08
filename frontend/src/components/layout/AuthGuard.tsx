@@ -7,8 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 import { tenantCan } from '@/lib/permissions';
-import { normalizePathname } from '@/lib/utils';
-import { clearStaleBodyPointerEvents } from '@/hooks/use-confirm';
+import { clearStaleBodyPointerEvents, normalizePathname } from '@/lib/utils';
 import type { Tenant } from '@/lib/types';
 
 export const LANDING_PAGE_CANDIDATES = [
@@ -83,6 +82,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     pathname?.startsWith('/server-standalone') ||
     pathname === '/customer-display' ||
     pathname?.startsWith('/customer-display/');
+  const isDashboardKdsPath = pathname === '/kds';
 
   useEffect(() => {
     clearStaleBodyPointerEvents();
@@ -92,9 +92,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     // Standalone KDS, Server App, and paired customer display pages manage their own
     // auth sessions; skip loading shared POS auth store unless a dashboard tenant session
     // is present on the in-dashboard /kds route.
+    const authState = typeof useAuthStore.getState === 'function' ? useAuthStore.getState() : null;
     if (isStandalonePath) {
       if (
-        pathname === '/kds' &&
+        isDashboardKdsPath &&
+        (!authState?.user || !authState?.currentTenant) &&
         typeof window !== 'undefined' &&
         Boolean(window.localStorage.getItem('token')) &&
         Boolean(window.localStorage.getItem('tenant'))
@@ -103,8 +105,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-    loadFromStorage();
-  }, [isStandalonePath, loadFromStorage, pathname]);
+    if (!authState?.user || !authState?.currentTenant) {
+      loadFromStorage();
+    }
+  }, [isDashboardKdsPath, isStandalonePath, loadFromStorage]);
 
   useEffect(() => {
     if (isStandalonePath || !user || !currentTenant) return;

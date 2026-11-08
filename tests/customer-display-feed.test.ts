@@ -879,7 +879,7 @@ async function main(): Promise<void> {
     db.prepare('DELETE FROM orders WHERE id IN (?, ?)').run(boundaryInclusiveId, boundaryExpiredId);
   }
 
-  // KDS disabled excludes completed orders even if items are still ready/pending
+  // KDS disabled keeps recent (<24h) completed orders with unserved items on the customer display feed
   db.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
   ).run(now());
@@ -887,8 +887,8 @@ async function main(): Promise<void> {
   assert.equal(prepaidFeed.status, 200);
   assert.equal(
     prepaidFeed.body.orders.some((o: any) => o.id === prepaidOrderId),
-    false,
-    'KDS-disabled mode omits completed orders from customer display feed',
+    true,
+    'KDS-disabled mode keeps recent completed orders with unserved items on the customer display feed',
   );
   db.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
@@ -1484,6 +1484,168 @@ async function main(): Promise<void> {
   assert.ok(
     !filteredPendingBoardAfter.body.orders.some((o: any) => o.id === unreleasedActivePendingId),
     'filtered board_status query without projectedCompletedIds excludes unreleased orders',
+  );
+
+  // Order-type filtering + POS Mark Ready / Picked Up transitions when KDS is disabled
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
+  ).run(now());
+  assert.equal(
+    (
+      await request(app)
+        .put('/api/settings/customer-display')
+        .set(ownerApi)
+        .send({
+          statuses: ['pending', 'preparing', 'ready'],
+          order_types: ['takeaway'],
+          refresh_seconds: 3,
+          show_updated: true,
+        })
+    ).status,
+    200,
+  );
+  const typeStamp = now();
+  const takeawayPrepId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+         VALUES ('TYPE-TAKEAWAY-1', 'feed-owner', 'takeaway', 'completed', 10, 10, ?, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp, typeStamp).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-1', 'Latte', 1, 10, 10, 10, 'preparing', ?, ?)`,
+  ).run(takeawayPrepId, typeStamp, typeStamp);
+
+  const deliveryPrepId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, created_at, updated_at)
+         VALUES ('TYPE-DELIVERY-1', 'feed-owner', 'delivery', 'preparing', ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+  const dineInPrepId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, created_at, updated_at)
+         VALUES ('TYPE-DINEIN-1', 'feed-owner', 'dine_in', 'preparing', ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+
+  const takeawayOnlyFeed = await request(app).get(FEED).set(display);
+  assert.equal(takeawayOnlyFeed.status, 200);
+  assert.equal(
+    takeawayOnlyFeed.body.orders.some((o: any) => o.id === takeawayPrepId && o.status === 'preparing'),
+    true,
+    'default takeaway order_types includes paid takeaway order in preparing',
+  );
+  assert.equal(
+    takeawayOnlyFeed.body.orders.some((o: any) => o.id === deliveryPrepId || o.id === dineInPrepId),
+    false,
+    'default takeaway order_types excludes delivery and dine_in orders from paired feed',
+  );
+
+  const signedInTakeawayOnly = await fetchSignedInBoardOrders({
+    config: takeawayOnlyFeed.body.config,
+    fetchPage: async (params: Record<string, unknown>) => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined) qs.set(k, String(v));
+      }
+      const res = await request(app)
+        .get(`/api/orders?${qs.toString()}`)
+        .set(signedInOwnerReady);
+      assert.equal(res.status, 200);
+      return res.body;
+    },
+  });
+  assert.equal(
+    signedInTakeawayOnly.orders.some((o: any) => o.id === takeawayPrepId && o.status === 'preparing'),
+    true,
+    'signed-in board helper includes paid takeaway order under default order_types',
+  );
+  assert.equal(
+    signedInTakeawayOnly.orders.some((o: any) => o.id === deliveryPrepId || o.id === dineInPrepId),
+    false,
+    'signed-in board helper excludes delivery and dine_in orders under default order_types',
+  );
+
+  // Enabling delivery in order_types includes delivery order while still excluding dine_in
+  assert.equal(
+    (
+      await request(app)
+        .put('/api/settings/customer-display')
+        .set(ownerApi)
+        .send({
+          statuses: ['pending', 'preparing', 'ready'],
+          order_types: ['takeaway', 'delivery'],
+          refresh_seconds: 3,
+          show_updated: true,
+        })
+    ).status,
+    200,
+  );
+  const takeawayAndDeliveryFeed = await request(app).get(FEED).set(display);
+  assert.equal(takeawayAndDeliveryFeed.status, 200);
+  assert.equal(
+    takeawayAndDeliveryFeed.body.orders.some((o: any) => o.id === deliveryPrepId),
+    true,
+    'enabling delivery in order_types includes delivery order on paired feed',
+  );
+  assert.equal(
+    takeawayAndDeliveryFeed.body.orders.some((o: any) => o.id === dineInPrepId),
+    false,
+    'dine_in remains excluded when not in order_types',
+  );
+
+  // Advance paid takeaway order via PATCH /api/orders/:id/status: preparing -> ready -> served (Picked Up)
+  const markReadyRes = await request(app)
+    .patch(`/api/orders/${takeawayPrepId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'ready' });
+  assert.equal(markReadyRes.status, 200, 'PATCH /api/orders/:id/status ready succeeds on completed order');
+  assert.equal(
+    markReadyRes.body.order.status,
+    'completed',
+    'completed order keeps orders.status=completed when marked ready',
+  );
+  assert.equal(
+    markReadyRes.body.order.items[0].status,
+    'ready',
+    'marking completed order ready updates active order_items to ready',
+  );
+
+  const afterReadyFeed = await request(app).get(FEED).set(display);
+  assert.equal(
+    afterReadyFeed.body.orders.some((o: any) => o.id === takeawayPrepId && o.status === 'ready'),
+    true,
+    'paid takeaway order projects as ready on customer display after Mark Ready',
+  );
+
+  const markPickedUpRes = await request(app)
+    .patch(`/api/orders/${takeawayPrepId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'served' });
+  assert.equal(markPickedUpRes.status, 200, 'PATCH /api/orders/:id/status served succeeds on completed order');
+  assert.equal(
+    markPickedUpRes.body.order.status,
+    'completed',
+    'completed order keeps orders.status=completed when marked served (picked up)',
+  );
+  assert.equal(
+    markPickedUpRes.body.order.items[0].status,
+    'served',
+    'marking completed order served updates active order_items to served',
+  );
+
+  const afterPickedUpFeed = await request(app).get(FEED).set(display);
+  assert.equal(
+    afterPickedUpFeed.body.orders.some((o: any) => o.id === takeawayPrepId),
+    false,
+    'paid takeaway order clears from customer display once marked Picked Up (served)',
   );
 
   console.log('customer-display-feed: all assertions passed');

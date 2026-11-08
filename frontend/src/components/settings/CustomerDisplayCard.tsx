@@ -8,10 +8,12 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import api from '@/lib/api';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
+  CUSTOMER_DISPLAY_ORDER_TYPES,
   CUSTOMER_DISPLAY_PATH,
   CUSTOMER_DISPLAY_STATUSES,
   isCustomerDisplayConfig,
   type CustomerDisplayConfig,
+  type CustomerDisplayOrderType,
   type CustomerDisplayStatus,
 } from '@/lib/customer-display';
 
@@ -19,6 +21,13 @@ const STATUS_LABEL_KEYS = {
   pending: 'statusPending',
   preparing: 'statusPreparing',
   ready: 'statusReady',
+} as const;
+
+const ORDER_TYPE_LABEL_KEYS = {
+  takeaway: 'orderTypeTakeaway',
+  dine_in: 'orderTypeDineIn',
+  online: 'orderTypeOnline',
+  delivery: 'orderTypeDelivery',
 } as const;
 
 interface PairedDisplay {
@@ -442,6 +451,21 @@ export function CustomerDisplayCard() {
     });
   }
 
+  function toggleOrderType(orderType: CustomerDisplayOrderType) {
+    setConfig((prev) => {
+      const next = prev.order_types.includes(orderType)
+        ? prev.order_types.filter((t) => t !== orderType)
+        : CUSTOMER_DISPLAY_ORDER_TYPES.filter(
+            (t) => t === orderType || prev.order_types.includes(t),
+          );
+      if (next.length === 0) {
+        toast.error(t('atLeastOneOrderType'));
+        return prev;
+      }
+      return { ...prev, order_types: next };
+    });
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -523,6 +547,26 @@ export function CustomerDisplayCard() {
                 className="text-brand"
               />
               {t(STATUS_LABEL_KEYS[status])}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="mb-5">
+        <legend className="text-sm font-medium text-foreground mb-2">{t('orderTypesLabel')}</legend>
+        <div className="flex flex-wrap gap-4">
+          {CUSTOMER_DISPLAY_ORDER_TYPES.map((orderType) => (
+            <label
+              key={orderType}
+              className="inline-flex items-center gap-2 text-sm text-foreground"
+            >
+              <input
+                type="checkbox"
+                checked={config.order_types.includes(orderType)}
+                onChange={() => toggleOrderType(orderType)}
+                className="text-brand"
+              />
+              {t(ORDER_TYPE_LABEL_KEYS[orderType])}
             </label>
           ))}
         </div>

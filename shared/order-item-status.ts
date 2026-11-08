@@ -79,3 +79,19 @@ export function projectBoardStatusFromItems(
   if (derived === null || derived === 'served') return null;
   return derived;
 }
+
+export function getOrderEffectivePrepStatus(order: {
+  status?: string | null;
+  release_status?: string | null;
+  items?: readonly OrderItemStatusLike[] | null;
+}): CustomerDisplayProjectedStatus | null {
+  if (order.release_status && order.release_status !== 'released') {
+    return null;
+  }
+  const status =
+    order.status === 'completed' ? projectBoardStatusFromItems(order.items) : order.status;
+  if (status === 'pending' || status === 'preparing' || status === 'ready') {
+    return status;
+  }
+  return null;
+}

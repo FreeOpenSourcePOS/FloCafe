@@ -271,7 +271,13 @@
     "pairFailed": "Ekran eşleştirilemedi",
     "tokenLimit": "Başka bir ekran eşleştirmeden önce kullanılmayan bir ekranı iptal edin",
     "unpairedTitle": "Bu ekran eşleştirilmemiş",
-    "unpairedHint": "Bir yöneticiden yeni eşleştirme bağlantısı isteyin."
+    "unpairedHint": "Bir yöneticiden yeni eşleştirme bağlantısı isteyin.",
+    "orderTypesLabel": "Gösterilen sipariş türleri",
+    "orderTypeTakeaway": "Gel-Al / Paket",
+    "orderTypeDineIn": "Masada servis",
+    "orderTypeOnline": "Çevrimiçi",
+    "orderTypeDelivery": "Teslimat",
+    "atLeastOneOrderType": "En az bir sipariş türü seçin"
   },
   "dashboard": {
     "aov": "Ortalama Sipariş Tutarı",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Ödeme yöntemi güncellendi",
     "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi",
     "releaseScheduled": "Planlı",
-    "releaseBlocked": "İletim engellendi"
+    "releaseBlocked": "İletim engellendi",
+    "markReady": "Hazır işaretle",
+    "pickedUp": "Teslim alındı",
+    "markedReady": "Sipariş hazır olarak işaretlendi",
+    "markedPickedUp": "Sipariş teslim alındı olarak işaretlendi",
+    "updateStatusFailed": "Sipariş durumu güncellenemedi"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",

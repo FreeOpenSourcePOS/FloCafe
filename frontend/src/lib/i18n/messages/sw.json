@@ -271,7 +271,13 @@
     "pairFailed": "Imeshindikana kuunganisha onyesho",
     "tokenLimit": "Batilisha onyesho lisilotumika kabla ya kuunganisha jingine",
     "unpairedTitle": "Onyesho hili halijaunganishwa",
-    "unpairedHint": "Mwombe meneja kiungo kipya cha kuunganisha."
+    "unpairedHint": "Mwombe meneja kiungo kipya cha kuunganisha.",
+    "orderTypesLabel": "Aina za oda zinazoonyeshwa",
+    "orderTypeTakeaway": "Kubeba / Kuchukua",
+    "orderTypeDineIn": "Kula hapo",
+    "orderTypeOnline": "Mtandaoni",
+    "orderTypeDelivery": "Uwasilishaji",
+    "atLeastOneOrderType": "Chagua angalau aina moja ya oda"
   },
   "dashboard": {
     "aov": "Wastani wa Thamani ya Oda",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Njia ya malipo imesasishwa",
     "correctPaymentMethodFailed": "Imeshindikana kusasisha njia ya malipo",
     "releaseScheduled": "Imepangwa",
-    "releaseBlocked": "Utumaji umezuiwa"
+    "releaseBlocked": "Utumaji umezuiwa",
+    "markReady": "Weka tayari",
+    "pickedUp": "Imechukuliwa",
+    "markedReady": "Oda imewekwa alama kuwa tayari",
+    "markedPickedUp": "Oda imewekwa alama kuwa imechukuliwa",
+    "updateStatusFailed": "Imeshindwa kusasisha hali ya oda"
   },
   "pos": {
     "addCustomer": "Ongeza Mteja",

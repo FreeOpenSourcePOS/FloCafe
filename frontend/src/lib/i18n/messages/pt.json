@@ -271,7 +271,13 @@
     "pairFailed": "Não foi possível emparelhar o ecrã",
     "tokenLimit": "Revogue um ecrã não utilizado antes de emparelhar outro",
     "unpairedTitle": "Este ecrã não está emparelhado",
-    "unpairedHint": "Peça uma nova ligação de emparelhamento a um responsável."
+    "unpairedHint": "Peça uma nova ligação de emparelhamento a um responsável.",
+    "orderTypesLabel": "Tipos de pedido exibidos",
+    "orderTypeTakeaway": "Para viagem / Retirada",
+    "orderTypeDineIn": "No local",
+    "orderTypeOnline": "Pedidos online",
+    "orderTypeDelivery": "Entrega",
+    "atLeastOneOrderType": "Selecione pelo menos um tipo de pedido"
   },
   "dashboard": {
     "aov": "Valor Médio do Pedido",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Forma de pagamento atualizada",
     "correctPaymentMethodFailed": "Não foi possível atualizar a forma de pagamento",
     "releaseScheduled": "Agendado",
-    "releaseBlocked": "Envio bloqueado"
+    "releaseBlocked": "Envio bloqueado",
+    "markReady": "Marcar pronto",
+    "pickedUp": "Retirado",
+    "markedReady": "Pedido marcado como pronto",
+    "markedPickedUp": "Pedido marcado como retirado",
+    "updateStatusFailed": "Falha ao atualizar o status do pedido"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",

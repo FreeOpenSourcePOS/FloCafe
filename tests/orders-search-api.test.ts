@@ -648,11 +648,18 @@ async function main() {
       '/api/orders?view=active&status=completed&per_page=50',
       { headers: owner.authHeader },
     );
+    const activeWithoutKdsNumbers = activeWithoutKds.data.orders.map(
+      (order: any) => order.order_number,
+    );
+    for (const itemStatus of ['PENDING', 'PREPARING', 'READY']) {
+      assertOrThrow(
+        activeWithoutKdsNumbers.includes(`ORD-COMPLETED-KITCHEN-${itemStatus}`),
+        `recent completed orders with ${itemStatus.toLowerCase()} items remain active when KDS is disabled until picked up`,
+      );
+    }
     assertOrThrow(
-      !activeWithoutKds.data.orders.some((order: any) =>
-        order.order_number.startsWith('ORD-COMPLETED-KITCHEN-'),
-      ),
-      'completed kitchen work is not active when KDS is disabled',
+      !activeWithoutKdsNumbers.includes('ORD-COMPLETED-KITCHEN-SERVED'),
+      'completed orders whose items are served are excluded when KDS is disabled',
     );
     db.prepare("UPDATE settings SET value = 'true' WHERE key = 'kds_enabled'").run();
 

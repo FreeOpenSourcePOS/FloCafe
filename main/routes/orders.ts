@@ -16,7 +16,6 @@ import {
   utcDayBounds,
   utcTodayDate,
   recordOrderAudit,
-  isKdsEnabled,
   registerOrderSearchFunctions,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
@@ -45,6 +44,7 @@ import {
   selectBoardEligibleOrderPage,
   type DisplayFeedCursor,
 } from '../services/customer-display-tokens';
+import { CUSTOMER_DISPLAY_ORDER_TYPES } from '../services/customer-display-config';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -97,7 +97,7 @@ import {
   validateScheduledOrderRequest,
 } from '../services/scheduled-orders';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { isTerminalItemStatus, projectBoardStatusFromItems } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   checkKitchenDeliveryStatus,
@@ -662,8 +662,7 @@ router.get(
           WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
           UNION ALL
           SELECT co.id FROM orders AS co
-          WHERE ? = 1
-            AND +co.status = 'completed'
+          WHERE +co.status = 'completed'
             AND co.created_at >= ?
             AND EXISTS (
               SELECT 1 FROM order_items AS active_item
@@ -672,7 +671,7 @@ router.get(
                 AND active_item.quantity > 0
             )
         )`);
-        params.push(isKdsEnabled() ? 1 : 0, completedKdsProjectionCutoff());
+        params.push(completedKdsProjectionCutoff());
       }
       if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
@@ -819,6 +818,7 @@ router.get(
       if (boardStatuses !== null && wheres.length === 0) {
         const { pageRows, hasMore } = selectBoardEligibleOrderPage(db, {
           statuses: boardStatuses,
+          orderTypes: CUSTOMER_DISPLAY_ORDER_TYPES,
           cursor: beforeCursor,
           limit: perPage,
         });
@@ -849,6 +849,7 @@ router.get(
           db,
           boardStatuses,
           beforeCursor,
+          CUSTOMER_DISPLAY_ORDER_TYPES,
         );
         if (projectedCompletedIds.length > 0) {
           wheres.push(`orders.id IN (
@@ -3565,7 +3566,33 @@ router.patch(
           throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
         }
 
-        if (currentOrder.status === status) {
+        const existingItemRows = db
+          .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
+          .all(req.params.id) as Array<{ status: string | null; quantity: number | null }>;
+        const projectedCompletedBoardStatus =
+          currentOrder.status === 'completed'
+            ? projectBoardStatusFromItems(existingItemRows)
+            : null;
+        const hasPendingOrPreparingItems = existingItemRows.some(
+          (item) =>
+            (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
+            (item.status === 'pending' || item.status === 'preparing'),
+        );
+        const hasActivePickupItems = existingItemRows.some(
+          (item) =>
+            (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
+            (item.status === 'pending' || item.status === 'preparing' || item.status === 'ready'),
+        );
+
+        const isSameOrderState =
+          (currentOrder.status === status &&
+            !(status === 'ready' && hasPendingOrPreparingItems) &&
+            !(status === 'served' && hasActivePickupItems)) ||
+          (currentOrder.status === 'completed' &&
+            status === 'ready' &&
+            projectedCompletedBoardStatus === 'ready');
+
+        if (isSameOrderState) {
           // Idempotent same-state request for order
           const items = attachEffectiveAddons(
             db,
@@ -3595,8 +3622,18 @@ router.patch(
           cancelled: [],
         };
 
+        const canTransitionCompletedPreparation =
+          currentOrder.status === 'completed' &&
+          ((status === 'ready' &&
+            (projectedCompletedBoardStatus === 'pending' ||
+              projectedCompletedBoardStatus === 'preparing')) ||
+            (status === 'served' &&
+              (projectedCompletedBoardStatus === 'pending' ||
+                projectedCompletedBoardStatus === 'preparing' ||
+                projectedCompletedBoardStatus === 'ready')));
+
         const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
-        if (!allowedTargets.includes(status)) {
+        if (!allowedTargets.includes(status) && !canTransitionCompletedPreparation) {
           throw Object.assign(
             new Error(
               `Cannot transition order status from '${currentOrder.status}' to '${status}'`,
@@ -3773,15 +3810,39 @@ router.patch(
             break;
 
           case 'ready':
-            db.prepare(
-              'UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?',
-            ).run(status, nowStr, nowStr, req.params.id);
+            db.prepare(`
+            UPDATE order_items SET status = 'ready', updated_at = ?
+            WHERE order_id = ? AND status IN ('pending', 'preparing')
+          `).run(nowStr, req.params.id);
+            if (currentOrder.status === 'completed') {
+              db.prepare('UPDATE orders SET ready_at = ?, updated_at = ? WHERE id = ?').run(
+                nowStr,
+                nowStr,
+                req.params.id,
+              );
+            } else {
+              db.prepare(
+                'UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?',
+              ).run(status, nowStr, nowStr, req.params.id);
+            }
             break;
 
           case 'served':
-            db.prepare(
-              'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
-            ).run(status, nowStr, nowStr, req.params.id);
+            db.prepare(`
+            UPDATE order_items SET status = 'served', updated_at = ?
+            WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
+          `).run(nowStr, req.params.id);
+            if (currentOrder.status === 'completed') {
+              db.prepare('UPDATE orders SET served_at = ?, updated_at = ? WHERE id = ?').run(
+                nowStr,
+                nowStr,
+                req.params.id,
+              );
+            } else {
+              db.prepare(
+                'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
+              ).run(status, nowStr, nowStr, req.params.id);
+            }
             break;
 
           case 'completed':

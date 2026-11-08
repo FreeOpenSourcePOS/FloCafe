@@ -219,6 +219,24 @@ parameter. The in-dashboard KDS polls `GET /api/kitchen/orders`; `/kds-standalon
 The frames, the handshake, and the server-side conditions live in
 [the API reference](../reference/api.md#kds-websocket-kds).
 
+### Customer Display board filtering and POS pickup controls
+
+The Customer Display board (`/customer-display/`) filters orders by both configured preparation
+statuses (`statuses`, defaulting to `['pending', 'preparing', 'ready']`) and configured order types
+(`order_types`, defaulting to `['takeaway']` so Dine-in, Online, and Delivery orders stay off the
+pickup screen unless enabled in **Settings > Customer display**). Both the paired token feed
+(`GET /api/customer-display/feed`) and the signed-in board helper
+([`fetchSignedInBoardOrders`](../../frontend/src/lib/customer-display.ts)) apply the configured
+`order_types` filter.
+
+Paid (`completed`) orders from the last 24 hours remain projected onto the Customer Display and the
+active orders view while any active `order_items` row is in `pending`, `preparing`, or `ready`,
+regardless of whether the Kitchen Display System (`kds_enabled`) is enabled. On the POS Orders
+screen (`/orders`), each released order exposes **Mark Ready** (when its effective preparation
+status is `pending` or `preparing`) and **Picked Up** (when its effective preparation status is
+`ready`), calling `PATCH /api/orders/:id/status` with `'ready'` or `'served'` to advance all active
+items and clear picked-up orders from the Customer Display without requiring KDS.
+
 ## The permission model
 
 ### Two catalogs, and which one you are looking at

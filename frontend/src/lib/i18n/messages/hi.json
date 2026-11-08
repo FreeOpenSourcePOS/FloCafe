@@ -271,7 +271,13 @@
     "pairFailed": "डिस्प्ले पेयर नहीं हो सका",
     "tokenLimit": "दूसरा पेयर करने से पहले किसी अनुपयोगी डिस्प्ले को रद्द करें",
     "unpairedTitle": "यह डिस्प्ले पेयर नहीं है",
-    "unpairedHint": "मैनेजर से नया पेयरिंग लिंक माँगें।"
+    "unpairedHint": "मैनेजर से नया पेयरिंग लिंक माँगें।",
+    "orderTypesLabel": "दिखाए जाने वाले ऑर्डर प्रकार",
+    "orderTypeTakeaway": "टेकअवे / पिकअप",
+    "orderTypeDineIn": "डाइन-इन",
+    "orderTypeOnline": "ऑनलाइन",
+    "orderTypeDelivery": "डिलीवरी",
+    "atLeastOneOrderType": "कम से कम एक ऑर्डर प्रकार चुनें"
   },
   "dashboard": {
     "aov": "औसत ऑर्डर मूल्य",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "भुगतान विधि अपडेट की गई",
     "correctPaymentMethodFailed": "भुगतान विधि अपडेट नहीं हो सकी",
     "releaseScheduled": "शेड्यूल किया गया",
-    "releaseBlocked": "रिलीज़ रुका"
+    "releaseBlocked": "रिलीज़ रुका",
+    "markReady": "तैयार चिह्नित करें",
+    "pickedUp": "पिक अप हो गया",
+    "markedReady": "ऑर्डर तैयार के रूप में चिह्नित किया गया",
+    "markedPickedUp": "ऑर्डर पिक अप के रूप में चिह्नित किया गया",
+    "updateStatusFailed": "ऑर्डर स्थिति अपडेट करने में विफल"
   },
   "pos": {
     "addCustomer": "ग्राहक जोड़ें",

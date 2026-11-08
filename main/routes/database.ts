@@ -965,7 +965,7 @@ router.get(
           return;
         }
         try {
-          res.download(snapshotPath, filename, (error) => settle(error));
+          res.download(snapshotPath, filename, { dotfiles: 'allow' }, (error) => settle(error));
         } catch (error) {
           settle(error as Error);
         }
@@ -978,6 +978,11 @@ router.get(
         })
         .catch((error) => {
           console.error('[DB Download] Stream error:', (error as Error).message);
+          if (!res.headersSent && !res.writableEnded && !res.destroyed) {
+            res.status(500).json({ error: 'Download failed' });
+          } else if (!res.writableEnded && !res.destroyed) {
+            res.destroy();
+          }
         });
     } catch (error: any) {
       res.locals.postHogError = error;

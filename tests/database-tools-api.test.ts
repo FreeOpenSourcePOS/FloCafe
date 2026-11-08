@@ -175,14 +175,8 @@ app.use((req: any, res: any, next: any) => {
       stalledDownloadDestroyed = true;
       return destroy(...args);
     };
-    res.download = (_filePath: string, _filename: string, _callback: (error?: Error) => void) => {
+    res.download = (..._args: any[]) => {
       stalledDownloadStarted();
-    };
-  } else if (req.path === '/api/db/download') {
-    res.download = (filePath: string, filename: string, callback: (error?: Error) => void) => {
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.status(200).send(fs.readFileSync(filePath));
-      callback();
     };
   }
   next();
@@ -3134,11 +3128,29 @@ async function runTests() {
     const headerPinDownload = await request(app)
       .get('/api/db/download')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .set('x-master-pin', '1234');
+      .set('x-master-pin', '1234')
+      .buffer(true)
+      .parse((res: any, callback: any) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .timeout(3000);
     assertEqual(
       headerPinDownload.status,
       200,
       'GET /api/db/download succeeds with x-master-pin request header and no body',
+    );
+    assert(
+      /^attachment; filename="?flo-database-/.test(
+        String(headerPinDownload.headers['content-disposition'] || ''),
+      ),
+      'GET /api/db/download sets attachment Content-Disposition header',
+    );
+    assert(
+      Buffer.isBuffer(headerPinDownload.body) &&
+        headerPinDownload.body.subarray(0, 16).toString('utf8') === 'SQLite format 3\0',
+      'GET /api/db/download streams a valid SQLite snapshot payload',
     );
 
     resetMasterPinRateLimit('master-pin:127.0.0.1');

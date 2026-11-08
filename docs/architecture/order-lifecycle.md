@@ -436,7 +436,8 @@ transitions govern preparation and service.
 ## Refunds
 
 `POST /api/refunds` reverses part or all of a paid bill. Cash refunds follow the same shift gate as
-cash payments. Refund approval tiers, cutoff, and store-credit requirements are in
+cash payments. Refund approval tiers, manager approval window settings, and store-credit
+requirements are in
 [product invariants](../reference/product-invariants.md#refunds-and-staff-approval-pins).
 
 The refund modal loads eligible staff before enabling PIN entry and submission. It retains an
@@ -453,7 +454,7 @@ held-order, bill, payment, or refund state use `withTxn` for their database writ
 print-status updates run outside this transaction. A failure in a wrapped mutation rolls back its
 database writes, so it leaves no partial order, bill, or ledger line behind. A closed business day
 does not block new orders or new payments; it blocks cash-drawer
-movements, and refunds have their own end-of-business-day cutoff described above.
+movements, and refunds follow the approval tiers described above.
 
 ## Verification
 

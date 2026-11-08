@@ -29,7 +29,6 @@ type Database = ReturnType<typeof getDatabase>;
 
 // Kept in sync with the 1:1 rate in main/routes/bills.ts — loyalty points equal currency units.
 const LOYALTY_REDEMPTION_RATE = 1;
-// Items already served/completed become refundable once an order is past the short window below.
 const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready', 'served', 'completed'];
 
 export const REFUND_MANAGER_WINDOWS = ['30m', '1h', '2h', '4h', 'same_business_day'] as const;
@@ -46,9 +45,7 @@ export const REFUND_MANAGER_WINDOW_MS: Record<
 };
 
 export function isRefundManagerWindow(value: unknown): value is RefundManagerWindow {
-  return (
-    typeof value === 'string' && (REFUND_MANAGER_WINDOWS as readonly string[]).includes(value)
-  );
+  return typeof value === 'string' && (REFUND_MANAGER_WINDOWS as readonly string[]).includes(value);
 }
 
 function readSetting(db: Database | undefined, key: string): string | null {

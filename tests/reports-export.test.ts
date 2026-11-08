@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -101,10 +102,9 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       };
     }
 
-    class FakePrintWindow {
+    class FakePrintWindow extends EventEmitter {
       destroyed = false;
-      webContents = {
-        on: () => undefined,
+      webContents = Object.assign(new EventEmitter(), {
         setWindowOpenHandler: () => undefined,
         session: {
           webRequest: { onBeforeRequest: () => undefined },
@@ -113,8 +113,9 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
           Buffer.from(
             `%PDF-1.4\n%FloCafe test PDF pageSize=${String(opts?.pageSize ?? '')} preferCSSPageSize=${String(opts?.preferCSSPageSize ?? '')}\n${lastLoadedHtmlContent}\n%%EOF\n`,
           ),
-      };
+      });
       constructor() {
+        super();
         trackedBrowserWindows.push(this);
       }
       async loadFile(filePath: string) {

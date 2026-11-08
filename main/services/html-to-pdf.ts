@@ -5,15 +5,21 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const MAX_PDF_HTML_BYTES = 15 * 1024 * 1024;
+export const PDF_RENDER_TIMEOUT_MS = 30_000;
 
 export type PdfPageSize = 'A4' | 'Letter';
 
 type HtmlToPdfRenderer = (input: { html: string; pageSize: PdfPageSize }) => Promise<Buffer>;
 
 let rendererOverride: HtmlToPdfRenderer | null = null;
+let timeoutOverrideMs: number | null = null;
 
 export function setHtmlToPdfRendererForTests(renderer: HtmlToPdfRenderer | null): void {
   rendererOverride = renderer;
+}
+
+export function setHtmlToPdfTimeoutForTests(timeoutMs: number | null): void {
+  timeoutOverrideMs = timeoutMs;
 }
 
 export function isAllowedPdfStagingRequestUrl(requestUrl: string, htmlPath: string): boolean {
@@ -70,6 +76,7 @@ export function isAllowedPdfStagingRequestUrl(requestUrl: string, htmlPath: stri
 export async function renderHtmlToPdfBuffer(input: {
   html: string;
   pageSize?: unknown;
+  timeoutMs?: number;
 }): Promise<Buffer> {
   if (typeof input.html !== 'string' || input.html.length === 0)
     throw new Error('Invalid PDF request');
@@ -78,6 +85,11 @@ export async function renderHtmlToPdfBuffer(input: {
 
   const pageSize: PdfPageSize = input.pageSize === 'Letter' ? 'Letter' : 'A4';
   if (rendererOverride) return rendererOverride({ html: input.html, pageSize });
+
+  const timeoutMs =
+    typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs) && input.timeoutMs > 0
+      ? input.timeoutMs
+      : (timeoutOverrideMs ?? PDF_RENDER_TIMEOUT_MS);
 
   const stagingDirectory = path.join(app.getPath('userData'), 'pdf-staging');
   fs.mkdirSync(stagingDirectory, { recursive: true, mode: 0o700 });
@@ -96,21 +108,87 @@ export async function renderHtmlToPdfBuffer(input: {
       partition: `qr-menu-pdf-${crypto.randomUUID()}`,
     },
   });
-  pdfWindow.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+  const { webContents } = pdfWindow;
+  webContents.session.webRequest.onBeforeRequest((details, callback) => {
     const allowed =
       details.url === htmlUrl || isAllowedPdfStagingRequestUrl(details.url, resolvedHtmlPath);
     callback({ cancel: !allowed });
   });
-  pdfWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  pdfWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const onWillNavigate = (event: Electron.Event) => event.preventDefault();
+  webContents.on('will-navigate', onWillNavigate);
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let onRenderProcessGone:
+    | ((event: Electron.Event, details: Electron.RenderProcessGoneDetails) => void)
+    | null = null;
+  let onWindowClosed: (() => void) | null = null;
+  let hasWillNavigateListener = true;
+
+  const cleanupRenderGuards = () => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (onWindowClosed) {
+      pdfWindow.removeListener('closed', onWindowClosed);
+      onWindowClosed = null;
+    }
+    if (onRenderProcessGone) {
+      try {
+        if (!pdfWindow.isDestroyed()) {
+          webContents.removeListener('render-process-gone', onRenderProcessGone);
+        }
+      } catch {}
+      onRenderProcessGone = null;
+    }
+    if (hasWillNavigateListener) {
+      try {
+        if (!pdfWindow.isDestroyed()) {
+          webContents.removeListener('will-navigate', onWillNavigate);
+        }
+      } catch {}
+      hasWillNavigateListener = false;
+    }
+  };
+
   try {
-    await pdfWindow.loadFile(resolvedHtmlPath);
-    return await pdfWindow.webContents.printToPDF({
-      printBackground: true,
-      pageSize,
-      preferCSSPageSize: true,
+    const abortPromise = new Promise<never>((_resolve, reject) => {
+      onRenderProcessGone = (_event, details) => {
+        const reason = details?.reason ? ` (${details.reason})` : '';
+        cleanupRenderGuards();
+        reject(new Error(`PDF renderer process terminated unexpectedly${reason}`));
+      };
+      onWindowClosed = () => {
+        cleanupRenderGuards();
+        reject(new Error('PDF rendering window closed unexpectedly'));
+      };
+      timeoutId = setTimeout(() => {
+        cleanupRenderGuards();
+        if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
+        reject(new Error(`PDF rendering timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      webContents.once('render-process-gone', onRenderProcessGone);
+      pdfWindow.once('closed', onWindowClosed);
     });
+
+    const renderPromise = (async () => {
+      await pdfWindow.loadFile(resolvedHtmlPath);
+      if (pdfWindow.isDestroyed()) {
+        throw new Error('PDF rendering window closed unexpectedly');
+      }
+      return await webContents.printToPDF({
+        printBackground: true,
+        pageSize,
+        preferCSSPageSize: true,
+      });
+    })();
+    renderPromise.catch(() => {});
+
+    return await Promise.race([renderPromise, abortPromise]);
   } finally {
+    cleanupRenderGuards();
     try {
       fs.unlinkSync(resolvedHtmlPath);
     } catch {}

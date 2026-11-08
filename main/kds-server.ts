@@ -338,9 +338,9 @@ export function startKdsServer(): Promise<void> {
             role: user.role,
             jti: randomUUID(),
             iat: nextTokenIatSeconds(),
+            exp: Math.floor(Date.now() / 1000) + 86400,
           },
           getJWTSecret(),
-          { expiresIn: '24h' },
         );
 
         res.json({

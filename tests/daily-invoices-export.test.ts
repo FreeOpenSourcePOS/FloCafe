@@ -13,6 +13,7 @@
  */
 
 import * as assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -26,17 +27,18 @@ let saveDialogResult: { canceled: boolean; filePath?: string } = { canceled: fal
 let lastLoadedHtmlPath = '';
 let lastLoadedHtmlContent = '';
 
-class FakePdfBrowserWindow {
+class FakePdfBrowserWindow extends EventEmitter {
   static allWindows: FakePdfBrowserWindow[] = [];
   destroyed = false;
   webContents: any;
 
   constructor(_options?: any) {
+    super();
     const allowedUrls: string[] = [];
     let beforeRequestHandler:
       | ((details: { url: string }, cb: (res: { cancel: boolean }) => void) => void)
       | null = null;
-    this.webContents = {
+    this.webContents = Object.assign(new EventEmitter(), {
       session: {
         webRequest: {
           onBeforeRequest: (
@@ -47,7 +49,6 @@ class FakePdfBrowserWindow {
         },
       },
       setWindowOpenHandler: () => undefined,
-      on: () => undefined,
       printToPDF: async (options: { pageSize?: string; preferCSSPageSize?: boolean }) => {
         return Buffer.from(
           `%PDF-1.4\n% Fake PDF pageSize=${options.pageSize} preferCSSPageSize=${String(options.preferCSSPageSize)} allowedUrls=${allowedUrls.length}\n${lastLoadedHtmlContent}\n%%EOF\n`,
@@ -64,7 +65,7 @@ class FakePdfBrowserWindow {
         if (allowed) allowedUrls.push(url);
         return allowed;
       },
-    };
+    });
     FakePdfBrowserWindow.allWindows.push(this);
   }
 

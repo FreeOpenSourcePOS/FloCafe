@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations, type AppConfig } from 'use-intl';
-import { getLandingPage } from '@/components/layout/AuthGuard';
+import { getLandingPage, resolveSafeRedirect } from '@/components/layout/AuthGuard';
 import { useAuthStore, StorageUnavailableError } from '@/store/auth';
 import { parseLoginFailure } from '@/lib/login-errors';
 import { Button } from '@/components/ui/button';
@@ -152,9 +152,11 @@ function LoginContent() {
   useEffect(() => {
     // Navigate to landing page once user and tenant are selected (auto-selection handled in auth store).
     if (user && currentTenant) {
-      router.push(getLandingPage(currentTenant));
+      router.push(
+        resolveSafeRedirect(searchParams.get('redirect')) ?? getLandingPage(currentTenant),
+      );
     }
-  }, [user, currentTenant, router]);
+  }, [user, currentTenant, router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

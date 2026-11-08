@@ -33,7 +33,13 @@ const request = require('supertest');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { printerRoutes } = require('../main/routes/printers');
 const { kitchenStationRoutes } = require('../main/routes/kitchen-stations');
-const { printReceipt, printReceiptDetailed } = require('../main/printers/thermal');
+const {
+  printReceipt,
+  printReceiptDetailed,
+  printViaNetwork,
+  validateNetworkPrinterTarget,
+} = require('../main/printers/thermal');
+const { setServerPort } = require('../main/server-state');
 const { cloudSync } = require('../main/services/cloud-sync');
 const { printerService } = require('../frontend/src/lib/printer/PrinterService');
 
@@ -846,6 +852,113 @@ async function runTests() {
       } else {
         delete (globalThis as any).navigator;
       }
+    }
+  }
+
+  // ── Test 11: compatibility-preserving network printer target hardening ──
+  console.log('\nTest 11: compatibility-preserving network printer target hardening');
+  {
+    const blockedTargets = [
+      { ip: '169.254.169.254', port: 80, label: 'IPv4 cloud metadata' },
+      { ip: '::ffff:169.254.169.254', port: 9100, label: 'IPv4-mapped cloud metadata' },
+      { ip: 'fd00:ec2::254', port: 80, label: 'AWS IPv6 metadata' },
+      { ip: 'metadata.google.internal', port: 80, label: 'GCP metadata hostname' },
+      { ip: 'metadata.google.internal.', port: 80, label: 'GCP metadata FQDN with trailing dot' },
+      { ip: 'metadata', port: 80, label: 'metadata short hostname' },
+      { ip: 'instance-data', port: 80, label: 'instance-data short hostname' },
+      { ip: '...', port: 9100, label: 'dot-only hostname' },
+      { ip: '0.0.0.0', port: 9100, label: 'IPv4 unspecified' },
+      { ip: '255.255.255.255', port: 9100, label: 'IPv4 broadcast' },
+      { ip: '::', port: 9100, label: 'IPv6 unspecified' },
+      { ip: '127.0.0.1', port: 3001, label: 'loopback API port 3001' },
+      { ip: 'localhost', port: 3002, label: 'localhost KDS port 3002' },
+      { ip: 'localhost.', port: 3002, label: 'localhost FQDN KDS port 3002' },
+      { ip: '::1', port: 3003, label: 'IPv6 loopback Server App port 3003' },
+      { ip: '::ffff:127.0.0.1', port: 3001, label: 'IPv4-mapped loopback port 3001' },
+    ];
+
+    for (const target of blockedTargets) {
+      const createRes = await request(app)
+        .post('/api/printers')
+        .send({
+          name: `Blocked ${target.label}`,
+          connection_type: 'network',
+          ip_address: target.ip,
+          port: target.port,
+        });
+      assert(
+        createRes.status === 400,
+        `POST rejects ${target.label} (${target.ip}:${target.port}) with 400 (got ${createRes.status})`,
+      );
+      const dispatchRes = await printViaNetwork(target.ip, target.port, Buffer.from('test'));
+      assert(
+        dispatchRes.ok === false && typeof dispatchRes.detail === 'string',
+        `printViaNetwork rejects ${target.label} at dispatch (${dispatchRes.detail})`,
+      );
+    }
+
+    const allowedTargets = [
+      { ip: '192.168.1.50', port: 9100, label: 'LAN IPv4 printer' },
+      { ip: '192.168.1.50', port: 3001, label: 'Remote LAN host on custom port 3001' },
+      { ip: '100.64.0.25', port: 9100, label: 'Tailscale CGNAT printer' },
+      { ip: '169.254.10.20', port: 9100, label: 'Legitimate IPv4 link-local printer' },
+      { ip: 'fe80::1', port: 9100, label: 'Legitimate IPv6 link-local printer' },
+      { ip: 'printer.local', port: 9100, label: 'mDNS hostname printer' },
+      { ip: '127.0.0.1', port: 9100, label: 'Loopback non-FloCafe printer port' },
+    ];
+
+    for (const target of allowedTargets) {
+      assert(
+        validateNetworkPrinterTarget(target.ip, target.port) === null,
+        `validateNetworkPrinterTarget allows ${target.label} (${target.ip}:${target.port})`,
+      );
+    }
+
+    const validNetRes = await request(app).post('/api/printers').send({
+      name: 'Valid Local Mock Printer',
+      connection_type: 'network',
+      ip_address: '127.0.0.1',
+      port: 9100,
+    });
+    assert(validNetRes.status === 201, 'POST allows loopback printer on port 9100');
+    const validNetId = validNetRes.body.printer.id;
+
+    // Partial PUT updating port to FloCafe's own server port on loopback must be rejected
+    const putBadPort = await request(app).put(`/api/printers/${validNetId}`).send({ port: 3001 });
+    assert(
+      putBadPort.status === 400,
+      `partial PUT changing port to 3001 on 127.0.0.1 printer is rejected (got ${putBadPort.status})`,
+    );
+
+    // Move printer to remote IP on port 3001 (allowed), then try partial PUT changing IP to 127.0.0.1
+    const putRemotePort = await request(app)
+      .put(`/api/printers/${validNetId}`)
+      .send({ ip_address: '192.168.1.50', port: 3001 });
+    assert(
+      putRemotePort.status === 200,
+      `PUT allows remote LAN printer on port 3001 (got ${putRemotePort.status})`,
+    );
+    const putBadIp = await request(app)
+      .put(`/api/printers/${validNetId}`)
+      .send({ ip_address: '127.0.0.1' });
+    assert(
+      putBadIp.status === 400,
+      `partial PUT changing ip_address to 127.0.0.1 when port is 3001 is rejected (got ${putBadIp.status})`,
+    );
+
+    // When active server port moves to 4301, 127.0.0.1:4301 is blocked and 127.0.0.1:3001 is allowed
+    setServerPort(4301);
+    try {
+      assert(
+        validateNetworkPrinterTarget('127.0.0.1', 4301) !== null,
+        'validateNetworkPrinterTarget blocks 127.0.0.1:4301 when setServerPort(4301) is active',
+      );
+      assert(
+        validateNetworkPrinterTarget('127.0.0.1', 3001) === null,
+        'validateNetworkPrinterTarget allows 127.0.0.1:3001 when server port moved to 4301',
+      );
+    } finally {
+      setServerPort(3001);
     }
   }
 

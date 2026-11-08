@@ -2,6 +2,8 @@ import os from 'os';
 
 const DEFAULT_PORT = parseInt(process.env.PORT || '3001', 10);
 let activePort = DEFAULT_PORT;
+const DEFAULT_KDS_PORT = parseInt(process.env.KDS_PORT || '3002', 10);
+let activeKdsPort = DEFAULT_KDS_PORT;
 
 export function getServerPort(): number {
   return activePort;
@@ -9,6 +11,14 @@ export function getServerPort(): number {
 
 export function setServerPort(port: number): void {
   activePort = port;
+}
+
+export function getKdsPort(): number {
+  return activeKdsPort;
+}
+
+export function setKdsPort(port: number): void {
+  activeKdsPort = port;
 }
 
 /** Helper to check if an IPv4 address is active and valid (excludes loopback & 169.254.x.x link-local APIPA). */

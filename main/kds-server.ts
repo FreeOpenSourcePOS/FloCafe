@@ -35,7 +35,8 @@ import {
   projectKdsOrder,
   UNRELEASED_KDS_ORDER_ITEM_ERROR,
 } from './db';
-import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
+import { checkKdsWebSocketAdmission, setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
+import { setKdsPort } from './server-state';
 import { reconcileActiveOrderStatusFromItems } from './services/orders';
 import { cloudSync } from './services/cloud-sync';
 import { getJWTSecret } from './security/jwt-secret';
@@ -875,6 +876,7 @@ export function startKdsServer(): Promise<void> {
         listeningServer.off('error', onError);
         const address = listeningServer.address();
         activeKdsPort = address && typeof address !== 'string' ? address.port : attemptedPort;
+        setKdsPort(activeKdsPort);
         console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
         if (listeningServer) {
@@ -903,6 +905,15 @@ export function startKdsServer(): Promise<void> {
 
             if (!isKdsEnabled()) {
               socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            const admission = checkKdsWebSocketAdmission(request);
+            if (!admission.allowed) {
+              socket.write(
+                `HTTP/1.1 ${admission.statusCode} ${admission.statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+              );
               socket.destroy();
               return;
             }

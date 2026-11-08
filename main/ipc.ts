@@ -53,6 +53,7 @@ import {
 } from './services/local-backup';
 import { readPostHogBootstrap } from './services/posthog';
 import { MAX_PDF_HTML_BYTES, renderHtmlToPdfBuffer } from './services/html-to-pdf';
+import { sanitizeLogTail } from './lib/log-sanitizer';
 
 // Cap on the log content attached to a support ticket (most recent bytes only).
 const LOG_TAIL_MAX_BYTES = 200_000;
@@ -686,10 +687,12 @@ export function registerIpcHandlers(
       const filteredText = filtered.join('\n');
 
       // Byte cap stays as a backstop in case even the time-windowed content
-      // is still large (e.g. a very chatty week).
-      const buffer = Buffer.from(filteredText, 'utf8');
+      // is still large (e.g. a very chatty week). Sanitize before slicing so a
+      // credential crossing the truncation boundary cannot lose its prefix.
+      const sanitizedText = sanitizeLogTail(filteredText);
+      const buffer = Buffer.from(sanitizedText, 'utf8');
       const overCap = buffer.length > LOG_TAIL_MAX_BYTES;
-      const text = overCap ? buffer.subarray(-LOG_TAIL_MAX_BYTES).toString('utf8') : filteredText;
+      const text = overCap ? buffer.subarray(-LOG_TAIL_MAX_BYTES).toString('utf8') : sanitizedText;
       return { text, truncated: overCap || cutIndex > 0 };
     } catch (error: unknown) {
       return { error: getErrorMessage(error) };

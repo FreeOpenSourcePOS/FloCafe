@@ -22,19 +22,34 @@ const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-product-images-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
-  api, assert, assertEqual, assertIncludes, assertGreaterThan,
-  closeDatabase, getDatabase, now,
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedCategory,
+  seedProduct,
+  api,
+  assert,
+  assertEqual,
+  assertIncludes,
+  assertGreaterThan,
+  closeDatabase,
+  getDatabase,
+  now,
 } = require('./helpers/test-setup');
 
 const { productRoutes } = require('../main/routes/products');
-const { closeHttpServer, installHttpShutdownTracking, cancelHttpShutdownWork } = require('../main/shutdown');
+const {
+  closeHttpServer,
+  installHttpShutdownTracking,
+  cancelHttpShutdownWork,
+} = require('../main/shutdown');
 const dns = require('dns');
 const https = require('https');
 const { EventEmitter } = require('events');
@@ -42,9 +57,11 @@ const { EventEmitter } = require('events');
 // ── Test Data ────────────────────────────────────────────────────────────────
 
 // A small valid WebP Base64 data URI (1x1 pixel, ~100 chars)
-const VALID_IMAGE = 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+const VALID_IMAGE =
+  'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
 // A small valid PNG Base64 data URI
-const VALID_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const VALID_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 // A legacy URL (not Base64)
 const LEGACY_URL = 'https://example.com/photo.jpg';
 // An oversized Base64 string (>50,000 chars)
@@ -61,7 +78,7 @@ async function main() {
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-1', 'Drinks');
-  seedProduct(db, 'prod-1', 'cat-1', 'Espresso', 3.50);
+  seedProduct(db, 'prod-1', 'cat-1', 'Espresso', 3.5);
 
   const app = createApp({ '/api/products': productRoutes });
   const { baseUrl, server } = await startServer(app);
@@ -72,7 +89,8 @@ async function main() {
 
     // A1: Valid Base64 image — should succeed
     let res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: VALID_IMAGE },
     });
     assertEqual(res.status, 200, 'A1: Valid Base64 image accepted');
@@ -80,14 +98,16 @@ async function main() {
 
     // A2: Valid PNG — should succeed
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: VALID_PNG },
     });
     assertEqual(res.status, 200, 'A2: Valid PNG accepted');
 
     // A3: Bad prefix — should fail
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: BAD_PREFIX },
     });
     assertEqual(res.status, 400, 'A3: Bad prefix rejected');
@@ -95,28 +115,32 @@ async function main() {
 
     // A4: Bad format (text/plain) — should fail
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: BAD_FORMAT },
     });
     assertEqual(res.status, 400, 'A4: Bad format rejected');
 
     // A5: Oversized — should fail
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: OVERSIZED_IMAGE },
     });
     assertEqual(res.status, 400, 'A5: Oversized image rejected');
 
     // A6: Non-string type — should fail
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: 12345 },
     });
     assertEqual(res.status, 400, 'A6: Non-string type rejected');
 
     // A7: null — should succeed (clears image)
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: null },
     });
     assertEqual(res.status, 200, 'A7: null accepted (clears image)');
@@ -126,13 +150,15 @@ async function main() {
 
     // B1: Set image, then clear it
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: VALID_IMAGE },
     });
     assertEqual(res.status, 200, 'B1a: Image set');
 
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: null },
     });
     assertEqual(res.status, 200, 'B1b: Image cleared');
@@ -143,12 +169,14 @@ async function main() {
     // B2: Update product WITHOUT sending image_url — image should be untouched
     // First set an image
     await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { image_url: VALID_IMAGE },
     });
     // Update name only — image_url not in body
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: { name: 'Espresso Shot' },
     });
     assertEqual(res.status, 200, 'B2a: Product updated without image');
@@ -160,12 +188,13 @@ async function main() {
 
     // B3: Parameter ordering — update ALL fields at once
     res = await api(baseUrl, '/api/products/prod-1', {
-      method: 'PUT', headers: authHeader,
+      method: 'PUT',
+      headers: authHeader,
       body: {
         name: 'Double Espresso',
         category_id: 'cat-1',
-        price: 4.50,
-        cost_price: 1.20,
+        price: 4.5,
+        cost_price: 1.2,
         sku: 'ESP-002',
         description: 'Strong double shot',
         tax_type: 'inclusive',
@@ -182,7 +211,7 @@ async function main() {
     });
     assertEqual(res.status, 200, 'B3a: Full update succeeded');
     assertEqual(res.data.product.name, 'Double Espresso', 'B3b: Name correct');
-    assertEqual(res.data.product.price, 4.50, 'B3c: Price correct');
+    assertEqual(res.data.product.price, 4.5, 'B3c: Price correct');
     assertEqual(res.data.product.sku, 'ESP-002', 'B3d: SKU correct');
     assertEqual(res.data.product.cb_percent, 5, 'B3e: Cashback correct');
 
@@ -194,42 +223,107 @@ async function main() {
       headers: authHeader,
     });
     assertEqual(imgResponse.status, 200, 'C1: Valid image served');
-    assertEqual(imgResponse.headers.get('content-type'), 'image/png', 'C1: Content-Type is image/png');
+    assertEqual(
+      imgResponse.headers.get('content-type'),
+      'image/png',
+      'C1: Content-Type is image/png',
+    );
     assert(imgResponse.headers.get('etag'), 'C1: ETag header present');
-    assertEqual(imgResponse.headers.get('cache-control'), 'no-cache', 'C1: Cache-Control is no-cache');
+    assertEqual(
+      imgResponse.headers.get('cache-control'),
+      'no-cache',
+      'C1: Cache-Control is no-cache',
+    );
 
-    // C2: 304 Not Modified
+    // C2: 304 Not Modified (checked BEFORE Buffer.from Base64 decoding)
     const etag = imgResponse.headers.get('etag');
-    const notModifiedResponse = await (globalThis as any).fetch(`${baseUrl}/api/products/prod-1/image`, {
-      headers: { ...authHeader, 'If-None-Match': etag },
-    });
-    assertEqual(notModifiedResponse.status, 304, 'C2: 304 Not Modified on matching ETag');
+    const validPngBase64 = VALID_PNG.split(',')[1];
+    const oversizedBase64 = OVERSIZED_IMAGE.split(',')[1];
+    const originalBufferFrom = Buffer.from;
+    let base64DecodeCalls = 0;
+    (Buffer as any).from = function (value: any, encoding?: any, ...rest: any[]) {
+      if (encoding === 'base64' && (value === validPngBase64 || value === oversizedBase64)) {
+        base64DecodeCalls += 1;
+      }
+      return originalBufferFrom.call(Buffer, value, encoding, ...rest);
+    };
+    try {
+      const notModifiedResponse = await (globalThis as any).fetch(
+        `${baseUrl}/api/products/prod-1/image`,
+        {
+          headers: { ...authHeader, 'If-None-Match': etag },
+        },
+      );
+      assertEqual(notModifiedResponse.status, 304, 'C2: 304 Not Modified on matching ETag');
+      assertEqual(base64DecodeCalls, 0, 'C2b: 304 Not Modified returns before decoding Base64');
+    } finally {
+      (Buffer as any).from = originalBufferFrom;
+    }
+
+    // C2c: Oversized stored image_url in DB is rejected before decoding Base64
+    db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(OVERSIZED_IMAGE, 'prod-1');
+    base64DecodeCalls = 0;
+    (Buffer as any).from = function (value: any, encoding?: any, ...rest: any[]) {
+      if (encoding === 'base64' && (value === validPngBase64 || value === oversizedBase64)) {
+        base64DecodeCalls += 1;
+      }
+      return originalBufferFrom.call(Buffer, value, encoding, ...rest);
+    };
+    try {
+      const oversizedResponse = await (globalThis as any).fetch(
+        `${baseUrl}/api/products/prod-1/image`,
+        {
+          headers: authHeader,
+        },
+      );
+      assertEqual(oversizedResponse.status, 404, 'C2c: Oversized stored image_url returns 404');
+      assertEqual(
+        base64DecodeCalls,
+        0,
+        'C2d: Oversized stored image_url is rejected before Base64 decoding',
+      );
+    } finally {
+      (Buffer as any).from = originalBufferFrom;
+    }
 
     // C3: Legacy external URL must not become an open redirect
     // Manually set image_url to a legacy URL
     db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(LEGACY_URL, 'prod-1');
-    const redirectResponse = await (globalThis as any).fetch(`${baseUrl}/api/products/prod-1/image`, {
-      headers: authHeader,
-      redirect: 'manual',
-    });
+    const redirectResponse = await (globalThis as any).fetch(
+      `${baseUrl}/api/products/prod-1/image`,
+      {
+        headers: authHeader,
+        redirect: 'manual',
+      },
+    );
     assertEqual(redirectResponse.status, 404, 'C3: Legacy external URL returns 404');
-    assertEqual(redirectResponse.headers.get('location'), null, 'C3: Legacy external URL has no redirect location');
+    assertEqual(
+      redirectResponse.headers.get('location'),
+      null,
+      'C3: Legacy external URL has no redirect location',
+    );
 
     // Restore valid image for remaining tests
     db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(VALID_PNG, 'prod-1');
 
     // C4: 404 for product with no image
     // Create a product without image
-    seedProduct(db, 'prod-no-img', 'cat-1', 'No Image Product', 2.00);
-    const noImgResponse = await (globalThis as any).fetch(`${baseUrl}/api/products/prod-no-img/image`, {
-      headers: authHeader,
-    });
+    seedProduct(db, 'prod-no-img', 'cat-1', 'No Image Product', 2.0);
+    const noImgResponse = await (globalThis as any).fetch(
+      `${baseUrl}/api/products/prod-no-img/image`,
+      {
+        headers: authHeader,
+      },
+    );
     assertEqual(noImgResponse.status, 404, 'C4: 404 for product without image');
 
     // C5: 404 for non-existent product
-    const notFoundResponse = await (globalThis as any).fetch(`${baseUrl}/api/products/nonexistent/image`, {
-      headers: authHeader,
-    });
+    const notFoundResponse = await (globalThis as any).fetch(
+      `${baseUrl}/api/products/nonexistent/image`,
+      {
+        headers: authHeader,
+      },
+    );
     assertEqual(notFoundResponse.status, 404, 'C5: 404 for non-existent product');
 
     // ── D) GET / — has_image flag ──────────────────────────────────────────
@@ -247,21 +341,27 @@ async function main() {
 
     const prodWithoutImage = products.find((p: any) => p.id === 'prod-no-img');
     assert(prodWithoutImage, 'D6: Found prod-no-img');
-    assertEqual(prodWithoutImage.has_image, false, 'D7: has_image is false for product without image');
+    assertEqual(
+      prodWithoutImage.has_image,
+      false,
+      'D7: has_image is false for product without image',
+    );
 
     // ── E) POST /fetch-url — CORS proxy ────────────────────────────────────
     console.log('\n─── E) POST /fetch-url (validation only) ───');
 
     // E1: Missing URL
     res = await api(baseUrl, '/api/products/fetch-url', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {},
     });
     assertEqual(res.status, 400, 'E1: Missing URL rejected');
 
     // E2: HTTP URL (not HTTPS)
     res = await api(baseUrl, '/api/products/fetch-url', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: { url: 'http://example.com/photo.jpg' },
     });
     assertEqual(res.status, 400, 'E2: HTTP URL rejected');
@@ -269,28 +369,32 @@ async function main() {
 
     // E3: Non-string URL
     res = await api(baseUrl, '/api/products/fetch-url', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: { url: 12345 },
     });
     assertEqual(res.status, 400, 'E3: Non-string URL rejected');
 
     // E4: HTTPS URL to non-existent server (will fail with 502)
     res = await api(baseUrl, '/api/products/fetch-url', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: { url: 'https://this-domain-does-not-exist-12345.com/photo.jpg' },
     });
     assertEqual(res.status, 502, 'E4: Non-existent server returns 502');
 
     // E5: Userinfo in URL rejected
     res = await api(baseUrl, '/api/products/fetch-url', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: { url: 'https://user:pass@example.com/photo.jpg' },
     });
     assertEqual(res.status, 400, 'E5: Userinfo URL rejected');
 
     // E6: Non-standard port rejected
     res = await api(baseUrl, '/api/products/fetch-url', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: { url: 'https://example.com:8443/photo.jpg' },
     });
     assertEqual(res.status, 400, 'E6: Non-standard port rejected');
@@ -325,19 +429,33 @@ async function main() {
     };
     try {
       res = await api(baseUrl, '/api/products/fetch-url', {
-        method: 'POST', headers: authHeader,
+        method: 'POST',
+        headers: authHeader,
         body: { url: 'https://example.com/photo.webp' },
       });
       assertEqual(res.status, 200, 'E7a: Pinned HTTPS image is fetched');
-      assertEqual(Array.isArray(pinnedAddresses), true, 'E7b: Pinned lookup returns an address list when requested');
-      assertEqual(pinnedAddresses[0].address, '93.184.216.34', 'E7c: Pinned lookup returns only validated IP');
+      assertEqual(
+        Array.isArray(pinnedAddresses),
+        true,
+        'E7b: Pinned lookup returns an address list when requested',
+      );
+      assertEqual(
+        pinnedAddresses[0].address,
+        '93.184.216.34',
+        'E7c: Pinned lookup returns only validated IP',
+      );
 
       res = await api(baseUrl, '/api/products/fetch-url', {
-        method: 'POST', headers: authHeader,
+        method: 'POST',
+        headers: authHeader,
         body: { url: 'https://93.184.216.34/photo.webp' },
       });
       assertEqual(res.status, 200, 'E7d: Public IP image URL is fetched');
-      assertEqual(requestOptions.hostname, '93.184.216.34', 'E7e: Public IP URL remains pinned to its literal address');
+      assertEqual(
+        requestOptions.hostname,
+        '93.184.216.34',
+        'E7e: Public IP URL remains pinned to its literal address',
+      );
     } finally {
       (dns.promises as any).Resolver = originalResolver;
       https.request = originalRequest;
@@ -359,7 +477,10 @@ async function main() {
       ['NAT64 loopback (dotted)', 'https://[64:ff9b::127.0.0.1]/photo.jpg'],
       ['IPv4-mapped private (hex)', 'https://[::ffff:a00:1]/photo.jpg'],
       ['IPv4-mapped link-local / cloud metadata (hex)', 'https://[::ffff:a9fe:a9fe]/photo.jpg'],
-      ['IPv4-mapped link-local / cloud metadata (expanded)', 'https://[0:0:0:0:0:ffff:169.254.169.254]/photo.jpg'],
+      [
+        'IPv4-mapped link-local / cloud metadata (expanded)',
+        'https://[0:0:0:0:0:ffff:169.254.169.254]/photo.jpg',
+      ],
       ['plain IPv4 loopback (control)', 'https://127.0.0.1/photo.jpg'],
       ['plain IPv4 link-local (control)', 'https://169.254.169.254/photo.jpg'],
     ];
@@ -372,15 +493,24 @@ async function main() {
         resolve6 = async () => [];
         cancel = () => undefined;
       };
-      https.request = () => { outboundAttempts += 1; throw new Error('outbound connection must not be attempted'); };
+      https.request = () => {
+        outboundAttempts += 1;
+        throw new Error('outbound connection must not be attempted');
+      };
       try {
         for (const [label, url] of BLOCKED_EMBEDDED_TARGETS) {
           const before = outboundAttempts;
           const blocked = await api(baseUrl, '/api/products/fetch-url', {
-            method: 'POST', headers: authHeader, body: { url },
+            method: 'POST',
+            headers: authHeader,
+            body: { url },
           });
           assertEqual(blocked.status, 400, `E8: ${label} is refused with 400`);
-          assertEqual(blocked.data.error, 'URL is not allowed', `E8: ${label} reports the SSRF guard`);
+          assertEqual(
+            blocked.data.error,
+            'URL is not allowed',
+            `E8: ${label} reports the SSRF guard`,
+          );
           assertEqual(outboundAttempts, before, `E8: ${label} opens no outbound connection`);
         }
       } finally {
@@ -413,9 +543,14 @@ async function main() {
         return req;
       };
       try {
-        for (const url of ['https://[::ffff:8.8.8.8]/photo.webp', 'https://[2606:4700:4700::1111]/photo.webp']) {
+        for (const url of [
+          'https://[::ffff:8.8.8.8]/photo.webp',
+          'https://[2606:4700:4700::1111]/photo.webp',
+        ]) {
           const allowed = await api(baseUrl, '/api/products/fetch-url', {
-            method: 'POST', headers: authHeader, body: { url },
+            method: 'POST',
+            headers: authHeader,
+            body: { url },
           });
           assertEqual(allowed.status, 200, `E8: public target ${url} still passes the SSRF guard`);
         }
@@ -431,10 +566,11 @@ async function main() {
 
     // F1: Create with valid image
     res = await api(baseUrl, '/api/products', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
         name: 'Latte',
-        price: 4.00,
+        price: 4.0,
         category_id: 'cat-1',
         image_url: VALID_IMAGE,
       },
@@ -444,10 +580,11 @@ async function main() {
 
     // F2: Create with invalid image — should fail
     res = await api(baseUrl, '/api/products', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
         name: 'Bad Image Product',
-        price: 5.00,
+        price: 5.0,
         category_id: 'cat-1',
         image_url: BAD_PREFIX,
       },
@@ -456,10 +593,11 @@ async function main() {
 
     // F3: Create without image — should succeed
     res = await api(baseUrl, '/api/products', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
         name: 'No Image Product',
-        price: 3.00,
+        price: 3.0,
         category_id: 'cat-1',
       },
     });
@@ -472,14 +610,15 @@ async function main() {
     // First create an addon group
     db.prepare(
       `INSERT OR IGNORE INTO addon_groups (id, name, is_required, min_selection, max_selection, sort_order, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run('ag-1', 'Milk Options', 0, 0, 3, 1, 1, now(), now());
 
     res = await api(baseUrl, '/api/products', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
         name: 'Cappuccino',
-        price: 4.50,
+        price: 4.5,
         category_id: 'cat-1',
         addon_group_ids: ['ag-1'],
       },
@@ -487,14 +626,18 @@ async function main() {
     assertEqual(res.status, 201, 'G1: Product with addon group created');
 
     // Verify addon group link exists
-    const agpCount = db.prepare('SELECT COUNT(*) as count FROM addon_group_product WHERE product_id = ?').get(res.data.product.id);
+    const agpCount = db
+      .prepare('SELECT COUNT(*) as count FROM addon_group_product WHERE product_id = ?')
+      .get(res.data.product.id);
     assertEqual(agpCount.count, 1, 'G1: Addon group link created');
 
     // E8: Shutdown aborts a redirect hop that is blocked in DNS resolution.
     const redirectResolver = (dns.promises as any).Resolver;
     const redirectRequest = https.request;
     let secondLookupStarted!: () => void;
-    const secondLookup = new Promise<void>((resolve) => { secondLookupStarted = resolve; });
+    const secondLookup = new Promise<void>((resolve) => {
+      secondLookupStarted = resolve;
+    });
     let resolverCanceled = false;
     (dns.promises as any).Resolver = class {
       resolve4 = (hostname: string) => {
@@ -510,7 +653,9 @@ async function main() {
         });
       };
       resolve6 = async () => [];
-      cancel = () => { resolverCanceled = true; };
+      cancel = () => {
+        resolverCanceled = true;
+      };
     };
     https.request = (_options: any, callback: (response: any) => void) => {
       const request = new EventEmitter() as any;
@@ -527,7 +672,8 @@ async function main() {
     installHttpShutdownTracking(server);
     try {
       const redirectResponse = api(baseUrl, '/api/products/fetch-url', {
-        method: 'POST', headers: authHeader,
+        method: 'POST',
+        headers: authHeader,
         body: { url: 'https://redirect.example/photo.webp' },
       });
       await secondLookup;

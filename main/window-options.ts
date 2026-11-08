@@ -219,3 +219,33 @@ export function createMainWindowWillNavigateHandler(
     }
   };
 }
+
+export interface ChildWindowWebContentsTarget {
+  setWindowOpenHandler: (handler: (details: { url: string }) => { action: 'deny' }) => void;
+  on: (
+    event: 'will-navigate',
+    listener: (event: { preventDefault: () => void }, url: string) => void,
+  ) => unknown;
+}
+
+export interface ParentWebContentsTarget {
+  on: (
+    event: 'did-create-window',
+    listener: (childWindow: { webContents: ChildWindowWebContentsTarget }) => void,
+  ) => unknown;
+}
+
+/**
+ * Attaches lifecycle guards to child windows spawned from the main window so
+ * nested popups are denied and child-window navigation is confined by the same
+ * local allowlist and external-browser routing as the main window.
+ */
+export function attachChildWindowLifecycleGuards(
+  parentWebContents: ParentWebContentsTarget,
+  willNavigateHandler: (event: { preventDefault: () => void }, url: string) => void,
+): void {
+  parentWebContents.on('did-create-window', (childWindow) => {
+    childWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    childWindow.webContents.on('will-navigate', willNavigateHandler);
+  });
+}

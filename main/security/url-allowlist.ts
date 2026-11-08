@@ -8,8 +8,6 @@ export function isAllowedLocalWindowUrl(rawUrl: string, port: number, localIp?: 
   if (rawUrl === 'about:blank' || rawUrl === '') return true;
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.protocol !== 'http:' || parsed.username || parsed.password) return false;
-
     const allowedOrigins = new Set([
       originFor('localhost', port),
       originFor('127.0.0.1', port),
@@ -17,6 +15,13 @@ export function isAllowedLocalWindowUrl(rawUrl: string, port: number, localIp?: 
       ...(localIp ? [originFor(localIp, port)] : []),
     ]);
 
+    if (parsed.protocol === 'blob:') {
+      const embedded = new URL(parsed.pathname);
+      if (embedded.protocol !== 'http:' || embedded.username || embedded.password) return false;
+      return allowedOrigins.has(embedded.origin);
+    }
+
+    if (parsed.protocol !== 'http:' || parsed.username || parsed.password) return false;
     return allowedOrigins.has(parsed.origin);
   } catch {
     return false;
@@ -36,12 +41,14 @@ export function isSafeExternalUrl(rawUrl: string): boolean {
 export function isSafeWhatsAppShareUrl(rawUrl: string): boolean {
   try {
     const parsed = new URL(rawUrl);
-    return parsed.protocol === 'https:'
-      && parsed.hostname === 'wa.me'
-      && parsed.username === ''
-      && parsed.password === ''
-      && parsed.port === ''
-      && /^\/(?:\d+)?$/.test(parsed.pathname);
+    return (
+      parsed.protocol === 'https:' &&
+      parsed.hostname === 'wa.me' &&
+      parsed.username === '' &&
+      parsed.password === '' &&
+      parsed.port === '' &&
+      /^\/(?:\d+)?$/.test(parsed.pathname)
+    );
   } catch {
     return false;
   }

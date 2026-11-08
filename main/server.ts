@@ -18,7 +18,7 @@ import {
   isDatabaseMaintenanceActive,
   isKdsEnabled,
 } from './db';
-import { setupKdsWebSocket } from './services/kds';
+import { checkKdsWebSocketAdmission, setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';
 import {
   staticRouteRateLimit,
@@ -385,6 +385,15 @@ export function startServer(): Promise<void> {
             if (!isKdsEnabled()) {
               // Return 404 when disabled to avoid revealing KDS presence to LAN clients.
               socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            const admission = checkKdsWebSocketAdmission(request);
+            if (!admission.allowed) {
+              socket.write(
+                `HTTP/1.1 ${admission.statusCode} ${admission.statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+              );
               socket.destroy();
               return;
             }

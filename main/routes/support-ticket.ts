@@ -8,6 +8,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
 import { getHttpRequestSignal } from '../shutdown';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { sanitizeLogTail } from '../lib/log-sanitizer';
 import {
   isOperationReference,
   serializeOperationFailure,
@@ -230,7 +231,9 @@ async function submitTicketHandler(req: Request, res: Response) {
 
   const logTail =
     typeof body.log_tail === 'string' && body.log_tail.trim()
-      ? Buffer.from(body.log_tail, 'utf8').subarray(-LOG_TAIL_MAX_BYTES).toString('utf8')
+      ? Buffer.from(sanitizeLogTail(body.log_tail), 'utf8')
+          .subarray(-LOG_TAIL_MAX_BYTES)
+          .toString('utf8')
       : undefined;
 
   const queued = await cloudSync.queueSupportTicket(

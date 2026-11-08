@@ -32,6 +32,7 @@ const {
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
 const { cloudSync } = require('../main/services/cloud-sync');
+const { sanitizeLogTail } = require('../main/lib/log-sanitizer');
 
 async function main() {
   console.log('Support Ticket Outbox Integration Tests');
@@ -415,6 +416,120 @@ async function main() {
     } finally {
       (cloudSync as any).cloudDeletionInProgress = false;
     }
+
+    console.log(
+      '\n8. Shared credential redaction scrubs tokens and secrets from log_tail while preserving diagnostics',
+    );
+    const rawLogTail = [
+      '[2026-11-07 10:15:30.123] [error] [Auth] Token verification failed code=ECONNRESET',
+      'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJvd25lci0xIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      '{"x-master-pin":"987654","master_pin":"654321","password":"SuperSecret!1","pin":"1234"}',
+      'cloud_api_key=floc_live_secret_key_12345 cloud_device_secret=dev_sec_98765 jwt_secret="jwt_top_secret"',
+      'x-api-key=header_api_key_secret api_key="snake_api_key_secret" apiKey=camelApiKeySecret',
+      'oauth access_token="ya29.a0AfH6SMBxSecretToken" refresh_token=1//0gSecretRefreshTokenValue12345',
+      '    at verifyRequest (/app/main/server.ts:112:15)',
+    ].join('\n');
+
+    const directSanitized = sanitizeLogTail(rawLogTail);
+    assert(
+      !directSanitized.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'),
+      'JWT is redacted by sanitizeLogTail',
+    );
+    assert(
+      directSanitized.includes('Authorization: Bearer [REDACTED]') &&
+        !directSanitized.includes('Authorization: Bearer [REDACTED]]'),
+      'Authorization: Bearer <jwt> sanitizes to Authorization: Bearer [REDACTED] with no extra ]',
+    );
+    assertEqual(
+      sanitizeLogTail(directSanitized),
+      directSanitized,
+      'sanitizeLogTail is idempotent across repeated passes',
+    );
+    assert(
+      !directSanitized.includes('header_api_key_secret') &&
+        !directSanitized.includes('snake_api_key_secret') &&
+        !directSanitized.includes('camelApiKeySecret'),
+      'x-api-key, api_key, and apiKey are redacted',
+    );
+    assert(
+      !directSanitized.includes('987654') && !directSanitized.includes('654321'),
+      'master PINs are redacted',
+    );
+    assert(
+      !directSanitized.includes('SuperSecret!1') && !directSanitized.includes('1234'),
+      'password and PIN are redacted',
+    );
+    assert(
+      !directSanitized.includes('floc_live_secret_key_12345') &&
+        !directSanitized.includes('dev_sec_98765') &&
+        !directSanitized.includes('jwt_top_secret'),
+      'cloud keys and jwt_secret are redacted',
+    );
+    assert(
+      !directSanitized.includes('ya29.a0AfH6SMBxSecretToken') &&
+        !directSanitized.includes('1//0gSecretRefreshTokenValue12345'),
+      'OAuth tokens are redacted',
+    );
+    assert(
+      directSanitized.includes(
+        '[2026-11-07 10:15:30.123] [error] [Auth] Token verification failed code=ECONNRESET',
+      ) && directSanitized.includes('at verifyRequest (/app/main/server.ts:112:15)'),
+      'timestamps, error codes, and stack traces are preserved',
+    );
+
+    const redactedTicketId = '55555555-6666-7777-8888-999999999999';
+    const redactedTicketRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        client_ticket_id: redactedTicketId,
+        subject: 'Log redaction check',
+        message: 'Checking attached log redaction.',
+        log_tail: rawLogTail,
+      },
+    });
+    assertEqual(redactedTicketRes.status, 202, 'ticket with log_tail is accepted');
+    const redactedOutboxRow = db
+      .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+      .get(redactedTicketId) as { payload: string };
+    const storedLogTail = JSON.parse(redactedOutboxRow.payload).log_tail as string;
+    assert(
+      typeof storedLogTail === 'string' && storedLogTail.length > 0,
+      'sanitized log_tail is stored',
+    );
+    assert(!storedLogTail.includes('SuperSecret!1'), 'stored log_tail redacts password');
+    assert(!storedLogTail.includes('987654'), 'stored log_tail redacts x-master-pin');
+    assert(
+      !storedLogTail.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'),
+      'stored log_tail redacts bearer JWT',
+    );
+    assert(
+      storedLogTail.includes('at verifyRequest (/app/main/server.ts:112:15)'),
+      'stored log_tail preserves stack trace',
+    );
+
+    const boundarySecret = 'BoundaryCrossingTopSecretValue999';
+    const boundaryCrossingTail = `password=${boundarySecret}\n` + 'x'.repeat(200_000 - 15);
+    const boundaryTicketId = '66666666-7777-8888-9999-000000000000';
+    const boundaryTicketRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        client_ticket_id: boundaryTicketId,
+        subject: 'Boundary log redaction check',
+        message: 'Checking credential crossing 200KB boundary.',
+        log_tail: boundaryCrossingTail,
+      },
+    });
+    assertEqual(boundaryTicketRes.status, 202, 'ticket with boundary-crossing log_tail accepted');
+    const boundaryOutboxRow = db
+      .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+      .get(boundaryTicketId) as { payload: string };
+    const storedBoundaryTail = JSON.parse(boundaryOutboxRow.payload).log_tail as string;
+    assert(
+      !storedBoundaryTail.includes(boundarySecret),
+      'credential crossing 200KB truncation boundary is redacted before slicing',
+    );
   } finally {
     server.close();
     closeDatabase();

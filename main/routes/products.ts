@@ -21,6 +21,8 @@ import { asyncHandler } from '../middleware/async-handler';
 import { ACTIVE_CATEGORIES_CTE_CLAUSES } from './categories';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
+export const MAX_IMAGE_DATA_URI_LENGTH = 50_000;
+export const MAX_IMAGE_BYTES = 37_500;
 
 function captureProductValidation(
   capturePoint: 'fc.backend.product.create.validation' | 'fc.backend.product.update.validation',
@@ -270,7 +272,7 @@ function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
   if (!formatMatch) {
     return { valid: false, error: 'Invalid image format. Supported: webp, png, jpeg' };
   }
-  if (imageUrl.length > 50_000) {
+  if (imageUrl.length > MAX_IMAGE_DATA_URI_LENGTH) {
     return { valid: false, error: 'Image too large (max 50,000 characters)' };
   }
   return { valid: true };
@@ -1299,9 +1301,12 @@ router.get(
 
       const contentType = match[1]; // e.g., "image/webp"
       const base64Data = match[3]; // group 2 is the extension, group 3 is the base64 data
-
-      const buffer = Buffer.from(base64Data, 'base64');
-      if (buffer.length === 0) {
+      const maxEncodedLength = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 4;
+      if (
+        imageUrl.length > MAX_IMAGE_DATA_URI_LENGTH ||
+        base64Data.length > maxEncodedLength ||
+        base64Data.replace(/[\r\n=]/g, '').length < 2
+      ) {
         return res.status(404).json({ error: 'No image' });
       }
 
@@ -1309,9 +1314,14 @@ router.get(
       // avoids future "why MD5?" questions in code review)
       const etag = crypto.createHash('sha256').update(base64Data).digest('hex');
 
-      // If client already has this version, return 304
+      // If client already has this version, return 304 before decoding Base64
       if (req.headers['if-none-match'] === `"${etag}"`) {
         return res.status(304).end();
+      }
+
+      const buffer = Buffer.from(base64Data, 'base64');
+      if (buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) {
+        return res.status(404).json({ error: 'No image' });
       }
 
       res.set({

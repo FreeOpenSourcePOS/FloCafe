@@ -393,14 +393,16 @@ The restore that path feeds is authorised over HTTP by a session holding `databa
 origin check is the right gate for the picker and adding a PIN prompt to it would be theatre.
 
 The HTTP twins of those repairs are gated separately, and not uniformly, by
-[`main/routes/database-tools.ts`](../../main/routes/database-tools.ts). Every one of its nine routes
-requires `database.manage`. Three of them add `requireMasterPin` on a `master_pin` body field:
+[`main/routes/database-tools.ts`](../../main/routes/database-tools.ts). Every one of its ten routes
+requires `database.manage`. Four of them add `requireMasterPin` (reading `master_pin` from the
+request body or `x-master-pin` header):
 
-| Route                                         | Extra requirement                            |
-| --------------------------------------------- | -------------------------------------------- |
-| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase |
-| `POST /api/db-tools/currency-reset`           | the Master PIN                               |
-| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                               |
+| Route                                         | Extra requirement                                      |
+| --------------------------------------------- | ------------------------------------------------------ |
+| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase           |
+| `POST /api/db-tools/currency-reset`           | the Master PIN                                         |
+| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                                         |
+| `POST /api/db-tools/master-pin/reset`         | the current Master PIN when one is already configured  |
 
 Of the remaining six, one matters here because its IPC twin is gated the other way:
 

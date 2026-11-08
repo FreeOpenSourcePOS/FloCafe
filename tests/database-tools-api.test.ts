@@ -2993,9 +2993,7 @@ async function runTests() {
       `overwrite import with empty blocked security tables succeeds (got ${overwriteBlockedTablesRes.status})`,
     );
     const ownerAfterEmptyUsersOverwrite = db
-      .prepare(
-        "SELECT terms_accepted_at, created_at, updated_at FROM users WHERE id = 'owner-1'",
-      )
+      .prepare("SELECT terms_accepted_at, created_at, updated_at FROM users WHERE id = 'owner-1'")
       .get() as { terms_accepted_at: string | null; created_at: string; updated_at: string };
     assertEqual(
       ownerAfterEmptyUsersOverwrite.terms_accepted_at,

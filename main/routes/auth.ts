@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt, { SignOptions } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import {
   getCurrentSchemaVersion,
@@ -65,12 +65,15 @@ import {
 
 const router = Router();
 
-const JWT_EXPIRES_IN = '24h';
-const JWT_REMEMBER_EXPIRES_IN = '10d';
+const JWT_EXPIRES_IN_SECONDS = 24 * 60 * 60;
 const JWT_REMEMBER_EXPIRES_IN_SECONDS = 10 * 24 * 60 * 60;
 
-function expiresInFor(remember: boolean): SignOptions['expiresIn'] {
-  return remember ? JWT_REMEMBER_EXPIRES_IN : JWT_EXPIRES_IN;
+function expiresInSecondsFor(remember: boolean): number {
+  return remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : JWT_EXPIRES_IN_SECONDS;
+}
+
+function tokenExpSeconds(remember = false): number {
+  return Math.floor(Date.now() / 1000) + expiresInSecondsFor(remember);
 }
 
 const INITIAL_ADMIN_ROLE = 'owner';
@@ -299,9 +302,9 @@ router.post(
           remember,
           jti: randomUUID(),
           iat: nextTokenIatSeconds(),
+          exp: tokenExpSeconds(remember),
         },
         getJWTSecret(),
-        { expiresIn: expiresInFor(remember) },
       );
 
       const tenant = buildLocalTenant(db, user.id, user.role);
@@ -309,7 +312,7 @@ router.post(
       res.json({
         access_token: token,
         token_type: 'bearer',
-        expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
+        expires_in: expiresInSecondsFor(remember),
         user: {
           id: user.id,
           name: user.name,
@@ -540,9 +543,9 @@ router.post(
           remember,
           jti: randomUUID(),
           iat: nextTokenIatSeconds(),
+          exp: tokenExpSeconds(remember),
         },
         getJWTSecret(),
-        { expiresIn: expiresInFor(remember) },
       );
 
       const tenant = buildLocalTenant(db, user.id, user.role);
@@ -550,7 +553,7 @@ router.post(
       res.json({
         access_token: token,
         token_type: 'bearer',
-        expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
+        expires_in: expiresInSecondsFor(remember),
         user: {
           id: user.id,
           name: user.name,
@@ -610,9 +613,9 @@ router.post('/tenants/select', (req: Request, res: Response) => {
         remember,
         jti: randomUUID(),
         iat: nextTokenIatSeconds(),
+        exp: tokenExpSeconds(remember),
       },
       getJWTSecret(),
-      { expiresIn: expiresInFor(remember) },
     );
 
     res.json({
@@ -677,15 +680,15 @@ router.post('/refresh', (req: Request, res: Response) => {
         remember,
         jti: randomUUID(),
         iat: nextTokenIatSeconds(),
+        exp: tokenExpSeconds(remember),
       },
       getJWTSecret(),
-      { expiresIn: expiresInFor(remember) },
     );
 
     res.json({
       access_token: newToken,
       token_type: 'bearer',
-      expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
+      expires_in: expiresInSecondsFor(remember),
     });
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -1400,9 +1403,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         role: INITIAL_ADMIN_ROLE,
         jti: randomUUID(),
         iat: nextTokenIatSeconds(),
+        exp: tokenExpSeconds(false),
       },
       getJWTSecret(),
-      { expiresIn: JWT_EXPIRES_IN },
     );
 
     const tenant = buildLocalTenant(db, userId, INITIAL_ADMIN_ROLE);
@@ -1410,7 +1413,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     res.json({
       access_token: token,
       token_type: 'bearer',
-      expires_in: 86400,
+      expires_in: JWT_EXPIRES_IN_SECONDS,
       user: { id: userId, name: displayName, email, role: INITIAL_ADMIN_ROLE },
       tenant,
       tenants: [tenant],

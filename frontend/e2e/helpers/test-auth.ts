@@ -9,6 +9,20 @@ function base64Url(data: string | Buffer): string {
   return Buffer.from(data).toString('base64url');
 }
 
+let lastE2eWallMs = 0;
+let lastE2eLogicalMs = 0;
+
+function nextE2eTokenIatSeconds(): number {
+  const wallMs = Date.now() + 5;
+  let nextMs = wallMs < lastE2eWallMs - 1000 ? wallMs : Math.max(wallMs, lastE2eLogicalMs + 1);
+  if (nextMs % 1000 === 0) {
+    nextMs += 1;
+  }
+  lastE2eWallMs = wallMs;
+  lastE2eLogicalMs = nextMs;
+  return nextMs / 1000;
+}
+
 /**
  * Generates an authoritative test JWT for E2E setup and teardown tasks
  * without requiring UI interaction or hardcoded network login requests.
@@ -18,14 +32,15 @@ export function getE2eToken(
   email = 'owner@flo.local',
   role = 'owner',
 ): string {
+  const iat = nextE2eTokenIatSeconds();
   const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64Url(
     JSON.stringify({
       userId,
       email,
       role,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat,
+      exp: Math.floor(iat) + 3600,
     }),
   );
   const signature = base64Url(

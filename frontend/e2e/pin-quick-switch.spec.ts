@@ -26,6 +26,11 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338)', () => {
       data: { pin: '1111' },
     });
     expect(ownerPinRes.ok()).toBeTruthy();
+    ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+    ownerHeaders = {
+      Authorization: `Bearer ${ownerToken}`,
+      'Content-Type': 'application/json',
+    };
 
     const staffRes = await request.get(`${BASE}/api/staff`, { headers: ownerHeaders });
     expect(staffRes.ok()).toBeTruthy();

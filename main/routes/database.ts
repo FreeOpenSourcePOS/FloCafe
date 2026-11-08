@@ -436,7 +436,8 @@ router.post(
               for (const tableName of importedTables) {
                 throwIfDatabaseMaintenanceAborted(signal);
                 if (!allowedTables.has(tableName) || EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
-                if (IMPORT_BLOCKED_SECURITY_TABLES.has(tableName)) continue;
+                if (IMPORT_BLOCKED_SECURITY_TABLES.has(tableName) || tableName === 'users')
+                  continue;
                 // Validate table name to prevent SQL injection
                 if (!isSafeIdentifier(tableName)) {
                   console.warn(`[DB Import] Skipping unsafe table name: ${tableName}`);
@@ -447,7 +448,6 @@ router.post(
                 if (!rows || !Array.isArray(rows)) continue;
                 if (rows.length === 0) {
                   if (overwrite || hasVersionMismatch) {
-                    if (IMPORT_BLOCKED_SECURITY_TABLES.has(tableName)) continue;
                     if (tableName === 'settings') {
                       const protectedKeys = Array.from(EXPORT_SETTINGS_REDACT);
                       const placeholders = protectedKeys.map(() => '?').join(', ');
@@ -475,8 +475,6 @@ router.post(
                         new Set(rows.flatMap((row) => Object.keys(row).filter(isSafeIdentifier))),
                       )
                     : Object.keys(rows[0]).filter(isSafeIdentifier);
-                // Never raw-insert rows into users; missing users are restored only as safe placeholders.
-                if (tableName === 'users') continue;
                 const commonCols = importCols.filter(
                   (c) => currentCols.includes(c) && isSafeIdentifier(c),
                 );

@@ -199,7 +199,7 @@ function main() {
       body: { master_pin: '0000' },
     },
     {
-      ip: '127.0.0.1',
+      ip: '::1',
       baseUrl: '/api/db-tools',
       path: '/BACKUPS/fake2.db/DELETE',
       headers: { 'x-master-pin': '0000' },
@@ -211,7 +211,7 @@ function main() {
     assert.equal(r.statusCode, 403, `shared IP attempt ${i + 1} returns 403`);
   }
   const fifth = runMiddleware({
-    ip: '::ffff:127.0.0.1',
+    ip: '0:0:0:0:0:0:0:1',
     baseUrl: '/api/db',
     path: '/download',
     headers: { 'x-master-pin': '0000' },

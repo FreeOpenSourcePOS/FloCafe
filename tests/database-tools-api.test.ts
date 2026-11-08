@@ -2967,7 +2967,10 @@ async function runTests() {
     );
     assertEqual(historicalServerRow.is_active, 0, 'historical server placeholder is inactive');
 
-    // Also verify overwrite: true with empty arrays for blocked security tables does not wipe existing rows
+    // Also verify overwrite: true with empty arrays for blocked security tables and users does not wipe existing rows
+    db.prepare(
+      "UPDATE users SET terms_accepted_at = '2026-01-01T00:00:00.000Z', created_at = '2026-01-01T00:00:00.000Z', updated_at = '2026-01-01T00:00:00.000Z' WHERE id = 'owner-1'",
+    ).run();
     db.exec('DELETE FROM inventory_movements;');
     const overwriteBlockedTablesRes = await request(app)
       .post('/api/db/import')
@@ -2994,6 +2997,26 @@ async function runTests() {
     assert(
       overwriteBlockedTablesRes.status === 200,
       `overwrite import with empty blocked security tables succeeds (got ${overwriteBlockedTablesRes.status})`,
+    );
+    const ownerAfterEmptyUsersOverwrite = db
+      .prepare(
+        "SELECT terms_accepted_at, created_at, updated_at FROM users WHERE id = 'owner-1'",
+      )
+      .get() as { terms_accepted_at: string | null; created_at: string; updated_at: string };
+    assertEqual(
+      ownerAfterEmptyUsersOverwrite.terms_accepted_at,
+      '2026-01-01T00:00:00.000Z',
+      'overwrite import with empty users array preserves existing user terms_accepted_at in place',
+    );
+    assertEqual(
+      ownerAfterEmptyUsersOverwrite.created_at,
+      '2026-01-01T00:00:00.000Z',
+      'overwrite import with empty users array preserves existing user created_at in place',
+    );
+    assertEqual(
+      ownerAfterEmptyUsersOverwrite.updated_at,
+      '2026-01-01T00:00:00.000Z',
+      'overwrite import with empty users array preserves existing user updated_at in place',
     );
     assert(
       hasPermission(delegatedManagerId, 'database.manage'),

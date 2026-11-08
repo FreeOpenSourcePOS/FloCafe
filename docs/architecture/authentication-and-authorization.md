@@ -191,7 +191,7 @@ drift apart without any test failing. Treat them as a set. Note also that `:3002
 All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` Server App) share an install-wide login attempt rate limiter exported from [`main/middleware/security.ts`](../../main/middleware/security.ts):
 
 1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password changes) use independent rate-limiter instances.
-2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which strips `::ffff:` IPv4-mapped IPv6 prefixes so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
+2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which lowers case, strips `::ffff:` IPv4-mapped IPv6 prefixes, and canonicalizes IPv6 loopback `::1` and `0:0:0:0:0:0:0:1` to `127.0.0.1` so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
 3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
 4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
@@ -289,12 +289,17 @@ to `authorizeMasterPin` in
 | PIN does not verify                               | 403, and the attempt is recorded; 429 once the limit is reached     |
 
 The PIN hash is stored through Electron `safeStorage` in `master-pin.enc` under the app's
-`userData` directory, written with mode `0o600`. Rate limiting is in memory, keyed by IP and route
-path, at 5 attempts per 15 minutes.
+`userData` directory, written with mode `0o600`. Rate limiting is in memory, at 5 attempts per 15
+minutes per key.
 
-The rate-limit key includes the route, so attempts against one endpoint do not consume another's
-budget. A caller with a different route can therefore attempt the PIN 5 times per route. That is
-the intended scoping, not an oversight.
+For HTTP routes (`requireMasterPin`) and local password recovery (`POST /api/auth/recover-password`),
+the rate-limit key is `master-pin:${normalizeIpForRateLimit(ip)}`, so all HTTP Master PIN endpoints,
+parameterized routes (such as `POST /api/db-tools/backups/:fileName/delete`), trailing slashes, path
+casing, and equivalent IP representations (`::1`, `127.0.0.1`, `::ffff:127.0.0.1`) share a single
+5-attempt budget per normalized client IP. `requireMasterPin` reads `master_pin` from the request
+body first and falls back to the `x-master-pin` request header (used by bodyless requests such as
+`GET /api/db/download`); it never reads URL query parameters. Electron IPC handlers pass channel-scoped
+`ipc:*` keys to `authorizeMasterPin`.
 
 ## KDS station and category narrowing
 

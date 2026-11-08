@@ -23,7 +23,8 @@ const DEFAULT_MAX = 100;
 /** Canonicalizes an IP address for rate-limit bucketing so equivalent forms share budget. */
 export function normalizeIpForRateLimit(ip: string): string {
   const lower = ip.toLowerCase();
-  return lower.startsWith('::ffff:') ? lower.substring(7) : lower;
+  const stripped = lower.startsWith('::ffff:') ? lower.substring(7) : lower;
+  return stripped === '::1' || stripped === '0:0:0:0:0:0:0:1' ? '127.0.0.1' : stripped;
 }
 
 /** In-memory rate limiter for local Express API keyed by canonicalized IP. */

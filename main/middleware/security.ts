@@ -1,7 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
-import { getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
+import { isIP } from 'node:net';
+import {
+  getDatabase,
+  isKdsEnabled,
+  nextTokenIatSeconds,
+  nextTokensValidAfterTimestamp,
+  now,
+  parseDbTimestamp,
+  resetAuthClockForTests,
+} from '../db';
+
+export { nextTokenIatSeconds, nextTokensValidAfterTimestamp, resetAuthClockForTests };
 
 interface RateLimitRecord {
   count: number;
@@ -25,6 +36,44 @@ export function normalizeIpForRateLimit(ip: string): string {
   const lower = ip.toLowerCase();
   const stripped = lower.startsWith('::ffff:') ? lower.substring(7) : lower;
   return stripped === '::1' || stripped === '0:0:0:0:0:0:0:1' ? '127.0.0.1' : stripped;
+}
+
+function expandIpv6Hextets(addr: string): string[] {
+  const expandPart = (part: string): string[] => {
+    if (!part) return [];
+    const tokens = part.split(':');
+    const last = tokens[tokens.length - 1];
+    if (last && last.includes('.')) {
+      const octets = last.split('.').map((n) => Number.parseInt(n, 10));
+      tokens.pop();
+      tokens.push(
+        ((octets[0] << 8) | octets[1]).toString(16),
+        ((octets[2] << 8) | octets[3]).toString(16),
+      );
+    }
+    return tokens;
+  };
+  if (addr.includes('::')) {
+    const [leftRaw, rightRaw] = addr.split('::');
+    const left = expandPart(leftRaw);
+    const right = expandPart(rightRaw);
+    const missing = Math.max(0, 8 - (left.length + right.length));
+    return [...left, ...Array<string>(missing).fill('0'), ...right];
+  }
+  return expandPart(addr);
+}
+
+/** Normalizes a client IP for PIN lockout bucketing, collapsing non-loopback IPv6 addresses to `/64`. */
+export function normalizeIpForPinRateLimit(ip: string): string {
+  const canonicalIp = normalizeIpForRateLimit(ip).split('%')[0];
+  if (isIP(canonicalIp) === 6 && canonicalIp !== '::1') {
+    const prefix = expandIpv6Hextets(canonicalIp)
+      .slice(0, 4)
+      .map((group) => group.padStart(4, '0').toLowerCase())
+      .join(':');
+    return `${prefix}::/64`;
+  }
+  return canonicalIp;
 }
 
 /** In-memory rate limiter for local Express API keyed by canonicalized IP. */
@@ -189,10 +238,6 @@ export function incrementFailedLogin(ip: string): number {
 export function resetSuccessfulLogin(ip: string): void {
   const canonicalIp = normalizeIpForRateLimit(ip);
   loginAttempts.delete(canonicalIp);
-  const pinIdx = canonicalIp.indexOf(':pin:');
-  if (pinIdx >= 0) {
-    loginAttempts.delete(`pin-user:${canonicalIp.slice(pinIdx + 5)}`);
-  }
 }
 
 export function clearLoginRateLimits(): void {
@@ -348,15 +393,19 @@ export function clearUserAuthCache(): void {
   lastUserAuthCachePruneAt = 0;
 }
 
-/** True if token iat predates user tokens_valid_after (e.g. after password/PIN change). */
+/** True if token iat predates or coincides with user tokens_valid_after (e.g. after password/PIN change). */
 export function isTokenStale(
   iat: number | undefined,
   tokensValidAfter: string | null | undefined,
 ): boolean {
-  if (!tokensValidAfter || typeof iat !== 'number') return false;
-  // tokens_valid_after is stored in UTC; compare at second resolution.
-  const tokensValidAfterSeconds = Math.floor(parseDbTimestamp(tokensValidAfter).getTime() / 1000);
-  return iat < tokensValidAfterSeconds;
+  if (!tokensValidAfter || typeof iat !== 'number' || !Number.isFinite(iat)) return false;
+  const validAfterMs = parseDbTimestamp(tokensValidAfter).getTime();
+  if (!Number.isFinite(validAfterMs)) return false;
+  // Legacy integer-second JWTs and whole-second timestamps compare at second resolution with <=.
+  if (Number.isInteger(iat) || !/\.\d+/.test(tokensValidAfter)) {
+    return Math.floor(iat) <= Math.floor(validAfterMs / 1000);
+  }
+  return iat <= validAfterMs / 1000;
 }
 
 // In-memory fallback and persistent hash store for token revocations.

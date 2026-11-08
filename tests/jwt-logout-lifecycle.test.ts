@@ -4,8 +4,11 @@
  */
 
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+process.env.FLO_AUTH_RATE_LIMIT_MAX = '100';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -38,9 +41,41 @@ const {
 } = require('./helpers/test-setup');
 
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
-const { getDatabase, initDatabase } = require('../main/db');
+const {
+  getDatabase,
+  initDatabase,
+  nextTokenIatSeconds,
+  nextTokensValidAfterTimestamp,
+  resetAuthClockForTests,
+} = require('../main/db');
 const { staffRoutes } = require('../main/routes/staff');
-const { clearRevokedTokens, revokeToken, isTokenRevoked } = require('../main/middleware/security');
+const {
+  clearRevokedTokens,
+  revokeToken,
+  isTokenRevoked,
+  isTokenStale,
+  clearUserAuthCache,
+  clearLoginRateLimits,
+} = require('../main/middleware/security');
+const { startKdsServer, stopKdsServer, getKdsPort } = require('../main/kds-server');
+const { startServerApp, stopServerApp, getServerAppPort } = require('../main/server-app');
+
+async function getFreeTcpPort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', resolve);
+  });
+  const address = probe.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Failed to allocate free TCP port');
+  }
+  const port = address.port;
+  await new Promise<void>((resolve, reject) =>
+    probe.close((error) => (error ? reject(error) : resolve())),
+  );
+  return port;
+}
 
 async function run() {
   console.log('Testing JWT Logout & Token Lifecycle (Area E)...');
@@ -188,6 +223,358 @@ async function run() {
     .post('/api/auth/refresh')
     .set('Authorization', `Bearer ${managerToken}`);
   assertEqual(inactiveRefreshRes.status, 401, 'Refresh rejects token for inactive user');
+
+  // Step 10: Deterministic token invalidation across same-second, same-millisecond, legacy integer iat, and all 7 issuers
+  console.log(
+    '\nStep 10: Deterministic token invalidation (same-second, same-ms, legacy iat, all 7 issuers)',
+  );
+  freshDb
+    .prepare(
+      `UPDATE users SET role = 'owner', is_active = 1, pin_hash = ?, tokens_valid_after = NULL WHERE id = 'jwt-owner-1'`,
+    )
+    .run(bcrypt.hashSync('2468', 10));
+  clearUserAuthCache();
+  clearLoginRateLimits();
+
+  // 10a: Legacy integer-second iat token minted in the same UTC second as tokens_valid_after
+  const fixedSecondEpochMs = 1_760_000_000_500; // 2025-10-09T08:53:20.500Z
+  const legacyIntegerIat = Math.floor(fixedSecondEpochMs / 1000); // 1760000000
+  const sameSecondValidAfter = new Date(fixedSecondEpochMs)
+    .toISOString()
+    .replace('T', ' ')
+    .replace('Z', '');
+  assertEqual(
+    isTokenStale(legacyIntegerIat, sameSecondValidAfter),
+    true,
+    'Legacy integer-second iat token minted in the same UTC second as tokens_valid_after is stale',
+  );
+  assertEqual(
+    isTokenStale(legacyIntegerIat + 1, sameSecondValidAfter),
+    false,
+    'Legacy integer-second iat token minted in a later UTC second than tokens_valid_after is valid',
+  );
+
+  // 10b: Pre-change token vs. credential change vs. fresh post-change login when Date.now() is frozen to the exact same millisecond (including .000 boundary)
+  const realDateNow = Date.now;
+  try {
+    resetAuthClockForTests();
+    for (const frozenMs of [1_760_000_010_000, 1_760_000_020_500, 1_760_000_030_999]) {
+      Date.now = () => frozenMs;
+      const iatBefore = nextTokenIatSeconds();
+      const validAfterTs = nextTokensValidAfterTimestamp();
+      const iatAfter = nextTokenIatSeconds();
+
+      assert(
+        !Number.isInteger(iatBefore) && !Number.isInteger(iatAfter),
+        `Issued iat claims at frozen ms ${frozenMs} carry sub-second precision`,
+      );
+      assertEqual(
+        isTokenStale(iatBefore, validAfterTs),
+        true,
+        `Pre-change token is stale when minted in the same frozen millisecond (${frozenMs}) as tokens_valid_after`,
+      );
+      assertEqual(
+        isTokenStale(iatAfter, validAfterTs),
+        false,
+        `Post-change token is valid when minted in the same frozen millisecond (${frozenMs}) after tokens_valid_after`,
+      );
+    }
+
+    // Full route integration with Date.now() frozen to a single millisecond:
+    // login -> password change -> pre-change token rejected -> post-change login accepted
+    const frozenRouteMs = realDateNow.call(Date);
+    Date.now = () => frozenRouteMs;
+
+    const preChangeLogin = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(preChangeLogin.status, 200, 'Pre-change login at frozen ms succeeds');
+    const preChangeToken = preChangeLogin.body.access_token;
+
+    const pwChangeRes = await request(app)
+      .post('/api/auth/password/change')
+      .set('Authorization', `Bearer ${preChangeToken}`)
+      .send({ current_password: 'Pass1234!', password: 'Pass5678!' });
+    assertEqual(pwChangeRes.status, 200, 'Password change in same frozen ms succeeds');
+
+    const preChangeMeAfterPwChange = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${preChangeToken}`);
+    assertEqual(
+      preChangeMeAfterPwChange.status,
+      401,
+      'Pre-change token is rejected immediately in the same frozen millisecond after password change',
+    );
+
+    const postChangeLogin = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass5678!' });
+    assertEqual(postChangeLogin.status, 200, 'Post-change login in same frozen ms succeeds');
+    const postChangeToken = postChangeLogin.body.access_token;
+
+    const postChangeMe = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${postChangeToken}`);
+    assertEqual(
+      postChangeMe.status,
+      200,
+      'Fresh post-change login token in the same frozen millisecond is accepted by /api/auth/me',
+    );
+
+    // Backward wall-clock jump (> 10s): pre-change token must still be invalidated when credentials change after clock jump backward
+    Date.now = () => frozenRouteMs - 15_000;
+    const pwChangeAfterBackwardJump = await request(app)
+      .post('/api/auth/password/change')
+      .set('Authorization', `Bearer ${postChangeToken}`)
+      .send({ current_password: 'Pass5678!', password: 'Pass1234!' });
+    assertEqual(
+      pwChangeAfterBackwardJump.status,
+      200,
+      'Password change after backward wall-clock jump (> 10s) succeeds',
+    );
+
+    const staleAfterBackwardJump = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${postChangeToken}`);
+    assertEqual(
+      staleAfterBackwardJump.status,
+      401,
+      'Pre-change token is rejected after credential change even when Date.now() jumped backward by > 10s',
+    );
+
+    // Simulated process restart (in-memory monotonic clock reset while persisted tokens_valid_after is ahead of wall clock):
+    // fresh login must still receive an iat strictly greater than persisted tokens_valid_after and succeed on /api/auth/me
+    resetAuthClockForTests();
+    const loginAfterSimulatedRestart = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(
+      loginAfterSimulatedRestart.status,
+      200,
+      'Login after simulated process restart with persisted tokens_valid_after ahead of wall clock succeeds',
+    );
+    const restartToken = loginAfterSimulatedRestart.body.access_token;
+    const meAfterSimulatedRestart = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${restartToken}`);
+    assertEqual(
+      meAfterSimulatedRestart.status,
+      200,
+      'Fresh login token after simulated process restart is accepted by /api/auth/me',
+    );
+  } finally {
+    Date.now = realDateNow;
+  }
+
+  // 10c: Verify all 7 issuers stamp sub-second iat and respect same-millisecond invalidation vs post-change login
+  clearLoginRateLimits();
+  process.env.KDS_PORT = String(await getFreeTcpPort());
+  process.env.SERVER_APP_PORT = String(await getFreeTcpPort());
+  await startKdsServer();
+  await startServerApp();
+  const kdsBaseUrl = `http://127.0.0.1:${getKdsPort()}`;
+  const serverAppBaseUrl = `http://127.0.0.1:${getServerAppPort()}`;
+
+  try {
+    const frozenAllIssuersMs = realDateNow.call(Date);
+    Date.now = () => frozenAllIssuersMs;
+
+    // Issuers 1-4 on :3001 (login, pin-login, tenants/select, refresh)
+    const login1 = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(login1.status, 200, 'Issuer 1 (/api/auth/login) succeeds');
+    const pinLogin1 = await request(app)
+      .post('/api/auth/pin-login')
+      .send({ user_id: 'jwt-owner-1', pin: '2468' });
+    assertEqual(pinLogin1.status, 200, 'Issuer 2 (/api/auth/pin-login) succeeds');
+    const select1 = await request(app)
+      .post('/api/auth/tenants/select')
+      .set('Authorization', `Bearer ${login1.body.access_token}`);
+    assertEqual(select1.status, 200, 'Issuer 3 (/api/auth/tenants/select) succeeds');
+    const refresh1 = await request(app)
+      .post('/api/auth/refresh')
+      .set('Authorization', `Bearer ${login1.body.access_token}`);
+    assertEqual(refresh1.status, 200, 'Issuer 4 (/api/auth/refresh) succeeds');
+
+    // Issuer 6: Server App (:3003) /api/auth/login
+    const serverAppLogin1 = await request(serverAppBaseUrl)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(serverAppLogin1.status, 200, 'Issuer 6 (server-app /api/auth/login) succeeds');
+
+    // Issuer 7: KDS Server (:3002) /api/auth/login
+    const kdsLogin1 = await request(kdsBaseUrl)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(kdsLogin1.status, 200, 'Issuer 7 (kds-server /api/auth/login) succeeds');
+
+    const preChangeTokens = [
+      { name: 'login', token: login1.body.access_token },
+      { name: 'pin-login', token: pinLogin1.body.access_token },
+      { name: 'tenants/select', token: select1.body.access_token },
+      { name: 'refresh', token: refresh1.body.access_token },
+      { name: 'server-app login', token: serverAppLogin1.body.access_token },
+      { name: 'kds-server login', token: kdsLogin1.body.access_token },
+    ];
+
+    for (const { name, token: issuedToken } of preChangeTokens) {
+      const decoded = jwt.verify(issuedToken, getJWTSecret()) as { iat: number };
+      assert(
+        typeof decoded.iat === 'number' && !Number.isInteger(decoded.iat),
+        `Issuer ${name} stamps sub-second iat (${decoded.iat})`,
+      );
+    }
+
+    // Bump credentials in the exact same frozen millisecond via PUT /api/staff/:id (PIN change)
+    const pinChangeRes = await request(app)
+      .put('/api/staff/jwt-owner-1')
+      .set('Authorization', `Bearer ${login1.body.access_token}`)
+      .send({ pin: '1357' });
+    assertEqual(pinChangeRes.status, 200, 'Staff PIN change in same frozen millisecond succeeds');
+
+    // Every pre-change token across Main API, Server App, and KDS must now be rejected (401)
+    for (const { name, token: issuedToken } of preChangeTokens) {
+      const meMain = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${issuedToken}`);
+      assertEqual(meMain.status, 401, `Pre-change token from ${name} rejected on Main API`);
+    }
+    const staleServerAppMe = await request(serverAppBaseUrl)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${serverAppLogin1.body.access_token}`);
+    assertEqual(
+      staleServerAppMe.status,
+      401,
+      'Pre-change token from server-app login rejected on Server App /api/auth/me',
+    );
+    const staleKdsMe = await request(kdsBaseUrl)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${kdsLogin1.body.access_token}`);
+    assertEqual(
+      staleKdsMe.status,
+      401,
+      'Pre-change token from kds-server login rejected on KDS /api/auth/me',
+    );
+
+    // Fresh post-change logins in the exact same frozen millisecond across all issuers succeed and validate
+    clearLoginRateLimits();
+    const login2 = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(login2.status, 200, 'Post-change /api/auth/login in same ms succeeds');
+    const pinLogin2 = await request(app)
+      .post('/api/auth/pin-login')
+      .send({ user_id: 'jwt-owner-1', pin: '1357' });
+    assertEqual(pinLogin2.status, 200, 'Post-change /api/auth/pin-login in same ms succeeds');
+    const select2 = await request(app)
+      .post('/api/auth/tenants/select')
+      .set('Authorization', `Bearer ${login2.body.access_token}`);
+    assertEqual(select2.status, 200, 'Post-change /api/auth/tenants/select in same ms succeeds');
+    const refresh2 = await request(app)
+      .post('/api/auth/refresh')
+      .set('Authorization', `Bearer ${login2.body.access_token}`);
+    assertEqual(refresh2.status, 200, 'Post-change /api/auth/refresh in same ms succeeds');
+    const serverAppLogin2 = await request(serverAppBaseUrl)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(
+      serverAppLogin2.status,
+      200,
+      'Post-change server-app /api/auth/login in same ms succeeds',
+    );
+    const kdsLogin2 = await request(kdsBaseUrl)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(
+      kdsLogin2.status,
+      200,
+      'Post-change kds-server /api/auth/login in same ms succeeds',
+    );
+
+    for (const [name, tok] of [
+      ['login', login2.body.access_token],
+      ['pin-login', pinLogin2.body.access_token],
+      ['tenants/select', select2.body.access_token],
+      ['refresh', refresh2.body.access_token],
+    ] as const) {
+      const meCheck = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${tok}`);
+      assertEqual(meCheck.status, 200, `Post-change token from ${name} accepted on Main API`);
+    }
+    const validServerAppMe = await request(serverAppBaseUrl)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${serverAppLogin2.body.access_token}`);
+    assertEqual(
+      validServerAppMe.status,
+      200,
+      'Post-change token from server-app login accepted on Server App /api/auth/me',
+    );
+    const validKdsMe = await request(kdsBaseUrl)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${kdsLogin2.body.access_token}`);
+    assertEqual(
+      validKdsMe.status,
+      200,
+      'Post-change token from kds-server login accepted on KDS /api/auth/me',
+    );
+
+    // Issuer 5: /api/auth/setup/initialize on a fresh user-less table in the same frozen millisecond
+    freshDb.prepare('DELETE FROM users').run();
+    const setupRes = await request(app).post('/api/auth/setup/initialize').send({
+      name: 'Setup Owner',
+      email: 'setup-owner@test.local',
+      password: 'SetupPass123!',
+      business_type: 'restaurant',
+      setup_profile: 'empty',
+      service_model: 'qsr',
+      business_name: 'Setup Cafe',
+      country: 'IN',
+      currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      terms_accepted: true,
+      master_pin: '1234',
+      owner_approval_pin: '2468',
+      owner_approval_pin_confirmation: '2468',
+    });
+    assertEqual(setupRes.status, 200, 'Issuer 5 (/api/auth/setup/initialize) succeeds');
+    const setupToken = setupRes.body.access_token;
+    const setupDecoded = jwt.verify(setupToken, getJWTSecret()) as { iat: number };
+    assert(
+      typeof setupDecoded.iat === 'number' && !Number.isInteger(setupDecoded.iat),
+      `Issuer setup/initialize stamps sub-second iat (${setupDecoded.iat})`,
+    );
+    const setupMeBefore = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${setupToken}`);
+    assertEqual(
+      setupMeBefore.status,
+      200,
+      'Token from setup/initialize is accepted before credential change',
+    );
+
+    const setupPwChange = await request(app)
+      .post('/api/auth/password/change')
+      .set('Authorization', `Bearer ${setupToken}`)
+      .send({ current_password: 'SetupPass123!', password: 'NewSetupPass123!' });
+    assertEqual(
+      setupPwChange.status,
+      200,
+      'Password change after setup/initialize in same frozen ms succeeds',
+    );
+
+    const setupMeAfter = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${setupToken}`);
+    assertEqual(
+      setupMeAfter.status,
+      401,
+      'Token from setup/initialize is invalidated in the same frozen millisecond after password change',
+    );
+  } finally {
+    Date.now = realDateNow;
+    await stopServerApp();
+    await stopKdsServer();
+  }
 
   const results = getResults();
   if (results.failed > 0) {

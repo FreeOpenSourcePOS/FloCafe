@@ -612,71 +612,137 @@ async function run() {
   );
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
 
-  // Rotating source IP cannot bypass the 5-attempt per-account lockout (pin-user:<userId>)
+  // Failed PIN attempts on client IP A lock out (IP A, userId) with 429 without locking out client IP B or loopback
   app.set('trust proxy', true);
   for (let attempt = 1; attempt <= 5; attempt++) {
-    const resIp = await request(app)
+    const resIpA = await request(app)
       .post('/api/auth/pin-login')
-      .set('X-Forwarded-For', `10.10.0.${attempt}`)
+      .set('X-Forwarded-For', '10.10.0.1')
       .send({ user_id: cashierId, pin: '0000' });
     assertEqualOrThrow(
-      resIp.status,
+      resIpA.status,
       401,
-      `Rotated IP attempt ${attempt} (10.10.0.${attempt}) returns 401`,
+      `Client IP A attempt ${attempt} (10.10.0.1) returns 401`,
     );
     assertEqualOrThrow(
-      resIp.body.attempts_remaining,
+      resIpA.body.attempts_remaining,
       5 - attempt,
-      `Rotated IP attempt ${attempt} reports ${5 - attempt} attempts remaining on account bucket`,
+      `Client IP A attempt ${attempt} reports ${5 - attempt} attempts remaining on (IP A, userId) bucket`,
     );
   }
-  const lockedAcrossIps = await request(app)
+  const lockedIpA = await request(app)
     .post('/api/auth/pin-login')
-    .set('X-Forwarded-For', '10.10.0.99')
+    .set('X-Forwarded-For', '10.10.0.1')
     .send({ user_id: cashierId, pin: '2468' });
   assertEqualOrThrow(
-    lockedAcrossIps.status,
+    lockedIpA.status,
     429,
-    '6th attempt from a fresh source IP returns 429 due to per-account lockout',
+    '6th attempt from client IP A (10.10.0.1) returns 429 for (IP A, userId)',
   );
-  const rotatedIpAuditRows = db
+  const ipAAuditRows = db
     .prepare(
-      "SELECT user_id, outcome, ip_address FROM auth_audit_log WHERE event_type = 'pin_login' AND ip_address = '10.10.0.99'",
+      "SELECT user_id, outcome, ip_address FROM auth_audit_log WHERE event_type = 'pin_login' AND ip_address = '10.10.0.1'",
     )
     .all() as Array<{ user_id: string; outcome: string; ip_address: string }>;
   assertOrThrow(
-    rotatedIpAuditRows.some((r) => r.user_id === cashierId && r.outcome === 'rate_limited'),
-    'Audit log records rate_limited on 6th attempt from rotated source IP 10.10.0.99',
+    ipAAuditRows.some((r) => r.user_id === cashierId && r.outcome === 'rate_limited'),
+    'Audit log records rate_limited on 6th attempt from client IP A (10.10.0.1)',
   );
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    resetSuccessfulLogin(`10.10.0.${attempt}:pin:${cashierId}`);
-  }
-  resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
 
-  // Concurrent failed attempts across distinct source IPs are serialized by withPinVerificationLock(accountRateKey)
-  const concurrentCrossIpResponses = await Promise.all(
-    Array.from({ length: 8 }, (_, idx) =>
-      request(app)
-        .post('/api/auth/pin-login')
-        .set('X-Forwarded-For', `10.20.0.${idx + 1}`)
-        .send({ user_id: cashierId, pin: '0000' }),
-    ),
-  );
+  // Client IP B (10.10.0.2) is NOT locked out by client IP A's failures and can still sign in as cashierId
+  const clientIpBLogin = await request(app)
+    .post('/api/auth/pin-login')
+    .set('X-Forwarded-For', '10.10.0.2')
+    .send({ user_id: cashierId, pin: '2468' });
   assertEqualOrThrow(
-    concurrentCrossIpResponses.filter((r) => r.status === 401).length,
-    5,
-    'Concurrent cross-IP wrong-PIN burst is serialized by withPinVerificationLock and allows only 5 attempts (401)',
-  );
-  assertEqualOrThrow(
-    concurrentCrossIpResponses.filter((r) => r.status === 429).length,
-    3,
-    'Remaining 3 concurrent cross-IP wrong-PIN requests receive 429 rate-limited',
+    clientIpBLogin.status,
+    200,
+    'Client IP B (10.10.0.2) can still authenticate as cashierId with valid PIN while IP A is locked out',
   );
   app.set('trust proxy', false);
-  for (let idx = 1; idx <= 8; idx++) {
-    resetSuccessfulLogin(`10.20.0.${idx}:pin:${cashierId}`);
+
+  // Loopback (127.0.0.1) is also unaffected by IP A's lockout, and is subject to its own 5-attempt lockout without exemption
+  const loopbackLoginWhileIpALocked = await request(app)
+    .post('/api/auth/pin-login')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    loopbackLoginWhileIpALocked.status,
+    200,
+    'Loopback (127.0.0.1) can still authenticate as cashierId while client IP A is locked out',
+  );
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const loopbackWrong = await request(app)
+      .post('/api/auth/pin-login')
+      .send({ user_id: cashierId, pin: '0000' });
+    assertEqualOrThrow(
+      loopbackWrong.status,
+      401,
+      `Loopback wrong PIN attempt ${attempt} returns 401`,
+    );
   }
+  const loopbackLocked = await request(app)
+    .post('/api/auth/pin-login')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    loopbackLocked.status,
+    429,
+    'Loopback (127.0.0.1) is subject to the same 5-attempt lockout on its own IP',
+  );
+  resetSuccessfulLogin(`10.10.0.1:pin:${cashierId}`);
+  resetSuccessfulLogin(`10.10.0.2:pin:${cashierId}`);
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
+
+  // Non-loopback IPv6 addresses in the same /64 prefix share one 5-attempt lockout bucket per user,
+  // while a different IPv6 /64 prefix remains independent
+  app.set('trust proxy', true);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const resV6Host1 = await request(app)
+      .post('/api/auth/pin-login')
+      .set('X-Forwarded-For', '2001:db8:1:2::10')
+      .send({ user_id: cashierId, pin: '0000' });
+    assertEqualOrThrow(
+      resV6Host1.status,
+      401,
+      `IPv6 /64 host 1 (2001:db8:1:2::10) attempt ${attempt} returns 401`,
+    );
+  }
+  for (let attempt = 4; attempt <= 5; attempt++) {
+    const resV6Host2 = await request(app)
+      .post('/api/auth/pin-login')
+      .set('X-Forwarded-For', '2001:db8:1:2::20')
+      .send({ user_id: cashierId, pin: '0000' });
+    assertEqualOrThrow(
+      resV6Host2.status,
+      401,
+      `IPv6 /64 host 2 (2001:db8:1:2::20) attempt ${attempt} shares /64 bucket and returns 401`,
+    );
+    assertEqualOrThrow(
+      resV6Host2.body.attempts_remaining,
+      5 - attempt,
+      `IPv6 /64 host 2 attempt ${attempt} reports ${5 - attempt} attempts remaining on shared /64 bucket`,
+    );
+  }
+  const lockedSameV6Prefix = await request(app)
+    .post('/api/auth/pin-login')
+    .set('X-Forwarded-For', '2001:db8:1:2::30')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    lockedSameV6Prefix.status,
+    429,
+    '6th attempt from another SLAAC address in the same IPv6 /64 (2001:db8:1:2::30) is locked out with 429',
+  );
+  const differentV6PrefixLogin = await request(app)
+    .post('/api/auth/pin-login')
+    .set('X-Forwarded-For', '2001:db8:1:3::10')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    differentV6PrefixLogin.status,
+    200,
+    'Client on a different IPv6 /64 prefix (2001:db8:1:3::10) is not locked out and can authenticate',
+  );
+  app.set('trust proxy', false);
+  resetSuccessfulLogin(`2001:0db8:0001:0002::/64:pin:${cashierId}`);
+  resetSuccessfulLogin(`2001:0db8:0001:0003::/64:pin:${cashierId}`);
 
   // ── 5. Cashier PIN rejected on EVERY approval endpoint ──
   console.log('\n5. Cashier PIN rejected on every approval endpoint');

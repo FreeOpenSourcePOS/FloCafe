@@ -9,6 +9,20 @@ function base64Url(data: string | Buffer): string {
   return Buffer.from(data).toString('base64url');
 }
 
+let lastE2eWallMs = 0;
+let lastE2eLogicalMs = 0;
+
+function nextE2eTokenIatSeconds(): number {
+  const wallMs = Date.now() + 5;
+  let nextMs = wallMs < lastE2eWallMs - 1000 ? wallMs : Math.max(wallMs, lastE2eLogicalMs + 1);
+  if (nextMs % 1000 === 0) {
+    nextMs += 1;
+  }
+  lastE2eWallMs = wallMs;
+  lastE2eLogicalMs = nextMs;
+  return nextMs / 1000;
+}
+
 /**
  * Generates an authoritative test JWT for E2E setup and teardown tasks
  * without requiring UI interaction or hardcoded network login requests.
@@ -18,14 +32,15 @@ export function getE2eToken(
   email = 'owner@flo.local',
   role = 'owner',
 ): string {
+  const iat = nextE2eTokenIatSeconds();
   const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64Url(
     JSON.stringify({
       userId,
       email,
       role,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat,
+      exp: Math.floor(iat) + 3600,
     }),
   );
   const signature = base64Url(
@@ -43,7 +58,9 @@ export type E2EOrdersLayout = 'split' | 'cards';
  */
 async function ordersLayoutToken(page: Page, token?: string): Promise<string> {
   if (token) return token;
-  return (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) || getE2eToken();
+  return (
+    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) || getE2eToken()
+  );
 }
 
 /**
@@ -104,14 +121,9 @@ export async function setOrdersLayout(
  * asserting that the API update succeeds. Guarantees that teardown never silently
  * leaves the shared database with contaminated state.
  */
-export async function setLanguage(
-  page: Page,
-  value: string,
-  base = E2E_BASE_URL,
-): Promise<void> {
+export async function setLanguage(page: Page, value: string, base = E2E_BASE_URL): Promise<void> {
   const token =
-    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||
-    getE2eToken();
+    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) || getE2eToken();
 
   const res = await page.request.put(`${base}/api/settings/language`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -122,12 +134,14 @@ export async function setLanguage(
     `setting language=${value} on ${base} must succeed (got status ${res.status()})`,
   ).toBeTruthy();
 
-  await page.evaluate((lang) => {
-    try {
-      const raw = localStorage.getItem('pos-settings');
-      const parsed = raw ? JSON.parse(raw) : { state: {} };
-      parsed.state = { ...parsed.state, language: lang };
-      localStorage.setItem('pos-settings', JSON.stringify(parsed));
-    } catch {}
-  }, value).catch(() => {});
+  await page
+    .evaluate((lang) => {
+      try {
+        const raw = localStorage.getItem('pos-settings');
+        const parsed = raw ? JSON.parse(raw) : { state: {} };
+        parsed.state = { ...parsed.state, language: lang };
+        localStorage.setItem('pos-settings', JSON.stringify(parsed));
+      } catch {}
+    }, value)
+    .catch(() => {});
 }

@@ -45,6 +45,7 @@ const {
   restoreBackup,
   captureRestoreProtectedSettings,
   mergeRestoreProtectedSettings,
+  nextTokenIatSeconds,
 } = require('../main/db');
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
 const { settingsRoutes } = require('../main/routes/settings');
@@ -369,7 +370,7 @@ async function main() {
 
   // ── F1(b): POST /api/settings/cloud/register early-return before SQLite write ─
   const ownerToken = jwt.sign(
-    { userId: 'owner-1', email: 'owner@example.com', role: 'owner' },
+    { userId: 'owner-1', email: 'owner@example.com', role: 'owner', iat: nextTokenIatSeconds() },
     getJWTSecret(),
     { expiresIn: '1h' },
   );

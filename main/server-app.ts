@@ -34,6 +34,7 @@ import {
   corsOptions,
   isTokenRevoked,
   isTokenStale,
+  nextTokenIatSeconds,
   rateLimit,
   revokeToken,
 } from './middleware/security';
@@ -318,7 +319,13 @@ export function startServerApp(): Promise<void> {
         resetSuccessfulLogin(ip);
 
         const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: randomUUID() },
+          {
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+            jti: randomUUID(),
+            iat: nextTokenIatSeconds(),
+          },
           getJWTSecret(),
           { expiresIn: remember_me ? '10d' : '24h' },
         );

@@ -87,7 +87,9 @@ secret must go through it or pre-rotation tokens would keep validating.
 `POST /api/auth/pin-login`, `POST /api/auth/tenants/select`, `POST /api/auth/refresh`, and
 `POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login` on `:3002` KDS and
 `:3003` Server App) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
-`iat` claim. A token without the remember option expires in 24 hours; with it, in 10 days.
+`iat` claim, while `exp` is computed explicitly from wall-clock `Date.now()`
+(`Math.floor(Date.now() / 1000) + ttlSeconds`) so clock corrections do not extend session lifetime. A
+token without the remember option expires in 24 hours of wall-clock time; with it, in 10 days.
 
 **Verification.** `requireAuth` in
 [`main/server.ts`](../../main/server.ts) guards paths under `/api`. It passes through `/api/health`,

@@ -12,15 +12,68 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   expect(loginRes.ok()).toBeTruthy();
   const { access_token } = await loginRes.json();
 
-  const orderRes = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
-    headers: {
-      Authorization: `Bearer ${access_token}`,
-      'Content-Type': 'application/json',
+  const authHeaders = {
+    Authorization: `Bearer ${access_token}`,
+    'Content-Type': 'application/json',
+  };
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const groupRes = await page.request.post(`${E2E_BASE_URL}/api/addon-groups`, {
+    headers: authHeaders,
+    data: {
+      name: `E2E Smash Extras ${suffix}`,
+      is_required: false,
+      min_selection: 0,
+      max_selection: 5,
+      allow_multiple_quantities: true,
+      addons: [
+        { name: 'Extra Cheese', price: 10 },
+        { name: 'Bacon', price: 15 },
+      ],
     },
+  });
+  expect(groupRes.ok()).toBeTruthy();
+  const { addon_group: addonGroup } = await groupRes.json();
+  const extraCheese = addonGroup.addons.find((a: { name: string }) => a.name === 'Extra Cheese');
+  const bacon = addonGroup.addons.find((a: { name: string }) => a.name === 'Bacon');
+
+  const productRes = await page.request.post(`${E2E_BASE_URL}/api/products`, {
+    headers: authHeaders,
+    data: {
+      name: `E2E Smash Burger ${suffix}`,
+      category_id: 'e2e-category',
+      price: 60,
+      tax_type: 'none',
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+      is_active: true,
+      addon_group_ids: [addonGroup.id],
+    },
+  });
+  expect(productRes.ok()).toBeTruthy();
+  const { product: kanbanProduct } = await productRes.json();
+
+  const orderRes = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
+    headers: authHeaders,
     data: {
       type: 'dine_in',
-      items: [{ product_id: 'e2e-product', quantity: 2 }],
+      items: [
+        {
+          product_id: kanbanProduct.id,
+          quantity: 2,
+          addons: [
+            { id: extraCheese.id, name: 'Extra Cheese', price: 10, quantity: 2 },
+            { id: bacon.id, name: 'Bacon', price: 15, quantity: 1 },
+          ],
+          special_instructions: 'No onions',
+        },
+      ],
     },
+  });
+  await page.request.delete(`${E2E_BASE_URL}/api/products/${kanbanProduct.id}`, {
+    headers: authHeaders,
+  });
+  await page.request.delete(`${E2E_BASE_URL}/api/addon-groups/${addonGroup.id}`, {
+    headers: authHeaders,
   });
   expect(orderRes.ok()).toBeTruthy();
   const { order } = await orderRes.json();
@@ -28,7 +81,9 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   // 2. Open standalone KDS
   await page.goto(`${E2E_KDS_BASE_URL}/kds-standalone`);
-  await expect(page.getByTestId('kds-login-form').or(page.getByTestId('kds-workspace'))).toBeVisible();
+  await expect(
+    page.getByTestId('kds-login-form').or(page.getByTestId('kds-workspace')),
+  ).toBeVisible();
   if (await page.getByTestId('kds-login-form').isVisible()) {
     await page.getByTestId('kds-login-email').fill('manager@flo.local');
     await page.getByTestId('kds-login-password').fill('E2ePass123!');
@@ -38,11 +93,17 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   // 3. Switch to Kanban view
   await page.getByRole('button', { name: 'Kanban' }).click();
-  await expect(page.getByRole('button', { name: 'Kanban' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Kanban' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 
   // Column drop targets
   const getColumn = (name: string) =>
-    page.locator('div.flex-1.min-w-\\[260px\\]').filter({ has: page.getByText(name, { exact: true }) }).locator('div[style*="min-height"]');
+    page
+      .locator('div.flex-1.min-w-\\[260px\\]')
+      .filter({ has: page.getByText(name, { exact: true }) })
+      .locator('div[style*="min-height"]');
 
   const waitingCol = getColumn('Waiting');
   const preparingCol = getColumn('Preparing');
@@ -55,11 +116,19 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(deliveredCol).toBeVisible();
 
   const cardIn = (col: Locator) =>
-    col.locator('div.select-none.cursor-grab:not([data-dnd-placeholder])').filter({ hasText: orderNumStr }).first();
+    col
+      .locator('div.select-none.cursor-grab:not([data-dnd-placeholder])')
+      .filter({ hasText: orderNumStr })
+      .first();
 
-  // Find the card for our order in Waiting column
-  await expect(cardIn(waitingCol)).toBeVisible();
-  await expect(cardIn(waitingCol)).not.toHaveClass(/pointer-events-none/);
+  // Find the card for our order in Waiting column and verify inline add-ons + notes
+  const waitingCard = cardIn(waitingCol);
+  await expect(waitingCard).toBeVisible();
+  await expect(waitingCard).not.toHaveClass(/pointer-events-none/);
+  await expect(waitingCard.getByText('+ Extra Cheese ×2', { exact: true })).toBeVisible();
+  await expect(waitingCard.getByText('+ Bacon', { exact: true })).toBeVisible();
+  await expect(waitingCard.getByText('"No onions"', { exact: true })).toBeVisible();
+  await expect(waitingCard.getByText('+2', { exact: true })).toHaveCount(0);
 
   // Helper for dnd-kit pointer drag and drop from card header
   const dragCard = async (sourceCard: Locator, targetColumn: Locator, desc = '') => {
@@ -110,7 +179,9 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   const dialogTitle = page.getByRole('heading', { name: 'Skip a stage?' });
   await expect(dialogTitle).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('This will mark the item as Delivered and skip the stages in between.')).toBeVisible({ timeout: 10000 });
+  await expect(
+    page.getByText('This will mark the item as Delivered and skip the stages in between.'),
+  ).toBeVisible({ timeout: 10000 });
   const cancelBtn = page.getByRole('button', { name: 'Cancel' });
   const confirmDeliveredBtn = page.getByRole('button', { name: 'Mark as Delivered' });
   await expect(cancelBtn).toBeVisible({ timeout: 10000 });
@@ -158,7 +229,9 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
 
   await dragCard(cardIn(waitingCol), readyCol, 'Waiting -> Ready (skips Preparing)');
   await expect(dialogTitle).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('This will mark the item as Ready and skip the stages in between.')).toBeVisible({ timeout: 10000 });
+  await expect(
+    page.getByText('This will mark the item as Ready and skip the stages in between.'),
+  ).toBeVisible({ timeout: 10000 });
   const confirmReadyBtn = page.getByRole('button', { name: 'Mark as Ready' });
   await expect(confirmReadyBtn).toBeVisible({ timeout: 10000 });
 

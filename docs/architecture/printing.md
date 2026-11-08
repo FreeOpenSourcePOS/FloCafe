@@ -202,7 +202,7 @@ tickets do not use the bill logo setting.
 
 | Transport | Mechanism |
 | --- | --- |
-| Network | Raw socket. Data is sent in 4096-byte chunks (`NETWORK_PRINT_CHUNK_SIZE`) with a 10 ms delay between chunks (`NETWORK_PRINT_CHUNK_DELAY_MS`), so a large receipt does not overrun the printer's buffer. `validateNetworkPrinterTarget()` (enforced on `/api/printers` configuration and `printViaNetwork()` dispatch) rejects cloud metadata endpoints, unspecified/broadcast addresses, and FloCafe's own local listening ports while preserving hostnames, custom ports, LAN/Tailscale/IPv6 addresses, and link-local printers. |
+| Network | Raw socket. Data is sent in 4096-byte chunks (`NETWORK_PRINT_CHUNK_SIZE`) with a 10 ms delay between chunks (`NETWORK_PRINT_CHUNK_DELAY_MS`), so a large receipt does not overrun the printer's buffer. `validateNetworkPrinterTarget()` (enforced on `/api/printers` configuration and `printViaNetwork()` dispatch) rejects cloud metadata endpoints, unspecified/broadcast addresses, and FloCafe's own local listening ports across canonical and non-canonical (shorthand, octal, hexadecimal, and integer) IPv4 forms while preserving hostnames, custom ports, LAN/Tailscale/IPv6 addresses, and link-local printers. |
 | CUPS | `lp -d <printer> -o raw <tmpfile>`, using an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created. |
 | Windows | `OpenPrinterW` with `pDataType` set to `RAW`, reading an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created. |
 | macOS Mac App Store | IPP over the local CUPS UNIX domain socket `/private/var/run/cupsd` (with loopback HTTP fallback on `127.0.0.1:631`) using `main/printers/ipp-client.ts` and `document-format` `application/vnd.cups-raw`, because the macOS App Sandbox blocks shelling out to `lp` and blocks outbound TCP to `localhost:631` while permitting `/private/var/run/cupsd` under `com.apple.security.print`. |
@@ -307,8 +307,9 @@ The enlargement is idempotent. The raster path applies it to the lines and to ea
 same `double-height` and `double-width` styles as native rows. On the browser HTML path,
 `web-print.ts`, `kot-web-print.ts`, `delivery-slip-web-print.ts`, and `order-slip-web-print.ts`
 render thermal output in solid `#000` (so 203 DPI GDI thermal drivers do not halftone-dither text or
-borders) with `@page` sizing (`58mm` or `80mm`) and scale font sizes and weights (`600`/`700`) for
-`normal`, `large`, and `extra_large`. `tests/printer-text-size.test.ts` and
+borders) with `@page` sizing (`58mm` or `80mm`), wrap 58 mm receipt item rows onto full-width item
+lines above their numeric columns across all text sizes, and scale font sizes and weights
+(`600`/`700`) for `normal`, `large`, and `extra_large`. `tests/printer-text-size.test.ts` and
 `tests/browser-receipts.test.ts` cover these paths; the ESC/POS column math is also pinned by the
 receipt column oracle.
 

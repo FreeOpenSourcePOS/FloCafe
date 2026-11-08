@@ -121,9 +121,9 @@ test.describe('Customer display pairing and clipboard safety', () => {
     try {
       const displayPage = await displayContext.newPage();
 
-      // Without a staff session or paired token, the board redirects to login.
+      // Without a staff session or paired token, the board redirects to login with ?redirect=/customer-display.
       await displayPage.goto(`${BASE}/customer-display/`);
-      await expect(displayPage).toHaveURL(/\/auth\/login/);
+      await expect(displayPage).toHaveURL(/\/auth\/login\/?\?redirect=(%2F|\/)customer-display$/);
 
       await openKdsSettingsTab(page);
       await expect(page.getByText('No displays paired yet', { exact: true })).toBeVisible();
@@ -317,4 +317,42 @@ test.describe('Customer display pairing and clipboard safety', () => {
       expect(pageErrors).toHaveLength(0);
     });
   }
+
+  test('navigates back to /customer-display after signing in from an unauthenticated /customer-display redirect and falls back to /pos for unsafe redirects', async ({
+    browser,
+    request,
+  }) => {
+    const readyOrder = await createOrderWithStatus(request, 'ready');
+    createdOrderIds.push(readyOrder.id);
+
+    const unauthContext = await browser.newContext();
+    try {
+      const displayPage = await unauthContext.newPage();
+
+      await displayPage.goto(`${BASE}/customer-display/`);
+      await expect(displayPage).toHaveURL(/\/auth\/login\/?\?redirect=(%2F|\/)customer-display$/);
+
+      await displayPage.getByLabel('Email').fill('owner@flo.local');
+      await displayPage.getByLabel('Password').fill(E2E_PASSWORD);
+      await displayPage.getByRole('button', { name: 'Sign In' }).click();
+
+      await expect(displayPage).toHaveURL(/\/customer-display\/?$/, { timeout: 30_000 });
+      await expect(displayPage.getByTestId('customer-display-ready-scroll')).toContainText(
+        readyOrder.order_number,
+      );
+
+      for (const unsafeRedirect of [
+        'https://evil.com',
+        '//evil.com',
+        '/\\evil.com',
+        '/auth/login',
+        '/setup',
+      ]) {
+        await displayPage.goto(`${BASE}/auth/login?redirect=${encodeURIComponent(unsafeRedirect)}`);
+        await expect(displayPage).toHaveURL(/\/pos\/?$/, { timeout: 30_000 });
+      }
+    } finally {
+      await unauthContext.close();
+    }
+  });
 });

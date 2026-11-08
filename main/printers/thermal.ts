@@ -5107,14 +5107,7 @@ export function validateNetworkPrinterTarget(rawHost: string, port: number): str
     (ipv6Groups !== null && isLocalInterfaceIp(ipCandidate, ipv6Groups));
 
   if (isLocalHost) {
-    const ownPorts = new Set<number>([
-      3001,
-      3002,
-      3003,
-      getServerPort(),
-      getKdsPort(),
-      getServerAppPort(),
-    ]);
+    const ownPorts = new Set<number>([getServerPort(), getKdsPort(), getServerAppPort()]);
     if (ownPorts.has(port)) {
       return 'Printer address cannot target a local FloCafe server port';
     }
@@ -5367,8 +5360,15 @@ async function printViaCups(
   let tmpFileCreated = false;
 
   try {
-    fs.writeFileSync(tmpFile, data, { mode: 0o600, flag: 'wx' });
+    const fd = fs.openSync(tmpFile, 'wx', 0o600);
     tmpFileCreated = true;
+    try {
+      fs.writeFileSync(fd, data);
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
 
     const args = printerName ? ['-d', printerName, '-o', 'raw', tmpFile] : ['-o', 'raw', tmpFile];
     const { stdout } = await execFileAsync('lp', args, {
@@ -5682,8 +5682,15 @@ async function printViaUSBWindows(
   let tmpFileCreated = false;
 
   try {
-    fs.writeFileSync(tmpFile, data, { mode: 0o600, flag: 'wx' });
+    const fd = fs.openSync(tmpFile, 'wx', 0o600);
     tmpFileCreated = true;
+    try {
+      fs.writeFileSync(fd, data);
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
 
     const { stdout } = await execFileAsync(
       'powershell',

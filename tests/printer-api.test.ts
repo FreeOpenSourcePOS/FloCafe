@@ -39,6 +39,7 @@ const {
   printViaNetwork,
   validateNetworkPrinterTarget,
 } = require('../main/printers/thermal');
+const { setServerPort } = require('../main/server-state');
 const { cloudSync } = require('../main/services/cloud-sync');
 const { printerService } = require('../frontend/src/lib/printer/PrinterService');
 
@@ -944,6 +945,21 @@ async function runTests() {
       putBadIp.status === 400,
       `partial PUT changing ip_address to 127.0.0.1 when port is 3001 is rejected (got ${putBadIp.status})`,
     );
+
+    // When active server port moves to 4301, 127.0.0.1:4301 is blocked and 127.0.0.1:3001 is allowed
+    setServerPort(4301);
+    try {
+      assert(
+        validateNetworkPrinterTarget('127.0.0.1', 4301) !== null,
+        'validateNetworkPrinterTarget blocks 127.0.0.1:4301 when setServerPort(4301) is active',
+      );
+      assert(
+        validateNetworkPrinterTarget('127.0.0.1', 3001) === null,
+        'validateNetworkPrinterTarget allows 127.0.0.1:3001 when server port moved to 4301',
+      );
+    } finally {
+      setServerPort(3001);
+    }
   }
 
   console.log('\n' + '='.repeat(50));

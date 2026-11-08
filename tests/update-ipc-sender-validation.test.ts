@@ -856,6 +856,25 @@ async function runTests() {
   childWillNavigateListener!(mockNavEvent, 'about:blank');
   assert.equal(navPrevented, false, 'about:blank print popup navigation permitted');
 
+  // Local blob: printMenuInBrowser popup navigation permitted
+  navPrevented = false;
+  openedExternalUrl = null;
+  childWillNavigateListener!(mockNavEvent, 'blob:http://localhost:3001/1234-5678');
+  assert.equal(navPrevented, false, 'local blob: print popup navigation permitted');
+
+  // External or wrong-port blob: URLs in child popup blocked without calling openExternal
+  navPrevented = false;
+  openedExternalUrl = null;
+  childWillNavigateListener!(mockNavEvent, 'blob:https://evil.example/1234');
+  assert.equal(navPrevented, true, 'external blob: navigation in child popup prevented');
+  assert.equal(openedExternalUrl, null, 'external blob: navigation not opened externally');
+
+  navPrevented = false;
+  openedExternalUrl = null;
+  childWillNavigateListener!(mockNavEvent, 'blob:http://localhost:9999/1234');
+  assert.equal(navPrevented, true, 'wrong-port blob: navigation in child popup prevented');
+  assert.equal(openedExternalUrl, null, 'wrong-port blob: navigation not opened externally');
+
   // Local KDS popup navigation permitted
   navPrevented = false;
   openedExternalUrl = null;

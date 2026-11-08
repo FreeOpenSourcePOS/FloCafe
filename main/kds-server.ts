@@ -33,7 +33,9 @@ import {
   KDS_VOIDED_ITEM_VISIBILITY_MS,
   projectKdsItem,
   projectKdsOrder,
+  recordAuthAudit,
   UNRELEASED_KDS_ORDER_ITEM_ERROR,
+  verifyPinAsync,
 } from './db';
 import { checkKdsWebSocketAdmission, setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { setKdsPort } from './server-state';
@@ -49,6 +51,8 @@ import {
   incrementFailedLogin,
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
+  normalizeIpForPinRateLimit,
+  withPinVerificationLock,
   staticRouteRateLimit,
   corsOptions,
   isTokenRevoked,
@@ -362,6 +366,300 @@ export function startKdsServer(): Promise<void> {
         res.status(500).json({ error: 'Internal server error' });
       }
     });
+
+    app.get('/api/auth/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Response) => {
+      if (!isKdsEnabled()) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      try {
+        const db = getDatabase();
+        const rows = db
+          .prepare(
+            `SELECT id, name, role
+             FROM users
+             WHERE is_active = 1 AND pin_hash IS NOT NULL
+             ORDER BY CASE role
+               WHEN 'owner' THEN 1
+               WHEN 'manager' THEN 2
+               WHEN 'cashier' THEN 3
+               WHEN 'server' THEN 4
+               WHEN 'chef' THEN 5
+               ELSE 6
+             END, name COLLATE NOCASE ASC`,
+          )
+          .all() as Array<{ id: string; name: string; role: string }>;
+
+        const eligible = rows.filter((row) => {
+          if (!hasPermission(row.id, 'kitchen.use')) return false;
+          const stationIds = getUserKdsStationIds(db, row.id);
+          const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, row.id);
+          if (!stationIds || stationAssignmentsConfigured === null) return false;
+          if (stationAssignmentsConfigured && stationIds.length === 0) return false;
+          return true;
+        });
+
+        res.json({
+          users: eligible.map((row) => ({
+            id: String(row.id),
+            name: String(row.name),
+            role: String(row.role),
+          })),
+        });
+      } catch (error: unknown) {
+        console.error('[KDS] PIN users error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    app.post(
+      '/api/auth/pin-login',
+      authRateLimit({
+        max: 600,
+        skipSuccessfulRequests: true,
+        onRateLimited: (req: Request) => {
+          const ip = req.ip || req.socket.remoteAddress || 'unknown';
+          const rawUserId = req.body?.user_id;
+          const userId =
+            typeof rawUserId === 'string' && rawUserId.trim() ? rawUserId.trim() : null;
+          recordAuthAudit(getDatabase(), {
+            userId,
+            eventType: 'pin_login',
+            outcome: 'rate_limited',
+            ipAddress: ip,
+            details: { reason: 'endpoint_rate_limited', service: 'kds' },
+          });
+        },
+      }),
+      async (req: Request, res: Response) => {
+        if (!isKdsEnabled()) {
+          return res.status(404).json({ error: 'Not found' });
+        }
+        try {
+          const ip = req.ip || req.socket.remoteAddress || 'unknown';
+          const { user_id, pin, rememberMe, remember_me } = req.body || {};
+          const userId = typeof user_id === 'string' ? user_id.trim() : '';
+          const rawPin = typeof pin === 'string' || typeof pin === 'number' ? String(pin) : '';
+
+          const db = getDatabase();
+          if (!userId || !rawPin) {
+            recordAuthAudit(db, {
+              userId: userId || null,
+              eventType: 'pin_login',
+              outcome: 'failure',
+              ipAddress: ip,
+              details: {
+                service: 'kds',
+                reason:
+                  !userId && !rawPin
+                    ? 'missing_credentials'
+                    : !userId
+                      ? 'missing_user_id'
+                      : 'missing_pin',
+              },
+            });
+            return res.status(400).json({ error: 'user_id and pin are required' });
+          }
+
+          const canonicalIp = normalizeIpForPinRateLimit(ip);
+          const pinRateKey = `${canonicalIp}:pin:${userId}`;
+          const pinLockKey = `pin-user:${userId}`;
+          type VerifiedKdsUser = {
+            id: string;
+            name: string;
+            email: string;
+            role: string;
+            is_active: number;
+            pin_hash: string | null;
+            category_ids: string | null;
+          };
+          type KdsPinLoginOutcome =
+            | { status: 429; body: Record<string, unknown> }
+            | { status: 401; body: Record<string, unknown> }
+            | { status: 403; body: Record<string, unknown> }
+            | { status: 500; body: Record<string, unknown> }
+            | {
+                status: 200;
+                user: VerifiedKdsUser;
+                stationIds: string[];
+                stationAssignmentsConfigured: boolean;
+              };
+
+          const verificationResult = await withPinVerificationLock<KdsPinLoginOutcome>(
+            pinLockKey,
+            async () => {
+              const ipRateLimit = checkLoginRateLimit(pinRateKey);
+              if (!ipRateLimit.allowed) {
+                const waitMinutes = ipRateLimit.waitMinutes || 0;
+                recordAuthAudit(db, {
+                  userId,
+                  eventType: 'pin_login',
+                  outcome: 'rate_limited',
+                  ipAddress: ip,
+                  details: { service: 'kds', wait_minutes: waitMinutes },
+                });
+                return {
+                  status: 429,
+                  body: {
+                    error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
+                  },
+                };
+              }
+
+              if (!/^\d{4,6}$/.test(rawPin)) {
+                const attemptsRemaining = incrementFailedLogin(pinRateKey);
+                recordAuthAudit(db, {
+                  userId,
+                  eventType: 'pin_login',
+                  outcome: 'failure',
+                  ipAddress: ip,
+                  details: {
+                    service: 'kds',
+                    reason: 'invalid_pin_format',
+                    attempts_remaining: attemptsRemaining,
+                  },
+                });
+                return {
+                  status: 401,
+                  body: {
+                    error: 'Invalid credentials',
+                    attempts_remaining: attemptsRemaining,
+                    lockout_minutes:
+                      attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+                  },
+                };
+              }
+
+              const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
+                | VerifiedKdsUser
+                | undefined;
+              let pinMatches = false;
+              if (user && user.is_active === 1 && user.pin_hash) {
+                try {
+                  pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
+                } catch {
+                  pinMatches = false;
+                }
+              }
+
+              if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
+                const attemptsRemaining = incrementFailedLogin(pinRateKey);
+                recordAuthAudit(db, {
+                  userId,
+                  eventType: 'pin_login',
+                  outcome: 'failure',
+                  ipAddress: ip,
+                  details: {
+                    service: 'kds',
+                    reason: !user
+                      ? 'user_not_found'
+                      : user.is_active !== 1
+                        ? 'user_inactive'
+                        : !user.pin_hash
+                          ? 'pin_not_set'
+                          : 'invalid_pin',
+                    attempts_remaining: attemptsRemaining,
+                  },
+                });
+                return {
+                  status: 401,
+                  body: {
+                    error: 'Invalid credentials',
+                    attempts_remaining: attemptsRemaining,
+                    lockout_minutes:
+                      attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+                  },
+                };
+              }
+
+              if (!hasPermission(user.id, 'kitchen.use')) {
+                recordAuthAudit(db, {
+                  userId: user.id,
+                  eventType: 'pin_login',
+                  outcome: 'failure',
+                  ipAddress: ip,
+                  details: { service: 'kds', reason: 'permission_denied' },
+                });
+                return {
+                  status: 403,
+                  body: {
+                    error: 'Access denied. Only kitchen staff allowed.',
+                    code: 'permission_denied',
+                  },
+                };
+              }
+
+              const stationIds = getUserKdsStationIds(db, user.id);
+              const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
+              if (!stationIds || stationAssignmentsConfigured === null) {
+                return {
+                  status: 500,
+                  body: { error: 'Could not load station permissions' },
+                };
+              }
+              if (stationAssignmentsConfigured && stationIds.length === 0) {
+                recordAuthAudit(db, {
+                  userId: user.id,
+                  eventType: 'pin_login',
+                  outcome: 'failure',
+                  ipAddress: ip,
+                  details: { service: 'kds', reason: 'no_active_station' },
+                });
+                return {
+                  status: 403,
+                  body: { error: 'No active kitchen station is assigned to this user' },
+                };
+              }
+
+              resetSuccessfulLogin(pinRateKey);
+              recordAuthAudit(db, {
+                userId: user.id,
+                eventType: 'pin_login',
+                outcome: 'success',
+                ipAddress: ip,
+                details: { service: 'kds', role: user.role },
+              });
+              return { status: 200, user, stationIds, stationAssignmentsConfigured };
+            },
+          );
+
+          if (verificationResult.status !== 200) {
+            return res.status(verificationResult.status).json(verificationResult.body);
+          }
+
+          const { user, stationIds, stationAssignmentsConfigured } = verificationResult;
+          const remember = !!(rememberMe ?? remember_me);
+          const token = jwt.sign(
+            {
+              userId: user.id,
+              email: user.email,
+              role: user.role,
+              jti: randomUUID(),
+              iat: nextTokenIatSeconds(),
+              exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
+            },
+            getJWTSecret(),
+          );
+
+          res.json({
+            access_token: token,
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              category_ids: categoryIdsForRole(user.role, user.category_ids),
+              station_ids: stationIds,
+              station_assignments_configured: stationAssignmentsConfigured,
+              permission_ids: [...(resolveEffectivePermissions(user.id)?.permissionIds ?? [])],
+              authorization_revision: effectivePermissionRevision(user.id),
+            },
+          });
+        } catch (error: unknown) {
+          console.error('[KDS] PIN login error:', error);
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      },
+    );
 
     app.post('/api/auth/logout', (req: Request, res: Response) => {
       const authHeader = req.headers.authorization;

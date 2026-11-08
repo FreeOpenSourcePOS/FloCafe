@@ -6,6 +6,9 @@ import {
   getCurrentSchemaVersion,
   getDatabase,
   getSettingValue,
+  getUserKdsStationIds,
+  hasUserKdsStationAssignments,
+  isKdsEnabled,
   nextTokenIatSeconds,
   nextTokensValidAfterTimestamp,
   now,
@@ -54,6 +57,7 @@ import { isSupportedCurrencyCode } from '../../shared/currencies';
 import {
   effectivePermissionRevision,
   hasActiveAdministrator,
+  hasPermission,
   resolveEffectivePermissions,
 } from '../services/authorization';
 import { serializeOperationFailure } from '../lib/operation-failure';
@@ -335,8 +339,12 @@ router.post(
 // ── GET /api/auth/pin-users ───────────────────────────────────────────────────
 // Public quick-switch user picker directory: active users with a PIN configured.
 
-router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Response) => {
+router.get('/pin-users', authRateLimit({ max: 600 }), (req: Request, res: Response) => {
   try {
+    const scope = typeof req.query.scope === 'string' ? req.query.scope : '';
+    if (scope === 'kds' && !isKdsEnabled()) {
+      return res.json({ users: [] });
+    }
     const db = getDatabase();
     const rows = db
       .prepare(
@@ -354,8 +362,20 @@ router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Respo
       )
       .all() as Array<{ id: string; name: string; role: string }>;
 
+    const filteredRows =
+      scope === 'kds'
+        ? rows.filter((row) => {
+            if (!hasPermission(row.id, 'kitchen.use')) return false;
+            const stationIds = getUserKdsStationIds(db, row.id);
+            const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, row.id);
+            if (!stationIds || stationAssignmentsConfigured === null) return false;
+            if (stationAssignmentsConfigured && stationIds.length === 0) return false;
+            return true;
+          })
+        : rows;
+
     res.json({
-      users: rows.map((row) => ({
+      users: filteredRows.map((row) => ({
         id: String(row.id),
         name: String(row.name),
         role: String(row.role),

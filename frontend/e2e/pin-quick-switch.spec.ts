@@ -14,6 +14,7 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338 / #1516)', () => {
   let ownerToken: string;
   let ownerHeaders: Record<string, string>;
   let cashierId: string;
+  let tableId: string;
   let settingsBefore: Map<string, string | undefined>;
   let createdOrderIds: string[] = [];
 
@@ -36,6 +37,14 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338 / #1516)', () => {
       Authorization: `Bearer ${ownerToken}`,
       'Content-Type': 'application/json',
     };
+
+    const tableRes = await request.post(`${BASE}/api/tables`, {
+      headers: ownerHeaders,
+      data: { number: `PinSwitch ${Date.now()}`, capacity: 2 },
+    });
+    expect(tableRes.ok()).toBeTruthy();
+    const tableBody = await tableRes.json();
+    tableId = tableBody.table.id;
 
     const staffRes = await request.get(`${BASE}/api/staff`, { headers: ownerHeaders });
     expect(staffRes.ok()).toBeTruthy();
@@ -82,6 +91,11 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338 / #1516)', () => {
       });
       if (cashierId) {
         await request.delete(`${BASE}/api/staff/${cashierId}`, {
+          headers: ownerHeaders,
+        });
+      }
+      if (tableId) {
+        await request.delete(`${BASE}/api/tables/${tableId}`, {
           headers: ownerHeaders,
         });
       }
@@ -232,6 +246,15 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338 / #1516)', () => {
 
     await kdsOwnerTile.click();
     await expect(page.getByTestId('pin-login-form')).toBeVisible();
+    // Wrong PIN attempt surfaces inline error and clears the PIN input
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-login-submit').click();
+    await expect(page.getByTestId('pin-login-error')).toBeVisible();
+    await expect(page.getByTestId('pin-login-input')).toHaveValue('');
+
     await page.getByTestId('pin-pad-digit-1').click();
     await page.getByTestId('pin-pad-digit-1').click();
     await page.getByTestId('pin-pad-digit-1').click();
@@ -256,6 +279,15 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338 / #1516)', () => {
 
     await serverAppOwnerTile.click();
     await expect(page.getByTestId('pin-login-form')).toBeVisible();
+    // Wrong PIN attempt surfaces inline error and clears the PIN input
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-pad-digit-9').click();
+    await page.getByTestId('pin-login-submit').click();
+    await expect(page.getByTestId('pin-login-error')).toBeVisible();
+    await expect(page.getByTestId('pin-login-input')).toHaveValue('');
+
     await page.getByTestId('pin-pad-digit-1').click();
     await page.getByTestId('pin-pad-digit-1').click();
     await page.getByTestId('pin-pad-digit-1').click();

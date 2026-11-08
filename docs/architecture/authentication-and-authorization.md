@@ -83,10 +83,10 @@ That module owns the only copy of the cache;
 `clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
 secret must go through it or pre-rotation tokens would keep validating.
 
-**Issuance.** `jwt.sign` runs across all seven token-issuance paths (`POST /api/auth/login`,
+**Issuance.** `jwt.sign` runs across all nine token-issuance paths (`POST /api/auth/login`,
 `POST /api/auth/pin-login`, `POST /api/auth/tenants/select`, `POST /api/auth/refresh`, and
-`POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login` on `:3002` KDS and
-`:3003` Server App) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
+`POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login` and `POST /api/auth/pin-login`
+on `:3002` KDS and `:3003` Server App) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
 `iat` claim, while `exp` is computed explicitly from wall-clock `Date.now()`
 (`Math.floor(Date.now() / 1000) + ttlSeconds`) so clock corrections do not extend session lifetime. A
 token without the remember option expires in 24 hours of wall-clock time; with it, in 10 days.
@@ -214,12 +214,23 @@ Any staff role (`owner`, `manager`, `cashier`, `server`, `chef`) may configure a
 (`users.pin_hash`) in Staff management. That PIN serves as the user's sign-in PIN on shared
 terminals, while approval authority stays restricted to active `owner` and `manager` accounts:
 
-1. **Quick-switch tile directory (`GET /api/auth/pin-users`):** Returns active users who have a
-   `pin_hash` set, exposing only `{ id, name, role }`. Users without a PIN are omitted from the
-   picker and sign in with email and password.
-2. **Selected-user PIN sign-in (`POST /api/auth/pin-login`):** Accepts `{ user_id, pin, rememberMe }`
+1. **Quick-switch tile directory (`GET /api/auth/pin-users`):** Served on `:3001`, `:3002`, and
+   `:3003`. Returns active users who have a `pin_hash` set, exposing only `{ id, name, role }`. On
+   `:3001` with `?scope=kds` and on `:3002`, the list is narrowed to accounts holding `kitchen.use`
+   with at least one active kitchen station when station assignments are configured (`:3001` returns
+   `{ users: [] }` and `:3002` returns `404` when KDS is disabled); on `:3003`, it is narrowed to
+   accounts holding `server-app.use` (`404` when Server App is disabled). Users without a PIN are
+   omitted from the picker and sign in with email and password. When PIN-eligible users exist, the
+   sign-in screens on POS (`/auth/login`), KDS (`/kds` and `/kds-standalone`), and Server App
+   (`/server-standalone`) show a segmented toggle between **Quick Sign-In** (default) and password
+   sign-in.
+2. **Selected-user PIN sign-in (`POST /api/auth/pin-login`):** Served on `:3001`, `:3002`, and
+   `:3003`. Accepts `{ user_id, pin, rememberMe }` (or `remember_me` on `:3002` and `:3003`)
    and verifies the PIN strictly against the selected `user_id` via `verifyPinAsync` without
-   scanning other users, so two staff members may share the same PIN. Concurrent bcrypt
+   scanning other users, so two staff members may share the same PIN. On `:3002` and `:3003`, it
+   also enforces the surface's permission and station gates (`kitchen.use` and active station check
+   on `:3002`; `server-app.use` on `:3003`) before resetting the failed-attempt counter or issuing a
+   token. Concurrent bcrypt
    verifications for a target account remain serialized per user (`pin-user:${userId}`) with
    `withPinVerificationLock`, while the 5-attempt / 15-minute failed-attempt lockout is scoped per
    normalized client IP and user ID (`${normalizeIpForPinRateLimit(ip)}:pin:${userId}`, collapsing

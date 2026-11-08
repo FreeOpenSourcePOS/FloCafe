@@ -579,9 +579,9 @@ export function startServerApp(): Promise<void> {
               role: user.role,
               jti: randomUUID(),
               iat: nextTokenIatSeconds(),
+              exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
             },
             getJWTSecret(),
-            { expiresIn: remember ? '10d' : '24h' },
           );
 
           res.json({

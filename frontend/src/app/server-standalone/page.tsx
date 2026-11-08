@@ -1322,14 +1322,14 @@ export default function ServerStandalonePage() {
                   setSignInMode('pin');
                   setPinError('');
                 }}
-                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                   activeSignInMode === 'pin'
                     ? 'bg-card text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <KeyRound size={15} />
-                <span>{tAuth('quickSwitchTitle')}</span>
+                <KeyRound className="size-4 shrink-0" />
+                <span className="truncate">{tAuth('quickSwitchTitle')}</span>
               </button>
               <button
                 type="button"
@@ -1342,16 +1342,14 @@ export default function ServerStandalonePage() {
                   setPin('');
                   setPinError('');
                 }}
-                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                   activeSignInMode === 'password'
                     ? 'bg-card text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <Mail size={15} />
-                <span>
-                  {tAuth('email')} / {tAuth('password')}
-                </span>
+                <Mail className="size-4 shrink-0" />
+                <span className="truncate">{tAuth('password')}</span>
               </button>
             </div>
           )}

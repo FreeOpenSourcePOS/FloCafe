@@ -72,14 +72,14 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 setSignInMode('pin');
                 conn.setLoginError?.('');
               }}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                 activeSignInMode === 'pin'
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <KeyRound size={15} />
-              <span>{tAuth('quickSwitchTitle')}</span>
+              <KeyRound className="size-4 shrink-0" />
+              <span className="truncate">{tAuth('quickSwitchTitle')}</span>
             </button>
             <button
               type="button"
@@ -92,16 +92,14 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 setPin('');
                 conn.setLoginError?.('');
               }}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                 activeSignInMode === 'password'
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Mail size={15} />
-              <span>
-                {tAuth('email')} / {tAuth('password')}
-              </span>
+              <Mail className="size-4 shrink-0" />
+              <span className="truncate">{tAuth('password')}</span>
             </button>
           </div>
         )}

@@ -389,7 +389,7 @@ export default function POSPage() {
     logTail: string | undefined;
   } | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
-  const supportSubmittingRef = useRef(false);
+  const supportSubmitTokenRef = useRef<symbol | null>(null);
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
@@ -408,6 +408,40 @@ export default function POSPage() {
   });
   const activeSubmissionTokenRef = useRef<symbol | null>(null);
 
+  const readStoredAuthToken = (): string | null => {
+    try {
+      return typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    } catch {
+      return null;
+    }
+  };
+  const readLiveSupportContext = () => {
+    const authState =
+      typeof useAuthStore.getState === 'function'
+        ? useAuthStore.getState()
+        : { currentTenant, user, token };
+    const liveTenantId = authState.currentTenant?.id;
+    if (initialStoreIdRef.current === 'default' && liveTenantId != null) {
+      initialStoreIdRef.current = liveTenantId;
+    }
+    const liveUserId = authState.user?.id == null ? null : String(authState.user.id);
+    const liveToken = authState.token ?? readStoredAuthToken();
+    return {
+      storeId: String(liveTenantId || 'default'),
+      initialStoreId: initialStoreIdRef.current,
+      userId: liveUserId,
+      token: liveToken,
+      sessionEpoch: sessionEpochRef.current,
+    };
+  };
+  const clearSupportErrorState = () => {
+    supportSubmitTokenRef.current = null;
+    setSupportSubmitting(false);
+    setSupportError(null);
+    setSentTicketId(null);
+    supportLogSnapshotRef.current = null;
+  };
+
   useEffect(() => {
     if (
       lastActiveSessionRef.current.userId === activeUserId &&
@@ -420,6 +454,8 @@ export default function POSPage() {
     activeSubmissionTokenRef.current = null;
     isSendingToPaymentRef.current = false;
     setSubmitting(false);
+    supportSubmitTokenRef.current = null;
+    setSupportSubmitting(false);
     setSupportError(null);
     setSentTicketId(null);
     supportLogSnapshotRef.current = null;
@@ -439,19 +475,38 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!supportError) return;
+    const authState =
+      typeof useAuthStore.getState === 'function'
+        ? useAuthStore.getState()
+        : {
+            currentTenant: { id: currentStoreId },
+            user: { id: activeUserId },
+            token: activeToken,
+          };
+    const liveTenantId = authState.currentTenant?.id;
+    const liveUserId = authState.user?.id == null ? null : String(authState.user.id);
+    let storedToken: string | null = null;
+    try {
+      storedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    } catch {
+      storedToken = null;
+    }
     if (
       !isSupportErrorContextCurrent(supportError.context, {
-        storeId: currentStoreId,
+        storeId: String(liveTenantId || currentStoreId),
         initialStoreId: initialStoreIdRef.current,
-        userId: activeUserId,
+        userId: liveUserId ?? activeUserId,
+        token: authState.token ?? activeToken ?? storedToken,
         sessionEpoch: sessionEpochRef.current,
       })
     ) {
+      supportSubmitTokenRef.current = null;
+      setSupportSubmitting(false);
       setSupportError(null);
       setSentTicketId(null);
       supportLogSnapshotRef.current = null;
     }
-  }, [supportError, currentStoreId, activeUserId]);
+  }, [supportError, currentStoreId, activeUserId, activeToken]);
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
     authToken ? { Authorization: `Bearer ${authToken}` } : {};
@@ -771,6 +826,9 @@ export default function POSPage() {
     });
     const subject = entry.subject || presentation.subject;
     const category = entry.category || presentation.category;
+    const liveContext = readLiveSupportContext();
+    supportSubmitTokenRef.current = null;
+    setSupportSubmitting(false);
     setSentTicketId(null);
     setAttachLog(true);
     supportLogSnapshotRef.current = null;
@@ -792,9 +850,10 @@ export default function POSPage() {
       ticketCorrelationId,
       clientTicketId,
       context: {
-        storeId: String(currentStoreIdRef.current),
-        userId: activeUserId,
-        sessionEpoch: sessionEpochRef.current,
+        storeId: liveContext.storeId,
+        userId: liveContext.userId,
+        token: liveContext.token,
+        sessionEpoch: liveContext.sessionEpoch,
       },
       presentation,
       payload: {
@@ -1064,6 +1123,13 @@ export default function POSPage() {
 
   const printKotIfEnabled = async (order: Order) => {
     if (order.release_status && order.release_status !== 'released') return;
+    if (
+      currentTenant &&
+      typeof useAuthStore.getState === 'function' &&
+      useAuthStore.getState().currentTenant?.id !== currentTenant.id
+    ) {
+      return;
+    }
     // Master kot_printing_enabled check gates both manual and automatic prints.
     if (!kotPrintingEnabled) return;
     if (!autoPrintKot) return;
@@ -3852,11 +3918,7 @@ export default function POSPage() {
               <div className="mt-3">
                 <button
                   className="rounded border px-3 py-2 text-sm"
-                  onClick={() => {
-                    setSupportError(null);
-                    setSentTicketId(null);
-                    supportLogSnapshotRef.current = null;
-                  }}
+                  onClick={clearSupportErrorState}
                 >
                   {tSupport('dismiss')}
                 </button>
@@ -3936,79 +3998,94 @@ export default function POSPage() {
                     !supportError.ticketCorrelationId
                   }
                   onClick={async () => {
-                    if (supportSubmittingRef.current) return;
-                    const activeAuthUser = useAuthStore.getState().user;
-                    const currentUserId =
-                      activeAuthUser?.id == null ? null : String(activeAuthUser.id);
+                    if (supportSubmitTokenRef.current !== null) return;
+                    const targetError = supportError;
                     if (
-                      !isSupportErrorContextCurrent(supportError.context, {
-                        storeId: currentStoreIdRef.current,
-                        initialStoreId: initialStoreIdRef.current,
-                        userId: currentUserId,
-                        sessionEpoch: sessionEpochRef.current,
-                      })
+                      !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
                     ) {
-                      setSupportError(null);
-                      setSentTicketId(null);
-                      supportLogSnapshotRef.current = null;
+                      clearSupportErrorState();
                       return;
                     }
-                    supportSubmittingRef.current = true;
+                    const submitToken = Symbol('pos-support-submit');
+                    supportSubmitTokenRef.current = submitToken;
                     setSupportSubmitting(true);
                     try {
                       let logTail: string | undefined;
                       if (attachLog) {
                         if (
                           supportLogSnapshotRef.current?.clientTicketId ===
-                            supportError.clientTicketId &&
+                            targetError.clientTicketId &&
                           supportLogSnapshotRef.current.logTail !== undefined
                         ) {
                           logTail = supportLogSnapshotRef.current.logTail;
                         } else {
-                          logTail = await readBoundedSupportLogTail(
+                          const fetchedLogTail = await readBoundedSupportLogTail(
                             true,
                             typeof window !== 'undefined'
                               ? window.electronAPI?.getLogTail
                               : undefined,
                           );
+                          const liveAfterLog = readLiveSupportContext();
+                          if (!isSupportErrorContextCurrent(targetError.context, liveAfterLog)) {
+                            clearSupportErrorState();
+                            return;
+                          }
+                          if (supportSubmitTokenRef.current !== submitToken) {
+                            return;
+                          }
+                          logTail = fetchedLogTail;
                           supportLogSnapshotRef.current = {
-                            clientTicketId: supportError.clientTicketId,
-                            logTail,
+                            clientTicketId: targetError.clientTicketId,
+                            logTail: fetchedLogTail,
                           };
                         }
-                        const postLogAuthUser = useAuthStore.getState().user;
-                        const postLogUserId =
-                          postLogAuthUser?.id == null ? null : String(postLogAuthUser.id);
                         if (
-                          !isSupportErrorContextCurrent(supportError.context, {
-                            storeId: currentStoreIdRef.current,
-                            initialStoreId: initialStoreIdRef.current,
-                            userId: postLogUserId,
-                            sessionEpoch: sessionEpochRef.current,
-                          })
+                          !isSupportErrorContextCurrent(
+                            targetError.context,
+                            readLiveSupportContext(),
+                          )
                         ) {
-                          setSupportError(null);
-                          setSentTicketId(null);
-                          supportLogSnapshotRef.current = null;
+                          clearSupportErrorState();
                           return;
                         }
                       }
                       const requestBody = buildPosSupportTicketRequestBody({
-                        payload: supportError.payload,
-                        subject: supportError.subject,
-                        ticketCorrelationId: supportError.ticketCorrelationId,
-                        clientTicketId: supportError.clientTicketId,
+                        payload: targetError.payload,
+                        subject: targetError.subject,
+                        ticketCorrelationId: targetError.ticketCorrelationId,
+                        clientTicketId: targetError.clientTicketId,
                         attachLog,
                         logTail,
                       });
-                      await api.post('/support-ticket', requestBody);
+                      await api.post('/support-ticket', requestBody, {
+                        headers: pinnedAuthHeaders(targetError.context.token),
+                      });
+                      if (
+                        !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
+                      ) {
+                        clearSupportErrorState();
+                        return;
+                      }
+                      if (supportSubmitTokenRef.current !== submitToken) {
+                        return;
+                      }
                       toast.success(tSupport('queued'));
-                      setSentTicketId(supportError.clientTicketId);
+                      setSentTicketId(targetError.clientTicketId);
                     } catch {
-                      toast.error(t('supportRequestQueueFailed'));
+                      if (
+                        !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
+                      ) {
+                        clearSupportErrorState();
+                        return;
+                      }
+                      if (supportSubmitTokenRef.current === submitToken) {
+                        toast.error(t('supportRequestQueueFailed'));
+                      }
                     } finally {
-                      supportSubmittingRef.current = false;
-                      setSupportSubmitting(false);
+                      if (supportSubmitTokenRef.current === submitToken) {
+                        supportSubmitTokenRef.current = null;
+                        setSupportSubmitting(false);
+                      }
                     }
                   }}
                 >
@@ -4043,10 +4120,7 @@ export default function POSPage() {
                 ))}
                 <button
                   className="rounded border px-3 py-2 text-sm"
-                  onClick={() => {
-                    setSupportError(null);
-                    supportLogSnapshotRef.current = null;
-                  }}
+                  onClick={clearSupportErrorState}
                 >
                   {tSupport('dismiss')}
                 </button>

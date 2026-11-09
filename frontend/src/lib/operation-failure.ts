@@ -1,3 +1,5 @@
+import { sanitizeServerError } from './order-attempt';
+
 export const OPERATION_REFERENCE_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -51,6 +53,7 @@ export async function readBoundedSupportLogTail(
 export interface SupportErrorContextSnapshot {
   storeId: string;
   userId: string | null;
+  token: string | null;
   sessionEpoch: number;
 }
 
@@ -66,11 +69,13 @@ export function isSupportErrorContextCurrent(
     storeId: string | number;
     initialStoreId?: string | number | null;
     userId: string | null;
+    token: string | null;
     sessionEpoch: number;
   },
 ): boolean {
   if (origin.sessionEpoch !== current.sessionEpoch) return false;
   if (origin.userId !== current.userId) return false;
+  if ((origin.token ?? null) !== (current.token ?? null)) return false;
   const originStore = normalizeStoreId(origin.storeId);
   const currentStore = normalizeStoreId(current.storeId);
   if (!originStore || !currentStore) return false;
@@ -145,12 +150,16 @@ export function normalizePrinterConnectionType(value: unknown): PrintConnectionT
 export const MAX_PRINTER_DETAIL_LENGTH = 400;
 const TRUNCATED_SUFFIX = ' ... [truncated]';
 const BASE64_COMMAND_BLOB_RE = /[A-Za-z0-9+/]{60,}={0,2}/;
+const QUOTED_PAYLOAD_FILE_RE =
+  /(['"])(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n'"]+\\)*flo_print_[^'"\r\n]+|\/(?:tmp|var\/folders|var\/tmp|private\/tmp)\/[^'"\r\n]*flo_print_[^'"\r\n]+)\1/gi;
 const PAYLOAD_FILE_RE =
-  /(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*flo_print_[^\s'"]+\.bin|\/(?:tmp|var\/folders|var\/tmp|private\/tmp)\/[^\s'"]*flo_print_[^\s'"]+\.bin|\bflo_print_[A-Za-z0-9_-]+\.bin\b)/gi;
-const WINDOWS_TEMP_FILE_QUOTE_RE =
-  /(['"])(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*flo_print_[^'"]+|\/(?:tmp|var\/folders|var\/tmp|private\/tmp)\/[^'"]*flo_print_[^'"]+)\1/gi;
+  /(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\s'"]+\\)*flo_print_[^\s'"]+\.bin|\/(?:tmp|var\/folders|var\/tmp|private\/tmp)\/[^\s'"]*flo_print_[^\s'"]+\.bin|\bflo_print_[A-Za-z0-9_-]+\.bin\b)/gi;
+const QUOTED_OS_PATH_RE =
+  /(['"])(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n'"]+\\)+[^\\/:*?"<>|\r\n'"]*|\/(?:tmp|var\/folders|var\/tmp|private\/tmp|Users|home)\/[^'"\r\n]+)\1/g;
 const OS_PATH_RE =
-  /(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)+[^\\/:*?"<>|\r\n'"\s]*|\/(?:tmp|var\/folders|var\/tmp|private\/tmp|Users|home)\/[^\s'"]+)/g;
+  /(?:[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\s'"]+\\)+[^\\/:*?"<>|\r\n\s'"]*|\/(?:tmp|var\/folders|var\/tmp|private\/tmp|Users|home)\/[^\s'"]+)/g;
+const WINDOWS_SUBPROCESS_LEAK_RE =
+  /\s-EncodedCommand\b|\s-NoProfile\b|\s-NonInteractive\b|\bpowershell(?:\.exe)?\b/i;
 const SUBPROCESS_COMMAND_LEAK_RE =
   /\bCommand failed:|\s-EncodedCommand\b|\s-NoProfile\b|\s-NonInteractive\b|\bpowershell(?:\.exe)?\b/i;
 
@@ -169,37 +178,39 @@ function decodeClixmlEscapes(value: string): string {
 }
 
 function stripPowerShellClixml(raw: string): string {
-  let text = raw;
-  const objsIndex = text.indexOf('<Objs ');
-  if (text.startsWith('#< CLIXML') || objsIndex !== -1) {
+  if (!raw.includes('#< CLIXML') && !raw.includes('<Objs')) {
+    return raw;
+  }
+  const errorTagMatches = Array.from(raw.matchAll(/<S S="Error">([\s\S]*?)<\/S>/g));
+  if (errorTagMatches.length > 0) {
+    const objsIndex = raw.indexOf('<Objs');
     const prefix =
       objsIndex > 0
-        ? text
+        ? raw
             .slice(0, objsIndex)
-            .replace(/^#<\s*CLIXML\s*/i, '')
+            .replace(/^#<\s*CLIXML[\r\n\s]*/i, '')
             .trim()
         : '';
-    const errorTagMatches = Array.from(text.matchAll(/<S S="Error">([\s\S]*?)<\/S>/g));
-    if (errorTagMatches.length > 0) {
-      const extracted = decodeClixmlEscapes(errorTagMatches.map((m) => m[1]).join(''))
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(
-          (line) =>
-            line.length > 0 &&
-            !/^At line:\d+/i.test(line) &&
-            !/^\+\s/.test(line) &&
-            !/^CategoryInfo\s*:/i.test(line) &&
-            !/^FullyQualifiedErrorId\s*:/i.test(line),
-        );
-      text = [prefix, ...extracted].filter(Boolean).join('\n');
-    } else if (objsIndex > 0 && prefix) {
-      text = prefix;
-    } else {
-      text = decodeClixmlEscapes(text.replace(/^#<\s*CLIXML\s*/i, '').replace(/<[^>]+>/g, ' '));
-    }
+    const extracted = decodeClixmlEscapes(errorTagMatches.map((m) => m[1]).join(''))
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line.length > 0 &&
+          !/^At line:\d+/i.test(line) &&
+          !/^\+\s/.test(line) &&
+          !/^CategoryInfo\s*:/i.test(line) &&
+          !/^FullyQualifiedErrorId\s*:/i.test(line),
+      );
+    return [prefix, ...extracted].filter(Boolean).join('\n');
   }
-  return text;
+
+  return decodeClixmlEscapes(
+    raw
+      .replace(/#<\s*CLIXML[\r\n\s]*/gi, '')
+      .replace(/<Objs\b[^>]*>[\s\S]*?<\/Objs>/gi, '')
+      .replace(/<Objs\b[\s\S]*$/gi, ''),
+  ).trim();
 }
 
 export function sanitizePrinterErrorDetail(raw: unknown): string {
@@ -207,9 +218,12 @@ export function sanitizePrinterErrorDetail(raw: unknown): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
 
+  const hadClixml = trimmed.includes('#< CLIXML') || trimmed.includes('<Objs');
   const clixmlCleaned = stripPowerShellClixml(trimmed);
+  const hadWindowsSubprocessLeak =
+    WINDOWS_SUBPROCESS_LEAK_RE.test(clixmlCleaned) || BASE64_COMMAND_BLOB_RE.test(clixmlCleaned);
   const hadSubprocessLeak =
-    SUBPROCESS_COMMAND_LEAK_RE.test(clixmlCleaned) || BASE64_COMMAND_BLOB_RE.test(clixmlCleaned);
+    hadWindowsSubprocessLeak || SUBPROCESS_COMMAND_LEAK_RE.test(clixmlCleaned);
   const timedOut = /timed?\s*out|etimedout/i.test(clixmlCleaned);
 
   const safeLines = clixmlCleaned
@@ -226,16 +240,20 @@ export function sanitizePrinterErrorDetail(raw: unknown): string {
     })
     .map((line) =>
       line
-        .replace(WINDOWS_TEMP_FILE_QUOTE_RE, "'<payload file>'")
+        .replace(QUOTED_PAYLOAD_FILE_RE, "'<payload file>'")
         .replace(PAYLOAD_FILE_RE, '<payload file>')
+        .replace(QUOTED_OS_PATH_RE, "'<path>'")
         .replace(OS_PATH_RE, '<path>')
         .trim(),
     )
     .filter(Boolean);
 
   if (safeLines.length === 0) {
-    if (hadSubprocessLeak) {
+    if (hadWindowsSubprocessLeak || (hadSubprocessLeak && hadClixml)) {
       return timedOut ? 'Windows print command timed out' : 'Windows raw print failed';
+    }
+    if (hadSubprocessLeak) {
+      return timedOut ? 'Print command timed out' : 'Print command failed';
     }
     return '';
   }
@@ -293,7 +311,11 @@ export function classifyPrinterFailureClass(
     if (/timed?\s*out|etimedout/i.test(text)) {
       return 'timeout';
     }
-    if (/unsupported|financial row|popup blocked|pop-ups|print window/i.test(text)) {
+    if (
+      /unsupported|not supported|financial row|pop-?ups?\b|print window|browser print mode/i.test(
+        text,
+      )
+    ) {
       return 'unsupported';
     }
     if (/write error|epipe|econnreset|broken pipe|transfer.*failed|claiminterface/i.test(text)) {
@@ -556,12 +578,22 @@ export function extractQuotedItemName(text: unknown): string | null {
   if (!match) return null;
   const candidate = match[1].trim();
   if (!candidate) return null;
-  if (
-    /https?:\/\/|[\/\\][A-Za-z0-9._-]+|\b(?:select|insert|update|delete|sqlite)\b/i.test(candidate)
-  ) {
-    return null;
-  }
+  if (/https?:\/\//i.test(candidate)) return null;
+  if (!sanitizeServerError(candidate)) return null;
   return candidate;
+}
+
+export function isStockInsufficientRejection(input: {
+  reasonCode?: string | null;
+  displayCode?: string | null;
+  message?: string | null;
+  detail?: string | null;
+}): boolean {
+  if (input.reasonCode === 'order.stock_insufficient') {
+    return true;
+  }
+  const unquoted = `${input.message || ''} ${input.detail || ''}`.replace(/"[^"\r\n]*"/g, '""');
+  return /\binsufficient\s+stock\b|\bout\s+of\s+stock\b/i.test(unquoted);
 }
 
 export function isClosedBooksRejection(input: {
@@ -628,7 +660,14 @@ export function resolvePosFailureSupportMetadata(input: {
   }
 
   const reasonCode = input.reasonCode || input.code;
-  if (reasonCode === 'order.stock_insufficient') {
+  if (
+    isStockInsufficientRejection({
+      reasonCode,
+      displayCode: input.displayCode,
+      message: input.message,
+      detail: input.detail,
+    })
+  ) {
     const affectedItem =
       extractQuotedItemName(input.message) ?? extractQuotedItemName(input.detail);
     return {

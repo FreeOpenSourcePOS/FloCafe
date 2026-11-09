@@ -4,32 +4,46 @@ import moduleApi from 'node:module';
 import {
   PrinterOperationError,
   buildPrinterOperationFailureSupportPayload,
+  classifyPrinterFailureClass,
+  normalizePrinterConnectionType,
   sanitizePrinterErrorDetail,
   toPrinterOperationError,
 } from '../frontend/src/lib/operation-failure';
 
-function loadFrontendWarnings(): typeof import('../frontend/src/lib/printer/warnings') {
-  const mod = moduleApi as unknown as { _resolveFilename: (...args: any[]) => string };
-  const originalResolveFilename = mod._resolveFilename;
-  mod._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
-    const resolvedRequest = request.startsWith('@print/')
-      ? path.resolve(__dirname, '../shared/print', request.slice('@print/'.length))
-      : request.startsWith('@/')
-        ? path.resolve(__dirname, '../frontend/src', request.slice('@/'.length))
-        : request;
-    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
-  };
-  try {
-    return require('../frontend/src/lib/printer/warnings');
-  } finally {
-    mod._resolveFilename = originalResolveFilename;
-  }
-}
+const mod = moduleApi as unknown as { _resolveFilename: (...args: any[]) => string };
+const originalResolveFilename = mod._resolveFilename;
+mod._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  const resolvedRequest =
+    request === '@countries'
+      ? path.resolve(__dirname, '../main/countries.ts')
+      : request.startsWith('@print/')
+        ? path.resolve(__dirname, '../shared/print', request.slice('@print/'.length))
+        : request.startsWith('@shared/')
+          ? path.resolve(__dirname, '../shared', request.slice('@shared/'.length))
+          : request.startsWith('@/')
+            ? path.resolve(__dirname, '../frontend/src', request.slice('@/'.length))
+            : request;
+  return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+};
+
+type WarningsMod = typeof import('../frontend/src/lib/printer/warnings');
+type UsePrinterMod = typeof import('../frontend/src/hooks/usePrinter');
+type PrinterServiceMod = typeof import('../frontend/src/lib/printer/PrinterService');
+type PosSettingsMod = typeof import('../frontend/src/store/pos-settings');
+type AuthStoreMod = typeof import('../frontend/src/store/auth');
 
 const { formatReceiptErrorToast, formatKotErrorToast, extractPrinterErrorMessage } =
-  loadFrontendWarnings();
+  require('../frontend/src/lib/printer/warnings') as WarningsMod;
+const { usePrinterStore, PrintCancelledOnTenantChangeError, isPrintCancelledOnTenantChangeError } =
+  require('../frontend/src/hooks/usePrinter') as UsePrinterMod;
+const { printerService } =
+  require('../frontend/src/lib/printer/PrinterService') as PrinterServiceMod;
+const { usePosSettingsStore } = require('../frontend/src/store/pos-settings') as PosSettingsMod;
+const { useAuthStore } = require('../frontend/src/store/auth') as AuthStoreMod;
+const frontendApiModule = require('../frontend/src/lib/api');
+const frontendApi = frontendApiModule.default || frontendApiModule;
 
-function runTests(): void {
+async function runTests(): Promise<void> {
   // 1. Receipt formatting: financial refusal is passed as-is without double-wrapping
   const financialMsg =
     'Receipt not printed: a financial row contains unsupported printer text: €5.00';
@@ -111,6 +125,31 @@ function runTests(): void {
     'toast formatter must sanitize PowerShell command strings',
   );
 
+  // Non-PowerShell subprocess failures (e.g. macOS/Linux CUPS lp) must not claim Windows
+  const cupsSubprocessFailure =
+    'Command failed: lp -d Kitchen -o raw /var/folders/ab/cd/T/flo_print_123.bin';
+  assert.equal(sanitizePrinterErrorDetail(cupsSubprocessFailure), 'Print command failed');
+  const cupsSubprocessTimeout =
+    'Command failed: lp -d Kitchen -o raw /tmp/flo_print_123.bin (ETIMEDOUT)';
+  assert.equal(sanitizePrinterErrorDetail(cupsSubprocessTimeout), 'Print command timed out');
+
+  // Progress-only CLIXML must strip <Objs>...</Objs> without leaking PowerShell object text
+  const progressOnlyClixml =
+    '#< CLIXML\r\n<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04"><Obj S="progress" RefId="0"><MS><Obj N="SourceId">0</Obj><S N="Record">System.Management.Automation.PSCustomObject Preparing modules for first use.</S></MS></Obj></Objs>';
+  assert.equal(sanitizePrinterErrorDetail(progressOnlyClixml), '');
+  assert.equal(
+    sanitizePrinterErrorDetail(`${progressOnlyClixml}\r\nPrinter spooler is stopped`),
+    'Printer spooler is stopped',
+  );
+
+  // Windows path followed by a UNC printer name must not collapse intervening prose into <path>
+  assert.equal(
+    sanitizePrinterErrorDetail(
+      'Write-RawBytes C:\\Temp\\spool_check.dat failed for printer \\\\Server\\Kitchen',
+    ),
+    'Write-RawBytes <path> failed for printer \\\\Server\\Kitchen',
+  );
+
   // 8. #1465: structured PrinterOperationError preserves backend failure_class, correlation_id, connection_type, and sanitized detail
   const backendCorrelationId = '4f8b8e11-53d9-4d4a-9f88-112233445566';
   const axiosPrintError = {
@@ -156,7 +195,11 @@ function runTests(): void {
     },
   });
 
-  // KOT timeout maps to fc.backend.printer.kot.timeout and normalizes bluetooth/serial to usb
+  // KOT timeout maps to fc.backend.printer.kot.timeout; non-allowlisted transports normalize to unknown
+  assert.equal(normalizePrinterConnectionType('bluetooth'), 'unknown');
+  assert.equal(normalizePrinterConnectionType('serial'), 'unknown');
+  assert.equal(classifyPrinterFailureClass('Please allow popups to print'), 'unsupported');
+  assert.equal(classifyPrinterFailureClass('Popup window was blocked by browser'), 'unsupported');
   const kotCorrelationId = '9a1b2c3d-4e5f-4a6b-8c7d-0123456789ab';
   const kotTimeoutError = toPrinterOperationError(
     {
@@ -190,7 +233,179 @@ function runTests(): void {
     },
   });
 
+  // 9. Browser print mode reports connection_type 'unknown' and failure_class 'unsupported' even if WebUSB is connected,
+  //    and printKot cancels with PrintCancelledOnTenantChangeError across mid-flight tenant switches.
+  const origIsConnected = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(printerService),
+    'isConnected',
+  );
+  const origPost = frontendApi.post;
+  const origGet = frontendApi.get;
+  try {
+    Object.defineProperty(printerService, 'isConnected', {
+      configurable: true,
+      get: () => true,
+    });
+    frontendApi.get = async () => ({ data: {} });
+    usePosSettingsStore.setState({ kotPrintingEnabled: true });
+    useAuthStore.setState({
+      currentTenant: {
+        id: 101,
+        business_name: 'Cafe One',
+        country: 'US',
+        currency: 'USD',
+        timezone: 'UTC',
+      } as any,
+    });
+    usePrinterStore.setState({
+      printMethod: 'browser',
+      hardwarePrinter: null,
+      lastError: null,
+    });
+
+    let browserBillErr: unknown = null;
+    try {
+      await usePrinterStore.getState().printBill(
+        {
+          id: 1,
+          bill_number: 'B-1',
+          subtotal: 10,
+          tax_amount: 0,
+          discount_amount: 0,
+          total: 10,
+          payment_status: 'paid',
+          created_at: '2026-11-09T12:00:00Z',
+          items: [],
+        } as any,
+        {
+          business_name: 'Cafe One',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'UTC',
+        },
+        undefined,
+        null,
+      );
+    } catch (err) {
+      browserBillErr = err;
+    }
+    assert(browserBillErr instanceof PrinterOperationError);
+    assert.equal(browserBillErr.failure_class, 'unsupported');
+    assert.equal(browserBillErr.connection_type, 'unknown');
+
+    let browserKotErr: unknown = null;
+    try {
+      await usePrinterStore.getState().printKot({
+        id: 1,
+        order_number: 'ORD-1',
+        type: 'dine_in',
+        status: 'pending',
+        subtotal: 10,
+        tax_amount: 0,
+        discount_amount: 0,
+        total: 10,
+        created_at: '2026-11-09T12:00:00Z',
+        items: [
+          {
+            id: 1,
+            product_id: 'p1',
+            product_name: 'Soup',
+            quantity: 1,
+            unit_price: 10,
+            subtotal: 10,
+          },
+        ],
+      } as any);
+    } catch (err) {
+      browserKotErr = err;
+    }
+    assert(browserKotErr instanceof PrinterOperationError);
+    assert.equal(browserKotErr.failure_class, 'unsupported');
+    assert.equal(browserKotErr.connection_type, 'unknown');
+
+    // Mid-flight tenant switch during printKot cancels with PrintCancelledOnTenantChangeError
+    let rejectKotPost!: (reason?: unknown) => void;
+    frontendApi.post = () =>
+      new Promise((_resolve, reject) => {
+        rejectKotPost = reject;
+      });
+    usePrinterStore.setState({
+      printMethod: 'escpos',
+      hardwarePrinter: {
+        id: 'hw-kot',
+        name: 'Kitchen USB',
+        connection_type: 'usb',
+        is_default: 1,
+      } as any,
+      lastError: null,
+    });
+    const kotInFlight = usePrinterStore.getState().printKot({
+      id: 2,
+      order_number: 'ORD-2',
+      type: 'dine_in',
+      status: 'pending',
+      subtotal: 10,
+      tax_amount: 0,
+      discount_amount: 0,
+      total: 10,
+      created_at: '2026-11-09T12:00:00Z',
+      items: [
+        {
+          id: 2,
+          product_id: 'p1',
+          product_name: 'Soup',
+          quantity: 1,
+          unit_price: 10,
+          subtotal: 10,
+        },
+      ],
+    } as any);
+    useAuthStore.setState({
+      currentTenant: {
+        id: 202,
+        business_name: 'Cafe Two',
+        country: 'US',
+        currency: 'USD',
+        timezone: 'UTC',
+      } as any,
+    });
+    rejectKotPost({
+      response: {
+        status: 502,
+        data: { error: 'Print failed', detail: 'Printer offline', failure_class: 'offline' },
+      },
+    });
+    let cancelledKotErr: unknown = null;
+    try {
+      await kotInFlight;
+    } catch (err) {
+      cancelledKotErr = err;
+    }
+    assert(
+      cancelledKotErr instanceof PrintCancelledOnTenantChangeError &&
+        isPrintCancelledOnTenantChangeError(cancelledKotErr),
+      'printKot throws PrintCancelledOnTenantChangeError when tenant switches mid-print',
+    );
+    assert.equal(
+      usePrinterStore.getState().lastError,
+      null,
+      'printKot leaves lastError null on tenant change',
+    );
+  } finally {
+    if (origIsConnected) {
+      Object.defineProperty(printerService, 'isConnected', origIsConnected);
+    } else {
+      delete (printerService as any).isConnected;
+    }
+    frontendApi.post = origPost;
+    frontendApi.get = origGet;
+    mod._resolveFilename = originalResolveFilename;
+  }
+
   console.log('✓ All printer error toast clarity tests passed.');
 }
 
-runTests();
+runTests().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

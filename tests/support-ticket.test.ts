@@ -37,6 +37,7 @@ const {
   SUPPORT_LOG_TAIL_MAX_CHARS,
   buildPosSupportTicketRequestBody,
   buildPrinterOperationFailureSupportPayload,
+  extractQuotedItemName,
   isSupportErrorContextCurrent,
   readBoundedSupportLogTail,
   resolvePosFailureSupportMetadata,
@@ -621,21 +622,28 @@ async function main() {
       'readBoundedSupportLogTail swallows IPC errors so ticket queueing still succeeds',
     );
 
-    const originContext = { storeId: 'tenant-a', userId: 'user-1', sessionEpoch: 3 };
+    const originContext = {
+      storeId: 'tenant-a',
+      userId: 'user-1',
+      token: 'tok-tenant-a',
+      sessionEpoch: 3,
+    };
     assert(
       isSupportErrorContextCurrent(originContext, {
         storeId: 'tenant-a',
         initialStoreId: 'tenant-a',
         userId: 'user-1',
+        token: 'tok-tenant-a',
         sessionEpoch: 3,
       }),
-      'matching tenant, user, and sessionEpoch is current',
+      'matching tenant, user, token, and sessionEpoch is current',
     );
     assert(
       !isSupportErrorContextCurrent(originContext, {
         storeId: 'tenant-b',
         initialStoreId: 'tenant-a',
         userId: 'user-1',
+        token: 'tok-tenant-b',
         sessionEpoch: 3,
       }),
       'tenant switch invalidates the captured supportError context',
@@ -644,15 +652,32 @@ async function main() {
       !isSupportErrorContextCurrent(originContext, {
         storeId: 'tenant-a',
         initialStoreId: 'tenant-a',
+        userId: 'user-1',
+        token: 'tok-tenant-b',
+        sessionEpoch: 3,
+      }),
+      'token rotation invalidates the captured supportError context even before epoch/store refs update',
+    );
+    assert(
+      !isSupportErrorContextCurrent(originContext, {
+        storeId: 'tenant-a',
+        initialStoreId: 'tenant-a',
         userId: 'user-2',
+        token: 'tok-tenant-a',
         sessionEpoch: 3,
       }),
       'user switch invalidates the captured supportError context',
     );
     assert(
       isSupportErrorContextCurrent(
-        { storeId: 'default', userId: 'user-1', sessionEpoch: 1 },
-        { storeId: 'tenant-a', initialStoreId: 'tenant-a', userId: 'user-1', sessionEpoch: 1 },
+        { storeId: 'default', userId: 'user-1', token: 'tok-tenant-a', sessionEpoch: 1 },
+        {
+          storeId: 'tenant-a',
+          initialStoreId: 'tenant-a',
+          userId: 'user-1',
+          token: 'tok-tenant-a',
+          sessionEpoch: 1,
+        },
       ),
       'initial default store hydration to the active tenant preserves context',
     );
@@ -816,6 +841,66 @@ async function main() {
       stockMetadata.correctiveActionHref,
       '/inventory',
       'stock rejection links to /inventory',
+    );
+
+    const appendStockMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.append',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'validation.rejected',
+      code: 'validation.rejected',
+      message: 'Insufficient stock for "1/2 Roasted Chicken"',
+      detail: 'Insufficient stock for "1/2 Roasted Chicken"',
+    });
+    assertEqual(
+      appendStockMetadata.rejectionKind,
+      'stock_insufficient',
+      'order.append stock rejection resolves as stock_insufficient',
+    );
+    assertEqual(
+      appendStockMetadata.affectedItem,
+      '1/2 Roasted Chicken',
+      'order.append stock rejection extracts fractional/slashed menu item name',
+    );
+    assertEqual(
+      appendStockMetadata.subject,
+      'FloCafe inventory or stock validation help',
+      'order.append stock rejection uses inventory validation subject',
+    );
+
+    const addonOutOfStockMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.create',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'order.addon_unavailable',
+      code: 'order.addon_unavailable',
+      message: 'Add-on "Chef\'s Select Burger Sauce" is out of stock (requested 2, available 0)',
+      detail: 'Add-on "Chef\'s Select Burger Sauce" is out of stock (requested 2, available 0)',
+    });
+    assertEqual(
+      addonOutOfStockMetadata.rejectionKind,
+      'stock_insufficient',
+      'add-on out-of-stock rejection resolves as stock_insufficient',
+    );
+    assertEqual(
+      addonOutOfStockMetadata.affectedItem,
+      "Chef's Select Burger Sauce",
+      'add-on out-of-stock rejection preserves item names containing SQL-like English words',
+    );
+    assertEqual(
+      extractQuotedItemName('Insufficient stock for "Chicken/Beef Wrap"'),
+      'Chicken/Beef Wrap',
+      'extractQuotedItemName accepts slashed menu item names',
+    );
+    assertEqual(
+      extractQuotedItemName('Error reading "/etc/passwd"'),
+      null,
+      'extractQuotedItemName rejects filesystem paths',
+    );
+    assertEqual(
+      extractQuotedItemName('Failed "SELECT * FROM products"'),
+      null,
+      'extractQuotedItemName rejects SQL statements',
     );
 
     const closedBooksMetadata = resolvePosFailureSupportMetadata({

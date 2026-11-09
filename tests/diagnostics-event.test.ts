@@ -817,11 +817,6 @@ async function main() {
       'order create persistence failure reports not_applied',
     );
     assertEqual(
-      orderPersistenceResponse.data.failure_class,
-      'constraint',
-      'order create persistence failure includes allowlisted failure_class',
-    );
-    assertEqual(
       orderPersistenceResponse.data.facts?.failure_class,
       'constraint',
       'order create persistence failure includes facts.failure_class',
@@ -921,11 +916,6 @@ async function main() {
       billPersistenceResponse.data.stage,
       'persistence',
       'bill generate persistence failure names persistence stage',
-    );
-    assertEqual(
-      billPersistenceResponse.data.failure_class,
-      'constraint',
-      'bill generate persistence failure includes allowlisted failure_class',
     );
     assertEqual(
       billPersistenceResponse.data.facts?.failure_class,

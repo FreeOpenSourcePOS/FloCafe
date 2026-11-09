@@ -490,7 +490,6 @@ function main() {
             outcome: 'not_applied',
             classification: 'unexpected_failure',
             correlation_id: operationReference,
-            failure_class: 'busy_or_locked',
             facts: { failure_class: 'busy_or_locked' },
           },
         },

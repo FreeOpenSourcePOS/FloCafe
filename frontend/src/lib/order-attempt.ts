@@ -759,17 +759,6 @@ export function classifyOrderRequestFailure(
       failureClass = payload.facts.failure_class;
     }
   }
-  if (payload.failure_class !== undefined) {
-    if (
-      !allowsPersistenceFailureClass ||
-      typeof payload.failure_class !== 'string' ||
-      !(PERSISTENCE_FAILURE_CLASSES as readonly string[]).includes(payload.failure_class) ||
-      (failureClass !== null && failureClass !== payload.failure_class)
-    ) {
-      return fallback;
-    }
-    failureClass = payload.failure_class;
-  }
   const operationDefinitions = STRUCTURED_FAILURES[expected.operation];
   if (!Object.prototype.hasOwnProperty.call(operationDefinitions, payload.stage)) return fallback;
   const stageDefinitions = operationDefinitions[payload.stage];

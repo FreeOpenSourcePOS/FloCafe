@@ -263,10 +263,7 @@ function structuredOperationFailure(
     correlation_id: failure.correlation_id,
     ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
     ...(failure.facts.failure_class
-      ? {
-          failure_class: failure.facts.failure_class,
-          facts: { failure_class: failure.facts.failure_class },
-        }
+      ? { facts: { failure_class: failure.facts.failure_class } }
       : {}),
   };
 }

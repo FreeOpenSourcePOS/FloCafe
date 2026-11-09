@@ -509,6 +509,72 @@ async function runAsyncTests() {
     htmlLongItem.includes('line-height:1.4;'),
     'generateKotHtml includes explicit line-height:1.4 on .kot-container',
   );
+
+  // 4. Large bold Order Number banner on KOT (document-kot, kot-encoder, kot-web-print)
+  const kotDefault = renderKotViaDocument(baseOrder, items, 'Kitchen', opts);
+  assert.ok(
+    kotDefault.lines.some((line) =>
+      line.includes(
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#A-1{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      ),
+    ),
+    'renderKotViaDocument renders centered bold double-size #A-1 banner by default',
+  );
+  const kotDisabled = renderKotViaDocument(
+    { ...baseOrder, show_large_order_number: false },
+    items,
+    'Kitchen',
+    opts,
+  );
+  assert.equal(
+    kotDisabled.lines.some((line) => line.includes('#A-1{/DOUBLE_WIDTH}')),
+    false,
+    'renderKotViaDocument omits large #A-1 banner when show_large_order_number is false',
+  );
+  assert.ok(
+    kotDisabled.lines.some((line) => line.includes('Order #A-1')),
+    'renderKotViaDocument retains metadata Order #A-1 line when large banner is disabled',
+  );
+
+  const kotBytesOn = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { ...opts, showLargeOrderNumber: true },
+  );
+  const kotBytesOff = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { ...opts, showLargeOrderNumber: false },
+  );
+  const kotRawOn = Buffer.from(kotBytesOn).toString('latin1');
+  const kotRawOff = Buffer.from(kotBytesOff).toString('latin1');
+  assert.ok(
+    kotRawOn.includes('\x1d!\x11#ORD-0042') || escPosToText(kotBytesOn).includes('#ORD-0042\n'),
+    'buildKotBytes emits double-size #ORD-0042 banner when showLargeOrderNumber is true',
+  );
+  assert.equal(
+    escPosToText(kotBytesOff)
+      .split(/\r?\n/)
+      .some((line) => line.trim() === '#ORD-0042'),
+    false,
+    'buildKotBytes omits standalone #ORD-0042 banner when showLargeOrderNumber is false',
+  );
+
+  const kotHtmlOn = frontend.kotWebPrint.generateKotHtml(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { showLargeOrderNumber: true },
+  );
+  const kotHtmlOff = frontend.kotWebPrint.generateKotHtml(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { showLargeOrderNumber: false },
+  );
+  assert.ok(
+    kotHtmlOn.includes('class="kot-order-banner"') && kotHtmlOn.includes('>#ORD-0042</div>'),
+    'generateKotHtml renders .kot-order-banner with #ORD-0042 when enabled',
+  );
+  assert.equal(
+    kotHtmlOff.includes('class="kot-order-banner"'),
+    false,
+    'generateKotHtml omits .kot-order-banner when showLargeOrderNumber is false',
+  );
 }
 
 runAsyncTests()

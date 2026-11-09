@@ -1189,4 +1189,211 @@ console.log('\n▶ Kernel purity (static import audit)');
   );
 }
 
+// ---------------------------------------------------------------------------
+// 7. Large bold Order Number banner on customer receipts (thermal & HTML)
+// ---------------------------------------------------------------------------
+
+console.log('\n▶ Large bold Order Number banner on customer receipts');
+{
+  const Module = require('node:module') as { _resolveFilename: (...args: any[]) => string };
+  const originalResolve = Module._resolveFilename;
+  Module._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
+    let resolvedRequest = request;
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+    } else if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    } else if (request.startsWith('@print/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
+    } else if (request.startsWith('@shared/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared', request.slice('@shared/'.length));
+    }
+    return originalResolve.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  let receiptEncoder: typeof import('../frontend/src/lib/printer/receipt-encoder');
+  let taxBillEncoder: typeof import('../frontend/src/lib/printer/tax-bill-encoder');
+  let webPrint: typeof import('../frontend/src/lib/printer/web-print');
+  try {
+    receiptEncoder = require('../frontend/src/lib/printer/receipt-encoder');
+    taxBillEncoder = require('../frontend/src/lib/printer/tax-bill-encoder');
+    webPrint = require('../frontend/src/lib/printer/web-print');
+  } finally {
+    Module._resolveFilename = originalResolve;
+  }
+
+  const { escPosToText } =
+    require('../main/printers/thermal') as typeof import('../main/printers/thermal');
+  const { order, bill, business } = buildParityFixtures();
+
+  // Even when bill.bill_number is INV-PARITY-001, meta.orderNumber preserves ORD-PARITY-001.
+  const defaultData = buildBillPrintData(order, bill, business, false);
+  assert.equal(
+    defaultData.business.showLargeOrderNumber,
+    undefined,
+    'omitted show_large_order_number stays undefined for golden fixture compatibility',
+  );
+  const defaultDoc = buildBillDocument(defaultData, makeContext());
+  const defaultMeta = getBlock(defaultDoc, 'document-meta');
+  assert.equal(defaultMeta?.invoiceNumber.text, 'INV-PARITY-001');
+  assert.equal(
+    defaultMeta?.orderNumber?.text,
+    'ORD-PARITY-001',
+    'meta.orderNumber preserves order.orderNumber alongside INV-... invoiceNumber',
+  );
+  assert.equal(defaultMeta?.showLargeOrderNumber, false);
+
+  const renderOpts = {
+    columns: 48,
+    language: 'en',
+    locale: 'en-IN',
+    currency: 'INR',
+    currencySymbol: '₹',
+    trimDecimals: false,
+    useUnicode: true,
+    arabicShaping: false,
+    cutMode: 'full' as const,
+  };
+
+  // Omitted / false showLargeOrderNumber omits the large ORDER # banner.
+  const enabledData = buildBillPrintData(
+    { ...order, order_number: '0012' },
+    bill,
+    { ...business, show_large_order_number: true },
+    false,
+  );
+  const disabledData = buildBillPrintData(
+    { ...order, order_number: '0012' },
+    bill,
+    { ...business, show_large_order_number: false },
+    false,
+  );
+  assert.equal(enabledData.business.showLargeOrderNumber, true);
+  assert.equal(disabledData.business.showLargeOrderNumber, false);
+
+  const enabledDoc = buildBillDocument(enabledData, makeContext({ columns: 48 }));
+  const disabledDoc = buildBillDocument(disabledData, makeContext({ columns: 48 }));
+
+  const classicEnabled = renderBillDocumentToClassicLines(enabledDoc, renderOpts);
+  const classicDisabled = renderBillDocumentToClassicLines(disabledDoc, renderOpts);
+  assert(
+    classicEnabled.some((line) =>
+      line.includes(
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}ORDER #0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      ),
+    ),
+    'classic thermal receipt emits centered bold double-size ORDER #0012 banner when enabled',
+  );
+  assert(
+    classicEnabled.some((line) => line.includes('INV-PARITY-001')),
+    'classic thermal receipt keeps INV-PARITY-001 invoice line alongside ORDER #0012 banner',
+  );
+  assert(
+    !classicDisabled.some((line) => line.includes('ORDER #0012')),
+    'classic thermal receipt omits ORDER # banner when showLargeOrderNumber is false',
+  );
+
+  const compactEnabled = renderBillDocumentToCompactLines(enabledDoc, renderOpts);
+  const compactDisabled = renderBillDocumentToCompactLines(disabledDoc, renderOpts);
+  assert(
+    compactEnabled.some((line) =>
+      line.includes(
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}ORDER #0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      ),
+    ),
+    'compact thermal receipt emits centered bold double-size ORDER #0012 banner when enabled',
+  );
+  assert(
+    !compactDisabled.some((line) => line.includes('ORDER #0012')),
+    'compact thermal receipt omits ORDER # banner when showLargeOrderNumber is false',
+  );
+  ok('backend document-classic and document-compact render/omit large bold ORDER # banner');
+
+  // Frontend ESC/POS encoders (classic, compact, detailed, tax-bill) and HTML web-print.
+  const feBill: any = {
+    id: 1,
+    bill_number: 'INV-20261109-0012',
+    subtotal: 200,
+    discount_amount: 0,
+    tax_amount: 10,
+    total_amount: 210,
+    payment_method: 'cash',
+    payment_status: 'paid',
+    created_at: '2026-11-09 12:00:00',
+    order: {
+      id: 1,
+      order_number: 'ORD-20261109-0012',
+      type: 'takeaway',
+      created_at: '2026-11-09 12:00:00',
+      items: [
+        {
+          id: 1,
+          product_name: 'Cappuccino',
+          quantity: 1,
+          unit_price: 200,
+          total: 200,
+          status: 'served',
+        },
+      ],
+    },
+  };
+  const feTenant: any = {
+    id: 1,
+    business_name: 'FloCafe Test',
+    country: 'IN',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+  };
+
+  for (const [label, buildFn] of [
+    ['classic encoder', receiptEncoder.buildClassicReceiptBytes],
+    ['compact encoder', receiptEncoder.buildCompactReceiptBytes],
+    ['detailed encoder', receiptEncoder.buildDetailedReceiptBytes],
+    ['tax-bill encoder', taxBillEncoder.buildTaxBillBytes],
+  ] as const) {
+    const onText = escPosToText(
+      buildFn(feBill, feTenant, { columns: 48, showLargeOrderNumber: true } as any),
+    );
+    const offText = escPosToText(
+      buildFn(feBill, feTenant, { columns: 48, showLargeOrderNumber: false } as any),
+    );
+    assert(
+      onText.includes('ORDER #ORD-20261109-0012'),
+      `${label} emits ORDER #ORD-20261109-0012 when showLargeOrderNumber is true`,
+    );
+    assert(
+      !offText.includes('ORDER #ORD-20261109-0012'),
+      `${label} omits ORDER #ORD-20261109-0012 when showLargeOrderNumber is false`,
+    );
+  }
+
+  const htmlOn = webPrint.generateBillHtml(feBill, feTenant, {
+    paperSize: 'thermal80',
+    columns: 48,
+    languages: ['en'],
+    showLargeOrderNumber: true,
+  });
+  const htmlOff = webPrint.generateBillHtml(feBill, feTenant, {
+    paperSize: 'thermal80',
+    columns: 48,
+    languages: ['en'],
+    showLargeOrderNumber: false,
+  });
+  assert(
+    htmlOn.includes('class="order-number-banner"') && htmlOn.includes('ORDER #ORD-20261109-0012'),
+    'generateBillHtml renders .order-number-banner with ORDER #ORD-20261109-0012 when enabled',
+  );
+  assert(
+    !htmlOff.includes('class="order-number-banner"') &&
+      !htmlOff.includes('ORDER #ORD-20261109-0012'),
+    'generateBillHtml omits .order-number-banner when showLargeOrderNumber is false',
+  );
+  ok('frontend thermal encoders and browser HTML receipt render/omit large bold ORDER # banner');
+}
+
 console.log(`\nPrintDocument unit tests: ${passed} checks passed.`);

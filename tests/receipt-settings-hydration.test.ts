@@ -112,6 +112,7 @@ async function runTests() {
     billShowCustomerPhone: true,
     billDeliveryShowCustomerPhoneAlways: true,
     billShowTableNumber: true,
+    billShowLargeOrderNumber: true,
     receiptLogo: '',
     receiptLogoRaster: '',
     billTemplate: 'classic',
@@ -148,6 +149,7 @@ async function runTests() {
     bill_show_customer_phone: true,
     bill_delivery_show_customer_phone_always: true,
     bill_show_table_number: true,
+    bill_show_large_order_number: false,
     bill_template: 'compact',
     billing_type: 'prepaid',
     tables_required: false,
@@ -185,6 +187,11 @@ async function runTests() {
   assertEqualOrThrow(updatedState.receiptLogoRaster, '1,1:ff', 'receiptLogoRaster hydrated');
   assertEqualOrThrow(updatedState.billShowTaxId, true, 'billShowTaxId hydrated');
   assertEqualOrThrow(updatedState.billShowCustomerName, false, 'billShowCustomerName hydrated');
+  assertEqualOrThrow(
+    updatedState.billShowLargeOrderNumber,
+    false,
+    'billShowLargeOrderNumber hydrated from bill_show_large_order_number',
+  );
   assertEqualOrThrow(updatedState.billTemplate, 'compact', 'billTemplate hydrated');
   assertEqualOrThrow(updatedState.billingType, 'prepaid', 'billingType hydrated');
   assertEqualOrThrow(updatedState.tablesRequired, false, 'tablesRequired hydrated');

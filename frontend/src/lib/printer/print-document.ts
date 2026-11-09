@@ -52,6 +52,7 @@ export interface BillBusinessOptions {
   showCustomerPhone?: boolean;
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
+  showLargeOrderNumber?: boolean;
   isReprint?: boolean;
 }
 
@@ -164,7 +165,9 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
   return {
     isReprint: opts.isReprint === true,
     order: {
-      orderNumber: String(order?.order_number ?? ''),
+      orderNumber: String(
+        order?.order_number ?? (bill as Bill & { order_number?: unknown }).order_number ?? '',
+      ),
       createdAt: String(order?.created_at ?? ''),
       tableName: String(order?.table?.name ?? ''),
       onlinePlatform: String(order?.online_platform ?? ''),
@@ -230,6 +233,9 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       showTaxId: showTaxId ? 'force' : 'never',
       showTaxBreakdown: opts.showTaxBreakdown === true,
       showTableNumber: opts.showTableNumber !== false,
+      ...(opts.showLargeOrderNumber !== undefined
+        ? { showLargeOrderNumber: opts.showLargeOrderNumber === true }
+        : {}),
       showCustomerName: opts.showCustomerName !== false,
       showCustomerPhone: shouldShowCustomerNumber({
         showOnReceipts: opts.showCustomerPhone !== false,
@@ -304,6 +310,7 @@ export function buildFrontendKotDocument(
     columns: number;
     language: string;
     timezone?: string;
+    showLargeOrderNumber?: boolean;
   },
 ): KotDocument {
   const orderShape = order as Order & {
@@ -314,6 +321,8 @@ export function buildFrontendKotDocument(
     order_notes?: unknown;
     orderNotes?: unknown;
     notes?: unknown;
+    show_large_order_number?: unknown;
+    showLargeOrderNumber?: unknown;
   };
   const firstText = (...values: unknown[]): string => {
     for (const value of values) {
@@ -340,8 +349,15 @@ export function buildFrontendKotDocument(
   };
   const languages = [opts.language] as ResolvedPrintLanguages;
   const items = opts.items ?? order.items ?? [];
+  const rawShowLarge =
+    opts.showLargeOrderNumber ??
+    orderShape.show_large_order_number ??
+    orderShape.showLargeOrderNumber;
   const printData: KotPrintData = {
     stationName: String(opts.stationName ?? ''),
+    ...(rawShowLarge !== undefined
+      ? { showLargeOrderNumber: rawShowLarge !== false && rawShowLarge !== 'false' }
+      : {}),
     order: {
       orderNumber: String(order.order_number ?? ''),
       createdAt: String(order.created_at ?? ''),

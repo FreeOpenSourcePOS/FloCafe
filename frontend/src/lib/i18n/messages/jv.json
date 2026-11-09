@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Jeneng Restoran",
     "showRestaurantPhone": "Telepon Restoran",
     "showTableNumber": "Nomer Meja",
+    "showLargeOrderNumber": "Nomer Pesenan Gedhe lan Kandel",
+    "showLargeOrderNumberHint": "Nyithak Nomer Pesenan ing spanduk gedhe lan kandel ing struk pelanggan lan tiket pawon (KOT) kanggo nggampangake njupuk lan verifikasi pesenan.",
     "showTaxBreakdown": "Rincian Pajeg",
     "showTaxId": "Nomer ID Pajeg",
     "softwareUpdates": "Panganyaran piranti alus",

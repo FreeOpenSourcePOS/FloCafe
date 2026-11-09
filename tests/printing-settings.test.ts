@@ -43,6 +43,7 @@ const basePayload = {
   bill_show_customer_name: false,
   bill_show_customer_phone: true,
   bill_show_table_number: false,
+  bill_show_large_order_number: false,
   bill_delivery_show_customer_phone_always: true,
   bill_show_logo: true,
   cash_drawer_pulse_enabled: true,
@@ -72,6 +73,29 @@ async function main() {
 
   try {
     console.log('Printing settings batch endpoint');
+
+    assertPersisted(
+      db,
+      'bill_show_large_order_number',
+      'true',
+      'fresh database seeds bill_show_large_order_number enabled by default',
+    );
+    const initialAllSettings = await api(baseUrl, '/api/settings', {
+      headers: owner.authHeader,
+    });
+    assertEqual(
+      initialAllSettings.data.settings.bill_show_large_order_number,
+      'true',
+      'GET /api/settings returns bill_show_large_order_number: "true" by default',
+    );
+    const initialBusinessSettings = await api(baseUrl, '/api/settings/business', {
+      headers: owner.authHeader,
+    });
+    assertEqual(
+      initialBusinessSettings.data.bill_show_large_order_number,
+      true,
+      'GET /api/settings/business returns bill_show_large_order_number: true by default',
+    );
 
     const ownerResponse = await api(baseUrl, '/api/settings/printing', {
       method: 'PUT',
@@ -120,6 +144,20 @@ async function main() {
     );
     assertPersisted(db, 'bill_show_tax_id', 'true', 'tax ID visibility is persisted');
     assertPersisted(db, 'bill_show_logo', 'true', 'logo visibility is persisted');
+    assertPersisted(
+      db,
+      'bill_show_large_order_number',
+      'false',
+      'large bold order number toggle is persisted via PUT /api/settings/printing',
+    );
+    const businessAfterDisable = await api(baseUrl, '/api/settings/business', {
+      headers: owner.authHeader,
+    });
+    assertEqual(
+      businessAfterDisable.data.bill_show_large_order_number,
+      false,
+      'GET /api/settings/business reflects disabled bill_show_large_order_number',
+    );
     assertPersisted(
       db,
       'cash_drawer_pulse_methods',
@@ -213,6 +251,32 @@ async function main() {
     });
     assertEqual(wildcardResponse.status, 200, 'legacy wildcard setting writes remain compatible');
     assertPersisted(db, 'printer_trim_decimals', 'true', 'legacy wildcard write still persists');
+
+    const largeOrderWildcard = await api(baseUrl, '/api/settings/bill_show_large_order_number', {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { value: 'true' },
+    });
+    assertEqual(
+      largeOrderWildcard.status,
+      200,
+      'PUT /api/settings/bill_show_large_order_number accepts wildcard write',
+    );
+    assertPersisted(
+      db,
+      'bill_show_large_order_number',
+      'true',
+      'PUT /api/settings/bill_show_large_order_number persists true',
+    );
+    const largeOrderRead = await api(baseUrl, '/api/settings/bill_show_large_order_number', {
+      headers: owner.authHeader,
+    });
+    assertEqual(largeOrderRead.status, 200, 'GET /api/settings/bill_show_large_order_number works');
+    assertEqual(
+      largeOrderRead.data.setting.value,
+      'true',
+      'GET /api/settings/bill_show_large_order_number returns persisted value',
+    );
 
     console.log(`\n${getResults().passed}/${getResults().total} passed`);
     if (getResults().failed) process.exit(1);

@@ -2468,6 +2468,8 @@
     "showRestaurantName": "भोजनालय नाम",
     "showRestaurantPhone": "रेस्टुरेन्ट फोन",
     "showTableNumber": "तालिका नम्बर",
+    "showLargeOrderNumber": "ठूलो र बाक्लो अर्डर नम्बर",
+    "showLargeOrderNumberHint": "सहज अर्डर पिकअप र प्रमाणीकरणका लागि ग्राहक रसिद र किचन टिकट (KOT) मा अर्डर नम्बरलाई ठूलो र बाक्लो ब्यानरमा प्रिन्ट गर्छ।",
     "showTaxBreakdown": "कर ब्रेकडाउन",
     "showTaxId": "कर आईडी नम्बर",
     "softwareUpdates": "सफ्टवेयर अपडेटहरू",

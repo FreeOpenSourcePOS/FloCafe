@@ -2459,6 +2459,8 @@
     "showRestaurantName": "রেস্তোরাঁর নাম",
     "showRestaurantPhone": "রেস্তোরাঁর ফোন",
     "showTableNumber": "টেবিল নম্বর",
+    "showLargeOrderNumber": "বড় ও বোল্ড অর্ডার নম্বর",
+    "showLargeOrderNumberHint": "সহজে অর্ডার সংগ্রহ ও যাচাইয়ের জন্য গ্রাহকের রসিদ এবং কিচেন টিকিটে (KOT) অর্ডার নম্বরটি বড় ও বোল্ড ব্যানারে প্রিন্ট করে।",
     "showTaxBreakdown": "কর ব্রেকডাউন",
     "showTaxId": "কর আইডি নম্বর",
     "softwareUpdates": "সফ্টওয়্যার আপডেট",

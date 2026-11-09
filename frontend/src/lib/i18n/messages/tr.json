@@ -2470,6 +2470,8 @@
     "showRestaurantName": "İşletme Adını Göster",
     "showRestaurantPhone": "İşletme Telefonunu Göster",
     "showTableNumber": "Masa Numarasını Göster",
+    "showLargeOrderNumber": "Büyük ve Kalın Sipariş Numarası",
+    "showLargeOrderNumberHint": "Kolay sipariş teslimi ve doğrulaması için müşteri fişlerinde ve mutfak fişlerinde (KOT) Sipariş Numarasını büyük, kalın bir başlıkla yazdırır.",
     "showTaxBreakdown": "KDV / Vergi Dağılımını Göster",
     "showTaxId": "Vergi Kimlik Numarasını Göster",
     "softwareUpdates": "Yazılım Güncellemeleri",

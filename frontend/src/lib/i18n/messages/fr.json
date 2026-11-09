@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Nom du restaurant",
     "showRestaurantPhone": "Téléphone du restaurant",
     "showTableNumber": "Numéro de table",
+    "showLargeOrderNumber": "Numéro de commande grand et en gras",
+    "showLargeOrderNumberHint": "Imprime le numéro de commande dans une grande bannière en gras sur les reçus clients et les bons de cuisine (KOT) pour faciliter le retrait et la vérification.",
     "showTaxBreakdown": "Ventilation des taxes",
     "showTaxId": "Numéro d’identification fiscale",
     "softwareUpdates": "Mises à jour logicielles",

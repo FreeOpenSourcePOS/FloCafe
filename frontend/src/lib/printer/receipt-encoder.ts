@@ -99,6 +99,8 @@ export interface ReceiptOptions {
   deliveryShowCustomerPhoneAlways?: boolean;
   /** Show the table number when available. Default: true */
   showTableNumber?: boolean;
+  /** Print the Order Number in a large bold callout banner on customer receipts. */
+  showLargeOrderNumber?: boolean;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
   /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
@@ -131,6 +133,49 @@ function printReprintBanner(
       },
       widthMultiplier: 2,
       field: 'reprint banner',
+    },
+    { logicalColumns: cols, direction: 'ltr', languages: [language ?? 'en'], capabilities },
+  );
+  warnings?.push(...layout.warnings);
+  enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
+  for (const line of layout.lines) {
+    writeSafePrinterText(
+      enc,
+      line,
+      warnings,
+      false,
+      arabicShaping,
+      cols,
+      undefined,
+      language,
+      false,
+      useUnicode,
+      capabilities,
+    ).newline();
+  }
+  enc.width(1).height(1).bold(false).align('left');
+}
+
+function printLargeOrderNumberBanner(
+  enc: ReceiptPrinterEncoder,
+  orderNumberText: string | undefined | null,
+  warnings: PrintWarning[] | undefined,
+  arabicShaping: boolean,
+  cols: number,
+  language?: string,
+  useUnicode?: boolean,
+  capabilities?: ThermalPrinterCapabilities,
+): void {
+  const cleanOrderNum = String(orderNumberText ?? '')
+    .trim()
+    .replace(/^#/, '');
+  if (!cleanOrderNum) return;
+  const bannerText = `ORDER #${cleanOrderNum}`;
+  const layout = layoutStyledUnit(
+    {
+      text: bannerText,
+      widthMultiplier: 2,
+      field: 'order number banner',
     },
     { logicalColumns: cols, direction: 'ltr', languages: [language ?? 'en'], capabilities },
   );
@@ -386,6 +431,7 @@ function buildReceiptEnvironment(
     showCustomerPhone: opts.showCustomerPhone,
     deliveryShowCustomerPhoneAlways: opts.deliveryShowCustomerPhoneAlways,
     showTableNumber: opts.showTableNumber,
+    showLargeOrderNumber: opts.showLargeOrderNumber,
     isReprint: opts.isReprint,
     trimDecimals: opts.trimDecimals,
     languages,
@@ -697,6 +743,18 @@ export function buildClassicReceiptBytes(
   }
 
   if (meta) {
+    if (meta.showLargeOrderNumber === true && meta.orderNumber?.text) {
+      printLargeOrderNumberBanner(
+        enc,
+        meta.orderNumber.text,
+        warnings,
+        arabicShaping,
+        cols,
+        primaryLang,
+        useUnicode,
+        opts.capabilities,
+      );
+    }
     enc.size('small');
     safePrinterText(
       enc,
@@ -1189,6 +1247,18 @@ export function buildCompactReceiptBytes(
 
   // Invoice number and timestamp on one line (document-meta block)
   if (meta) {
+    if (meta.showLargeOrderNumber === true && meta.orderNumber?.text) {
+      printLargeOrderNumberBanner(
+        enc,
+        meta.orderNumber.text,
+        warnings,
+        arabicShaping,
+        cols,
+        primaryLang,
+        useUnicode,
+        opts.capabilities,
+      );
+    }
     safePrinterText(
       enc,
       padRow(
@@ -1656,6 +1726,21 @@ export function buildDetailedReceiptBytes(
   }
 
   enc.align('left').rule({ style: 'single' });
+
+  const detailedOrderNumber =
+    order?.order_number ?? (bill as Bill & { order_number?: string }).order_number;
+  if (opts.showLargeOrderNumber === true && detailedOrderNumber) {
+    printLargeOrderNumberBanner(
+      enc,
+      detailedOrderNumber,
+      warnings,
+      arabicShaping,
+      cols,
+      primaryLang,
+      useUnicode,
+      opts.capabilities,
+    );
+  }
 
   // Bill info
   enc

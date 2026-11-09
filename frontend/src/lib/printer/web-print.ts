@@ -93,6 +93,8 @@ export interface WebPrintOptions {
   showCustomerPhone?: boolean;
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
+  /** Print the Order Number in a large bold callout banner on customer receipts. */
+  showLargeOrderNumber?: boolean;
   /** Ignored for browser receipts: HTML uses locale currency formatting and code fallback. */
   useUnicode?: boolean;
   /** Show a large "REPRINT" banner so a reprinted bill can't be mistaken for the original. */
@@ -283,6 +285,7 @@ export function generateBillHtml(
     showCustomerPhone,
     deliveryShowCustomerPhoneAlways,
     showTableNumber,
+    showLargeOrderNumber: opts.showLargeOrderNumber,
     isReprint,
     trimDecimals,
     languages,
@@ -370,6 +373,7 @@ export function generateBillHtml(
     </div>
 
     <!-- Bill Details -->
+    ${meta?.showLargeOrderNumber === true && meta.orderNumber?.text ? `<div class="order-number-banner" style="font-size: 1.5em; font-weight: 800; text-align: center; border: 2px solid #000; padding: 4px 8px; margin: 6px 0;">ORDER #${directionalValue({ ...meta.orderNumber, text: meta.orderNumber.text.trim().replace(/^#/, '') }, base)}</div>` : ''}
     <div class="bill-details">
       <table>
         <tr>

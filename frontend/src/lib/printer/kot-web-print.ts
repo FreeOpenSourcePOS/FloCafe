@@ -26,6 +26,8 @@ export interface KotWebPrintOptions {
   stationName?: string;
   /** Store timezone used for business-local time formatting. */
   timezone?: string;
+  /** Print the Order Number in a large bold callout banner on KOT. Default: true */
+  showLargeOrderNumber?: boolean;
 }
 
 /** Resolve the KOT ticket language: fixed policy language or the UI language. */
@@ -190,7 +192,15 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
     order_notes?: unknown;
     orderNotes?: unknown;
     notes?: unknown;
+    show_large_order_number?: unknown;
+    showLargeOrderNumber?: unknown;
   };
+  const rawShowLarge =
+    opts.showLargeOrderNumber ??
+    orderShape.show_large_order_number ??
+    orderShape.showLargeOrderNumber;
+  const showLargeOrderNumber = rawShowLarge !== false && rawShowLarge !== 'false';
+  const cleanOrderNumber = orderNumber.text.trim().replace(/^#/, '');
   const orderNotes =
     [order.special_instructions, orderShape.order_notes, orderShape.orderNotes, orderShape.notes]
       .find((val): val is string => typeof val === 'string' && val.trim().length > 0)
@@ -235,6 +245,7 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
   return `
     <div class="kot-container" lang="${escapeHtml(locale)}" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:${fontFamily};font-size:${fontSize};line-height:1.4;color:#000;font-weight:600;">
       <h2 style="margin:0 0 ${padding} 0;font-size:${headingFontSize};text-align:center;color:#000;font-weight:700;">${escapeHtml(tr('print.kot.banner'))}</h2>
+      ${showLargeOrderNumber && cleanOrderNumber.length > 0 ? `<div class="kot-order-banner" style="font-size:1.5em;font-weight:800;text-align:center;border:2px solid #000;padding:4px 8px;margin:4px 0;">#${directionalValue(directionalText(cleanOrderNumber, base), base)}</div>` : ''}
       ${stationName ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.station'))}: ${directionalValue(directionalText(stationName, base), base)}</p>` : ''}
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}

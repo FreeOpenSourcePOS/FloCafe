@@ -233,6 +233,11 @@ async function runTests() {
       /text-slate-700 dark:text-slate-200 line-through[\s\S]*?Latte/,
       'KDS Kanban VoidedColumn renders voided item heading with high-contrast struck-through text',
     );
+    assert.match(
+      kanbanMarkup,
+      /class="[^"]*font-extrabold text-lg tracking-tight[^"]*"[^>]*>#KDS-1513<\//,
+      'KDS Kanban card header renders #order_number in large extrabold typography',
+    );
 
     const tabsMarkup = ReactDOMServer.renderToStaticMarkup(
       React.createElement(
@@ -299,6 +304,11 @@ async function runTests() {
       tabsMarkup,
       /rounded-xl border-2/,
       'KDS Tabs view order cards do not have 4-sided border-2 outlines',
+    );
+    assert.match(
+      tabsMarkup,
+      /class="[^"]*font-extrabold text-lg tracking-tight[^"]*"[^>]*>#KDS-1513<\//,
+      'KDS Tabs card header renders #order_number in large extrabold typography',
     );
 
     const modalMarkup = ReactDOMServer.renderToStaticMarkup(

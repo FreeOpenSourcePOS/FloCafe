@@ -1196,9 +1196,16 @@ export async function printKOT(
 
     const warnings: PrintWarning[] = [];
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+    const showLargeOrderNumber =
+      order?.show_large_order_number !== undefined
+        ? order.show_large_order_number !== false && order.show_large_order_number !== 'false'
+        : order?.showLargeOrderNumber !== undefined
+          ? order.showLargeOrderNumber !== false && order.showLargeOrderNumber !== 'false'
+          : getSettingValue('bill_show_large_order_number') !== 'false';
+    const kotOrder = { ...order, show_large_order_number: showLargeOrderNumber };
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
-      const documentResult = renderKotViaDocument(order, items, stationName, {
+      const documentResult = renderKotViaDocument(kotOrder, items, stationName, {
         columns: cols,
         language: normalizePrintLanguage(language ?? biz?.language),
         locale,
@@ -1208,7 +1215,7 @@ export async function printKOT(
         cutMode: profile.cutMode,
         capabilities,
       });
-      const nativeResult = renderKotViaDocument(order, items, stationName, {
+      const nativeResult = renderKotViaDocument(kotOrder, items, stationName, {
         columns: cols,
         language: normalizePrintLanguage(language ?? biz?.language),
         locale,
@@ -1238,7 +1245,7 @@ export async function printKOT(
       warnings.push(...rasterized.warnings);
     } else {
       data = formatKOT(
-        order,
+        kotOrder,
         items,
         stationName,
         cols,

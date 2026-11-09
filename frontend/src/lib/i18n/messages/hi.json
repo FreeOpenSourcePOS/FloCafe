@@ -2470,6 +2470,8 @@
     "showRestaurantName": "रेस्तरां का नाम",
     "showRestaurantPhone": "रेस्तरां का फ़ोन",
     "showTableNumber": "टेबल नंबर",
+    "showLargeOrderNumber": "बड़ा और बोल्ड ऑर्डर नंबर",
+    "showLargeOrderNumberHint": "आसान ऑर्डर पिकअप और सत्यापन के लिए ग्राहक रसीदों और किचन टिकटों (KOT) पर ऑर्डर नंबर को बड़े, बोल्ड बैनर में प्रिंट करता है।",
     "showTaxBreakdown": "कर विवरण",
     "showTaxId": "कर पंजीकरण संख्या",
     "softwareUpdates": "सॉफ़्टवेयर अपडेट",

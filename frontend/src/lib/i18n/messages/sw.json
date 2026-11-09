@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Jina la Mgahawa",
     "showRestaurantPhone": "Simu ya Mgahawa",
     "showTableNumber": "Nambari ya Meza",
+    "showLargeOrderNumber": "Nambari Kubwa ya Oda Yenye Wino Mzito",
+    "showLargeOrderNumberHint": "Huchapisha Nambari ya Oda kwenye bango kubwa lenye wino mzito katika risiti za wateja na tikiti za jikoni (KOT) ili kurahisisha uchukuaji na uthibitishaji.",
     "showTaxBreakdown": "Mchanganuo wa Kodi",
     "showTaxId": "Nambari ya Kitambulisho cha Kodi",
     "softwareUpdates": "Masasisho ya Programu",

@@ -45,8 +45,12 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
   const ticketItems = Array.isArray(items)
     ? items.filter((item: any) => isKotItemPending(item?.status))
     : [];
+  const rawShowLarge = order?.show_large_order_number ?? order?.showLargeOrderNumber;
+  const showLargeOrderNumber =
+    rawShowLarge !== undefined ? rawShowLarge !== false && rawShowLarge !== 'false' : undefined;
   return {
     stationName: String(stationName ?? ''),
+    ...(showLargeOrderNumber !== undefined ? { showLargeOrderNumber } : {}),
     order: {
       orderNumber: String(order?.order_number ?? ''),
       createdAt: String(order?.created_at ?? ''),
@@ -57,6 +61,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
         [order?.special_instructions, order?.order_notes, order?.orderNotes, order?.notes]
           .find((val: unknown) => typeof val === 'string' && val.trim().length > 0)
           ?.trim() ?? '',
+      ...(showLargeOrderNumber !== undefined ? { showLargeOrderNumber } : {}),
     },
     items: ticketItems.map((item: any) => ({
       productName: formatVariantItemHeading(
@@ -129,6 +134,7 @@ export interface KotDocumentRenderOptions {
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly rasterGroups?: RasterSemanticLineGroup[];
+  readonly showLargeOrderNumber?: boolean;
 }
 
 /** Typed accessor for one block kind within a KOT document. */
@@ -278,6 +284,35 @@ function kotHeaderLines(
   );
   sourceLines?.push(labelOf(header.banner));
   sourceControlLines?.push(lines.at(-1) ?? '');
+  const showLargeOrderNumber =
+    options.showLargeOrderNumber !== undefined
+      ? options.showLargeOrderNumber
+      : header.showLargeOrderNumber !== false;
+  const cleanOrderNumber = header.orderNumber.text.trim().replace(/^#/, '');
+  if (showLargeOrderNumber && cleanOrderNumber.length > 0) {
+    const safeLargeOrderNum = thermalSafeMetadataValue(
+      cleanOrderNumber,
+      options.language,
+      options.arabicShaping,
+      options.capabilities,
+    );
+    if (safeLargeOrderNum && safeLargeOrderNum !== UNSUPPORTED_METADATA_PLACEHOLDER) {
+      const largeBannerText = `#${safeLargeOrderNum}`;
+      lines.push(
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' +
+          truncateShapedLine(
+            largeBannerText,
+            cols,
+            options.arabicShaping,
+            options.language,
+            options.capabilities,
+          ) +
+          '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      );
+      sourceLines?.push(`#${cleanOrderNumber}`);
+      sourceControlLines?.push(lines.at(-1) ?? '');
+    }
+  }
   lines.push('');
   sourceLines?.push('');
   sourceControlLines?.push('');
@@ -541,9 +576,16 @@ export function renderKotViaDocument(
     arabicShaping: boolean;
     cutMode: PrinterCutMode;
     capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
+    showLargeOrderNumber?: boolean;
   },
 ): KotDocumentRenderResult {
-  const printData = buildKotPrintData(order, items, stationName);
+  const printData = buildKotPrintData(
+    opts.showLargeOrderNumber !== undefined
+      ? { ...order, show_large_order_number: opts.showLargeOrderNumber }
+      : order,
+    items,
+    stationName,
+  );
   const printContext = buildKotPrintContext({
     columns: opts.columns,
     language: opts.language,
@@ -562,6 +604,9 @@ export function renderKotViaDocument(
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
     rasterGroups,
+    ...(opts.showLargeOrderNumber !== undefined
+      ? { showLargeOrderNumber: opts.showLargeOrderNumber }
+      : {}),
   });
   const data = buildEscPos(
     lines,

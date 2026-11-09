@@ -2459,6 +2459,8 @@
     "showRestaurantName": "ریسٹورنٹ کا نام",
     "showRestaurantPhone": "ریسٹورنٹ کا فون",
     "showTableNumber": "میز نمبر",
+    "showLargeOrderNumber": "بڑا اور نمایاں آرڈر نمبر",
+    "showLargeOrderNumberHint": "آرڈر کی آسانی سے وصولی اور تصدیق کے لیے کسٹمر کی رسیدوں اور کچن ٹکٹوں (KOT) پر آرڈر نمبر کو بڑے اور نمایاں بینر میں پرنٹ کرتا ہے۔",
     "showTaxBreakdown": "ٹیکس کی تفصیل",
     "showTaxId": "ٹیکس ID نمبر",
     "softwareUpdates": "سافٹ ویئر اپ ڈیٹس",

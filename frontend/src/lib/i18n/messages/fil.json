@@ -2470,6 +2470,8 @@
     "showRestaurantName": "Pangalan ng Restaurant",
     "showRestaurantPhone": "Telepono ng Restaurant",
     "showTableNumber": "Lamesa Number",
+    "showLargeOrderNumber": "Malaki at Bold na Numero ng Order",
+    "showLargeOrderNumberHint": "Nagpi-print ng Numero ng Order sa malaki at bold na banner sa resibo ng customer at kitchen ticket (KOT) para sa madaling pagkuha at beripikasyon.",
     "showTaxBreakdown": "Buwis Breakdown",
     "showTaxId": "Buwis ID Number",
     "softwareUpdates": "Mga Update sa Software",

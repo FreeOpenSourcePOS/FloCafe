@@ -2470,6 +2470,8 @@
     "showRestaurantName": "Tên nhà hàng",
     "showRestaurantPhone": "Điện thoại nhà hàng",
     "showTableNumber": "Số bàn",
+    "showLargeOrderNumber": "Số đơn hàng lớn và in đậm",
+    "showLargeOrderNumberHint": "In Số đơn hàng trong khung lớn, in đậm trên hóa đơn khách hàng và phiếu bếp (KOT) để dễ dàng nhận và đối chiếu đơn hàng.",
     "showTaxBreakdown": "Chi tiết thuế",
     "showTaxId": "Mã số thuế",
     "softwareUpdates": "Cập nhật phần mềm",

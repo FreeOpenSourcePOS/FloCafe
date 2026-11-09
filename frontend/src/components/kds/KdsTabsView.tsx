@@ -109,7 +109,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
             >
               <div className="flex justify-between items-center mb-2 gap-2">
                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <Ltr as="span" className="font-bold text-base shrink-0">
+                  <Ltr as="span" className="font-extrabold text-lg tracking-tight shrink-0">
                     #{order.order_number}
                   </Ltr>
                   <Badge

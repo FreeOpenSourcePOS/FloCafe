@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Название ресторана",
     "showRestaurantPhone": "Телефон ресторана",
     "showTableNumber": "Номер стола",
+    "showLargeOrderNumber": "Крупный жирный номер заказа",
+    "showLargeOrderNumberHint": "Печатает номер заказа крупным жирным шрифтом на чеках клиентов и кухонных заказах (KOT) для удобной выдачи и проверки.",
     "showTaxBreakdown": "Разбивка налогов",
     "showTaxId": "Идентификационный номер налогоплательщика",
     "softwareUpdates": "Обновления программного обеспечения",

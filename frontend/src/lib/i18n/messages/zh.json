@@ -2459,6 +2459,8 @@
     "showRestaurantName": "餐厅名称",
     "showRestaurantPhone": "餐厅电话",
     "showTableNumber": "桌台编号",
+    "showLargeOrderNumber": "大号粗体订单编号",
+    "showLargeOrderNumberHint": "在顾客收据与厨房工单 (KOT) 上以大号粗体横幅打印订单编号，方便取餐与核对。",
     "showTaxBreakdown": "税费明细",
     "showTaxId": "税号",
     "softwareUpdates": "软件更新",

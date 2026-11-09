@@ -2460,6 +2460,8 @@
     "showRestaurantName": "Name des Geschäfts",
     "showRestaurantPhone": "Telefonnummer des Geschäfts",
     "showTableNumber": "Tischnummer",
+    "showLargeOrderNumber": "Große fettgedruckte Bestellnummer",
+    "showLargeOrderNumberHint": "Druckt die Bestellnummer als großes, fettgedrucktes Banner auf Kundenbelegen und Küchentickets (KOT) zur einfachen Abholung und Überprüfung.",
     "showTaxBreakdown": "Steueraufschlüsselung",
     "showTaxId": "Steuer-ID-Nummer",
     "softwareUpdates": "Software-Updates",

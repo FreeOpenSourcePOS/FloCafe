@@ -42,6 +42,8 @@ export interface KotOptions {
   locale?: string;
   /** Store timezone used for business-local time formatting. */
   timezone?: string;
+  /** Print the Order Number in a large bold callout banner on KOT. Default: true */
+  showLargeOrderNumber?: boolean;
   /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
   capabilities?: ThermalPrinterCapabilities;
 }
@@ -165,6 +167,43 @@ export function buildKotBytes(
   enc.align('center').bold(true);
   writeKotHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', { isBanner: true });
   enc.width(1).height(1).bold(false);
+
+  const orderShowLarge = order as Order & {
+    show_large_order_number?: unknown;
+    showLargeOrderNumber?: unknown;
+  };
+  const rawShowLarge =
+    opts.showLargeOrderNumber ??
+    orderShowLarge.show_large_order_number ??
+    orderShowLarge.showLargeOrderNumber;
+  const showLargeOrderNumber = rawShowLarge !== false && rawShowLarge !== 'false';
+  const cleanOrderNumber = String(order.order_number ?? '')
+    .trim()
+    .replace(/^#/, '');
+  if (showLargeOrderNumber && cleanOrderNumber.length > 0) {
+    const safeLargeOrderNum = thermalSafeMetadataValue(
+      cleanOrderNumber,
+      language,
+      arabicShaping,
+      opts.capabilities,
+    );
+    if (safeLargeOrderNum && safeLargeOrderNum !== '[UNSUPPORTED]') {
+      const largeBannerText = truncateText(`#${safeLargeOrderNum}`, cols);
+      const bannerWidth = displayCellWidth(largeBannerText) * 2 <= cols ? 2 : 1;
+      enc.align('center').bold(true).width(bannerWidth).height(2);
+      safePrinterText(
+        enc,
+        largeBannerText,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        cols,
+        language,
+      ).newline();
+      enc.width(1).height(1).bold(false);
+    }
+  }
 
   // Order details
   enc.align('left').bold(true);

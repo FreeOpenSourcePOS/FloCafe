@@ -2459,6 +2459,8 @@
     "showRestaurantName": "店舗名",
     "showRestaurantPhone": "店舗電話番号",
     "showTableNumber": "テーブル番号",
+    "showLargeOrderNumber": "大きく太字の注文番号",
+    "showLargeOrderNumberHint": "注文の受け取りや確認がしやすいよう、お客様用レシートとキッチン伝票（KOT）に注文番号を大きく太字のバナーで印刷します。",
     "showTaxBreakdown": "税の内訳",
     "showTaxId": "税ID番号",
     "softwareUpdates": "ソフトウェア更新",

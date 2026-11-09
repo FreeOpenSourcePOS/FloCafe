@@ -104,6 +104,7 @@ export type PrintingForm = {
   billShowCustomerPhone: boolean;
   billDeliveryShowCustomerPhoneAlways: boolean;
   billShowTableNumber: boolean;
+  billShowLargeOrderNumber: boolean;
 };
 
 export type BillTemplateForm = {
@@ -1238,13 +1239,23 @@ export function PrintersSettingsTab({
                     { label: t('showCustomerName'), key: 'billShowCustomerName' as const },
                     { label: t('showCustomerPhone'), key: 'billShowCustomerPhone' as const },
                     { label: t('showTableNumber'), key: 'billShowTableNumber' as const },
+                    {
+                      label: t('showLargeOrderNumber'),
+                      hint: t('showLargeOrderNumberHint'),
+                      key: 'billShowLargeOrderNumber' as const,
+                    },
                   ] as const
                 ).map((item) => (
                   <div
                     key={item.key}
                     className="flex min-h-11 items-center justify-between gap-3 py-1"
                   >
-                    <span className="text-sm text-foreground">{item.label}</span>
+                    <span className="flex flex-col">
+                      <span className="text-sm text-foreground">{item.label}</span>
+                      {'hint' in item && item.hint ? (
+                        <span className="text-xs text-muted-foreground">{item.hint}</span>
+                      ) : null}
+                    </span>
                     <Toggle
                       value={printingForm[item.key]}
                       label={item.label}

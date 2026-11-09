@@ -366,17 +366,19 @@ enforce sender validation.
 
 ### What the settings channel may write
 
-One key. `set-setting` checks the key against `ALLOWED_IPC_KEYS`, which contains `theme_mode` and
-nothing else, and rejects a value that is not one of `light`, `dark`, or `system`. Every other
+Two keys. `set-setting` checks the key against `ALLOWED_IPC_KEYS`, which contains `theme_mode` and
+`orders_layout` and nothing else, and rejects `theme_mode` values outside `light`, `dark`, or
+`system` and `orders_layout` values outside `split` or `cards`. Every other
 setting is written over a permission-gated HTTP route, where the acting user is known. The read
-side, `get-settings`, masks `jwt_secret`, `cloud_api_key`, `cloud_device_secret`,
-`cloud_deletion_status_token`, and `cloud_last_error`, and collapses `cloud_last_error` to a
-generic string.
+side, `get-settings`, masks `jwt_secret`, `auth_clock_high_water_ms`, `cloud_api_key`,
+`cloud_device_secret`, `cloud_deletion_status_token`, and `cloud_last_error`, and collapses
+`cloud_last_error` to a generic string.
 
-The renderer writes the theme over HTTP too, with `PUT /api/settings/theme_mode`, which requires
-`settings.manage`. The IPC settings channel exists with the theme key allowed; no renderer code
-calls it today. Widening `ALLOWED_IPC_KEYS` means moving an authorization decision from a
-permission-gated route onto a window-origin check, which is a different and weaker boundary.
+The renderer writes those preferences over HTTP too (`PUT /api/settings/theme_mode` and
+`PUT /api/settings/orders_layout`, which require `settings.manage`). The IPC settings channel exists
+with those two keys allowed; no renderer code calls it today. Widening `ALLOWED_IPC_KEYS` means
+moving an authorization decision from a permission-gated route onto a window-origin check, which is
+a different and weaker boundary.
 
 ### The database channels
 

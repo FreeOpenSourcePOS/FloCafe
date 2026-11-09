@@ -394,6 +394,7 @@ export default function SettingsPage() {
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = tenantCan(currentTenant, 'settings.manage');
   const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
+  const canManageRefundPolicy = currentTenant?.role === 'owner' && isAdmin;
   const canManageDatabase = tenantCan(currentTenant, 'database.manage');
   const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
   const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
@@ -475,6 +476,7 @@ export default function SettingsPage() {
       confirmedKitchenVersions.current.clear();
       failedKitchenSaveVersions.current.clear();
       confirmedKitchenSettings.current = { tenantId };
+      setRefundPolicyHydrated(false);
     }
   };
   const markHydrationTouched = (field: string) => {
@@ -1987,6 +1989,12 @@ export default function SettingsPage() {
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
   const [scheduledOrdersEnabled, setScheduledOrdersEnabled] = useState(false);
   const [savingScheduledOrdersEnabled, setSavingScheduledOrdersEnabled] = useState(false);
+  const [refundManagerEnabled, setRefundManagerEnabled] = useState(true);
+  const [refundManagerWindow, setRefundManagerWindow] = useState<
+    '30m' | '1h' | '2h' | '4h' | 'same_business_day'
+  >('1h');
+  const [refundPolicyHydrated, setRefundPolicyHydrated] = useState(false);
+  const [savingRefundPolicy, setSavingRefundPolicy] = useState(false);
 
   const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
     prefix: 'ORD',
@@ -2967,9 +2975,28 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'pos') {
-        const res = await readOptional('/settings/scheduled_orders_enabled');
+        const [res, refundsRes] = await Promise.all([
+          readOptional('/settings/scheduled_orders_enabled'),
+          readOptional('/settings/refunds'),
+        ]);
         if (active()) {
           setScheduledOrdersEnabled(res?.data?.setting?.value === 'true');
+          if (refundsRes?.data) {
+            if (!isHydrationTouched('refundManagerEnabled')) {
+              setRefundManagerEnabled(refundsRes.data.refund_manager_enabled !== false);
+            }
+            if (
+              !isHydrationTouched('refundManagerWindow') &&
+              (refundsRes.data.refund_manager_window === '30m' ||
+                refundsRes.data.refund_manager_window === '1h' ||
+                refundsRes.data.refund_manager_window === '2h' ||
+                refundsRes.data.refund_manager_window === '4h' ||
+                refundsRes.data.refund_manager_window === 'same_business_day')
+            ) {
+              setRefundManagerWindow(refundsRes.data.refund_manager_window);
+            }
+          }
+          setRefundPolicyHydrated(true);
         }
         return;
       }
@@ -3777,6 +3804,56 @@ export default function SettingsPage() {
       toast.error(t('saveFailed'));
     } finally {
       setSavingScheduledOrdersEnabled(false);
+    }
+  };
+
+  const saveRefundManagerEnabled = async (enabled: boolean) => {
+    const previous = refundManagerEnabled;
+    markHydrationTouched('refundManagerEnabled');
+    setRefundManagerEnabled(enabled);
+    setSavingRefundPolicy(true);
+    try {
+      const { data } = await api.put('/settings/refunds', {
+        refund_manager_enabled: enabled,
+      });
+      if (typeof data?.refund_manager_enabled === 'boolean') {
+        setRefundManagerEnabled(data.refund_manager_enabled);
+      }
+      toast.success(t('diagnosticsSettingSaved'));
+    } catch {
+      setRefundManagerEnabled(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingRefundPolicy(false);
+    }
+  };
+
+  const saveRefundManagerWindow = async (
+    nextWindow: '30m' | '1h' | '2h' | '4h' | 'same_business_day',
+  ) => {
+    const previous = refundManagerWindow;
+    markHydrationTouched('refundManagerWindow');
+    setRefundManagerWindow(nextWindow);
+    setSavingRefundPolicy(true);
+    try {
+      const { data } = await api.put('/settings/refunds', {
+        refund_manager_window: nextWindow,
+      });
+      if (
+        data?.refund_manager_window === '30m' ||
+        data?.refund_manager_window === '1h' ||
+        data?.refund_manager_window === '2h' ||
+        data?.refund_manager_window === '4h' ||
+        data?.refund_manager_window === 'same_business_day'
+      ) {
+        setRefundManagerWindow(data.refund_manager_window);
+      }
+      toast.success(t('diagnosticsSettingSaved'));
+    } catch {
+      setRefundManagerWindow(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingRefundPolicy(false);
     }
   };
 
@@ -4842,6 +4919,75 @@ export default function SettingsPage() {
                       dataTestId="setting-scheduled-orders-enabled"
                     />
                   </div>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">
+                    {t('refundPolicyTitle')}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('refundPolicyHint')}</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {t('refundManagerEnabled')}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t('refundManagerEnabledHint')}
+                      </p>
+                    </div>
+                    <Toggle
+                      value={refundManagerEnabled}
+                      onChange={(val) => void saveRefundManagerEnabled(val)}
+                      label={t('refundManagerEnabled')}
+                      disabled={
+                        !canManageRefundPolicy || !refundPolicyHydrated || savingRefundPolicy
+                      }
+                      dataTestId="setting-refund-manager-enabled"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {t('refundManagerWindow')}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t('refundManagerWindowHint')}
+                      </p>
+                    </div>
+                    <select
+                      aria-label={t('refundManagerWindow')}
+                      data-testid="setting-refund-manager-window"
+                      disabled={
+                        !canManageRefundPolicy ||
+                        !refundPolicyHydrated ||
+                        !refundManagerEnabled ||
+                        savingRefundPolicy
+                      }
+                      value={refundManagerWindow}
+                      onChange={(e) =>
+                        void saveRefundManagerWindow(
+                          e.target.value as '30m' | '1h' | '2h' | '4h' | 'same_business_day',
+                        )
+                      }
+                      className="w-48 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card disabled:opacity-50"
+                    >
+                      <option value="30m">{t('refundWindow30m')}</option>
+                      <option value="1h">{t('refundWindow1h')}</option>
+                      <option value="2h">{t('refundWindow2h')}</option>
+                      <option value="4h">{t('refundWindow4h')}</option>
+                      <option value="same_business_day">{t('refundWindowSameDay')}</option>
+                    </select>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground pt-3 border-t border-border">
+                    {t('refundOwnerUnlimitedNote')}
+                  </p>
                 </div>
               </div>
 

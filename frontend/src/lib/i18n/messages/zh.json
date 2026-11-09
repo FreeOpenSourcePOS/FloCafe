@@ -866,7 +866,9 @@
     "pickedUp": "已取餐",
     "markedReady": "订单已标记为可取餐",
     "markedPickedUp": "订单已标记为已取餐",
-    "updateStatusFailed": "更新订单状态失败"
+    "updateStatusFailed": "更新订单状态失败",
+    "refundOwnerOnlyNotice": "经理退款审批已禁用 — 需要店主 PIN 码才能批准此退款。",
+    "refundOutsideWindowNotice": "此订单已超出经理审批时限 — 需要店主 PIN 码才能批准此退款。"
   },
   "pos": {
     "addCustomer": "添加顾客",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "仅限驱动 / 浏览器打印",
     "printerDriverOnlyWarning": "此打印机不支持原始 ESC/POS 指令。请使用浏览器打印，不要将其添加为原始热敏打印机。",
     "printerSwitchToBrowserPrint": "使用浏览器打印",
-    "printerSwitchedToBrowserPrint": "已将打印方式切换为浏览器打印"
+    "printerSwitchedToBrowserPrint": "已将打印方式切换为浏览器打印",
+    "refundPolicyTitle": "退款政策",
+    "refundPolicyHint": "控制经理是否可以批准退款以及其审批时限保持开启的时长。",
+    "refundManagerEnabled": "允许经理批准退款",
+    "refundManagerEnabledHint": "关闭后，每笔退款都需要店主的员工审批 PIN 码。",
+    "refundManagerWindow": "经理退款审批时限",
+    "refundManagerWindowHint": "订单创建或下达后，经理的员工审批 PIN 码可以批准退款的时长。",
+    "refundWindow30m": "30 分钟",
+    "refundWindow1h": "1 小时",
+    "refundWindow2h": "2 小时",
+    "refundWindow4h": "4 小时",
+    "refundWindowSameDay": "同一营业日",
+    "refundOwnerUnlimitedNote": "店主始终可以使用其员工审批 PIN 码批准任何历史订单的退款。"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

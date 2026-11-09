@@ -866,7 +866,9 @@
     "pickedUp": "Opgehaald",
     "markedReady": "Bestelling gemarkeerd als klaar",
     "markedPickedUp": "Bestelling gemarkeerd als opgehaald",
-    "updateStatusFailed": "Bestelstatus bijwerken mislukt"
+    "updateStatusFailed": "Bestelstatus bijwerken mislukt",
+    "refundOwnerOnlyNotice": "Terugbetalingsgoedkeuringen door managers zijn uitgeschakeld — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren.",
+    "refundOutsideWindowNotice": "Deze bestelling valt buiten het goedkeuringsvenster voor managers — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren."
   },
   "pos": {
     "addCustomer": "Klant toevoegen",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "Alleen stuurprogramma- / browserafdruk",
     "printerDriverOnlyWarning": "Deze printer gebruikt geen directe ESC/POS-opdrachten. Gebruik Afdrukken via browser in plaats van deze als directe thermische printer toe te voegen.",
     "printerSwitchToBrowserPrint": "Afdrukken via browser gebruiken",
-    "printerSwitchedToBrowserPrint": "Afdrukmethode gewijzigd naar Afdrukken via browser"
+    "printerSwitchedToBrowserPrint": "Afdrukmethode gewijzigd naar Afdrukken via browser",
+    "refundPolicyTitle": "Terugbetalingsbeleid",
+    "refundPolicyHint": "Bepaal of managers terugbetalingen mogen goedkeuren en hoe lang hun goedkeuringsvenster open blijft.",
+    "refundManagerEnabled": "Goedkeuring van terugbetalingen door managers toestaan",
+    "refundManagerEnabledHint": "Wanneer uitgeschakeld, vereist elke terugbetaling de goedkeuringspincode van een eigenaar.",
+    "refundManagerWindow": "Goedkeuringsvenster voor terugbetalingen door managers",
+    "refundManagerWindowHint": "Hoe lang na het aanmaken of vrijgeven van een bestelling een manager met zijn goedkeuringspincode een terugbetaling kan goedkeuren.",
+    "refundWindow30m": "30 minuten",
+    "refundWindow1h": "1 uur",
+    "refundWindow2h": "2 uur",
+    "refundWindow4h": "4 uur",
+    "refundWindowSameDay": "Zelfde werkdag",
+    "refundOwnerUnlimitedNote": "Eigenaren kunnen terugbetalingen voor elke eerdere bestelling altijd goedkeuren met hun goedkeuringspincode."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

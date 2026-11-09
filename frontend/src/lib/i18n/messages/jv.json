@@ -866,7 +866,9 @@
     "pickedUp": "Wis dijupuk",
     "markedReady": "Pesenan ditandhani siap",
     "markedPickedUp": "Pesenan ditandhani wis dijupuk",
-    "updateStatusFailed": "Gagal nganyari status pesenan"
+    "updateStatusFailed": "Gagal nganyari status pesenan",
+    "refundOwnerOnlyNotice": "Persetujuan bali dhuwit dening manajer dipateni — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki.",
+    "refundOutsideWindowNotice": "Pesanan iki wis liwat wektu persetujuan manajer — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki."
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "Mung cetak driver / browser",
     "printerDriverOnlyWarning": "Printer iki ora nganggo prentah ESC/POS mentah. Gunakake Cetak Browser tinimbang nambahake minangka printer termal mentah.",
     "printerSwitchToBrowserPrint": "Gunakake Cetak Browser",
-    "printerSwitchedToBrowserPrint": "Cara Cetak diganti dadi Cetak Browser"
+    "printerSwitchedToBrowserPrint": "Cara Cetak diganti dadi Cetak Browser",
+    "refundPolicyTitle": "Kabijakan Bali Dhuwit",
+    "refundPolicyHint": "Atur apa manajer bisa nyetujoni bali dhuwit lan sepira suwene wektu persetujuane tetep mbukak.",
+    "refundManagerEnabled": "Idini Persetujuan Bali Dhuwit Manajer",
+    "refundManagerEnabledHint": "Yen dipateni, saben bali dhuwit mbutuhake PIN Persetujuan Staf sing duwe toko.",
+    "refundManagerWindow": "Wektu Persetujuan Bali Dhuwit Manajer",
+    "refundManagerWindowHint": "Sepira suwene sawisé pesanan digawe utawa dirilis PIN Persetujuan Staf manajer bisa nyetujoni bali dhuwit.",
+    "refundWindow30m": "30 menit",
+    "refundWindow1h": "1 jam",
+    "refundWindow2h": "2 jam",
+    "refundWindow4h": "4 jam",
+    "refundWindowSameDay": "Dina kerja sing padha",
+    "refundOwnerUnlimitedNote": "Sing duwe toko tansah bisa nyetujoni bali dhuwit kanggo pesanan lawas apa wae nganggo PIN Persetujuan Staf dheweke."
   },
   "setup": {
     "alreadyCompleted": "Pangaturan wiwitan wis rampung ditindakake ing pamasangan iki. Ngalihake menyang layar mlebu…",

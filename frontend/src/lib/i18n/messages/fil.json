@@ -866,7 +866,9 @@
     "pickedUp": "Nakuha na",
     "markedReady": "Minarkahan nang handa ang order",
     "markedPickedUp": "Minarkahan nang nakuha ang order",
-    "updateStatusFailed": "Hindi na-update ang status ng order"
+    "updateStatusFailed": "Hindi na-update ang status ng order",
+    "refundOwnerOnlyNotice": "Naka-disable ang pag-apruba ng refund ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito.",
+    "refundOutsideWindowNotice": "Lampas na ang order na ito sa window ng pag-apruba ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito."
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "Pang-driver / Browser print lang",
     "printerDriverOnlyWarning": "Hindi gumagamit ang printer na ito ng direktang ESC/POS commands. Gamitin ang Browser Print sa halip na idagdag ito bilang raw thermal printer.",
     "printerSwitchToBrowserPrint": "Gamitin ang Browser Print",
-    "printerSwitchedToBrowserPrint": "Pinalitan ang Paraan ng Pag-print sa Browser Print"
+    "printerSwitchedToBrowserPrint": "Pinalitan ang Paraan ng Pag-print sa Browser Print",
+    "refundPolicyTitle": "Patakaran sa Refund",
+    "refundPolicyHint": "Kontrolin kung maaaring mag-apruba ng mga refund ang mga manager at kung gaano katagal bukas ang kanilang window ng pag-apruba.",
+    "refundManagerEnabled": "Payagan ang Pag-apruba ng Refund ng Manager",
+    "refundManagerEnabledHint": "Kapag naka-off, bawat refund ay nangangailangan ng Staff Approval PIN ng may-ari.",
+    "refundManagerWindow": "Window ng Pag-apruba ng Refund ng Manager",
+    "refundManagerWindowHint": "Kung gaano katagal pagkatapos malikha o mailabas ang order maaaring aprubahan ng Staff Approval PIN ng manager ang refund.",
+    "refundWindow30m": "30 minuto",
+    "refundWindow1h": "1 oras",
+    "refundWindow2h": "2 oras",
+    "refundWindow4h": "4 na oras",
+    "refundWindowSameDay": "Parehong araw ng negosyo",
+    "refundOwnerUnlimitedNote": "Maaaring aprubahan palagi ng mga may-ari ang refund para sa anumang nakaraang order gamit ang kanilang Staff Approval PIN."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

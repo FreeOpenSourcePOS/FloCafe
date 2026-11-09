@@ -29,9 +29,50 @@ type Database = ReturnType<typeof getDatabase>;
 
 // Kept in sync with the 1:1 rate in main/routes/bills.ts — loyalty points equal currency units.
 const LOYALTY_REDEMPTION_RATE = 1;
-// Items already served/completed become refundable once an order is past the short window below.
 const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready', 'served', 'completed'];
-const REFUND_WINDOW_MS = 60 * 60 * 1000;
+
+export const REFUND_MANAGER_WINDOWS = ['30m', '1h', '2h', '4h', 'same_business_day'] as const;
+export type RefundManagerWindow = (typeof REFUND_MANAGER_WINDOWS)[number];
+
+export const REFUND_MANAGER_WINDOW_MS: Record<
+  Exclude<RefundManagerWindow, 'same_business_day'>,
+  number
+> = {
+  '30m': 30 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '2h': 2 * 60 * 60 * 1000,
+  '4h': 4 * 60 * 60 * 1000,
+};
+
+export function isRefundManagerWindow(value: unknown): value is RefundManagerWindow {
+  return typeof value === 'string' && (REFUND_MANAGER_WINDOWS as readonly string[]).includes(value);
+}
+
+function readSetting(db: Database | undefined, key: string): string | null {
+  if (db) {
+    try {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+        | { value?: string | null }
+        | undefined;
+      return row?.value ?? null;
+    } catch {
+      return getSettingValue(key);
+    }
+  }
+  return getSettingValue(key);
+}
+
+export function getRefundPolicySettings(db?: Database): {
+  refund_manager_enabled: boolean;
+  refund_manager_window: RefundManagerWindow;
+} {
+  const rawEnabled = readSetting(db, 'refund_manager_enabled');
+  const rawWindow = readSetting(db, 'refund_manager_window');
+  return {
+    refund_manager_enabled: rawEnabled !== 'false',
+    refund_manager_window: isRefundManagerWindow(rawWindow) ? rawWindow : '1h',
+  };
+}
 
 export function getTenantCurrency(db?: Database): string {
   const explicit = db
@@ -103,7 +144,7 @@ export function getRefundableBalance(
   return { paidCents, refundedCents, refundableCents: paidCents - refundedCents };
 }
 
-/** `ownerOnly` narrows the approving PIN to owner accounts — used once a refund falls outside the short in-progress window. */
+/** `ownerOnly` narrows the approving PIN to owner accounts when manager approval is disabled or the manager window has elapsed. */
 function resolveRefundApprover(
   db: Database,
   overridePin: string,
@@ -160,7 +201,7 @@ export interface ValidatedRefundPreconditions {
   currency: string;
 }
 
-/** Check whether a bill/order is in late refund status or expired. */
+/** Check whether a bill/order requires owner PIN approval (outside manager window or manager approvals disabled). */
 export function checkIsLateRefund(
   db: Database,
   billId: string | number,
@@ -176,6 +217,11 @@ export function checkIsLateRefund(
     | { created_at: string; release_status?: string | null; released_at?: string | null }
     | undefined;
   if (!order) throw httpError('Order not found', 404, 'order_unavailable');
+
+  const { refund_manager_enabled, refund_manager_window } = getRefundPolicySettings(db);
+  if (!refund_manager_enabled) {
+    return { lateRefund: true, bill };
+  }
   if (order.release_status && order.release_status !== 'released') {
     return { lateRefund: false, bill };
   }
@@ -183,22 +229,22 @@ export function checkIsLateRefund(
   const orderAnchorMs = parseDbTimestamp(anchorTimestamp).getTime();
   if (!Number.isFinite(orderAnchorMs)) throw httpError('Order creation time is invalid', 500);
 
-  if (nowMs - orderAnchorMs > REFUND_WINDOW_MS) {
-    const timezone = resolveRegionalSnapshot({
-      country: getSettingValue('country') ?? undefined,
-      currency: getSettingValue('currency') ?? undefined,
-      timezone: getSettingValue('timezone') ?? undefined,
-    }).timezone;
-    const startTime = tenantBusinessDayStartTime(db);
-    const orderBusinessDate = localDateInTimezone(new Date(orderAnchorMs), timezone, startTime);
-    const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);
-    if (nowMs >= parseDbTimestamp(businessDayEnd).getTime()) {
-      throw httpError(
-        'Refund window has expired. Completed orders can only be refunded within the same business day.',
-        409,
-        'refund_window_expired',
-      );
-    }
+  if (
+    refund_manager_window !== 'same_business_day' &&
+    nowMs - orderAnchorMs > REFUND_MANAGER_WINDOW_MS[refund_manager_window]
+  ) {
+    return { lateRefund: true, bill };
+  }
+
+  const timezone = resolveRegionalSnapshot({
+    country: readSetting(db, 'country') ?? undefined,
+    currency: readSetting(db, 'currency') ?? undefined,
+    timezone: readSetting(db, 'timezone') ?? undefined,
+  }).timezone;
+  const startTime = tenantBusinessDayStartTime(db);
+  const orderBusinessDate = localDateInTimezone(new Date(orderAnchorMs), timezone, startTime);
+  const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);
+  if (nowMs >= parseDbTimestamp(businessDayEnd).getTime()) {
     return { lateRefund: true, bill };
   }
   return { lateRefund: false, bill };

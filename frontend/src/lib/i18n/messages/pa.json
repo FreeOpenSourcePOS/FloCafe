@@ -866,7 +866,9 @@
     "pickedUp": "ਚੁੱਕ ਲਿਆ ਗਿਆ",
     "markedReady": "ਆਰਡਰ ਤਿਆਰ ਵਜੋਂ ਚਿੰਨ੍ਹਿਤ ਕੀਤਾ ਗਿਆ",
     "markedPickedUp": "ਆਰਡਰ ਚੁੱਕਿਆ ਗਿਆ ਵਜੋਂ ਚਿੰਨ੍ਹਿਤ ਕੀਤਾ ਗਿਆ",
-    "updateStatusFailed": "ਆਰਡਰ ਸਥਿਤੀ ਅੱਪਡੇਟ ਕਰਨ ਵਿੱਚ ਅਸਫਲ"
+    "updateStatusFailed": "ਆਰਡਰ ਸਥਿਤੀ ਅੱਪਡੇਟ ਕਰਨ ਵਿੱਚ ਅਸਫਲ",
+    "refundOwnerOnlyNotice": "ਮੈਨੇਜਰ ਰਿਫੰਡ ਮਨਜ਼ੂਰੀਆਂ ਬੰਦ ਹਨ — ਇਸ ਰਿਫੰਡ ਨੂੰ ਮਨਜ਼ੂਰ ਕਰਨ ਲਈ ਮਾਲਕ ਦੇ ਪਿੰਨ ਦੀ ਲੋੜ ਹੈ।",
+    "refundOutsideWindowNotice": "ਇਹ ਆਰਡਰ ਮੈਨੇਜਰ ਦੀ ਮਨਜ਼ੂਰੀ ਸਮਾਂ-ਸੀਮਾ ਤੋਂ ਬਾਹਰ ਹੈ — ਇਸ ਰਿਫੰਡ ਨੂੰ ਮਨਜ਼ੂਰ ਕਰਨ ਲਈ ਮਾਲਕ ਦੇ ਪਿੰਨ ਦੀ ਲੋੜ ਹੈ।"
   },
   "pos": {
     "addCustomer": "ਗਾਹਕ ਜੋੜੋ",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "ਸਿਰਫ਼ ਡਰਾਈਵਰ / ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ",
     "printerDriverOnlyWarning": "ਇਹ ਪ੍ਰਿੰਟਰ ਕੱਚੇ ESC/POS ਕਮਾਂਡਾਂ ਦੀ ਵਰਤੋਂ ਨਹੀਂ ਕਰਦਾ। ਇਸਨੂੰ ਕੱਚੇ ਥਰਮਲ ਪ੍ਰਿੰਟਰ ਵਜੋਂ ਜੋੜਨ ਦੀ ਬਜਾਏ ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਵਰਤੋ।",
     "printerSwitchToBrowserPrint": "ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਵਰਤੋ",
-    "printerSwitchedToBrowserPrint": "ਪ੍ਰਿੰਟ ਵਿਧੀ ਨੂੰ ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਉੱਤੇ ਬਦਲ ਦਿੱਤਾ ਗਿਆ"
+    "printerSwitchedToBrowserPrint": "ਪ੍ਰਿੰਟ ਵਿਧੀ ਨੂੰ ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਉੱਤੇ ਬਦਲ ਦਿੱਤਾ ਗਿਆ",
+    "refundPolicyTitle": "ਰਿਫੰਡ ਨੀਤੀ",
+    "refundPolicyHint": "ਨਿਯੰਤਰਣ ਕਰੋ ਕਿ ਕੀ ਮੈਨੇਜਰ ਰਿਫੰਡ ਮਨਜ਼ੂਰ ਕਰ ਸਕਦੇ ਹਨ ਅਤੇ ਉਨ੍ਹਾਂ ਦੀ ਮਨਜ਼ੂਰੀ ਸਮਾਂ-ਸੀਮਾ ਕਿੰਨੀ ਦੇਰ ਖੁੱਲ੍ਹੀ ਰਹਿੰਦੀ ਹੈ।",
+    "refundManagerEnabled": "ਮੈਨੇਜਰ ਰਿਫੰਡ ਮਨਜ਼ੂਰੀਆਂ ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ",
+    "refundManagerEnabledHint": "ਬੰਦ ਹੋਣ ਤੇ, ਹਰੇਕ ਰਿਫੰਡ ਲਈ ਮਾਲਕ ਦੇ ਸਟਾਫ ਮਨਜ਼ੂਰੀ ਪਿੰਨ ਦੀ ਲੋੜ ਹੁੰਦੀ ਹੈ।",
+    "refundManagerWindow": "ਮੈਨੇਜਰ ਰਿਫੰਡ ਮਨਜ਼ੂਰੀ ਸਮਾਂ-ਸੀਮਾ",
+    "refundManagerWindowHint": "ਆਰਡਰ ਬਣਨ ਜਾਂ ਜਾਰੀ ਹੋਣ ਤੋਂ ਬਾਅਦ ਕਿੰਨੀ ਦੇਰ ਤੱਕ ਮੈਨੇਜਰ ਦਾ ਸਟਾਫ ਮਨਜ਼ੂਰੀ ਪਿੰਨ ਰਿਫੰਡ ਮਨਜ਼ੂਰ ਕਰ ਸਕਦਾ ਹੈ।",
+    "refundWindow30m": "30 ਮਿੰਟ",
+    "refundWindow1h": "1 ਘੰਟਾ",
+    "refundWindow2h": "2 ਘੰਟੇ",
+    "refundWindow4h": "4 ਘੰਟੇ",
+    "refundWindowSameDay": "ਉਸੇ ਕਾਰੋਬਾਰੀ ਦਿਨ",
+    "refundOwnerUnlimitedNote": "ਮਾਲਕ ਆਪਣੇ ਸਟਾਫ ਮਨਜ਼ੂਰੀ ਪਿੰਨ ਨਾਲ ਕਿਸੇ ਵੀ ਪੁਰਾਣੇ ਆਰਡਰ ਦੇ ਰਿਫੰਡ ਨੂੰ ਹਮੇਸ਼ਾ ਮਨਜ਼ੂਰ ਕਰ ਸਕਦੇ ਹਨ।"
   },
   "setup": {
     "alreadyCompleted": "ਇਸ ਇੰਸਟਾਲ ਉੱਤੇ ਸੈੱਟਅੱਪ ਪਹਿਲਾਂ ਹੀ ਪੂਰਾ ਹੋ ਚੁੱਕਾ ਹੈ। ਲੌਗਇਨ ਉੱਤੇ ਭੇਜਿਆ ਜਾ ਰਿਹਾ ਹੈ…",

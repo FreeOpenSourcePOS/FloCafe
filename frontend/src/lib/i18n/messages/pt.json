@@ -866,7 +866,9 @@
     "pickedUp": "Retirado",
     "markedReady": "Pedido marcado como pronto",
     "markedPickedUp": "Pedido marcado como retirado",
-    "updateStatusFailed": "Falha ao atualizar o status do pedido"
+    "updateStatusFailed": "Falha ao atualizar o status do pedido",
+    "refundOwnerOnlyNotice": "As aprovações de reembolso por gerentes estão desativadas — é necessário o PIN do proprietário para aprovar este reembolso.",
+    "refundOutsideWindowNotice": "Este pedido está fora da janela de aprovação do gerente — é necessário o PIN do proprietário para aprovar este reembolso."
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "Apenas impressão por navegador / controlador",
     "printerDriverOnlyWarning": "Esta impressora não utiliza comandos ESC/POS diretos. Use a impressão pelo navegador em vez de a adicionar como impressora térmica direta.",
     "printerSwitchToBrowserPrint": "Usar impressão pelo navegador",
-    "printerSwitchedToBrowserPrint": "Método de impressão alterado para impressão pelo navegador"
+    "printerSwitchedToBrowserPrint": "Método de impressão alterado para impressão pelo navegador",
+    "refundPolicyTitle": "Política de reembolso",
+    "refundPolicyHint": "Controle se os gerentes podem aprovar reembolsos e por quanto tempo a janela de aprovação permanece aberta.",
+    "refundManagerEnabled": "Permitir aprovações de reembolso pelo gerente",
+    "refundManagerEnabledHint": "Quando desativado, todo reembolso exige o PIN de aprovação do proprietário.",
+    "refundManagerWindow": "Janela de aprovação de reembolso do gerente",
+    "refundManagerWindowHint": "Por quanto tempo após a criação ou liberação de um pedido o PIN de aprovação do gerente pode aprovar um reembolso.",
+    "refundWindow30m": "30 minutos",
+    "refundWindow1h": "1 hora",
+    "refundWindow2h": "2 horas",
+    "refundWindow4h": "4 horas",
+    "refundWindowSameDay": "Mesmo dia comercial",
+    "refundOwnerUnlimitedNote": "Os proprietários podem sempre aprovar reembolsos de qualquer pedido anterior com seu PIN de aprovação."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

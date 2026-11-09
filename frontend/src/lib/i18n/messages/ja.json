@@ -866,7 +866,9 @@
     "pickedUp": "受取済み",
     "markedReady": "注文を準備完了にしました",
     "markedPickedUp": "注文を受取済みにしました",
-    "updateStatusFailed": "注文ステータスの更新に失敗しました"
+    "updateStatusFailed": "注文ステータスの更新に失敗しました",
+    "refundOwnerOnlyNotice": "マネージャーによる返金承認は無効になっています — この返金を承認するにはオーナーのPINが必要です。",
+    "refundOutsideWindowNotice": "この注文はマネージャーの承認可能時間を過ぎています — この返金を承認するにはオーナーのPINが必要です。"
   },
   "pos": {
     "addCustomer": "顧客を追加",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "ドライバー / ブラウザー印刷専用",
     "printerDriverOnlyWarning": "このプリンターは生のESC/POSコマンドに対応していません。サーマルプリンターとして追加せず、ブラウザー印刷を使用してください。",
     "printerSwitchToBrowserPrint": "ブラウザー印刷を使用",
-    "printerSwitchedToBrowserPrint": "印刷方式をブラウザー印刷に切り替えました"
+    "printerSwitchedToBrowserPrint": "印刷方式をブラウザー印刷に切り替えました",
+    "refundPolicyTitle": "返金ポリシー",
+    "refundPolicyHint": "マネージャーが返金を承認できるかどうか、および承認可能時間の長さを設定します。",
+    "refundManagerEnabled": "マネージャーによる返金承認を許可する",
+    "refundManagerEnabledHint": "オフの場合、すべての返金にオーナーのスタッフ承認PINが必要です。",
+    "refundManagerWindow": "マネージャーの返金承認可能時間",
+    "refundManagerWindowHint": "注文の作成または送信後、マネージャーのスタッフ承認PINで返金を承認できる時間。",
+    "refundWindow30m": "30分",
+    "refundWindow1h": "1時間",
+    "refundWindow2h": "2時間",
+    "refundWindow4h": "4時間",
+    "refundWindowSameDay": "同一営業日内",
+    "refundOwnerUnlimitedNote": "オーナーはスタッフ承認PINを使用して、過去のどの注文の返金でも常に承認できます。"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

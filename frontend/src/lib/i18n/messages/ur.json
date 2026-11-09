@@ -866,7 +866,9 @@
     "pickedUp": "وصول کر لیا گیا",
     "markedReady": "آرڈر کو تیار نشان زد کر دیا گیا",
     "markedPickedUp": "آرڈر کو وصول شدہ نشان زد کر دیا گیا",
-    "updateStatusFailed": "آرڈر کی حالت اپ ڈیٹ نہیں ہو سکی"
+    "updateStatusFailed": "آرڈر کی حالت اپ ڈیٹ نہیں ہو سکی",
+    "refundOwnerOnlyNotice": "مینیجر کی جانب سے رقم واپسی کی منظوری غیر فعال ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔",
+    "refundOutsideWindowNotice": "یہ آرڈر مینیجر کی منظوری کے وقت سے باہر ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "صرف ڈرائیور / براؤزر پرنٹ",
     "printerDriverOnlyWarning": "یہ پرنٹر براہ راست ESC/POS کمانڈز استعمال نہیں کرتا۔ اسے تھرمل پرنٹر کے طور پر شامل کرنے کے بجائے براؤزر پرنٹ استعمال کریں۔",
     "printerSwitchToBrowserPrint": "براؤزر پرنٹ استعمال کریں",
-    "printerSwitchedToBrowserPrint": "پرنٹ کا طریقہ براؤزر پرنٹ پر منتقل کر دیا گیا"
+    "printerSwitchedToBrowserPrint": "پرنٹ کا طریقہ براؤزر پرنٹ پر منتقل کر دیا گیا",
+    "refundPolicyTitle": "رقم واپسی کی پالیسی",
+    "refundPolicyHint": "کنٹرول کریں کہ آیا مینیجر رقم واپسی کی منظوری دے سکتے ہیں اور ان کی منظوری کا وقتکتنی دیر کھلا رہتا ہے۔",
+    "refundManagerEnabled": "مینیجر کو رقم واپسی کی منظوری کی اجازت دیں",
+    "refundManagerEnabledHint": "بند ہونے پر، ہر رقم واپسی کے لیے مالک کا اسٹاف منظوری پن درکار ہوتا ہے۔",
+    "refundManagerWindow": "مینیجر کی رقم واپسی کی منظوری کا دورانیہ",
+    "refundManagerWindowHint": "آرڈر بننے یا جاری ہونے کے بعد کتنی دیر تک مینیجر کا اسٹاف منظوری پن واپسی کی منظوری دے سکتا ہے۔",
+    "refundWindow30m": "30 منٹ",
+    "refundWindow1h": "1 گھنٹہ",
+    "refundWindow2h": "2 گھنٹے",
+    "refundWindow4h": "4 گھنٹے",
+    "refundWindowSameDay": "ایک ہی کاروباری دن",
+    "refundOwnerUnlimitedNote": "مالکان اپنے اسٹاف منظوری پن کے ذریعے کسی بھی سابقہ آرڈر کی رقم واپسی کی ہمیشہ منظوری دے سکتے ہیں۔"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

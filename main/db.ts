@@ -11235,6 +11235,8 @@ function seedInstallDefaults(): void {
   insert('invoice_number_reset_period', 'daily');
   insert('invoice_financial_year_start_month', '4');
   insert('invoice_financial_year_start_day', '1');
+  insert('refund_manager_enabled', 'true');
+  insert('refund_manager_window', '1h');
 
   seedCloudSyncDefaults();
 

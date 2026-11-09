@@ -866,7 +866,9 @@
     "pickedUp": "수령 완료",
     "markedReady": "주문이 준비 완료로 표시되었습니다",
     "markedPickedUp": "주문이 수령 완료로 표시되었습니다",
-    "updateStatusFailed": "주문 상태를 업데이트하지 못했습니다"
+    "updateStatusFailed": "주문 상태를 업데이트하지 못했습니다",
+    "refundOwnerOnlyNotice": "매니저 환불 승인이 비활성화되어 있습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다.",
+    "refundOutsideWindowNotice": "이 주문은 매니저 승인 가능 시간을 지났습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다."
   },
   "pos": {
     "addCustomer": "고객 추가",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "드라이버 / 브라우저 인쇄 전용",
     "printerDriverOnlyWarning": "이 프린터는 원시 ESC/POS 명령을 사용하지 않습니다. 감열식 프린터로 추가하는 대신 브라우저 인쇄를 사용하세요.",
     "printerSwitchToBrowserPrint": "브라우저 인쇄 사용",
-    "printerSwitchedToBrowserPrint": "인쇄 방식을 브라우저 인쇄로 전환했습니다"
+    "printerSwitchedToBrowserPrint": "인쇄 방식을 브라우저 인쇄로 전환했습니다",
+    "refundPolicyTitle": "환불 정책",
+    "refundPolicyHint": "매니저의 환불 승인 허용 여부와 승인 가능 시간을 설정합니다.",
+    "refundManagerEnabled": "매니저 환불 승인 허용",
+    "refundManagerEnabledHint": "꺼져 있으면 모든 환불에 점주의 직원 승인 PIN이 필요합니다.",
+    "refundManagerWindow": "매니저 환불 승인 가능 시간",
+    "refundManagerWindowHint": "주문이 생성되거나 전달된 후 매니저의 직원 승인 PIN으로 환불을 승인할 수 있는 시간입니다.",
+    "refundWindow30m": "30분",
+    "refundWindow1h": "1시간",
+    "refundWindow2h": "2시간",
+    "refundWindow4h": "4시간",
+    "refundWindowSameDay": "동일 영업일",
+    "refundOwnerUnlimitedNote": "점주는 직원 승인 PIN으로 과거 모든 주문의 환불을 언제든지 승인할 수 있습니다."
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

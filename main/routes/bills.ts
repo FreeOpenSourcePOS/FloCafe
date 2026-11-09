@@ -121,7 +121,11 @@ interface ChargeOrderRow {
   release_status?: string | null;
 }
 import { sendEvent } from '../services/telemetry';
-import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+import {
+  classifySqlitePersistenceFailure,
+  isOperationReference,
+  serializeOperationFailure,
+} from '../lib/operation-failure';
 import {
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
@@ -136,14 +140,19 @@ function structuredBillFailure(
   error: string,
   displayCode?: string,
   outcome: 'not_applied' | 'applied' | 'unknown' = 'not_applied',
+  facts?: Record<string, string | number>,
 ): Record<string, unknown> {
   const header = req.get('x-operation-id');
   const correlationId = isOperationReference(header) ? header : randomUUID();
+  const mergedFacts = {
+    ...(displayCode ? { display_code: displayCode } : {}),
+    ...(facts ?? {}),
+  };
   const failure = serializeOperationFailure({
     capture_point: capturePoint,
     outcome,
     correlation_id: correlationId,
-    ...(displayCode ? { facts: { display_code: displayCode } } : {}),
+    ...(Object.keys(mergedFacts).length > 0 ? { facts: mergedFacts } : {}),
   });
   if (!failure) return { error };
   (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
@@ -166,6 +175,12 @@ function structuredBillFailure(
     outcome: failure.outcome,
     correlation_id: failure.correlation_id,
     ...(responseDisplayCode ? { display_code: responseDisplayCode } : {}),
+    ...(failure.facts.failure_class
+      ? {
+          failure_class: failure.facts.failure_class,
+          facts: { failure_class: failure.facts.failure_class },
+        }
+      : {}),
   };
 }
 
@@ -1314,6 +1329,9 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
           error.statusCode ? error.message : 'Internal server error',
           undefined,
           operationCommitted ? 'applied' : 'unknown',
+          operationCommitted
+            ? undefined
+            : { failure_class: classifySqlitePersistenceFailure(error) },
         ),
       );
   }

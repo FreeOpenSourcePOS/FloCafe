@@ -9,6 +9,7 @@ interface ThemeState {
   /** Set by an explicit user choice this session; boot hydration must not override. */
   userSelected: boolean;
   setMode: (mode: ThemeMode) => void;
+  selectMode: (mode: ThemeMode) => void;
   markUserSelected: () => void;
 }
 
@@ -18,5 +19,6 @@ export const useThemeMode = create<ThemeState>((set) => ({
   mode: 'system',
   userSelected: false,
   setMode: (mode) => set({ mode }),
+  selectMode: (mode) => set({ mode, userSelected: true }),
   markUserSelected: () => set({ userSelected: true }),
 }));

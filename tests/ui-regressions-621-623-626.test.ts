@@ -72,7 +72,7 @@ assert.match(
   /bg-yellow-50 dark:bg-yellow-950\/60/,
   'waiting KDS cards use a dark-mode background',
 );
-assert.match(kds, /text-yellow-700 dark:text-yellow-300/, 'waiting KDS labels use dark-mode text');
+assert.match(kds, /text-yellow-800 dark:text-yellow-200/, 'waiting KDS labels use dark-mode text');
 
 const customers = source('frontend/src/app/(dashboard)/customers/page.tsx');
 assert.match(

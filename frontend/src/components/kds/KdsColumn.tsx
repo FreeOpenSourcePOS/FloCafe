@@ -23,7 +23,9 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
 
   return (
     <div className="flex-1 min-w-[260px] flex flex-col">
-      <div className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}>
+      <div
+        className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}
+      >
         <div className={`w-2 h-2 rounded-full ${config.color}`} />
         <span className={`text-base font-semibold ${config.text}`}>{statusLabel}</span>
         <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-card/70 text-foreground font-medium tabular-nums">
@@ -33,13 +35,15 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
       <div
         ref={ref}
         className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-muted/40 transition-colors ${
-          isDropTarget ? 'bg-blue-50 ring-2 ring-blue-300 ring-inset' : ''
+          isDropTarget
+            ? 'bg-blue-50 ring-2 ring-blue-300 dark:bg-blue-950/40 dark:ring-blue-700 ring-inset'
+            : ''
         }`}
         style={{ minHeight: '60vh', maxHeight: 'calc(100vh - 220px)' }}
       >
         {children}
         {count === 0 && (
-          <div className="flex flex-col items-center justify-center py-6 text-gray-400 text-xs">
+          <div className="flex flex-col items-center justify-center py-6 text-muted-foreground text-xs">
             <span>{t('emptyColumn')}</span>
           </div>
         )}

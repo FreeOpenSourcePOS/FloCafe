@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { useThemeMode, type ThemeMode } from '@/store/theme';
 import { isLanguage, type Language } from './languages';
 
 export type ServerInfo = {
   language: Language | null;
   country: string | null;
   kdsDefaultView: 'tabs' | 'kanban' | null;
+  themeMode?: ThemeMode | null;
 };
 
 /** Fetches tenant preferred language and KDS defaults from public info
@@ -15,7 +17,12 @@ export async function fetchServerInfo(
   timeoutMs = 1500,
   infoPath = '/api/kds/info',
 ): Promise<ServerInfo> {
-  const empty: ServerInfo = { language: null, country: null, kdsDefaultView: null };
+  const empty: ServerInfo = {
+    language: null,
+    country: null,
+    kdsDefaultView: null,
+    themeMode: null,
+  };
   if (typeof window === 'undefined') return empty;
   try {
     const res = await fetch(`${baseUrl}${infoPath}`, {
@@ -27,12 +34,21 @@ export async function fetchServerInfo(
       language?: string | null;
       country?: string | null;
       kds_default_view?: string | null;
+      theme_mode?: string | null;
     };
     return {
       language: isLanguage(data.language) ? data.language : null,
       country: data.country || null,
       kdsDefaultView:
-        data.kds_default_view === 'kanban' ? 'kanban' : data.kds_default_view === 'tabs' ? 'tabs' : null,
+        data.kds_default_view === 'kanban'
+          ? 'kanban'
+          : data.kds_default_view === 'tabs'
+            ? 'tabs'
+            : null,
+      themeMode:
+        data.theme_mode === 'light' || data.theme_mode === 'dark' || data.theme_mode === 'system'
+          ? data.theme_mode
+          : null,
     };
   } catch {
     return empty;
@@ -49,6 +65,21 @@ export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
       if (cancelled) return;
       // Keep the existing tenant language when metadata is unavailable.
       if (info.language) setLanguage(info.language);
+      if (info.themeMode && !useThemeMode.getState().userSelected) {
+        useThemeMode.getState().setMode(info.themeMode);
+        if (typeof document !== 'undefined') {
+          const isDark =
+            info.themeMode === 'dark' ||
+            (info.themeMode === 'system' &&
+              typeof window !== 'undefined' &&
+              typeof window.matchMedia === 'function' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement?.classList?.toggle('dark', isDark);
+          try {
+            window.localStorage?.setItem('flo-theme-resolved', isDark ? 'dark' : 'light');
+          } catch {}
+        }
+      }
     });
     return () => {
       cancelled = true;

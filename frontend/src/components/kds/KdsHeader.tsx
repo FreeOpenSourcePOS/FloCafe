@@ -1,9 +1,10 @@
 'use client';
 
-import { ChefHat, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { ChefHat, LogOut, Moon, Sun, Wifi, WifiOff } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { ConnectionMode } from '@/hooks/useKdsConnection';
 import type { KdsViewMode } from '@/hooks/useKdsView';
+import { useThemeMode } from '@/store/theme';
 
 export interface KdsHeaderProps {
   userName: string;
@@ -26,6 +27,15 @@ export function KdsHeader({
 }: KdsHeaderProps) {
   const t = useTranslations('kds');
   const tNav = useTranslations('nav');
+  const tSettings = useTranslations('settings');
+  const mode = useThemeMode((s) => s.mode);
+  const selectMode = useThemeMode((s) => s.selectMode);
+  const isDark =
+    mode === 'dark' ||
+    (mode !== 'light' &&
+      typeof document !== 'undefined' &&
+      Boolean(document.documentElement?.classList?.contains('dark')));
+  const themeLabel = `${tSettings('themeTitle')}: ${isDark ? tSettings('themeLight') : tSettings('themeDark')}`;
 
   return (
     <div className="shrink-0 mb-4">
@@ -47,8 +57,10 @@ export function KdsHeader({
               <WifiOff size={16} className="text-amber-500" />
             </span>
           ) : null}
-          <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-xs text-gray-400">
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
+          />
+          <span className="text-xs text-muted-foreground">
             {connected
               ? connectionMode === 'websocket'
                 ? t('connectionLive')
@@ -82,8 +94,28 @@ export function KdsHeader({
           </div>
 
           <button
+            type="button"
+            data-testid="kds-theme-toggle"
+            onClick={() => {
+              const nextMode = isDark ? 'light' : 'dark';
+              selectMode(nextMode);
+              if (typeof document !== 'undefined') {
+                document.documentElement?.classList?.toggle('dark', nextMode === 'dark');
+                try {
+                  window.localStorage?.setItem('flo-theme-resolved', nextMode);
+                } catch {}
+              }
+            }}
+            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground ms-1"
+            title={themeLabel}
+            aria-label={themeLabel}
+          >
+            {isDark ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+
+          <button
             onClick={onLogout}
-            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-muted-foreground ms-2"
+            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-muted-foreground ms-1"
             title={tNav('logout')}
           >
             <LogOut size={20} />

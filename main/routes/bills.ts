@@ -176,10 +176,7 @@ function structuredBillFailure(
     correlation_id: failure.correlation_id,
     ...(responseDisplayCode ? { display_code: responseDisplayCode } : {}),
     ...(failure.facts.failure_class
-      ? {
-          failure_class: failure.facts.failure_class,
-          facts: { failure_class: failure.facts.failure_class },
-        }
+      ? { facts: { failure_class: failure.facts.failure_class } }
       : {}),
   };
 }

@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Tidak dapat memperbarui metode pembayaran",
     "releaseScheduled": "Terjadwal",
     "releaseBlocked": "Rilis tertahan",
-    "markReady": "Tandai siap",
-    "pickedUp": "Sudah diambil",
-    "markedReady": "Pesanan ditandai siap",
-    "markedPickedUp": "Pesanan ditandai sudah diambil",
-    "updateStatusFailed": "Gagal memperbarui status pesanan",
     "refundOwnerOnlyNotice": "Persetujuan pengembalian dana oleh manajer dinonaktifkan — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini.",
     "refundOutsideWindowNotice": "Pesanan ini berada di luar batas waktu persetujuan manajer — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini."
   },

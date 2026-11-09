@@ -1184,11 +1184,24 @@ async function main() {
         .set(authHeader)
         .send({ status: st });
       assertEqualOrThrow(prepRes.status, 200, `prepaid completed item -> ${st} succeeds`);
+      const prepaidState = readOrderState(prepaidCompletedOrderId);
       assertEqualOrThrow(
-        readOrderState(prepaidCompletedOrderId).status,
+        prepaidState.status,
         'completed',
         `completed order status is never mutated when item moves to ${st}`,
       );
+      if (st === 'ready') {
+        assertOrThrow(
+          prepaidState.ready_at !== null,
+          'prepaid completed order stamps ready_at when KDS item reaches ready',
+        );
+      }
+      if (st === 'served') {
+        assertOrThrow(
+          prepaidState.served_at !== null,
+          'prepaid completed order stamps served_at when KDS item reaches served',
+        );
+      }
     }
 
     // KDS disabled preserves manual parent-status workflow without automatic item reconciliation

@@ -420,22 +420,21 @@ order items are appended, cancelled, edited, refunded, or restored:
 - Each resulting parent status change records an actor-attributed `status_changed` entry
   (`source: 'kds_reconciliation'`) in `order_audit_log`.
 
-Terminal `completed` and `cancelled` orders are never reopened or mutated by item-status
-reconciliation. Regardless of whether KDS is enabled, paid (`completed`) orders created within the
-rolling 24-hour `orders.created_at` window that settle to `completed` before preparation and pickup
-finish remain in `GET /api/orders?view=active` and `GET /api/orders?status=active` while
-positive-quantity live items stay in `pending`, `preparing`, or `ready` (non-`completed` active
-orders are not age-bounded). Both `/customer-display` surfaces (`GET /api/orders?board_status=...`
-and `GET /api/customer-display/feed`) filter by configured `order_types` (`['takeaway']` by
-default) and `statuses` before pagination, projecting a `completed` order's effective board status
-(`pending`, `preparing`, or `ready`) from live item statuses via `projectBoardStatusFromItems` and
-omitting the order once no live item remains unfinished (for example once every remaining live item
-is `served` or `completed`). When KDS is disabled, automatic item-to-order reconciliation stands
-down and manual `PATCH /api/orders/:id/status` transitions (`ready` and `served`, exposed on the
-POS `/orders` screen as **Mark Ready** and **Picked Up**) advance active `order_items`
-(`pending`/`preparing` to `ready`, and `pending`/`preparing`/`ready` to `served`) on both active
-and `completed` orders (preserving `orders.status = 'completed'` on settled orders while recording
-`ready_at` or `served_at`).
+Terminal `completed` and `cancelled` orders never transition `orders.status` via item-status
+reconciliation. When KDS is enabled, upfront-paid orders created within the rolling 24-hour
+`orders.created_at` window that settle to `completed` before kitchen fulfillment finishes remain in
+`GET /api/orders?view=active` and `GET /api/orders?status=active` while positive-quantity live items
+stay in `pending`, `preparing`, or `ready` (non-`completed` active orders are not age-bounded), and
+`reconcileActiveOrderStatusFromItems` stamps `ready_at = COALESCE(ready_at, now)` and
+`served_at = COALESCE(served_at, now)` on `completed` orders as live items reach `ready` and
+`served`. Both `/customer-display` surfaces (`GET /api/orders?board_status=...` and
+`GET /api/customer-display/feed`) filter by configured `order_types` (`['takeaway']` by default) and
+`statuses` before pagination, projecting an eligible KDS-unfinished `completed` order's effective
+board status (`pending`, `preparing`, or `ready`) from live item statuses via
+`projectBoardStatusFromItems` and omitting the order once no live item remains unfinished (for
+example once every remaining live item is `served` or `completed`). When KDS is disabled, automatic
+item-to-order reconciliation stands down and manual `PATCH /api/orders/:id/status` transitions
+govern preparation and service.
 
 ## Refunds
 

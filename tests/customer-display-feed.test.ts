@@ -21,6 +21,7 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { settingsRoutes } = require('../main/routes/settings');
 const { customerDisplayFeedRoutes } = require('../main/routes/customer-display-feed');
 const { orderRoutes } = require('../main/routes/orders');
+const { orderItemRoutes } = require('../main/routes/order-items');
 const { billRoutes } = require('../main/routes/bills');
 const { kdsRoutes } = require('../main/routes/kds');
 const { completedKdsProjectionCutoff } = require('../main/services/orders');
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
   app.use('/api/settings', settingsRoutes);
   app.use('/api/customer-display', customerDisplayFeedRoutes);
   app.use('/api/orders', orderRoutes);
+  app.use('/api/order-items', orderItemRoutes);
   app.use('/api/bills', billRoutes);
   app.use('/api/kds', kdsRoutes);
 
@@ -879,7 +881,7 @@ async function main(): Promise<void> {
     db.prepare('DELETE FROM orders WHERE id IN (?, ?)').run(boundaryInclusiveId, boundaryExpiredId);
   }
 
-  // KDS disabled keeps recent (<24h) completed orders with unserved items on the customer display feed
+  // KDS disabled excludes completed orders even if items are still ready/pending
   db.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
   ).run(now());
@@ -887,8 +889,8 @@ async function main(): Promise<void> {
   assert.equal(prepaidFeed.status, 200);
   assert.equal(
     prepaidFeed.body.orders.some((o: any) => o.id === prepaidOrderId),
-    true,
-    'KDS-disabled mode keeps recent completed orders with unserved items on the customer display feed',
+    false,
+    'KDS-disabled mode omits completed orders from customer display feed',
   );
   db.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
@@ -1486,7 +1488,7 @@ async function main(): Promise<void> {
     'filtered board_status query without projectedCompletedIds excludes unreleased orders',
   );
 
-  // Order-type filtering + POS Mark Ready / Picked Up transitions when KDS is disabled
+  // Order-type filtering + KDS item-level completion driving prepaid order readiness/delivery + category/station restrictions on PATCH /api/orders/:id/status
   db.transaction(() => {
     db.prepare(
       `UPDATE orders
@@ -1498,7 +1500,7 @@ async function main(): Promise<void> {
     ).run();
   })();
   db.prepare(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
   ).run(now());
   assert.equal(
     (
@@ -1523,10 +1525,14 @@ async function main(): Promise<void> {
       )
       .run(typeStamp, typeStamp, typeStamp).lastInsertRowid,
   );
-  db.prepare(
-    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
-     VALUES (?, 'feed-prod-1', 'Latte', 1, 10, 10, 10, 'preparing', ?, ?)`,
-  ).run(takeawayPrepId, typeStamp, typeStamp);
+  const takeawayPrepItemId = Number(
+    db
+      .prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+         VALUES (?, 'feed-prod-1', 'Latte', 1, 10, 10, 10, 'preparing', ?, ?)`,
+      )
+      .run(takeawayPrepId, typeStamp, typeStamp).lastInsertRowid,
+  );
 
   const deliveryPrepId = Number(
     db
@@ -1552,7 +1558,7 @@ async function main(): Promise<void> {
       (o: any) => o.id === takeawayPrepId && o.status === 'preparing',
     ),
     true,
-    'default takeaway order_types includes paid takeaway order in preparing',
+    'default takeaway order_types includes paid takeaway order in preparing when KDS is enabled',
   );
   assert.equal(
     takeawayOnlyFeed.body.orders.some((o: any) => o.id === deliveryPrepId || o.id === dineInPrepId),
@@ -1613,146 +1619,65 @@ async function main(): Promise<void> {
     'dine_in remains excluded when not in order_types',
   );
 
-  // Advance paid takeaway order via PATCH /api/orders/:id/status: preparing -> ready -> served (Picked Up)
-  const markReadyRes = await request(app)
-    .patch(`/api/orders/${takeawayPrepId}/status`)
+  // Advance paid takeaway order via KDS item endpoint PATCH /api/order-items/:id/status: preparing -> ready -> served
+  const itemReadyRes = await request(app)
+    .patch(`/api/order-items/${takeawayPrepItemId}/status`)
     .set(signedInOwnerReady)
     .send({ status: 'ready' });
+  assert.equal(itemReadyRes.status, 200, 'KDS item transition to ready succeeds');
+
+  const afterReadyOrderRow = db
+    .prepare('SELECT status, ready_at, served_at FROM orders WHERE id = ?')
+    .get(takeawayPrepId) as {
+    status: string;
+    ready_at: string | null;
+    served_at: string | null;
+  };
   assert.equal(
-    markReadyRes.status,
-    200,
-    'PATCH /api/orders/:id/status ready succeeds on completed order',
-  );
-  assert.equal(
-    markReadyRes.body.order.status,
+    afterReadyOrderRow.status,
     'completed',
-    'completed order keeps orders.status=completed when marked ready',
+    'completed order keeps orders.status=completed when KDS items reach ready',
   );
-  assert.equal(
-    markReadyRes.body.order.items[0].status,
-    'ready',
-    'marking completed order ready updates active order_items to ready',
+  assert.ok(
+    typeof afterReadyOrderRow.ready_at === 'string' && afterReadyOrderRow.ready_at.length > 0,
+    'completed order records ready_at when KDS items reach ready',
   );
 
   const afterReadyFeed = await request(app).get(FEED).set(display);
   assert.equal(
     afterReadyFeed.body.orders.some((o: any) => o.id === takeawayPrepId && o.status === 'ready'),
     true,
-    'paid takeaway order projects as ready on customer display after Mark Ready',
+    'paid takeaway order projects as ready on customer display after KDS items reach ready',
   );
 
-  const markPickedUpRes = await request(app)
-    .patch(`/api/orders/${takeawayPrepId}/status`)
+  const itemServedRes = await request(app)
+    .patch(`/api/order-items/${takeawayPrepItemId}/status`)
     .set(signedInOwnerReady)
     .send({ status: 'served' });
+  assert.equal(itemServedRes.status, 200, 'KDS item transition to served succeeds');
+
+  const afterServedOrderRow = db
+    .prepare('SELECT status, ready_at, served_at FROM orders WHERE id = ?')
+    .get(takeawayPrepId) as {
+    status: string;
+    ready_at: string | null;
+    served_at: string | null;
+  };
   assert.equal(
-    markPickedUpRes.status,
-    200,
-    'PATCH /api/orders/:id/status served succeeds on completed order',
-  );
-  assert.equal(
-    markPickedUpRes.body.order.status,
+    afterServedOrderRow.status,
     'completed',
-    'completed order keeps orders.status=completed when marked served (picked up)',
+    'completed order keeps orders.status=completed when KDS items reach served',
   );
-  assert.equal(
-    markPickedUpRes.body.order.items[0].status,
-    'served',
-    'marking completed order served updates active order_items to served',
+  assert.ok(
+    typeof afterServedOrderRow.served_at === 'string' && afterServedOrderRow.served_at.length > 0,
+    'completed order records served_at when KDS items reach served',
   );
 
   const afterPickedUpFeed = await request(app).get(FEED).set(display);
   assert.equal(
     afterPickedUpFeed.body.orders.some((o: any) => o.id === takeawayPrepId),
     false,
-    'paid takeaway order clears from customer display once marked Picked Up (served)',
-  );
-
-  const repeatPickedUpRes = await request(app)
-    .patch(`/api/orders/${takeawayPrepId}/status`)
-    .set(signedInOwnerReady)
-    .send({ status: 'served' });
-  assert.equal(
-    repeatPickedUpRes.status,
-    200,
-    'repeating PATCH /api/orders/:id/status served on already-served completed order is idempotent',
-  );
-  assert.equal(repeatPickedUpRes.body.order.status, 'completed');
-  assert.equal(repeatPickedUpRes.body.order.items[0].status, 'served');
-
-  const activeCatchUpOrderId = Number(
-    db
-      .prepare(
-        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
-         VALUES ('ACTIVE-CATCHUP-1', 'feed-owner', 'takeaway', 'ready', 10, 10, ?, ?)`,
-      )
-      .run(typeStamp, typeStamp).lastInsertRowid,
-  );
-  db.prepare(
-    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
-     VALUES (?, 'feed-prod-1', 'Latte', 1, 5, 5, 5, 'ready', ?, ?),
-            (?, 'feed-prod-2', 'Muffin', 1, 5, 5, 5, 'pending', ?, ?)`,
-  ).run(activeCatchUpOrderId, typeStamp, typeStamp, activeCatchUpOrderId, typeStamp, typeStamp);
-
-  const catchUpReadyRes = await request(app)
-    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
-    .set(signedInOwnerReady)
-    .send({ status: 'ready' });
-  assert.equal(
-    catchUpReadyRes.status,
-    200,
-    'active ready order with pending item accepts PATCH status=ready to catch up items',
-  );
-  assert.deepEqual(
-    catchUpReadyRes.body.order.items.map((item: any) => item.status),
-    ['ready', 'ready'],
-    'all active items on ready order catch up to ready',
-  );
-
-  const markActiveServedRes = await request(app)
-    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
-    .set(signedInOwnerReady)
-    .send({ status: 'served' });
-  assert.equal(markActiveServedRes.status, 200);
-  db.prepare(
-    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
-     VALUES (?, 'feed-prod-1', 'Espresso', 1, 5, 5, 5, 'pending', ?, ?)`,
-  ).run(activeCatchUpOrderId, typeStamp, typeStamp);
-
-  const servedToReadyCatchUpRes = await request(app)
-    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
-    .set(signedInOwnerReady)
-    .send({ status: 'ready' });
-  assert.equal(
-    servedToReadyCatchUpRes.status,
-    200,
-    'active served order with newly added pending item accepts PATCH status=ready',
-  );
-  assert.equal(servedToReadyCatchUpRes.body.order.status, 'ready');
-  assert.deepEqual(
-    servedToReadyCatchUpRes.body.order.items.map((item: any) => item.status),
-    ['served', 'served', 'ready'],
-  );
-
-  db.prepare(
-    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
-     VALUES (?, 'feed-prod-2', 'Muffin', 1, 5, 5, 5, 'pending', ?, ?)`,
-  ).run(activeCatchUpOrderId, typeStamp, typeStamp);
-  db.prepare("UPDATE orders SET status = 'served' WHERE id = ?").run(activeCatchUpOrderId);
-
-  const catchUpServedRes = await request(app)
-    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
-    .set(signedInOwnerReady)
-    .send({ status: 'served' });
-  assert.equal(
-    catchUpServedRes.status,
-    200,
-    'active served order with unserved items accepts PATCH status=served to catch up items',
-  );
-  assert.deepEqual(
-    catchUpServedRes.body.order.items.map((item: any) => item.status),
-    ['served', 'served', 'served', 'served'],
-    'all active items on served order catch up to served',
+    'paid takeaway order clears from customer display once all KDS items are served',
   );
 
   assert.equal(
@@ -1834,72 +1759,125 @@ async function main(): Promise<void> {
     'excluded dine_in completed orders never appear on takeaway-only signed-in board',
   );
 
-  // Expired (>24h) completed order rejects PATCH /api/orders/:id/status ready/served
-  const expiredCompletedOrderId = Number(
-    db
-      .prepare(
-        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
-         VALUES ('EXPIRED-COMPLETED-PREP-1', 'feed-owner', 'takeaway', 'completed', 10, 10, ?, ?, ?)`,
-      )
-      .run(expired25hStamp, expired25hStamp, expired25hStamp).lastInsertRowid,
-  );
-  insertHistoricalItem.run(expiredCompletedOrderId, 'pending', expired25hStamp, expired25hStamp);
-  const expiredPatchReady = await request(app)
-    .patch(`/api/orders/${expiredCompletedOrderId}/status`)
+  // Completed orders are terminal in VALID_TRANSITIONS for PATCH /api/orders/:id/status
+  const completedPatchReady = await request(app)
+    .patch(`/api/orders/${retainedTakeawayId}/status`)
     .set(signedInOwnerReady)
     .send({ status: 'ready' });
   assert.equal(
-    expiredPatchReady.status,
+    completedPatchReady.status,
     400,
-    'completed order older than 24h window rejects PATCH status=ready',
+    'completed order rejects PATCH /api/orders/:id/status ready because item-level KDS endpoints drive completed order prep',
   );
 
-  // Cashier without kitchen.status.update cannot bulk-transition completed order when KDS is enabled, but can when KDS is disabled
-  const signedInCashier = seedUser(db, 'feed-cashier', 'cashier');
+  // Category and station restriction enforcement on PATCH /api/orders/:id/status
   db.prepare(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
-  ).run(now());
-  const cashierKdsOnReady = await request(app)
-    .patch(`/api/orders/${retainedTakeawayId}/status`)
-    .set(signedInCashier)
-    .send({ status: 'ready' });
-  assert.equal(
-    cashierKdsOnReady.status,
-    403,
-    'cashier without kitchen.status.update is rejected from bulk-advancing completed order when KDS is enabled',
-  );
+    `INSERT OR IGNORE INTO categories (id, name, created_at, updated_at)
+     VALUES ('cat-bar', 'Bar', ?, ?),
+            ('cat-grill', 'Grill', ?, ?)`,
+  ).run(typeStamp, typeStamp, typeStamp, typeStamp);
   db.prepare(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
-  ).run(now());
-  const cashierKdsOffReady = await request(app)
-    .patch(`/api/orders/${retainedTakeawayId}/status`)
-    .set(signedInCashier)
-    .send({ status: 'ready' });
-  assert.equal(cashierKdsOffReady.status, 200, 'cashier can mark order ready when KDS is disabled');
+    `INSERT OR IGNORE INTO products (id, name, category_id, price, is_active, created_at, updated_at)
+     VALUES ('prod-bar', 'Mojito', 'cat-bar', 12, 1, ?, ?),
+            ('prod-grill', 'Steak', 'cat-grill', 25, 1, ?, ?)`,
+  ).run(typeStamp, typeStamp, typeStamp, typeStamp);
 
-  // Settled non-completed takeaway order auto-completes when marked served via PATCH /api/orders/:id/status
-  const settledReadyOrderId = Number(
+  const barChef = seedUser(db, 'feed-bar-chef', 'chef');
+  db.prepare(`UPDATE users SET category_ids = ? WHERE id = 'feed-bar-chef'`).run(
+    JSON.stringify(['cat-bar']),
+  );
+
+  const mixedOrderId = Number(
     db
       .prepare(
         `INSERT INTO orders (order_number, user_id, type, status, release_status, subtotal, total, created_at, updated_at)
-         VALUES ('SETTLED-READY-TAKEAWAY-1', 'feed-owner', 'takeaway', 'ready', 'released', 10, 10, ?, ?)`,
+         VALUES ('MIXED-BAR-GRILL-1', 'feed-owner', 'takeaway', 'pending', 'released', 37, 37, ?, ?)`,
       )
       .run(typeStamp, typeStamp).lastInsertRowid,
   );
-  insertHistoricalItem.run(settledReadyOrderId, 'ready', typeStamp, typeStamp);
-  db.prepare(
-    `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, created_at)
-     VALUES ('BILL-SETTLED-READY-1', ?, 10, 0, 0, 10, 10, 0, 'paid', ?)`,
-  ).run(settledReadyOrderId, typeStamp);
-  const autoCompleteOnServed = await request(app)
-    .patch(`/api/orders/${settledReadyOrderId}/status`)
-    .set(signedInCashier)
-    .send({ status: 'served' });
-  assert.equal(autoCompleteOnServed.status, 200);
+  const barItemOnMixedId = Number(
+    db
+      .prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+         VALUES (?, 'prod-bar', 'Mojito', 1, 12, 12, 12, 'pending', ?, ?)`,
+      )
+      .run(mixedOrderId, typeStamp, typeStamp).lastInsertRowid,
+  );
+  const grillItemOnMixedId = Number(
+    db
+      .prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+         VALUES (?, 'prod-grill', 'Steak', 1, 25, 25, 25, 'pending', ?, ?)`,
+      )
+      .run(mixedOrderId, typeStamp, typeStamp).lastInsertRowid,
+  );
+
+  const barChefGrillItemRes = await request(app)
+    .patch(`/api/order-items/${grillItemOnMixedId}/status`)
+    .set(barChef)
+    .send({ status: 'ready' });
+  assert.equal(barChefGrillItemRes.status, 403, 'Bar-only chef gets 403 on Grill item endpoint');
+
+  const barChefBulkMixedRes = await request(app)
+    .patch(`/api/orders/${mixedOrderId}/status`)
+    .set(barChef)
+    .send({ status: 'ready' });
   assert.equal(
-    autoCompleteOnServed.body.order.status,
-    'completed',
-    'settled released takeaway order auto-completes when marked served via PATCH /api/orders/:id/status',
+    barChefBulkMixedRes.status,
+    403,
+    'Bar-only chef gets 403 on PATCH /api/orders/:id/status when order contains Grill item',
+  );
+
+  const barChefBarItemRes = await request(app)
+    .patch(`/api/order-items/${barItemOnMixedId}/status`)
+    .set(barChef)
+    .send({ status: 'ready' });
+  assert.equal(barChefBarItemRes.status, 200, 'Bar-only chef can advance Bar item to ready');
+
+  const barOnlyOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, subtotal, total, created_at, updated_at)
+         VALUES ('BAR-ONLY-1', 'feed-owner', 'takeaway', 'pending', 'released', 12, 12, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+     VALUES (?, 'prod-bar', 'Mojito', 1, 12, 12, 12, 'pending', ?, ?)`,
+  ).run(barOnlyOrderId, typeStamp, typeStamp);
+
+  const barChefBarOrderRes = await request(app)
+    .patch(`/api/orders/${barOnlyOrderId}/status`)
+    .set(barChef)
+    .send({ status: 'ready' });
+  assert.equal(
+    barChefBarOrderRes.status,
+    200,
+    'Bar-only chef can advance order status when all active items are in Bar category',
+  );
+
+  // Station-restricted chef cannot advance mixed order via PATCH /api/orders/:id/status
+  db.prepare(
+    `INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+     VALUES ('station-bar', 'Bar Station', ?, 1, ?, ?)`,
+  ).run(JSON.stringify(['cat-bar']), typeStamp, typeStamp);
+  const stationChef = seedUser(db, 'feed-station-chef', 'chef');
+  db.prepare(
+    `UPDATE users SET station_assignments_configured = 1 WHERE id = 'feed-station-chef'`,
+  ).run();
+  db.prepare(
+    `INSERT INTO station_users (user_id, station_id, created_at) VALUES ('feed-station-chef', 'station-bar', ?)`,
+  ).run(typeStamp);
+
+  const stationChefMixedOrderRes = await request(app)
+    .patch(`/api/orders/${mixedOrderId}/status`)
+    .set(stationChef)
+    .send({ status: 'ready' });
+  assert.equal(
+    stationChefMixedOrderRes.status,
+    403,
+    'Station-restricted Bar chef gets 403 on PATCH /api/orders/:id/status when order contains Grill item',
   );
 
   console.log('customer-display-feed: all assertions passed');

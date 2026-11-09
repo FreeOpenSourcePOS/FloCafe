@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { getDatabase, now } from '../db';
+import { getDatabase, isKdsEnabled, now } from '../db';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_KEY,
@@ -203,7 +203,7 @@ function collectProjectedCompletedRows(
     options.orderTypes && options.orderTypes.length > 0
       ? options.orderTypes
       : CUSTOMER_DISPLAY_DEFAULTS.order_types;
-  if (options.maxRows <= 0 || orderTypes.length === 0) {
+  if (!isKdsEnabled() || options.maxRows <= 0 || orderTypes.length === 0) {
     return projectedCompletedRows;
   }
 

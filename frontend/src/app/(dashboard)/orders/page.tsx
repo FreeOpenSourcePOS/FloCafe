@@ -463,11 +463,6 @@ export default function OrdersPage() {
   const canOverridePrice = tenantCan(currentTenant, 'orders.item.price_override');
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
-  const canUpdateOrderStatus = tenantCan(currentTenant, 'orders.status.update');
-  const canUpdateKitchenStatus = tenantCan(currentTenant, 'kitchen.status.update');
-  const canUpdateOrderPrepStatus =
-    canUpdateOrderStatus && (kdsEnabled === false || canUpdateKitchenStatus);
-  const [updatingPrepOrderId, setUpdatingPrepOrderId] = useState<number | null>(null);
 
   // A tenant that disables discounts has no type left to normalize into, so an
   // open draft dialog is closed once on entry into `none` instead of
@@ -735,28 +730,6 @@ export default function OrdersPage() {
       return Boolean(listRefreshed) && detailRefreshed;
     }
     return Boolean(listRefreshed);
-  };
-
-  const handleUpdateOrderPrepStatus = async (orderId: number, targetStatus: 'ready' | 'served') => {
-    setUpdatingPrepOrderId(orderId);
-    const operationId = createOperationReference();
-    try {
-      const { data } = await api.patch(
-        `/orders/${orderId}/status`,
-        { status: targetStatus },
-        { headers: operationHeaders(operationId) },
-      );
-      if (selectedOrderIdRef.current === orderId && data?.order) {
-        setSelectedOrderSnapshot(data.order);
-      }
-      toast.success(targetStatus === 'ready' ? tOrders('markedReady') : tOrders('markedPickedUp'));
-      await fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('updateStatusFailed'));
-      await fetchOrders(undefined, { refreshLoadedPages: true });
-    } finally {
-      setUpdatingPrepOrderId(null);
-    }
   };
 
   useEffect(() => {
@@ -2065,10 +2038,6 @@ export default function OrdersPage() {
                 selectedOrderId={selectedOrderId}
                 onSelect={handleSelectOrder}
                 now={now}
-                onUpdatePrepStatus={
-                  canUpdateOrderPrepStatus ? handleUpdateOrderPrepStatus : undefined
-                }
-                updatingPrepOrderId={updatingPrepOrderId}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center p-4 text-sm text-gray-400">
@@ -2171,10 +2140,6 @@ export default function OrdersPage() {
               }
               onRestoreItem={restoreItem}
               onItemEditResolved={handleItemEditResolved}
-              onUpdatePrepStatus={
-                canUpdateOrderPrepStatus ? handleUpdateOrderPrepStatus : undefined
-              }
-              updatingPrepOrderId={updatingPrepOrderId}
             />
           </div>
         </div>
@@ -2256,10 +2221,6 @@ export default function OrdersPage() {
               }
               onRestoreItem={restoreItem}
               onItemEditResolved={handleItemEditResolved}
-              onUpdatePrepStatus={
-                canUpdateOrderPrepStatus ? handleUpdateOrderPrepStatus : undefined
-              }
-              updatingPrepOrderId={updatingPrepOrderId}
             />
           ))}
         </div>

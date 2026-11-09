@@ -5537,6 +5537,7 @@ export type RestoreOutboxState = {
 };
 const RESTORE_PROTECTED_SETTING_KEYS = [
   'jwt_secret',
+  'auth_clock_high_water_ms',
   'email',
   'cloud_api_key',
   'cloud_device_secret',
@@ -5594,6 +5595,18 @@ export function mergeRestoreProtectedSettings(
   // Clear cloud settings first; cloud identity is installation-local.
   dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
   for (const state of states) {
+    if (state.key === 'auth_clock_high_water_ms') {
+      if (state.present && state.value) {
+        dbInstance
+          .prepare(
+            `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+             WHERE CAST(settings.value AS INTEGER) < CAST(excluded.value AS INTEGER)`,
+          )
+          .run(state.key, state.value, now());
+      }
+      continue;
+    }
     if (state.present) upsert.run(state.key, state.value, now());
     else if (!state.key.startsWith('cloud_'))
       dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
@@ -11506,24 +11519,38 @@ export function now(): string {
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
 }
 
+const AUTH_CLOCK_HIGH_WATER_SETTING_KEY = 'auth_clock_high_water_ms';
 let lastAuthLogicalMs = 0;
 
 function readPersistedMaxTokensValidAfterMs(): number {
   if (!db) return 0;
+  let maxMs = 0;
   try {
     const row = db
       .prepare(
         'SELECT MAX(tokens_valid_after) AS max_valid_after FROM users WHERE tokens_valid_after IS NOT NULL',
       )
       .get() as { max_valid_after?: string | null } | undefined;
-    if (!row?.max_valid_after) return 0;
-    const raw = row.max_valid_after.trim();
-    const parsedMs = parseDbTimestamp(raw).getTime();
-    if (!Number.isFinite(parsedMs)) return 0;
-    return /\.\d+/.test(raw) ? parsedMs : parsedMs + 999;
-  } catch {
-    return 0;
-  }
+    if (row?.max_valid_after) {
+      const raw = row.max_valid_after.trim();
+      const parsedMs = parseDbTimestamp(raw).getTime();
+      if (Number.isFinite(parsedMs)) {
+        maxMs = Math.max(maxMs, /\.\d+/.test(raw) ? parsedMs : parsedMs + 999);
+      }
+    }
+  } catch {}
+  try {
+    const settingRow = db
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get(AUTH_CLOCK_HIGH_WATER_SETTING_KEY) as { value?: string | null } | undefined;
+    if (settingRow?.value) {
+      const highWaterMs = Number.parseInt(settingRow.value.trim(), 10);
+      if (Number.isFinite(highWaterMs) && highWaterMs > 0) {
+        maxMs = Math.max(maxMs, highWaterMs);
+      }
+    }
+  } catch {}
+  return maxMs;
 }
 
 export function resetAuthClockForTests(): void {
@@ -11540,6 +11567,15 @@ export function nextAuthTimestampMs(): number {
     nextMs += 1;
   }
   lastAuthLogicalMs = nextMs;
+  if (db) {
+    try {
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+         WHERE CAST(settings.value AS INTEGER) < CAST(excluded.value AS INTEGER)`,
+      ).run(AUTH_CLOCK_HIGH_WATER_SETTING_KEY, String(nextMs), now());
+    } catch {}
+  }
   return nextMs;
 }
 

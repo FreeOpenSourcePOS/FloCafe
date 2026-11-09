@@ -400,12 +400,12 @@ The HTTP twins of those repairs are gated separately, and not uniformly, by
 requires `database.manage`. Four of them add `requireMasterPin` (reading `master_pin` from the
 request body or `x-master-pin` header):
 
-| Route                                         | Extra requirement                                      |
-| --------------------------------------------- | ------------------------------------------------------ |
-| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase           |
-| `POST /api/db-tools/currency-reset`           | the Master PIN                                         |
-| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                                         |
-| `POST /api/db-tools/master-pin/reset`         | the current Master PIN when one is already configured  |
+| Route                                         | Extra requirement                                     |
+| --------------------------------------------- | ----------------------------------------------------- |
+| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase          |
+| `POST /api/db-tools/currency-reset`           | the Master PIN                                        |
+| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                                        |
+| `POST /api/db-tools/master-pin/reset`         | the current Master PIN when one is already configured |
 
 Of the remaining six, one matters here because its IPC twin is gated the other way:
 
@@ -593,12 +593,8 @@ Kitchen Display apply without reloading the board. The tenant-wide config sets w
 (`statuses`, defaulting to `['pending', 'preparing', 'ready']`), which order types show
 (`order_types`, defaulting to `['takeaway']` so Dine-in, Online, and Delivery orders stay off the
 pickup screen unless enabled), the refresh interval (`refresh_seconds`), and whether the
-last-updated time is shown (`show_updated`). On the POS Orders screen (`/orders`), each released
-order derives its effective preparation status via `getOrderEffectivePrepStatus` in
-[`shared/order-item-status.ts`](../../shared/order-item-status.ts) and exposes **Mark Ready** (when
-`pending` or `preparing`) and **Picked Up** (when `ready`), calling `PATCH /api/orders/:id/status`
-with `'ready'` or `'served'` to advance active `order_items` and clear picked-up orders from
-`/customer-display` even when KDS is disabled. Deduplicated orders are sorted oldest first and applied atomically once all pages complete in a cycle, preserving the ten-second TV
+last-updated time is shown (`show_updated`). Deduplicated orders are sorted oldest first and
+applied atomically once all pages complete in a cycle, preserving the ten-second TV
 visual page rotation. At desktop widths, each column renders complete bill or order numbers in
 readable rows and independently rotates measured pages every ten seconds when needed, showing a
 multi-page indicator (`1 / N`, page dots, and a `+count` overflow pill) and a ten-second progress

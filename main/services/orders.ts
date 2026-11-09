@@ -360,11 +360,28 @@ export function reconcileActiveOrderStatusFromItems(
   if (!order) {
     return { changed: false, previousStatus: null, status: null };
   }
-  if (
-    !isKdsEnabled() ||
-    !RECONCILABLE_ORDER_STATUSES.has(order.status) ||
-    !RECONCILABLE_ORDER_TYPES.has(order.type)
-  ) {
+  if (!isKdsEnabled() || !RECONCILABLE_ORDER_TYPES.has(order.type)) {
+    return { changed: false, previousStatus: order.status, status: order.status };
+  }
+  if (order.status === 'completed') {
+    const items = db
+      .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
+      .all(orderId) as Array<{ status: string | null; quantity: number | null }>;
+    const derived: DerivedOrderKdsStatus | null = deriveOrderStatusFromItems(items);
+    if (derived === 'ready') {
+      const nowStr = now();
+      db.prepare(
+        'UPDATE orders SET ready_at = COALESCE(ready_at, ?), updated_at = ? WHERE id = ? AND ready_at IS NULL',
+      ).run(nowStr, nowStr, orderId);
+    } else if (derived === 'served') {
+      const nowStr = now();
+      db.prepare(
+        'UPDATE orders SET served_at = COALESCE(served_at, ?), updated_at = ? WHERE id = ? AND served_at IS NULL',
+      ).run(nowStr, nowStr, orderId);
+    }
+    return { changed: false, previousStatus: order.status, status: order.status };
+  }
+  if (!RECONCILABLE_ORDER_STATUSES.has(order.status)) {
     return { changed: false, previousStatus: order.status, status: order.status };
   }
 

@@ -362,6 +362,49 @@ async function run() {
       200,
       'Fresh login token after simulated process restart is accepted by /api/auth/me',
     );
+
+    // Simulated server restart + 2-minute backward clock adjustment after minting a token when tokens_valid_after was NULL:
+    // credential change after restart + backward jump must still invalidate the pre-restart token.
+    freshDb.prepare(`UPDATE users SET tokens_valid_after = NULL WHERE id = 'jwt-owner-1'`).run();
+    clearUserAuthCache();
+    const preRestartMintMs = frozenRouteMs + 60_000;
+    Date.now = () => preRestartMintMs;
+    const loginBeforeRestart = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(loginBeforeRestart.status, 200, 'Login at T before restart succeeds');
+    const preRestartToken = loginBeforeRestart.body.access_token;
+
+    // Simulate process restart and 2-minute backward clock jump (T - 120_000)
+    resetAuthClockForTests();
+    Date.now = () => preRestartMintMs - 120_000;
+    const pwChangeAfterRestartAndClockRollback = await request(app)
+      .post('/api/auth/password/change')
+      .set('Authorization', `Bearer ${preRestartToken}`)
+      .send({ current_password: 'Pass1234!', password: 'Pass5678!' });
+    assertEqual(
+      pwChangeAfterRestartAndClockRollback.status,
+      200,
+      'Password change after restart and 2-minute backward clock jump succeeds',
+    );
+    const stalePreRestartMe = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${preRestartToken}`);
+    assertEqual(
+      stalePreRestartMe.status,
+      401,
+      'Pre-restart token is rejected (401) after server restart + 2-minute backward clock jump + credential change',
+    );
+    // Restore password back to Pass1234! for subsequent tests
+    const restorePwLogin = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass5678!' });
+    assertEqual(restorePwLogin.status, 200, 'Post-restart login with new password succeeds');
+    const restorePwRes = await request(app)
+      .post('/api/auth/password/change')
+      .set('Authorization', `Bearer ${restorePwLogin.body.access_token}`)
+      .send({ current_password: 'Pass5678!', password: 'Pass1234!' });
+    assertEqual(restorePwRes.status, 200, 'Password restored to Pass1234!');
   } finally {
     Date.now = realDateNow;
   }

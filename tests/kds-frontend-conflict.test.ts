@@ -42,6 +42,7 @@ const frontendResolved = new Map<string, string>(
     'class-variance-authority',
     'zustand',
     'zustand/middleware',
+    'axios',
   ].map((pkg) => [pkg, frontendRequire.resolve(pkg)]),
 );
 
@@ -76,11 +77,17 @@ async function runTests() {
       ORDER_TYPE_BADGE_STYLES,
     } = require('../frontend/src/hooks/useKdsConnection');
     const { useThemeMode } = require('../frontend/src/store/theme');
+    const api = require('../frontend/src/lib/api').default;
+    const { ThemeSync } = require('../frontend/src/components/layout/ThemeSync');
+    const { useThemeModeToggle } = require('../frontend/src/hooks/useThemeModeToggle');
     const {
       KDS_THEME_OVERRIDE_KEY,
+      clearKdsThemeOverride,
       fetchServerInfo,
       hydrateKdsThemeOverride,
       applyServerThemeInfo,
+      isDashboardPosContext,
+      useSyncServerLanguage,
     } = require('../frontend/src/lib/i18n/server-language');
 
     const sampleOrders = [
@@ -543,7 +550,7 @@ async function runTests() {
 
       // 3. Without an explicit KDS override, store theme_mode from /api/kds/info applies on reload
       storage.delete(KDS_THEME_OVERRIDE_KEY);
-      useThemeMode.setState({ mode: 'system', userSelected: false });
+      useThemeMode.setState({ mode: 'system', userSelected: false, serverSynced: false });
       applyServerThemeInfo('dark', '/api/kds/info');
       assert.equal(
         useThemeMode.getState().mode,
@@ -560,6 +567,237 @@ async function runTests() {
         true,
         'applyServerThemeInfo applies dark class when store theme_mode is dark',
       );
+
+      mediaMatches = false;
+      useThemeMode.setState({ mode: 'dark', userSelected: false, serverSynced: false });
+      applyServerThemeInfo(null, '/api/kds/info', false);
+      assert.equal(
+        useThemeMode.getState().mode,
+        'dark',
+        'unreachable /api/kds/info does not overwrite fallback theme mode',
+      );
+      applyServerThemeInfo(null, '/api/server-app/info', true);
+      assert.equal(
+        useThemeMode.getState().mode,
+        'dark',
+        'non-KDS infoPath with null themeMode does not overwrite fallback theme mode',
+      );
+      applyServerThemeInfo(null, '/api/kds/info', true);
+      assert.equal(
+        useThemeMode.getState().mode,
+        'system',
+        'reachable /api/kds/info with theme_mode = null applies store system default',
+      );
+      assert.equal(
+        useThemeMode.getState().serverSynced,
+        true,
+        'applyServerThemeInfo marks serverSynced = true when /api/kds/info succeeds',
+      );
+      assert.equal(
+        darkClasses.has('dark'),
+        false,
+        'reachable /api/kds/info with theme_mode = null resolves system mode against OS preference',
+      );
+
+      storage.set(KDS_THEME_OVERRIDE_KEY, 'dark');
+      storage.set('flo-theme-resolved', 'light');
+      darkClasses.delete('dark');
+      useThemeMode.setState({ mode: 'light', userSelected: true, serverSynced: true });
+      assert.equal(
+        hydrateKdsThemeOverride('/api/kds/info'),
+        null,
+        'hydrateKdsThemeOverride returns null when userSelected is already true',
+      );
+      assert.equal(
+        useThemeMode.getState().mode,
+        'light',
+        'hydrateKdsThemeOverride preserves userSelected light mode',
+      );
+      assert.equal(
+        darkClasses.has('dark'),
+        false,
+        'hydrateKdsThemeOverride does not force html.dark when userSelected is already true',
+      );
+      assert.equal(
+        storage.get('flo-theme-resolved'),
+        'light',
+        'hydrateKdsThemeOverride does not overwrite flo-theme-resolved when userSelected is true',
+      );
+
+      const origApiPut = api.put;
+      const origApiGet = api.get;
+      const origUseEffect = React.useEffect;
+      const origLocation = (globalThis as any).location;
+      const origLocalStorage = (globalThis as any).localStorage;
+      try {
+        const putCalls: Array<{ url: string; body: unknown }> = [];
+        api.put = async (url: string, body: unknown) => {
+          putCalls.push({ url, body });
+          return { data: { success: true } };
+        };
+
+        useThemeMode.setState({ mode: 'dark', userSelected: false, serverSynced: true });
+        Object.assign(useThemeMode.getInitialState(), useThemeMode.getState());
+        let capturedSave: ((next: 'light' | 'dark' | 'system') => Promise<void>) | null = null;
+        function ToggleHarness() {
+          const toggle = useThemeModeToggle();
+          capturedSave = toggle.save;
+          return null;
+        }
+        ReactDOMServer.renderToStaticMarkup(
+          React.createElement(
+            IntlProvider,
+            { locale: 'en', messages: enMessages, timeZone: 'UTC' },
+            React.createElement(ToggleHarness),
+          ),
+        );
+        await capturedSave!('light');
+        assert.equal(putCalls.length, 1, 'useThemeModeToggle persists theme_mode via PUT');
+        assert.equal(
+          storage.has(KDS_THEME_OVERRIDE_KEY),
+          false,
+          'saving theme_mode via useThemeModeToggle clears flo-kds-theme-override',
+        );
+
+        storage.set('token', 'pos-jwt');
+        storage.set('tenant', JSON.stringify({ id: 1 }));
+        assert.equal(
+          isDashboardPosContext('/api/kds/info'),
+          true,
+          'isDashboardPosContext detects authenticated POS tenant session on /kds',
+        );
+        let kdsInfoFetchCount = 0;
+        globalThis.fetch = (async () => {
+          kdsInfoFetchCount += 1;
+          return { ok: false, status: 401 };
+        }) as any;
+        useThemeMode.setState({ mode: 'light', userSelected: false, serverSynced: true });
+        const effects: Array<() => void | (() => void)> = [];
+        React.useEffect = ((fn: () => void | (() => void)) => {
+          effects.push(fn);
+        }) as typeof React.useEffect;
+        function SyncLanguageHarness() {
+          useSyncServerLanguage('/api/kds/info');
+          return null;
+        }
+        ReactDOMServer.renderToStaticMarkup(React.createElement(SyncLanguageHarness));
+        React.useEffect = origUseEffect;
+        for (const eff of effects) eff();
+        assert.equal(
+          kdsInfoFetchCount,
+          0,
+          'useSyncServerLanguage skips unauthenticated /api/kds/info fetch in POS dashboard context',
+        );
+        assert.equal(
+          useThemeMode.getState().mode,
+          'light',
+          'visiting /kds after reload preserves saved POS theme without stale KDS override',
+        );
+
+        storage.set(KDS_THEME_OVERRIDE_KEY, 'dark');
+        clearKdsThemeOverride();
+        assert.equal(
+          storage.has(KDS_THEME_OVERRIDE_KEY),
+          false,
+          'clearKdsThemeOverride removes flo-kds-theme-override from localStorage',
+        );
+
+        storage.clear();
+        storage.set('token', 'chef-kds-jwt');
+        (globalThis as any).localStorage = (globalThis as any).window.localStorage;
+        (globalThis as any).window.addEventListener = () => {};
+        (globalThis as any).window.removeEventListener = () => {};
+
+        let settingsThemeGetCalls = 0;
+        api.get = async (url: string) => {
+          if (url === '/settings/theme_mode') settingsThemeGetCalls += 1;
+          return { data: '<!doctype html>' };
+        };
+
+        mediaMatches = true;
+        (globalThis as any).location = { pathname: '/kds-standalone', search: '' };
+        useThemeMode.setState({ mode: 'system', userSelected: false, serverSynced: false });
+        Object.assign(useThemeMode.getInitialState(), useThemeMode.getState());
+        applyServerThemeInfo('system', '/api/kds/info', true);
+        assert.equal(storage.get('flo-theme-resolved'), 'dark');
+
+        const standaloneEffects: Array<() => void | (() => void)> = [];
+        React.useEffect = ((fn: () => void | (() => void)) => {
+          standaloneEffects.push(fn);
+        }) as typeof React.useEffect;
+        ReactDOMServer.renderToStaticMarkup(React.createElement(ThemeSync));
+        React.useEffect = origUseEffect;
+        const cleanups = standaloneEffects
+          .map((fn) => fn())
+          .filter((c): c is () => void => typeof c === 'function');
+        await new Promise<void>((r) => setImmediate(r));
+        for (const cleanup of cleanups) cleanup();
+
+        assert.equal(
+          settingsThemeGetCalls,
+          0,
+          'ThemeSync skips /settings/theme_mode fetch on /kds-standalone',
+        );
+        assert.equal(
+          useThemeMode.getState().mode,
+          'system',
+          'ThemeSync does not clobber system mode with flo-theme-resolved mirror on /kds-standalone',
+        );
+
+        (globalThis as any).location = { pathname: '/kds', search: '?theme=light' };
+        useThemeMode.setState({ mode: 'system', userSelected: false, serverSynced: false });
+        Object.assign(useThemeMode.getInitialState(), useThemeMode.getState());
+        applyServerThemeInfo('dark', '/api/kds/info', true);
+
+        const origSetTimeout = globalThis.setTimeout;
+        let popupThemeAttempts = 0;
+        api.get = async () => {
+          popupThemeAttempts += 1;
+          return { data: '<!doctype html>' };
+        };
+        globalThis.setTimeout = ((cb: (...args: any[]) => void, ms?: number, ...args: any[]) => {
+          if (ms === 1000) {
+            return origSetTimeout(cb, 0, ...args);
+          }
+          return origSetTimeout(cb, ms, ...args);
+        }) as typeof globalThis.setTimeout;
+
+        try {
+          const popupEffects: Array<() => void | (() => void)> = [];
+          React.useEffect = ((fn: () => void | (() => void)) => {
+            popupEffects.push(fn);
+          }) as typeof React.useEffect;
+          ReactDOMServer.renderToStaticMarkup(React.createElement(ThemeSync));
+          React.useEffect = origUseEffect;
+          const popupCleanups = popupEffects
+            .map((fn) => fn())
+            .filter((c): c is () => void => typeof c === 'function');
+          await new Promise<void>((r) => origSetTimeout(r, 20));
+          for (const cleanup of popupCleanups) cleanup();
+          assert.equal(popupThemeAttempts, 2, 'ThemeSync completes bounded 2-attempt fetch');
+          assert.equal(
+            useThemeMode.getState().mode,
+            'dark',
+            'ThemeSync ?theme=light fallback does not clobber newer store dark theme from /api/kds/info',
+          );
+        } finally {
+          globalThis.setTimeout = origSetTimeout;
+        }
+      } finally {
+        api.put = origApiPut;
+        api.get = origApiGet;
+        React.useEffect = origUseEffect;
+        if (origLocation === undefined) {
+          delete (globalThis as any).location;
+        } else {
+          (globalThis as any).location = origLocation;
+        }
+        if (origLocalStorage === undefined) {
+          delete (globalThis as any).localStorage;
+        } else {
+          (globalThis as any).localStorage = origLocalStorage;
+        }
+      }
     } finally {
       jsxRuntime.jsx = origJsx;
       globalThis.fetch = origFetch;

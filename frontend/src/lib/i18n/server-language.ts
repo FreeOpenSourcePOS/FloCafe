@@ -8,6 +8,7 @@ export type ServerInfo = {
   country: string | null;
   kdsDefaultView: 'tabs' | 'kanban' | null;
   themeMode?: ThemeMode | null;
+  reachable?: boolean;
 };
 
 export const KDS_THEME_OVERRIDE_KEY = 'flo-kds-theme-override';
@@ -31,6 +32,13 @@ export function persistKdsThemeOverride(mode: 'light' | 'dark'): void {
   } catch {}
 }
 
+export function clearKdsThemeOverride(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage?.removeItem(KDS_THEME_OVERRIDE_KEY);
+  } catch {}
+}
+
 function applyResolvedThemeDom(isDark: boolean): void {
   if (typeof document !== 'undefined') {
     document.documentElement?.classList?.toggle('dark', isDark);
@@ -42,13 +50,22 @@ function applyResolvedThemeDom(isDark: boolean): void {
   }
 }
 
+export function isDashboardPosContext(infoPath = '/api/kds/info'): boolean {
+  if (infoPath !== '/api/kds/info' || typeof window === 'undefined') return false;
+  if (window.electronAPI) return true;
+  try {
+    const storage = window.localStorage;
+    return Boolean(storage?.getItem('token') && storage?.getItem('tenant'));
+  } catch {
+    return false;
+  }
+}
+
 export function hydrateKdsThemeOverride(infoPath = '/api/kds/info'): 'light' | 'dark' | null {
-  if (infoPath !== '/api/kds/info') return null;
+  if (infoPath !== '/api/kds/info' || useThemeMode.getState().userSelected) return null;
   const override = readKdsThemeOverride();
   if (!override) return null;
-  if (!useThemeMode.getState().userSelected) {
-    useThemeMode.getState().selectMode(override);
-  }
+  useThemeMode.getState().selectMode(override);
   applyResolvedThemeDom(override === 'dark');
   return override;
 }
@@ -56,13 +73,17 @@ export function hydrateKdsThemeOverride(infoPath = '/api/kds/info'): 'light' | '
 export function applyServerThemeInfo(
   themeMode: ThemeMode | null | undefined,
   infoPath = '/api/kds/info',
+  reachable = true,
 ): void {
+  if (useThemeMode.getState().userSelected) return;
   if (hydrateKdsThemeOverride(infoPath)) return;
-  if (!themeMode || useThemeMode.getState().userSelected) return;
-  useThemeMode.getState().setMode(themeMode);
+  const effectiveMode: ThemeMode | null =
+    themeMode ?? (reachable && infoPath === '/api/kds/info' ? 'system' : null);
+  if (!effectiveMode) return;
+  useThemeMode.getState().setServerMode(effectiveMode);
   const isDark =
-    themeMode === 'dark' ||
-    (themeMode === 'system' &&
+    effectiveMode === 'dark' ||
+    (effectiveMode === 'system' &&
       typeof window !== 'undefined' &&
       typeof window.matchMedia === 'function' &&
       Boolean(window.matchMedia('(prefers-color-scheme: dark)').matches));
@@ -81,6 +102,7 @@ export async function fetchServerInfo(
     country: null,
     kdsDefaultView: null,
     themeMode: null,
+    reachable: false,
   };
   if (typeof window === 'undefined') return empty;
   try {
@@ -108,6 +130,7 @@ export async function fetchServerInfo(
         data.theme_mode === 'light' || data.theme_mode === 'dark' || data.theme_mode === 'system'
           ? data.theme_mode
           : null,
+      reachable: true,
     };
   } catch {
     return empty;
@@ -119,13 +142,14 @@ export async function fetchServerInfo(
 export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
   useEffect(() => {
-    let cancelled = false;
     hydrateKdsThemeOverride(infoPath);
+    if (isDashboardPosContext(infoPath)) return;
+    let cancelled = false;
     fetchServerInfo('', 1500, infoPath).then((info) => {
       if (cancelled) return;
       // Keep the existing tenant language when metadata is unavailable.
       if (info.language) setLanguage(info.language);
-      applyServerThemeInfo(info.themeMode, infoPath);
+      applyServerThemeInfo(info.themeMode, infoPath, info.reachable);
     });
     return () => {
       cancelled = true;

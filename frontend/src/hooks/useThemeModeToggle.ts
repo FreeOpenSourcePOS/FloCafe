@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
+import { clearKdsThemeOverride } from '@/lib/i18n/server-language';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import api from '@/lib/api';
 
@@ -19,7 +20,11 @@ export function useThemeModeToggle() {
   const savingRef = useRef(false);
 
   const save = async (next: ThemeMode) => {
-    if (savingRef.current || next === mode) return;
+    if (savingRef.current) return;
+    if (next === mode) {
+      clearKdsThemeOverride();
+      return;
+    }
     const previous = mode;
     savingRef.current = true;
     setSaving(true);
@@ -27,6 +32,7 @@ export function useThemeModeToggle() {
     setMode(next);
     try {
       await api.put('/settings/theme_mode', { value: next });
+      clearKdsThemeOverride();
     } catch {
       setMode(previous);
       toast.error(t('saveFailed'));

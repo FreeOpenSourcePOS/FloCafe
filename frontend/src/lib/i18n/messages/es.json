@@ -866,7 +866,9 @@
     "pickedUp": "Recogido",
     "markedReady": "Pedido marcado como listo",
     "markedPickedUp": "Pedido marcado como recogido",
-    "updateStatusFailed": "No se pudo actualizar el estado del pedido"
+    "updateStatusFailed": "No se pudo actualizar el estado del pedido",
+    "refundOwnerOnlyNotice": "Las aprobaciones de reembolso de gerentes están desactivadas — se requiere el PIN de un propietario para aprobar este reembolso.",
+    "refundOutsideWindowNotice": "Este pedido está fuera de la ventana de aprobación del gerente — se requiere el PIN de un propietario para aprobar este reembolso."
   },
   "pos": {
     "addCustomer": "Agregar Cliente",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "Solo impresión por navegador / controlador",
     "printerDriverOnlyWarning": "Esta impresora no usa comandos ESC/POS directos. Use la impresión del navegador en lugar de agregarla como impresora térmica directa.",
     "printerSwitchToBrowserPrint": "Usar impresión del navegador",
-    "printerSwitchedToBrowserPrint": "Método de impresión cambiado a impresión del navegador"
+    "printerSwitchedToBrowserPrint": "Método de impresión cambiado a impresión del navegador",
+    "refundPolicyTitle": "Política de reembolsos",
+    "refundPolicyHint": "Controla si los gerentes pueden aprobar reembolsos y cuánto tiempo permanece abierta su ventana de aprobación.",
+    "refundManagerEnabled": "Permitir aprobaciones de reembolso del gerente",
+    "refundManagerEnabledHint": "Cuando está desactivado, cada reembolso requiere el PIN de aprobación de personal del propietario.",
+    "refundManagerWindow": "Ventana de aprobación de reembolso del gerente",
+    "refundManagerWindowHint": "Cuánto tiempo después de crear o liberar un pedido el PIN de aprobación de un gerente puede aprobar un reembolso.",
+    "refundWindow30m": "30 minutos",
+    "refundWindow1h": "1 hora",
+    "refundWindow2h": "2 horas",
+    "refundWindow4h": "4 horas",
+    "refundWindowSameDay": "Mismo día comercial",
+    "refundOwnerUnlimitedNote": "Los propietarios siempre pueden aprobar reembolsos de cualquier pedido anterior con su PIN de aprobación de personal."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

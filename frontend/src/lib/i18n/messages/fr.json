@@ -866,7 +866,9 @@
     "pickedUp": "Récupéré",
     "markedReady": "Commande marquée comme prête",
     "markedPickedUp": "Commande marquée comme récupérée",
-    "updateStatusFailed": "Impossible de mettre à jour le statut de la commande"
+    "updateStatusFailed": "Impossible de mettre à jour le statut de la commande",
+    "refundOwnerOnlyNotice": "Les approbations de remboursement par le responsable sont désactivées — le code PIN du propriétaire est requis pour approuver ce remboursement.",
+    "refundOutsideWindowNotice": "Cette commande dépasse la fenêtre d’approbation du responsable — le code PIN du propriétaire est requis pour approuver ce remboursement."
   },
   "pos": {
     "addCustomer": "Ajouter un client",
@@ -2696,7 +2698,19 @@
     "printerCompatibilityDriverOnly": "Impression pilote / navigateur uniquement",
     "printerDriverOnlyWarning": "Cette imprimante n'utilise pas les commandes ESC/POS brutes. Utilisez l'impression via le navigateur au lieu de l'ajouter comme imprimante thermique brute.",
     "printerSwitchToBrowserPrint": "Utiliser l'impression du navigateur",
-    "printerSwitchedToBrowserPrint": "Méthode d'impression basculée sur l'impression du navigateur"
+    "printerSwitchedToBrowserPrint": "Méthode d'impression basculée sur l'impression du navigateur",
+    "refundPolicyTitle": "Politique de remboursement",
+    "refundPolicyHint": "Contrôlez si les responsables peuvent approuver les remboursements et pendant combien de temps leur fenêtre d’approbation reste ouverte.",
+    "refundManagerEnabled": "Autoriser les approbations de remboursement par le responsable",
+    "refundManagerEnabledHint": "Lorsque cette option est désactivée, chaque remboursement nécessite le code PIN d’approbation du propriétaire.",
+    "refundManagerWindow": "Fenêtre d’approbation de remboursement du responsable",
+    "refundManagerWindowHint": "Durée après la création ou l’envoi d’une commande pendant laquelle le code PIN d’un responsable peut approuver un remboursement.",
+    "refundWindow30m": "30 minutes (30 min)",
+    "refundWindow1h": "1 heure",
+    "refundWindow2h": "2 heures",
+    "refundWindow4h": "4 heures",
+    "refundWindowSameDay": "Même journée commerciale",
+    "refundOwnerUnlimitedNote": "Les propriétaires peuvent toujours approuver les remboursements de toute commande passée avec leur code PIN d’approbation."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

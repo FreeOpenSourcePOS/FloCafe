@@ -349,11 +349,7 @@ async function main() {
       'a further refund on a fully refunded bill is rejected before touching the PIN budget',
     );
 
-    // ── Business-day eligibility window (rejected before PIN budget) ───────
-    // A prior business day is fully closed to refunds regardless of who approves
-    // (see docs/reference/product-invariants.md: completed-order refunds stay open only
-    // through the end of the order's own business day). A same-day, past-the-
-    // 1-hour-window refund is covered separately in refund-completed-orders.test.ts.
+    // ── Prior business-day eligibility (manager rejected, owner accepted) ──
     const expiredBill = await newPaidBill('prod-refund');
     db.prepare("UPDATE orders SET created_at = datetime('now', '-2 days') WHERE id = ?").run(
       expiredBill.order.id,
@@ -371,8 +367,8 @@ async function main() {
     });
     assertEqual(
       expiredRefund.status,
-      409,
-      'a refund on an order from a prior business day is rejected',
+      403,
+      'a manager PIN cannot approve a refund on an order from a prior business day',
     );
     assertEqual(
       (
@@ -381,7 +377,28 @@ async function main() {
           .get(expiredBill.bill.id) as any
       ).count,
       0,
-      'an expired refund does not create a refund row',
+      'a rejected manager refund on a prior-day order does not create a refund row',
+    );
+    const ownerPriorDayRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: {
+        bill_id: expiredBill.bill.id,
+        amount: expiredBill.bill.paid_amount,
+        method: 'cash',
+        override_pin: '9999',
+        approver_id: ownerId,
+      },
+      headers: ownerAuth,
+    });
+    assertEqual(
+      ownerPriorDayRefund.status,
+      201,
+      'an owner PIN can approve a refund on an order from a prior business day',
+    );
+    assertEqual(
+      ownerPriorDayRefund.data.refund.approved_by,
+      ownerId,
+      'the prior-day refund records the owner as the approver',
     );
 
     // ── Partial refund ─────────────────────────────────────────────────────

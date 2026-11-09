@@ -36,7 +36,7 @@ list. `requireRole` (in `main/middleware/security.ts`) still exists, but a stati
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
 in their own sections below or in the owning feature documentation (KDS station/category scope,
 refund approver identity, the Staff Approval PIN holder, the last-active-owner/staff-target rule,
-own-shift vs manager/owner cash-shift access, and owner-only `z_report_day_close` configuration in
+own-shift vs manager/owner cash-shift access, owner-only counter and refund-policy settings, and owner-only `z_report_day_close` configuration in
 [WhatsApp receipt delivery](cloud-integrations.md#whatsapp-receipt-delivery)).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in

@@ -16,13 +16,47 @@ import { useAuthStore } from '@/store/auth';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { parseDbTimestamp } from '@/lib/utils';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import {
+  businessDateForInstant,
+  dayBoundsInTimezone,
+  normalizeBusinessDayStartTime,
+} from '@shared/business-date';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 // Kept in sync with REFUND_ITEM_ELIGIBLE_STATUSES in main/services/refund.ts.
 const REFUND_ELIGIBLE_ITEM_STATUSES = ['preparing', 'ready', 'served', 'completed'];
-// Approximation of REFUND_WINDOW_MS in main/services/refund.ts, for the PIN hint only —
-// the backend's business-day check is authoritative.
-const REFUND_IN_PROGRESS_WINDOW_MS = 60 * 60 * 1000;
+
+type RefundManagerWindow = '30m' | '1h' | '2h' | '4h' | 'same_business_day';
+
+interface RefundPolicySettings {
+  refund_manager_enabled: boolean;
+  refund_manager_window: RefundManagerWindow;
+}
+
+const DEFAULT_REFUND_POLICY: RefundPolicySettings = {
+  refund_manager_enabled: true,
+  refund_manager_window: '1h',
+};
+
+const REFUND_MANAGER_WINDOW_MS: Record<
+  Exclude<RefundManagerWindow, 'same_business_day'>,
+  number
+> = {
+  '30m': 30 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '2h': 2 * 60 * 60 * 1000,
+  '4h': 4 * 60 * 60 * 1000,
+};
+
+function isRefundManagerWindow(value: unknown): value is RefundManagerWindow {
+  return (
+    value === '30m' ||
+    value === '1h' ||
+    value === '2h' ||
+    value === '4h' ||
+    value === 'same_business_day'
+  );
+}
 
 // Mirrors BUILT_IN_PAYMENT_KEYS in PaymentModal.tsx.
 const BUILT_IN_PAYMENT_KEYS = {
@@ -41,10 +75,39 @@ function getCurrentTime(): number {
   return Date.now();
 }
 
-function isOrderLikelyLateForRefund(order: Order, nowMs: number): boolean {
+function isOrderLikelyLateForRefund(
+  order: Order,
+  nowMs: number,
+  policy: RefundPolicySettings,
+  timezone: string | null | undefined,
+  businessDayStartTime: string | null | undefined,
+): boolean {
+  if (!policy.refund_manager_enabled) return true;
   if (order.release_status && order.release_status !== 'released') return false;
   const anchor = order.released_at || order.created_at;
-  return nowMs - parseDbTimestamp(anchor).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
+  const anchorMs = parseDbTimestamp(anchor).getTime();
+  if (!Number.isFinite(anchorMs)) return false;
+
+  if (
+    policy.refund_manager_window !== 'same_business_day' &&
+    nowMs - anchorMs > REFUND_MANAGER_WINDOW_MS[policy.refund_manager_window]
+  ) {
+    return true;
+  }
+
+  const effectiveTz = timezone || 'UTC';
+  const effectiveStartTime = normalizeBusinessDayStartTime(businessDayStartTime);
+  const orderBusinessDate = businessDateForInstant({
+    instant: new Date(anchorMs),
+    timezone: effectiveTz,
+    startTime: effectiveStartTime,
+  });
+  const [, businessDayEnd] = dayBoundsInTimezone(
+    orderBusinessDate,
+    effectiveTz,
+    effectiveStartTime,
+  );
+  return nowMs >= parseDbTimestamp(businessDayEnd).getTime();
 }
 
 function getConfiguredApprovers(staff: Staff[]): Staff[] {
@@ -77,9 +140,16 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, formatInput } = unitAdapter;
   const formatCurrency = useFormatCurrency();
   // Ticks while the modal is open so the hint doesn't go stale if it's left open across
-  // the 1-hour mark; the backend re-checks the real time at submission regardless.
+  // the approval window; the backend re-checks the real time at submission regardless.
   const [now, setNow] = useState(() => Date.now());
-  const isLikelyLate = isOrderLikelyLateForRefund(order, now);
+  const [refundPolicy, setRefundPolicy] = useState<RefundPolicySettings>(DEFAULT_REFUND_POLICY);
+  const isLikelyLate = isOrderLikelyLateForRefund(
+    order,
+    now,
+    refundPolicy,
+    currentTenant?.timezone,
+    currentTenant?.business_day_start_time,
+  );
 
   // Split checks mean an order can have several paid bills, each with its own allocated
   // items; a fully refunded bill has nothing left, so exclude it from selection.
@@ -109,13 +179,25 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   useEffect(() => {
     let cancelled = false;
     const requestUserId = user?.id == null ? null : String(user.id);
-    api
-      .get('/staff/approvers')
-      .then((res) => {
+    Promise.all([api.get('/staff/approvers'), api.get('/settings/refunds')])
+      .then(([res, policyRes]) => {
         if (cancelled) return;
+        const loadedPolicy: RefundPolicySettings = {
+          refund_manager_enabled: policyRes.data?.refund_manager_enabled !== false,
+          refund_manager_window: isRefundManagerWindow(policyRes.data?.refund_manager_window)
+            ? policyRes.data.refund_manager_window
+            : '1h',
+        };
+        setRefundPolicy(loadedPolicy);
         const staff: Staff[] = res.data?.approvers ?? res.data?.staff ?? [];
         const configured = getConfiguredApprovers(staff);
-        const late = isOrderLikelyLateForRefund(order, getCurrentTime());
+        const late = isOrderLikelyLateForRefund(
+          order,
+          getCurrentTime(),
+          loadedPolicy,
+          currentTenant?.timezone,
+          currentTenant?.business_day_start_time,
+        );
         const eligible = configured.filter((member) =>
           hasRole(member.role, late ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager),
         );
@@ -142,7 +224,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [currentTenant?.business_day_start_time, currentTenant?.timezone, order, user?.id]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -151,7 +233,13 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
       const eligible = approvers.filter((member) =>
         hasRole(
           member.role,
-          isOrderLikelyLateForRefund(order, currentTime)
+          isOrderLikelyLateForRefund(
+            order,
+            currentTime,
+            refundPolicy,
+            currentTenant?.timezone,
+            currentTenant?.business_day_start_time,
+          )
             ? ROLE_ACCESS.owner
             : ROLE_ACCESS.ownerManager,
         ),
@@ -177,7 +265,14 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
       });
     }, 30000);
     return () => clearInterval(interval);
-  }, [approvers, order, user?.id]);
+  }, [
+    approvers,
+    currentTenant?.business_day_start_time,
+    currentTenant?.timezone,
+    order,
+    refundPolicy,
+    user?.id,
+  ]);
 
   const approversReady =
     !approversLoading && approversUserId === (user?.id == null ? null : String(user.id));
@@ -298,9 +393,24 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     if (!canSubmit || !effectiveBill) return;
     setSubmitting(true);
     try {
-      const staffResponse = await api.get('/staff/approvers');
+      const [staffResponse, policyResponse] = await Promise.all([
+        api.get('/staff/approvers'),
+        api.get('/settings/refunds'),
+      ]);
+      const latestPolicy: RefundPolicySettings = {
+        refund_manager_enabled: policyResponse.data?.refund_manager_enabled !== false,
+        refund_manager_window: isRefundManagerWindow(policyResponse.data?.refund_manager_window)
+          ? policyResponse.data.refund_manager_window
+          : '1h',
+      };
       const submissionNow = getCurrentTime();
-      const submissionIsLate = isOrderLikelyLateForRefund(order, submissionNow);
+      const submissionIsLate = isOrderLikelyLateForRefund(
+        order,
+        submissionNow,
+        latestPolicy,
+        currentTenant?.timezone,
+        currentTenant?.business_day_start_time,
+      );
       const configuredApprovers = getConfiguredApprovers(
         staffResponse.data?.approvers ?? staffResponse.data?.staff ?? [],
       );
@@ -314,6 +424,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
         : eligibleApproversAtSubmission.length === 1
           ? String(eligibleApproversAtSubmission[0].id)
           : '';
+      setRefundPolicy(latestPolicy);
       setNow(submissionNow);
       setApprovers(configuredApprovers);
       setApproverId(approverIdAtSubmission);
@@ -573,7 +684,13 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
             />
             <p className="text-xs text-muted-foreground mt-1">{t('refundApprovalPinHint')}</p>
             {isLikelyLate && (
-              <p className="text-xs text-muted-foreground mt-1">{t('refundOwnerPinNotice')}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {!refundPolicy.refund_manager_enabled
+                  ? t('refundOwnerOnlyNotice')
+                  : refundPolicy.refund_manager_window === '1h'
+                    ? t('refundOwnerPinNotice')
+                    : t('refundOutsideWindowNotice')}
+              </p>
             )}
           </div>
         </div>

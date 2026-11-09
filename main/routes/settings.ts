@@ -46,6 +46,7 @@ import {
   isOfflineMode,
   notifyOfflineModeEnabled,
 } from '../services/offline-mode';
+import { getRefundPolicySettings, isRefundManagerWindow } from '../services/refund';
 import * as whatsapp from '../services/whatsapp';
 import {
   PRODUCT_ANALYTICS_LEVEL_SETTING,
@@ -197,6 +198,8 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   pos_item_sort: 'saved',
   // Idle auto-lock timeout in minutes ('0' = off).
   auto_lock_minutes: '0',
+  refund_manager_enabled: 'true',
+  refund_manager_window: '1h',
 };
 
 const VALID_AUTO_LOCK_MINUTES = new Set(['0', '1', '5', '15', '30']);
@@ -1925,6 +1928,69 @@ router.get(
   },
 );
 
+router.get(
+  '/refunds',
+  settingsReadRateLimit,
+  requireAuthenticatedStaff,
+  (_req: Request, res: Response) => {
+    try {
+      res.json(getRefundPolicySettings(getDatabase()));
+    } catch (error) {
+      res.locals.postHogError = error;
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.put(
+  '/refunds',
+  settingsWriteRateLimit,
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const callerUser = (req as Request & { user?: { role?: string } }).user;
+      if (callerUser?.role !== 'owner') {
+        return res.status(403).json({ error: 'Only the store owner can modify refund policy' });
+      }
+      const { refund_manager_enabled, refund_manager_window } = req.body ?? {};
+      if (refund_manager_enabled === undefined && refund_manager_window === undefined) {
+        return res
+          .status(400)
+          .json({ error: 'refund_manager_enabled or refund_manager_window is required' });
+      }
+      const entries: Record<string, string> = {};
+      if (refund_manager_enabled !== undefined) {
+        if (
+          refund_manager_enabled !== true &&
+          refund_manager_enabled !== false &&
+          refund_manager_enabled !== 'true' &&
+          refund_manager_enabled !== 'false'
+        ) {
+          return res.status(400).json({ error: 'refund_manager_enabled must be a boolean' });
+        }
+        entries.refund_manager_enabled =
+          refund_manager_enabled === true || refund_manager_enabled === 'true' ? 'true' : 'false';
+      }
+      if (refund_manager_window !== undefined) {
+        if (!isRefundManagerWindow(refund_manager_window)) {
+          return res.status(400).json({
+            error: 'refund_manager_window must be 30m, 1h, 2h, 4h, or same_business_day',
+          });
+        }
+        entries.refund_manager_window = refund_manager_window;
+      }
+      const db = getDatabase();
+      upsertSettings(db, entries);
+      return res.json(getRefundPolicySettings(db));
+    } catch (error) {
+      res.locals.postHogError = error;
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.
@@ -1985,6 +2051,8 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'require_open_shift',
   'one_shift_per_staff',
   'auto_lock_minutes',
+  'refund_manager_enabled',
+  'refund_manager_window',
 ]);
 
 /**
@@ -2282,7 +2350,8 @@ router.put(
         req.params.key === 'one_shift_per_staff' ||
         req.params.key === 'card_transaction_id_required' ||
         req.params.key === 'multi_counter_enabled' ||
-        req.params.key === 'scheduled_orders_enabled'
+        req.params.key === 'scheduled_orders_enabled' ||
+        req.params.key === 'refund_manager_enabled'
       ) {
         if (req.params.key === 'multi_counter_enabled') {
           const callerUser = (req as Request & { user?: { role?: string } }).user;
@@ -2292,10 +2361,28 @@ router.put(
               .json({ error: 'Only the store owner can modify counter configuration' });
           }
         }
+        if (req.params.key === 'refund_manager_enabled') {
+          const callerUser = (req as Request & { user?: { role?: string } }).user;
+          if (callerUser?.role !== 'owner') {
+            return res.status(403).json({ error: 'Only the store owner can modify refund policy' });
+          }
+        }
         if (value !== true && value !== false && value !== 'true' && value !== 'false') {
           return res.status(400).json({ error: `${req.params.key} must be a boolean` });
         }
         valueToPersist = value === true || value === 'true' ? 'true' : 'false';
+      }
+      if (req.params.key === 'refund_manager_window') {
+        const callerUser = (req as Request & { user?: { role?: string } }).user;
+        if (callerUser?.role !== 'owner') {
+          return res.status(403).json({ error: 'Only the store owner can modify refund policy' });
+        }
+        if (!isRefundManagerWindow(value)) {
+          return res.status(400).json({
+            error: 'refund_manager_window must be 30m, 1h, 2h, 4h, or same_business_day',
+          });
+        }
+        valueToPersist = value;
       }
       const diagnosticsChoice =
         req.params.key === 'diagnostics_consent' ||

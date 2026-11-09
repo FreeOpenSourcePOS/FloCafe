@@ -10,8 +10,8 @@ export type ServerInfo = {
   themeMode?: ThemeMode | null;
 };
 
-/** Fetches tenant preferred language and KDS defaults from public info
- * endpoint with 1.5s timeout, returning empty defaults on failure. */
+/** Fetches tenant preferred language, KDS defaults, and theme mode from public
+ * info endpoint with 1.5s timeout, returning empty defaults on failure. */
 export async function fetchServerInfo(
   baseUrl = '',
   timeoutMs = 1500,
@@ -55,8 +55,8 @@ export async function fetchServerInfo(
   }
 }
 
-/** Fetches tenant preferred language on mount and updates posSettingsStore;
- * safe best-effort sync for standalone views. */
+/** Fetches tenant preferred language and theme mode on mount and updates client
+ * stores; safe best-effort sync for standalone views. */
 export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
   useEffect(() => {

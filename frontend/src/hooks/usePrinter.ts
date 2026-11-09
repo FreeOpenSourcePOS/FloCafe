@@ -57,8 +57,14 @@ import {
   isPrintCancelledOnTenantChangeError,
 } from '@/hooks/useReceiptSettingsSync';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+import { PrinterOperationError, toPrinterOperationError } from '@/lib/operation-failure';
 
-export { PrintCancelledOnTenantChangeError, isPrintCancelledOnTenantChangeError };
+export {
+  PrintCancelledOnTenantChangeError,
+  isPrintCancelledOnTenantChangeError,
+  PrinterOperationError,
+  toPrinterOperationError,
+};
 
 type CoreBillTemplate = 'classic' | 'compact';
 
@@ -400,15 +406,25 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>(
-                '/printers/print-bill',
-                {
-                  billId: bill.id,
-                  useUnicode: printerUseUnicode,
-                  arabicShaping: printerArabicShaping,
-                  isReprint,
-                },
-              );
+              const response = await api.post<{
+                success?: boolean;
+                warnings?: PrintWarning[];
+                error?: string;
+                detail?: string;
+                failure_class?: string;
+                connection_type?: string;
+                code?: string;
+                stage?: string;
+                correlation_id?: string;
+              }>('/printers/print-bill', {
+                billId: bill.id,
+                useUnicode: printerUseUnicode,
+                arabicShaping: printerArabicShaping,
+                isReprint,
+              });
+              if (response.data && response.data.success === false) {
+                throw { response: { data: response.data } };
+              }
               if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
               windowTransferred = true;
               return response.data.warnings || [];
@@ -423,7 +439,12 @@ export const usePrinterStore = create<PrinterState>()(
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
                 return await executeBrowserPrint();
               }
-              throw new Error(errorMsg);
+              throw toPrinterOperationError(err, {
+                kind: 'receipt',
+                connectionType: hw.connection_type,
+                stage: 'dispatch',
+                fallbackDetail: 'Print failed',
+              });
             }
           }
 
@@ -578,7 +599,14 @@ export const usePrinterStore = create<PrinterState>()(
 
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
-            throw new Error(refusal);
+            throw new PrinterOperationError({
+              kind: 'receipt',
+              code: 'print.receipt.failed',
+              failure_class: 'unsupported',
+              connection_type: 'webusb',
+              stage: 'prepare',
+              detail: refusal,
+            });
           }
           throwIfTenantChanged();
 
@@ -588,10 +616,17 @@ export const usePrinterStore = create<PrinterState>()(
         } catch (err) {
           if (!windowTransferred && reservedWindow && !reservedWindow.closed)
             reservedWindow.close();
-          if (!isPrintCancelledOnTenantChangeError(err)) {
-            set({ lastError: (err as Error).message });
+          if (isPrintCancelledOnTenantChangeError(err)) {
+            throw err;
           }
-          throw err;
+          const printerErr = toPrinterOperationError(err, {
+            kind: 'receipt',
+            connectionType: printerService.isConnected ? 'webusb' : 'unknown',
+            stage: 'dispatch',
+            fallbackDetail: 'Print failed',
+          });
+          set({ lastError: printerErr.message });
+          throw printerErr;
         }
       },
 
@@ -759,28 +794,34 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>(
-                '/printers/print-kot',
-                {
-                  orderId: order.id,
-                  items: opts?.items ?? order.items,
-                  stationName: opts?.stationName,
-                  useUnicode: printerUseUnicode,
-                  arabicShaping: printerArabicShaping,
-                },
-              );
+              const response = await api.post<{
+                success?: boolean;
+                warnings?: PrintWarning[];
+                error?: string;
+                detail?: string;
+                failure_class?: string;
+                connection_type?: string;
+                code?: string;
+                stage?: string;
+                correlation_id?: string;
+              }>('/printers/print-kot', {
+                orderId: order.id,
+                items: opts?.items ?? order.items,
+                stationName: opts?.stationName,
+                useUnicode: printerUseUnicode,
+                arabicShaping: printerArabicShaping,
+              });
+              if (response.data && response.data.success === false) {
+                throw { response: { data: response.data } };
+              }
               return response.data.warnings || [];
             } catch (err: unknown) {
-              const e = err as {
-                response?: { data?: { error?: string; detail?: string } };
-                message?: string;
-              };
-              throw new Error(
-                e.response?.data?.detail ||
-                  e.response?.data?.error ||
-                  e.message ||
-                  'KOT print failed',
-              );
+              throw toPrinterOperationError(err, {
+                kind: 'kot',
+                connectionType: hw.connection_type,
+                stage: 'dispatch',
+                fallbackDetail: 'KOT print failed',
+              });
             }
           }
 
@@ -898,7 +939,14 @@ export const usePrinterStore = create<PrinterState>()(
             if (hasFinancialPrintWarning(warnings)) {
               const refusal = makeFinancialPrintRefusalMessage(warnings);
               toast.error(refusal);
-              throw new Error(refusal);
+              throw new PrinterOperationError({
+                kind: 'kot',
+                code: 'print.kot.failed',
+                failure_class: 'unsupported',
+                connection_type: 'webusb',
+                stage: 'prepare',
+                detail: refusal,
+              });
             }
             set({ lastPrintedBytes: output });
             await printerService.print(output);
@@ -933,8 +981,17 @@ export const usePrinterStore = create<PrinterState>()(
             kind: 'locale' as const,
           })) as PrintWarning[];
         } catch (err) {
-          set({ lastError: (err as Error).message });
-          throw err;
+          if (isPrintCancelledOnTenantChangeError(err)) {
+            throw err;
+          }
+          const printerErr = toPrinterOperationError(err, {
+            kind: 'kot',
+            connectionType: printerService.isConnected ? 'webusb' : 'unknown',
+            stage: 'dispatch',
+            fallbackDetail: 'KOT print failed',
+          });
+          set({ lastError: printerErr.message });
+          throw printerErr;
         }
       },
 

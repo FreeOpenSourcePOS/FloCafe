@@ -215,12 +215,29 @@ test('a structured stock rejection displays the specific item name to the cashie
     });
 
     await addOneProduct(page);
+    await page.evaluate(() => {
+      (window as unknown as { electronAPI?: Record<string, unknown> }).electronAPI = {
+        getLogTail: async () => ({
+          text: '[2026-11-09 12:00:00] [warn] Stock check rejected Double Cheeseburger',
+          truncated: false,
+        }),
+      };
+    });
     await page.getByRole('button', { name: 'Place Order' }).click();
 
+    const supportPanel = page.getByTestId('pos-support-error-panel');
+    await expect(supportPanel).toHaveAttribute('data-variant', 'validation');
+    await expect(supportPanel).toHaveAttribute('data-classification', 'expected_rejection');
     await expect(
       page.getByRole('main').getByText('Insufficient stock for "Double Cheeseburger"'),
     ).toBeVisible();
     await expect(page.getByText('Correct the details, then submit the order again.')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open Inventory & Recipes' })).toHaveAttribute(
+      'href',
+      '/inventory',
+    );
+    const attachLogCheckbox = page.locator('#pos-support-attach-log');
+    await expect(attachLogCheckbox).toBeChecked();
 
     const getHelp = page.getByRole('button', { name: 'Get help', exact: true });
     await getHelp.click();
@@ -229,6 +246,11 @@ test('a structured stock rejection displays the specific item name to the cashie
       supportSubmissions[0].message,
       'support ticket receives the item-specific stock rejection message',
     ).toBe('Insufficient stock for "Double Cheeseburger"');
+    expect(supportSubmissions[0].category).toBe('general');
+    expect(supportSubmissions[0].subject).toBe('FloCafe inventory or stock validation help');
+    expect(supportSubmissions[0].log_tail).toBe(
+      '[2026-11-09 12:00:00] [warn] Stock check rejected Double Cheeseburger',
+    );
     expect(supportSubmissions[0].correlation_id).toBe(originalOperationId);
     expect(supportSubmissions[0].operation_failure).toEqual({
       capture_point: 'fc.backend.order.create.stock_validation',
@@ -565,4 +587,141 @@ test('an unrelated payment does not resolve another cashier’s pending payment 
     latestPaymentDetails,
     'the UI retries its saved key after the unrelated payment and both payments remain accounted for',
   ).toHaveLength(2);
+});
+
+test('a KOT print failure preserves backend failure_class and sanitized detail in Get Help and omits log_tail when unchecked', async ({
+  page,
+}) => {
+  const originalBusiness = await setBillingType(page, 'postpaid');
+
+  try {
+    await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          setting: {
+            key: 'kot_printing_enabled',
+            value: 'true',
+            updated_at: '2026-11-09T12:00:00Z',
+          },
+        }),
+      });
+    });
+    await page.route('**/api/settings/auto_print_kot', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          setting: { key: 'auto_print_kot', value: 'true', updated_at: '2026-11-09T12:00:00Z' },
+        }),
+      });
+    });
+    await page.route('**/api/printers', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          printers: [
+            {
+              id: 1,
+              name: 'Kitchen USB Printer',
+              connection_type: 'usb',
+              is_default: 1,
+              paper_width: '80mm',
+            },
+          ],
+        }),
+      });
+    });
+
+    const kotCorrelationId = '4a8c9d01-1234-4b5c-89ab-cdef01234567';
+    await page.route('**/api/printers/print-kot', async (route) => {
+      await route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'Print failed',
+          detail:
+            'Command failed: powershell -NoProfile -EncodedCommand SQBuAHYAbwBrAGUA\nKitchen USB printer queue is paused',
+          failure_class: 'needs_attention',
+          connection_type: 'usb',
+          code: 'print.kot.failed',
+          stage: 'dispatch',
+          correlation_id: kotCorrelationId,
+        }),
+      });
+    });
+
+    const supportSubmissions: Array<Record<string, unknown>> = [];
+    await page.route('**/api/support-ticket', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      supportSubmissions.push(payload);
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ client_ticket_id: payload.client_ticket_id }),
+      });
+    });
+
+    await loginAndOpenPos(page);
+    await page.evaluate(() => {
+      (window as unknown as { electronAPI?: Record<string, unknown> }).electronAPI = {
+        getLogTail: async () => ({
+          text: '[2026-11-09 12:05:00] [error] should be omitted when unchecked',
+          truncated: false,
+        }),
+      };
+    });
+
+    await addOneProduct(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+
+    const supportPanel = page.getByTestId('pos-support-error-panel');
+    await expect(supportPanel).toBeVisible();
+    await expect(supportPanel).toHaveAttribute('data-variant', 'error');
+    await expect(supportPanel).toContainText('Kitchen USB printer queue is paused');
+    await expect(supportPanel).not.toContainText('EncodedCommand');
+
+    const attachLogCheckbox = page.locator('#pos-support-attach-log');
+    await expect(attachLogCheckbox).toBeChecked();
+    await attachLogCheckbox.uncheck();
+    await expect(attachLogCheckbox).not.toBeChecked();
+
+    await page.getByRole('button', { name: 'Get help', exact: true }).click();
+    await expect.poll(() => supportSubmissions.length).toBe(1);
+    expect('log_tail' in supportSubmissions[0]).toBe(false);
+    expect(supportSubmissions[0].category).toBe('printer');
+    expect(supportSubmissions[0].subject).toBe('FloCafe printer problem');
+    expect(supportSubmissions[0].correlation_id).toBe(kotCorrelationId);
+    expect(supportSubmissions[0].message).toBe('Kitchen USB printer queue is paused');
+    expect(supportSubmissions[0].operation_failure).toEqual({
+      capture_point: 'fc.backend.printer.kot.queue',
+      operation_id: kotCorrelationId,
+      outcome: 'unknown',
+      facts: {
+        kind: 'kot',
+        failure_class: 'needs_attention',
+        connection_type: 'usb',
+      },
+    });
+  } finally {
+    await restoreBusiness(page, originalBusiness);
+  }
 });

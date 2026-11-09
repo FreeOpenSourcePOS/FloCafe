@@ -104,6 +104,15 @@ import {
   resolveRetryScheduledFor,
   buildCartFingerprintFromState,
 } from '@/lib/order-attempt';
+import {
+  buildPosSupportTicketRequestBody,
+  buildPrinterOperationFailureSupportPayload,
+  isSupportErrorContextCurrent,
+  readBoundedSupportLogTail,
+  resolvePosFailureSupportMetadata,
+  type PosFailureSupportMetadata,
+  type SupportErrorContextSnapshot,
+} from '@/lib/operation-failure';
 
 // Loaded on demand: the menu printer pulls the thermal print kernel in, which the
 // POS has no use for until the merchant opens the dialog.
@@ -149,7 +158,12 @@ type SupportOperationFailure = {
   capture_point: string;
   operation_id: string;
   outcome: string;
-  facts?: { display_code?: string; failure_class?: string };
+  facts?: {
+    display_code?: string;
+    failure_class?: string;
+    kind?: string;
+    connection_type?: string;
+  };
 };
 
 const OPERATION_REFERENCE_V4 =
@@ -360,11 +374,19 @@ export default function POSPage() {
     outcome: string;
     classification?: string;
     reasonCode?: string;
+    displayCode?: string;
     correlationId?: string;
     operationFailure?: SupportOperationFailure;
     ticketCorrelationId: string;
     clientTicketId: string;
+    context: SupportErrorContextSnapshot;
+    presentation: PosFailureSupportMetadata;
     payload: Record<string, unknown>;
+  } | null>(null);
+  const [attachLog, setAttachLog] = useState(true);
+  const supportLogSnapshotRef = useRef<{
+    clientTicketId: string;
+    logTail: string | undefined;
   } | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const supportSubmittingRef = useRef(false);
@@ -398,6 +420,9 @@ export default function POSPage() {
     activeSubmissionTokenRef.current = null;
     isSendingToPaymentRef.current = false;
     setSubmitting(false);
+    setSupportError(null);
+    setSentTicketId(null);
+    supportLogSnapshotRef.current = null;
 
     setCheckoutOverridePin(undefined);
     setPaymentBill(null);
@@ -411,6 +436,22 @@ export default function POSPage() {
     shift.setOpenModalOpen(false);
     shift.setCloseModalOpen(false);
   }, [activeUserId, activeToken, cashDrawer, shift]);
+
+  useEffect(() => {
+    if (!supportError) return;
+    if (
+      !isSupportErrorContextCurrent(supportError.context, {
+        storeId: currentStoreId,
+        initialStoreId: initialStoreIdRef.current,
+        userId: activeUserId,
+        sessionEpoch: sessionEpochRef.current,
+      })
+    ) {
+      setSupportError(null);
+      setSentTicketId(null);
+      supportLogSnapshotRef.current = null;
+    }
+  }, [supportError, currentStoreId, activeUserId]);
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
     authToken ? { Authorization: `Bearer ${authToken}` } : {};
@@ -704,8 +745,13 @@ export default function POSPage() {
     outcome: string;
     classification?: string;
     reasonCode?: string | null;
+    displayCode?: string | null;
     correlationId?: string | null;
     operationFailure?: SupportOperationFailure;
+    category?: string;
+    subject?: string;
+    extraDiagnostics?: Record<string, unknown>;
+    suppressToast?: boolean;
   }) => {
     const correlationId =
       entry.correlationId && OPERATION_REFERENCE_V4.test(entry.correlationId)
@@ -713,9 +759,24 @@ export default function POSPage() {
         : undefined;
     const ticketCorrelationId = correlationId || createOperationReference() || '';
     const clientTicketId = createOperationReference() || '';
+    const presentation = resolvePosFailureSupportMetadata({
+      operation: entry.operation,
+      classification: entry.classification,
+      outcome: entry.outcome,
+      reasonCode: entry.reasonCode,
+      displayCode: entry.displayCode,
+      code: entry.code,
+      message: entry.message,
+      detail: entry.detail,
+    });
+    const subject = entry.subject || presentation.subject;
+    const category = entry.category || presentation.category;
+    setSentTicketId(null);
+    setAttachLog(true);
+    supportLogSnapshotRef.current = null;
     setSupportError({
       title: entry.title,
-      subject: 'FloCafe order problem',
+      subject,
       code: entry.code,
       message: entry.message,
       nextStep: entry.nextStep,
@@ -724,15 +785,22 @@ export default function POSPage() {
       outcome: entry.outcome,
       classification: entry.classification,
       reasonCode: entry.reasonCode || undefined,
+      displayCode: entry.displayCode || undefined,
       correlationId,
       operationFailure:
         entry.operationFailure?.operation_id === correlationId ? entry.operationFailure : undefined,
       ticketCorrelationId,
       clientTicketId,
+      context: {
+        storeId: String(currentStoreIdRef.current),
+        userId: activeUserId,
+        sessionEpoch: sessionEpochRef.current,
+      },
+      presentation,
       payload: {
         event_code: entry.code,
         message: entry.detail,
-        category: 'bug',
+        category,
         diagnostics: {
           operation: entry.operation,
           stage: entry.stage,
@@ -741,13 +809,16 @@ export default function POSPage() {
           reason_code: entry.reasonCode || entry.code,
           correlation_id: correlationId,
           http_status: entry.status,
+          ...(entry.extraDiagnostics || {}),
         },
         ...(entry.operationFailure?.operation_id === correlationId
           ? { operation_failure: entry.operationFailure }
           : {}),
       },
     });
-    toast.error(entry.message);
+    if (!entry.suppressToast) {
+      toast.error(entry.message);
+    }
   };
 
   const reportOrderStorageFailure = (
@@ -973,6 +1044,7 @@ export default function POSPage() {
       outcome: failure.outcome || 'unknown',
       classification: failure.classification || undefined,
       reasonCode: failure.reasonCode,
+      displayCode: failure.displayCode,
       correlationId,
       operationFailure: helpOperationFailure,
     });
@@ -1000,21 +1072,43 @@ export default function POSPage() {
       const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       console.error('[POS] KOT print failed:', err);
-      const code = 'printer.queue_failed';
-      reportOrderFailure({
-        code,
-        title: t('printingFailed'),
-        message: t('saleCompletePrintFailed'),
-        nextStep: t('saleCompleteReprintNextStep'),
-        detail: 'Kitchen ticket printing failed after the order was created',
-        status: null,
-        operation: 'printer.print',
-        stage: 'printing',
-        outcome: 'unknown',
-        reasonCode: code,
+      const printFailure = buildPrinterOperationFailureSupportPayload(err, {
+        kind: 'kot',
+        fallbackDetail: 'Kitchen ticket printing failed after the order was created',
       });
-      toast.error(formatKotErrorToast(t('kotPrintFailed'), t('saleCompletePrintFailed')));
+      const fallbackKotLabel = t('kotPrintFailed');
+      const userMessage = printFailure.hasSpecificDetail
+        ? formatKotErrorToast(printFailure.detail, t('saleCompletePrintFailed'))
+        : t('saleCompletePrintFailed');
+      reportOrderFailure({
+        code: printFailure.code,
+        title: t('printingFailed'),
+        message: userMessage,
+        nextStep: t('saleCompleteReprintNextStep'),
+        detail: printFailure.detail,
+        status: printFailure.status,
+        operation: 'printer.print',
+        stage: printFailure.stage,
+        outcome: printFailure.outcome,
+        classification: 'unexpected_failure',
+        reasonCode: printFailure.reasonCode,
+        correlationId: printFailure.correlation_id,
+        operationFailure: printFailure.operation_failure,
+        category: 'printer',
+        extraDiagnostics: {
+          failure_class: printFailure.failure_class,
+          connection_type: printFailure.connection_type,
+        },
+        suppressToast: true,
+      });
+      toast.error(
+        formatKotErrorToast(
+          printFailure.hasSpecificDetail ? printFailure.detail : fallbackKotLabel,
+          t('saleCompletePrintFailed'),
+        ),
+      );
     }
   };
 
@@ -1090,21 +1184,42 @@ export default function POSPage() {
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
       // Non-fatal: print failure should not block the checkout flow.
-      const code = 'print.receipt.failed';
       console.error('[POS] Receipt print failed:', err);
-      reportOrderFailure({
-        code,
-        title: t('printingFailed'),
-        message: t('saleCompletePrintFailed'),
-        nextStep: t('saleCompleteReprintNextStep'),
-        detail: 'Receipt printing failed after payment was completed',
-        status: null,
-        operation: 'printer.print',
-        stage: 'printing',
-        outcome: 'unknown',
-        reasonCode: code,
+      const printFailure = buildPrinterOperationFailureSupportPayload(err, {
+        kind: 'receipt',
+        fallbackDetail: 'Receipt printing failed after payment was completed',
       });
-      toast.error(formatReceiptErrorToast(t('receiptPrintFailed'), t('saleCompletePrintFailed')));
+      const fallbackReceiptLabel = t('receiptPrintFailed');
+      const userMessage = printFailure.hasSpecificDetail
+        ? formatReceiptErrorToast(printFailure.detail, t('saleCompletePrintFailed'))
+        : t('saleCompletePrintFailed');
+      reportOrderFailure({
+        code: printFailure.code,
+        title: t('printingFailed'),
+        message: userMessage,
+        nextStep: t('saleCompleteReprintNextStep'),
+        detail: printFailure.detail,
+        status: printFailure.status,
+        operation: 'printer.print',
+        stage: printFailure.stage,
+        outcome: printFailure.outcome,
+        classification: 'unexpected_failure',
+        reasonCode: printFailure.reasonCode,
+        correlationId: printFailure.correlation_id,
+        operationFailure: printFailure.operation_failure,
+        category: 'printer',
+        extraDiagnostics: {
+          failure_class: printFailure.failure_class,
+          connection_type: printFailure.connection_type,
+        },
+        suppressToast: true,
+      });
+      toast.error(
+        formatReceiptErrorToast(
+          printFailure.hasSpecificDetail ? printFailure.detail : fallbackReceiptLabel,
+          t('saleCompletePrintFailed'),
+        ),
+      );
     }
   };
 
@@ -3694,10 +3809,27 @@ export default function POSPage() {
   return (
     <>
       {supportError && (
-        <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-card p-4 shadow-xl">
+        <div
+          data-testid="pos-support-error-panel"
+          data-classification={supportError.classification || 'unexpected_failure'}
+          data-variant={supportError.presentation.variant}
+          className={`fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border bg-card p-4 shadow-xl ${
+            supportError.presentation.variant === 'validation'
+              ? 'border-amber-300 dark:border-amber-700'
+              : 'border-red-200'
+          }`}
+        >
           {sentTicketId ? (
             <>
-              <p className="font-semibold text-red-800">{tSupport('requestQueued')}</p>
+              <p
+                className={`font-semibold ${
+                  supportError.presentation.variant === 'validation'
+                    ? 'text-amber-900 dark:text-amber-200'
+                    : 'text-red-800'
+                }`}
+              >
+                {tSupport('requestQueued')}
+              </p>
               {delivery.status === 'delivered' && delivery.supportCode ? (
                 <>
                   <p className="mt-1 text-sm font-semibold text-foreground">
@@ -3723,6 +3855,7 @@ export default function POSPage() {
                   onClick={() => {
                     setSupportError(null);
                     setSentTicketId(null);
+                    supportLogSnapshotRef.current = null;
                   }}
                 >
                   {tSupport('dismiss')}
@@ -3731,9 +3864,54 @@ export default function POSPage() {
             </>
           ) : (
             <>
-              <p className="font-semibold text-red-800">{supportError.title}</p>
+              <p
+                className={`font-semibold ${
+                  supportError.presentation.variant === 'validation'
+                    ? 'text-amber-900 dark:text-amber-200'
+                    : 'text-red-800'
+                }`}
+              >
+                {supportError.title}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">{supportError.message}</p>
               <p className="mt-1 text-sm text-muted-foreground">{supportError.nextStep}</p>
+              {supportError.presentation.correctiveGuidance && (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                  <p>{supportError.presentation.correctiveGuidance}</p>
+                  {supportError.presentation.correctiveActionHref &&
+                    supportError.presentation.correctiveActionLabel && (
+                      <a
+                        href={supportError.presentation.correctiveActionHref}
+                        className="mt-1 inline-block font-medium text-brand underline"
+                      >
+                        {supportError.presentation.correctiveActionLabel}
+                      </a>
+                    )}
+                </div>
+              )}
+              {supportError.presentation.supportEvidenceHint && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {supportError.presentation.supportEvidenceHint}
+                </p>
+              )}
+              <div className="mt-2.5 flex items-start gap-2">
+                <input
+                  id="pos-support-attach-log"
+                  type="checkbox"
+                  checked={attachLog}
+                  onChange={(e) => setAttachLog(e.target.checked)}
+                  className="mt-0.5 rounded border-border"
+                />
+                <div>
+                  <label
+                    htmlFor="pos-support-attach-log"
+                    className="cursor-pointer text-xs font-medium text-foreground"
+                  >
+                    {tSupport('attachLog')}
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">{tSupport('attachLogHint')}</p>
+                </div>
+              </div>
               <details className="mt-2 text-xs text-muted-foreground">
                 <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
                 <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2">
@@ -3759,15 +3937,71 @@ export default function POSPage() {
                   }
                   onClick={async () => {
                     if (supportSubmittingRef.current) return;
+                    const activeAuthUser = useAuthStore.getState().user;
+                    const currentUserId =
+                      activeAuthUser?.id == null ? null : String(activeAuthUser.id);
+                    if (
+                      !isSupportErrorContextCurrent(supportError.context, {
+                        storeId: currentStoreIdRef.current,
+                        initialStoreId: initialStoreIdRef.current,
+                        userId: currentUserId,
+                        sessionEpoch: sessionEpochRef.current,
+                      })
+                    ) {
+                      setSupportError(null);
+                      setSentTicketId(null);
+                      supportLogSnapshotRef.current = null;
+                      return;
+                    }
                     supportSubmittingRef.current = true;
                     setSupportSubmitting(true);
                     try {
-                      await api.post('/support-ticket', {
-                        ...supportError.payload,
+                      let logTail: string | undefined;
+                      if (attachLog) {
+                        if (
+                          supportLogSnapshotRef.current?.clientTicketId ===
+                            supportError.clientTicketId &&
+                          supportLogSnapshotRef.current.logTail !== undefined
+                        ) {
+                          logTail = supportLogSnapshotRef.current.logTail;
+                        } else {
+                          logTail = await readBoundedSupportLogTail(
+                            true,
+                            typeof window !== 'undefined'
+                              ? window.electronAPI?.getLogTail
+                              : undefined,
+                          );
+                          supportLogSnapshotRef.current = {
+                            clientTicketId: supportError.clientTicketId,
+                            logTail,
+                          };
+                        }
+                        const postLogAuthUser = useAuthStore.getState().user;
+                        const postLogUserId =
+                          postLogAuthUser?.id == null ? null : String(postLogAuthUser.id);
+                        if (
+                          !isSupportErrorContextCurrent(supportError.context, {
+                            storeId: currentStoreIdRef.current,
+                            initialStoreId: initialStoreIdRef.current,
+                            userId: postLogUserId,
+                            sessionEpoch: sessionEpochRef.current,
+                          })
+                        ) {
+                          setSupportError(null);
+                          setSentTicketId(null);
+                          supportLogSnapshotRef.current = null;
+                          return;
+                        }
+                      }
+                      const requestBody = buildPosSupportTicketRequestBody({
+                        payload: supportError.payload,
                         subject: supportError.subject,
-                        correlation_id: supportError.ticketCorrelationId,
-                        client_ticket_id: supportError.clientTicketId,
+                        ticketCorrelationId: supportError.ticketCorrelationId,
+                        clientTicketId: supportError.clientTicketId,
+                        attachLog,
+                        logTail,
                       });
+                      await api.post('/support-ticket', requestBody);
                       toast.success(tSupport('queued'));
                       setSentTicketId(supportError.clientTicketId);
                     } catch {
@@ -3809,7 +4043,10 @@ export default function POSPage() {
                 ))}
                 <button
                   className="rounded border px-3 py-2 text-sm"
-                  onClick={() => setSupportError(null)}
+                  onClick={() => {
+                    setSupportError(null);
+                    supportLogSnapshotRef.current = null;
+                  }}
                 >
                   {tSupport('dismiss')}
                 </button>

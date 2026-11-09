@@ -66,13 +66,22 @@ async function runTests() {
     const { KdsKanbanBoard } = require('../frontend/src/components/kds/KdsKanbanBoard');
     const { KdsTabsView } = require('../frontend/src/components/kds/KdsTabsView');
     const { KdsItemModal } = require('../frontend/src/components/kds/KdsItemModal');
-    const { KdsHeader } = require('../frontend/src/components/kds/KdsHeader');
+    const {
+      KdsHeader,
+      resolveEffectiveKdsDark,
+      subscribeSystemColorScheme,
+    } = require('../frontend/src/components/kds/KdsHeader');
     const {
       STATUS_CONFIG,
       ORDER_TYPE_BADGE_STYLES,
     } = require('../frontend/src/hooks/useKdsConnection');
     const { useThemeMode } = require('../frontend/src/store/theme');
-    const { fetchServerInfo } = require('../frontend/src/lib/i18n/server-language');
+    const {
+      KDS_THEME_OVERRIDE_KEY,
+      fetchServerInfo,
+      hydrateKdsThemeOverride,
+      applyServerThemeInfo,
+    } = require('../frontend/src/lib/i18n/server-language');
 
     const sampleOrders = [
       {
@@ -305,11 +314,57 @@ async function runTests() {
       'KdsHeader shows Sun icon when effective theme is dark',
     );
 
-    // Verify fetchServerInfo parses theme_mode into themeMode
+    // Verify fetchServerInfo parses theme_mode into themeMode, KdsHeader subscribes to
+    // matchMedia in system mode & resolves live darkness on click, and KDS theme override
+    // survives reload without being overwritten by server info.themeMode.
     const origWindow = (globalThis as any).window;
+    const origDocument = (globalThis as any).document;
     const origFetch = globalThis.fetch;
+    const jsxRuntime = frontendRequire('react/jsx-runtime');
+    const origJsx = jsxRuntime.jsx;
     try {
-      (globalThis as any).window = {};
+      const storage = new Map<string, string>();
+      const darkClasses = new Set<string>();
+      let mediaMatches = false;
+      const mediaListeners = new Set<() => void>();
+      const mockMediaQueryList = {
+        get matches() {
+          return mediaMatches;
+        },
+        addEventListener: (event: string, cb: () => void) => {
+          if (event === 'change') mediaListeners.add(cb);
+        },
+        removeEventListener: (event: string, cb: () => void) => {
+          if (event === 'change') mediaListeners.delete(cb);
+        },
+      };
+
+      (globalThis as any).window = {
+        localStorage: {
+          getItem: (key: string) => (storage.has(key) ? storage.get(key)! : null),
+          setItem: (key: string, value: string) => {
+            storage.set(key, value);
+          },
+          removeItem: (key: string) => {
+            storage.delete(key);
+          },
+        },
+        matchMedia: (_query: string) => mockMediaQueryList,
+      };
+      (globalThis as any).document = {
+        documentElement: {
+          classList: {
+            contains: (cls: string) => darkClasses.has(cls),
+            toggle: (cls: string, force?: boolean) => {
+              const shouldAdd = force === undefined ? !darkClasses.has(cls) : Boolean(force);
+              if (shouldAdd) darkClasses.add(cls);
+              else darkClasses.delete(cls);
+              return shouldAdd;
+            },
+          },
+        },
+      };
+
       for (const [raw, expected] of [
         ['light', 'light'],
         ['dark', 'dark'],
@@ -333,12 +388,190 @@ async function runTests() {
           `fetchServerInfo parses theme_mode=${String(raw)} as ${String(expected)}`,
         );
       }
+
+      // 1. System mode matchMedia subscription + live click-time resolution in KdsHeader
+      useThemeMode.setState({ mode: 'system', userSelected: false });
+      Object.assign(useThemeMode.getInitialState(), useThemeMode.getState());
+      mediaMatches = false;
+
+      let changeNotifications = 0;
+      const unsubscribe = subscribeSystemColorScheme('system', () => {
+        changeNotifications += 1;
+      });
+      assert.equal(
+        mediaListeners.size,
+        1,
+        'subscribeSystemColorScheme attaches a change listener when mode is system',
+      );
+
+      let capturedToggleOnClick: (() => void) | null = null;
+      jsxRuntime.jsx = function (type: any, props: any, key: any) {
+        if (type === 'button' && props?.['data-testid'] === 'kds-theme-toggle') {
+          capturedToggleOnClick = props.onClick;
+        }
+        return origJsx.call(this, type, props, key);
+      };
+      const systemLightMarkup = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(
+          IntlProvider,
+          { locale: 'en', messages: enMessages, timeZone: 'UTC' },
+          React.createElement(KdsHeader, {
+            userName: 'Chef Alex',
+            userRole: 'chef',
+            connected: true,
+            connectionMode: 'websocket',
+            viewMode: 'kanban',
+            onChangeView: () => {},
+            onLogout: () => {},
+          }),
+        ),
+      );
+      jsxRuntime.jsx = origJsx;
+
+      assert.match(
+        systemLightMarkup,
+        /lucide-moon/,
+        'KdsHeader renders Moon icon in system mode when OS prefers light',
+      );
+      assert.equal(
+        typeof capturedToggleOnClick,
+        'function',
+        'KdsHeader wires an onClick handler to kds-theme-toggle',
+      );
+
+      // Flip OS color scheme to dark while mode remains 'system'
+      mediaMatches = true;
+      for (const listener of [...mediaListeners]) listener();
+      assert.equal(
+        changeNotifications,
+        1,
+        'matchMedia change notifies system-mode subscriber immediately',
+      );
+      assert.equal(
+        resolveEffectiveKdsDark('system'),
+        true,
+        'resolveEffectiveKdsDark reflects updated OS dark preference',
+      );
+
+      const systemDarkMarkup = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(
+          IntlProvider,
+          { locale: 'en', messages: enMessages, timeZone: 'UTC' },
+          React.createElement(KdsHeader, {
+            userName: 'Chef Alex',
+            userRole: 'chef',
+            connected: true,
+            connectionMode: 'websocket',
+            viewMode: 'kanban',
+            onChangeView: () => {},
+            onLogout: () => {},
+          }),
+        ),
+      );
+      assert.match(
+        systemDarkMarkup,
+        /lucide-sun/,
+        'KdsHeader updates to Sun icon in system mode when OS switches to dark',
+      );
+
+      unsubscribe();
+      assert.equal(
+        mediaListeners.size,
+        0,
+        'subscribeSystemColorScheme removes the matchMedia change listener on cleanup',
+      );
+
+      // Invoke the pre-flip onClick closure: it must resolve live darkness (true -> 'light'),
+      // not use the stale render-time false value, and must persist flo-kds-theme-override.
+      capturedToggleOnClick!();
+      assert.equal(
+        useThemeMode.getState().mode,
+        'light',
+        'clicking kds-theme-toggle resolves live OS darkness at click time and switches to light',
+      );
+      assert.equal(
+        storage.get(KDS_THEME_OVERRIDE_KEY),
+        'light',
+        'clicking kds-theme-toggle persists flo-kds-theme-override in localStorage',
+      );
+      assert.equal(
+        storage.get('flo-theme-resolved'),
+        'light',
+        'clicking kds-theme-toggle updates flo-theme-resolved mirror to light',
+      );
+      assert.equal(
+        darkClasses.has('dark'),
+        false,
+        'clicking kds-theme-toggle removes dark class from documentElement',
+      );
+
+      // 2. Simulate page reload: in-memory store resets to { mode: 'system', userSelected: false }
+      // while server /api/kds/info returns theme_mode = 'dark'. Explicit KDS override must win.
+      useThemeMode.setState({ mode: 'system', userSelected: false });
+      darkClasses.add('dark');
+      const restored = hydrateKdsThemeOverride('/api/kds/info');
+      applyServerThemeInfo('dark', '/api/kds/info');
+      assert.equal(restored, 'light', 'hydrateKdsThemeOverride restores persisted light override');
+      assert.equal(
+        useThemeMode.getState().mode,
+        'light',
+        'persisted KDS override is not overwritten by server info.themeMode on reload',
+      );
+      assert.equal(
+        useThemeMode.getState().userSelected,
+        true,
+        'hydrated KDS override marks userSelected = true',
+      );
+      assert.equal(
+        storage.get('flo-theme-resolved'),
+        'light',
+        'server info.themeMode does not clobber flo-theme-resolved when KDS override exists',
+      );
+      assert.equal(
+        darkClasses.has('dark'),
+        false,
+        'hydrated KDS light override clears dark class on reload',
+      );
+
+      // Non-KDS infoPath (/api/server-app/info) does not consume KDS override
+      useThemeMode.setState({ mode: 'system', userSelected: false });
+      assert.equal(
+        hydrateKdsThemeOverride('/api/server-app/info'),
+        null,
+        'non-KDS infoPath ignores flo-kds-theme-override',
+      );
+
+      // 3. Without an explicit KDS override, store theme_mode from /api/kds/info applies on reload
+      storage.delete(KDS_THEME_OVERRIDE_KEY);
+      useThemeMode.setState({ mode: 'system', userSelected: false });
+      applyServerThemeInfo('dark', '/api/kds/info');
+      assert.equal(
+        useThemeMode.getState().mode,
+        'dark',
+        'store theme_mode applies on KDS when no explicit KDS override exists',
+      );
+      assert.equal(
+        storage.get('flo-theme-resolved'),
+        'dark',
+        'applyServerThemeInfo writes store dark theme to flo-theme-resolved when unoverridden',
+      );
+      assert.equal(
+        darkClasses.has('dark'),
+        true,
+        'applyServerThemeInfo applies dark class when store theme_mode is dark',
+      );
     } finally {
+      jsxRuntime.jsx = origJsx;
       globalThis.fetch = origFetch;
       if (origWindow === undefined) {
         delete (globalThis as any).window;
       } else {
         (globalThis as any).window = origWindow;
+      }
+      if (origDocument === undefined) {
+        delete (globalThis as any).document;
+      } else {
+        (globalThis as any).document = origDocument;
       }
     }
   } finally {

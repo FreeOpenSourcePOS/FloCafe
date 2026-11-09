@@ -1,10 +1,43 @@
 'use client';
 
+import { useCallback, useSyncExternalStore } from 'react';
 import { ChefHat, LogOut, Moon, Sun, Wifi, WifiOff } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { ConnectionMode } from '@/hooks/useKdsConnection';
 import type { KdsViewMode } from '@/hooks/useKdsView';
-import { useThemeMode } from '@/store/theme';
+import { persistKdsThemeOverride } from '@/lib/i18n/server-language';
+import { useThemeMode, type ThemeMode } from '@/store/theme';
+
+const DARK_MEDIA_QUERY = '(prefers-color-scheme: dark)';
+
+export function resolveEffectiveKdsDark(mode: ThemeMode): boolean {
+  if (mode === 'dark') return true;
+  if (mode === 'light') return false;
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return Boolean(window.matchMedia(DARK_MEDIA_QUERY).matches);
+  }
+  if (typeof document !== 'undefined') {
+    return Boolean(document.documentElement?.classList?.contains('dark'));
+  }
+  return false;
+}
+
+export function subscribeSystemColorScheme(mode: ThemeMode, onStoreChange: () => void): () => void {
+  if (
+    mode !== 'system' ||
+    typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function'
+  ) {
+    return () => {};
+  }
+  const media = window.matchMedia(DARK_MEDIA_QUERY);
+  media.addEventListener('change', onStoreChange);
+  return () => media.removeEventListener('change', onStoreChange);
+}
+
+function getSystemDarkSnapshot(): boolean {
+  return resolveEffectiveKdsDark('system');
+}
 
 export interface KdsHeaderProps {
   userName: string;
@@ -30,11 +63,12 @@ export function KdsHeader({
   const tSettings = useTranslations('settings');
   const mode = useThemeMode((s) => s.mode);
   const selectMode = useThemeMode((s) => s.selectMode);
-  const isDark =
-    mode === 'dark' ||
-    (mode !== 'light' &&
-      typeof document !== 'undefined' &&
-      Boolean(document.documentElement?.classList?.contains('dark')));
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => subscribeSystemColorScheme(mode, onStoreChange),
+    [mode],
+  );
+  const systemDark = useSyncExternalStore(subscribe, getSystemDarkSnapshot, getSystemDarkSnapshot);
+  const isDark = mode === 'dark' ? true : mode === 'light' ? false : systemDark;
   const themeLabel = `${tSettings('themeTitle')}: ${isDark ? tSettings('themeLight') : tSettings('themeDark')}`;
 
   return (
@@ -97,13 +131,12 @@ export function KdsHeader({
             type="button"
             data-testid="kds-theme-toggle"
             onClick={() => {
-              const nextMode = isDark ? 'light' : 'dark';
+              const currentDark = resolveEffectiveKdsDark(useThemeMode.getState().mode);
+              const nextMode: 'light' | 'dark' = currentDark ? 'light' : 'dark';
               selectMode(nextMode);
+              persistKdsThemeOverride(nextMode);
               if (typeof document !== 'undefined') {
                 document.documentElement?.classList?.toggle('dark', nextMode === 'dark');
-                try {
-                  window.localStorage?.setItem('flo-theme-resolved', nextMode);
-                } catch {}
               }
             }}
             className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground ms-1"

@@ -318,6 +318,7 @@ export type OperationFailureMetadata = {
   classification: 'expected_rejection' | 'unexpected_failure' | null;
   correlationId: string | null;
   displayCode: string | null;
+  failureClass: string | null;
   serverError: string | null;
   trusted: boolean;
 };
@@ -617,6 +618,15 @@ const CHARGE_DISPLAY_CODES = [
   'charge_not_waivable',
   'charge_always_applied',
 ] as const;
+const PERSISTENCE_FAILURE_CLASSES = [
+  'busy_or_locked',
+  'constraint',
+  'read_only',
+  'disk_full',
+  'io_error',
+  'schema_or_migration',
+  'unknown',
+] as const;
 
 export function isSupportedFailureOperation(value: string): value is OperationName {
   return Object.prototype.hasOwnProperty.call(STRUCTURED_FAILURES, value);
@@ -715,6 +725,7 @@ export function classifyOrderRequestFailure(
     classification: null,
     correlationId: null,
     displayCode: null,
+    failureClass: null,
     serverError: null,
     trusted: false,
   };
@@ -727,11 +738,38 @@ export function classifyOrderRequestFailure(
     typeof payload.stage !== 'string'
   )
     return fallback;
-  if (
-    payload.facts !== undefined &&
-    (!plainRecord(payload.facts) || Object.keys(payload.facts).length > 0)
-  )
-    return fallback;
+  const allowsPersistenceFailureClass =
+    payload.reason_code === 'persistence.failed' &&
+    payload.stage === 'persistence' &&
+    (expected.operation === 'order.create' || expected.operation === 'bill.generate');
+  let failureClass: string | null = null;
+  if (payload.facts !== undefined) {
+    if (!plainRecord(payload.facts)) return fallback;
+    const factKeys = Object.keys(payload.facts);
+    if (factKeys.length > 0) {
+      if (
+        !allowsPersistenceFailureClass ||
+        factKeys.length !== 1 ||
+        factKeys[0] !== 'failure_class' ||
+        typeof payload.facts.failure_class !== 'string' ||
+        !(PERSISTENCE_FAILURE_CLASSES as readonly string[]).includes(payload.facts.failure_class)
+      ) {
+        return fallback;
+      }
+      failureClass = payload.facts.failure_class;
+    }
+  }
+  if (payload.failure_class !== undefined) {
+    if (
+      !allowsPersistenceFailureClass ||
+      typeof payload.failure_class !== 'string' ||
+      !(PERSISTENCE_FAILURE_CLASSES as readonly string[]).includes(payload.failure_class) ||
+      (failureClass !== null && failureClass !== payload.failure_class)
+    ) {
+      return fallback;
+    }
+    failureClass = payload.failure_class;
+  }
   const operationDefinitions = STRUCTURED_FAILURES[expected.operation];
   if (!Object.prototype.hasOwnProperty.call(operationDefinitions, payload.stage)) return fallback;
   const stageDefinitions = operationDefinitions[payload.stage];
@@ -778,6 +816,7 @@ export function classifyOrderRequestFailure(
     classification: definition.classification,
     correlationId: expected.correlationId,
     displayCode: typeof displayCode === 'string' ? displayCode : null,
+    failureClass,
     serverError,
     detail,
     trusted: true,

@@ -191,6 +191,43 @@ async function main() {
       'a ticket retry cannot replace the original structured failure',
     );
 
+    for (const capturePoint of [
+      'fc.backend.order.create.persistence',
+      'fc.backend.bill.generate.failure',
+    ]) {
+      const persistenceOpId = require('crypto').randomUUID();
+      const persistenceTicketId = require('crypto').randomUUID();
+      const persistenceTicketRes = await api(baseUrl, '/api/support-ticket', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          client_ticket_id: persistenceTicketId,
+          correlation_id: persistenceOpId,
+          subject: 'Persistence failure help',
+          message: 'Database busy during checkout',
+          operation_failure: {
+            capture_point: capturePoint,
+            operation_id: persistenceOpId,
+            outcome: 'not_applied',
+            facts: { failure_class: 'busy_or_locked' },
+          },
+        },
+      });
+      assertEqual(
+        persistenceTicketRes.status,
+        202,
+        `${capturePoint} support ticket context with allowlisted failure_class is accepted`,
+      );
+      const persistenceTicketRow = db
+        .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+        .get(persistenceTicketId) as { payload: string };
+      assertEqual(
+        JSON.parse(persistenceTicketRow.payload).diagnostics.operation_failure.facts.failure_class,
+        'busy_or_locked',
+        `${capturePoint} support ticket retains allowlisted failure_class fact`,
+      );
+    }
+
     console.log('\n2. GET status reflects the outbox row');
     const statusRes = await api(baseUrl, `/api/support-ticket/${clientTicketId}/status`, {
       headers: owner.authHeader,
@@ -299,6 +336,15 @@ async function main() {
           operation_id: invalidOperationId,
           outcome: 'not_applied',
           facts: { display_code: 'raw error text' },
+        },
+      },
+      {
+        correlation_id: invalidOperationId,
+        operation_failure: {
+          capture_point: 'fc.backend.order.create.persistence',
+          operation_id: invalidOperationId,
+          outcome: 'not_applied',
+          facts: { failure_class: 'SQLITE_BUSY: /Users/pos/flo.db' },
         },
       },
       {

@@ -139,7 +139,11 @@ export {
   PIN_MAX_ATTEMPTS,
   PIN_WINDOW_MS,
 };
-import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+import {
+  classifySqlitePersistenceFailure,
+  isOperationReference,
+  serializeOperationFailure,
+} from '../lib/operation-failure';
 
 type PinApproverCandidate = { id: string; role: string; pin_hash: string };
 
@@ -228,14 +232,19 @@ function structuredOperationFailure(
   outcome: 'not_applied' | 'applied',
   error: string,
   displayCode?: string,
+  facts?: Record<string, string | number>,
 ): Record<string, unknown> {
   const header = req.get('x-operation-id');
   const correlationId = isOperationReference(header) ? header : randomUUID();
+  const mergedFacts = {
+    ...(displayCode ? { display_code: displayCode } : {}),
+    ...(facts ?? {}),
+  };
   const failure = serializeOperationFailure({
     capture_point: capturePoint,
     outcome,
     correlation_id: correlationId,
-    ...(displayCode ? { facts: { display_code: displayCode } } : {}),
+    ...(Object.keys(mergedFacts).length > 0 ? { facts: mergedFacts } : {}),
   });
   if (!failure) return { error };
   (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
@@ -253,6 +262,12 @@ function structuredOperationFailure(
     outcome: failure.outcome,
     correlation_id: failure.correlation_id,
     ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
+    ...(failure.facts.failure_class
+      ? {
+          failure_class: failure.facts.failure_class,
+          facts: { failure_class: failure.facts.failure_class },
+        }
+      : {}),
   };
 }
 
@@ -2816,6 +2831,10 @@ router.post(
           point,
           operationCommitted ? 'applied' : 'not_applied',
           error.statusCode ? error.message : 'Internal server error',
+          undefined,
+          point === 'fc.backend.order.create.persistence'
+            ? { failure_class: classifySqlitePersistenceFailure(error) }
+            : undefined,
         ),
         ...(error.code === 'MULTI_COUNTER_DISABLED' || error.code === 'SCHEDULED_ORDERS_DISABLED'
           ? { code: error.code }

@@ -50,6 +50,8 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+  await page.waitForFunction(() => !!localStorage.getItem('token'));
   await page.goto(`${BASE}/tables`);
   await expect(page.getByRole('heading', { name: 'Tables' })).toBeVisible();
   // List is the default view — switch to the floor plan second view first.

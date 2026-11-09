@@ -10,6 +10,7 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
+  await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
 
   // The LAN/browser build must not render Electron-only title-bar markup.
   expect(await page.evaluate(() => Boolean(window.electronAPI))).toBe(false);
@@ -2285,6 +2286,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.clock.runFor(3000);
     await nextFeedUpdate;
     await page.clock.runFor(0);
+    await expect(ready.locator('[data-order-id="display-ready-new-2"]')).toBeAttached();
     await page.clock.runFor(7000);
     await expect.poll(readReadyIds).not.toEqual(firstOrdinaryPage);
     await expect(readyIndicator).toContainText(/^2 \/ \d+/);
@@ -2308,7 +2310,13 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       'ready heading',
     );
 
-    await page.clock.runFor(20_000);
+    await page.clock.runFor(10_000);
+    await expect(
+      ready.locator('[data-order-id="display-ready-new-2"]:visible'),
+      'continued arrivals show the next priority page before rotating back to ordinary pages',
+    ).toBeVisible();
+    await page.clock.runFor(10_000);
+    await expect(ready.locator('[data-order-id="display-ready-new-2"]:visible')).toHaveCount(0);
     const laterOrdinaryPage = await readReadyIds();
     expect(
       laterOrdinaryPage.length,

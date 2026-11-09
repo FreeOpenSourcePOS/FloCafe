@@ -100,6 +100,8 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
+  await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+  await page.waitForFunction(() => !!localStorage.getItem('token'));
   await setLanguage(page, 'en');
   await page.goto(`${BASE}/pos`);
 
@@ -183,6 +185,8 @@ test('prepaid checkout preserves the saved discount and bill when retrying after
     await page.locator('#email').fill('manager@flo.local');
     await page.locator('#password').fill(E2E_PASSWORD);
     await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+    await page.waitForFunction(() => !!localStorage.getItem('token'));
     await setLanguage(page, 'en');
     await page.goto(`${BASE}/pos`);
 
@@ -291,6 +295,8 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
+  await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+  await page.waitForFunction(() => !!localStorage.getItem('token'));
   await setLanguage(page, 'en');
   await page.goto(`${BASE}/pos`);
 
@@ -380,6 +386,8 @@ test('prepaid checkout fee choices use fresh quotes and fail closed when a quote
     await page.locator('#email').fill('manager@flo.local');
     await page.locator('#password').fill(E2E_PASSWORD);
     await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+    await page.waitForFunction(() => !!localStorage.getItem('token'));
     await setLanguage(page, 'en');
     await page.goto(`${BASE}/pos`);
     // E2E Coffee is a simple product, so the card tap lands it on the cart.
@@ -549,6 +557,8 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     await page.locator('#email').fill('manager@flo.local');
     await page.locator('#password').fill(E2E_PASSWORD);
     await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+    await page.waitForFunction(() => !!localStorage.getItem('token'));
     await setLanguage(page, 'en');
     await page.goto(`${BASE}/orders`);
     await page

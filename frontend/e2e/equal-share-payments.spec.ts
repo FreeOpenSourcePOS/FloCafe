@@ -1198,11 +1198,11 @@ test.describe('equal share payments', () => {
     // window between the split and the next payment screen stays visible.
     await page.route('**/api/bills/*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1200));
-      await route.continue();
+      await route.continue().catch(() => undefined);
     });
     await page.route('**/api/orders?*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1200));
-      await route.continue();
+      await route.continue().catch(() => undefined);
     });
 
     await page.getByRole('button', { name: 'Split check' }).click();
@@ -1213,6 +1213,7 @@ test.describe('equal share payments', () => {
       .getByRole('spinbutton')
       .fill('1');
     await page.getByRole('button', { name: 'Create checks' }).click();
+    await expect(page.getByRole('heading', { name: 'Split check' })).toHaveCount(0);
 
     // The check that was just split must not be payable while the departing one loads.
     await expect(page.getByRole('heading', { name: 'Payment' })).toHaveCount(1);

@@ -102,6 +102,7 @@ async function openOrderCheckout(page: Page, orderNumber: string): Promise<void>
   await expect(masterRow).toBeVisible();
   await masterRow.click();
   await page.getByRole('button', { name: /Checkout|Take Payment/ }).click();
+  await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
 }
 
 /** The unpaid check's Pay action in the detail pane drives the next guest. */
@@ -456,6 +457,7 @@ test('a double click still creates exactly one split', async ({ page, request })
     submit.click({ force: true }),
     submit.click({ force: true, timeout: 3_000 }),
   ]);
+  await expect(page.getByRole('heading', { name: 'Split check' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeVisible();
   expect(splitRequests).toHaveLength(1);
   expect(await readOrderBills(request, order.id)).toHaveLength(2);

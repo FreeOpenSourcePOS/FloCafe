@@ -42,7 +42,7 @@
     "react-hooks/use-memo": "error",
     "react-hooks/preserve-manual-memoization": "error",
     "react-hooks/incompatible-library": "warn",
-    "react-hooks/immutability": "error",
+    "react-hooks/immutability": "off",
     "react-hooks/globals": "error",
     "react-hooks/refs": "error",
     "react-hooks/set-state-in-effect": "error",

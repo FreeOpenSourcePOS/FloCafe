@@ -56,7 +56,12 @@ test('category editor can remove an assigned inactive add-on group', async ({ pa
   ).toBeChecked();
   await inactiveGroupCheckbox.click();
   await expect(inactiveGroupCheckbox).not.toBeChecked();
+  const updateCategoryResponse = page.waitForResponse(
+    (res) =>
+      res.url().endsWith(`/api/categories/${categoryId}`) && res.request().method() === 'PUT',
+  );
   await page.getByRole('button', { name: 'Update', exact: true }).click();
+  expect((await updateCategoryResponse).status()).toBe(200);
 
   const updatedCategoryResponse = await page.request.get(`${BASE}/api/categories/${categoryId}`, {
     headers,
@@ -150,7 +155,11 @@ test.describe('product editor', () => {
       inactiveGroupCheckbox,
       'an original inactive assignment can be restored before saving',
     ).toBeChecked();
+    const retainUpdateResponse = page.waitForResponse(
+      (res) => res.url().endsWith(`/api/products/${productId}`) && res.request().method() === 'PUT',
+    );
     await page.getByRole('button', { name: 'Update Product', exact: true }).click();
+    expect((await retainUpdateResponse).status()).toBe(200);
 
     const retainedProductResponse = await page.request.get(`${BASE}/api/products/${productId}`, {
       headers,
@@ -167,7 +176,11 @@ test.describe('product editor', () => {
     const removableGroupCheckbox = page.locator(`#addon-group-${groupId}`);
     await expect(removableGroupCheckbox).toBeChecked();
     await removableGroupCheckbox.uncheck();
+    const removeUpdateResponse = page.waitForResponse(
+      (res) => res.url().endsWith(`/api/products/${productId}`) && res.request().method() === 'PUT',
+    );
     await page.getByRole('button', { name: 'Update Product', exact: true }).click();
+    expect((await removeUpdateResponse).status()).toBe(200);
 
     const removedProductResponse = await page.request.get(`${BASE}/api/products/${productId}`, {
       headers,

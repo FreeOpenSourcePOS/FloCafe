@@ -536,7 +536,12 @@ test('an unrelated payment does not resolve another cashier’s pending payment 
       }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send same payment' })).toBeEnabled();
+  const retryPaymentResponse = page.waitForResponse(
+    (res) =>
+      res.url().endsWith(`/api/bills/${bill.id}/payments`) && res.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Send same payment' }).click();
+  expect((await retryPaymentResponse).ok()).toBeTruthy();
   await expect(
     page
       .getByRole('main')

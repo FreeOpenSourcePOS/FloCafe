@@ -271,7 +271,13 @@
     "pairFailed": "Не удалось подключить экран",
     "tokenLimit": "Отзовите неиспользуемый экран, прежде чем подключать другой",
     "unpairedTitle": "Этот экран не подключён",
-    "unpairedHint": "Попросите у менеджера новую ссылку для подключения."
+    "unpairedHint": "Попросите у менеджера новую ссылку для подключения.",
+    "orderTypesLabel": "Отображаемые типы заказов",
+    "orderTypeTakeaway": "Навынос / Самовывоз",
+    "orderTypeDineIn": "В зале",
+    "orderTypeOnline": "Онлайн",
+    "orderTypeDelivery": "Доставка",
+    "atLeastOneOrderType": "Выберите хотя бы один тип заказа"
   },
   "dashboard": {
     "aov": "Средняя стоимость заказа",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Способ оплаты обновлён",
     "correctPaymentMethodFailed": "Не удалось обновить способ оплаты",
     "releaseScheduled": "Запланирован",
-    "releaseBlocked": "Отправка заблокирована"
+    "releaseBlocked": "Отправка заблокирована",
+    "markReady": "Отметить готовым",
+    "pickedUp": "Выдан",
+    "markedReady": "Заказ отмечен как готовый",
+    "markedPickedUp": "Заказ отмечен как выданный",
+    "updateStatusFailed": "Не удалось обновить статус заказа"
   },
   "pos": {
     "addCustomer": "Добавить клиента",

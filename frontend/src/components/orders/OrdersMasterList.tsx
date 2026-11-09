@@ -6,7 +6,7 @@ import type { Order } from '@/lib/types';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { parseDbTimestamp, cn } from '@/lib/utils';
-import { orderStatusBadge, ORDER_TYPE_KEYS } from './OrderCard';
+import { getOrderEffectivePrepStatus, orderStatusBadge, ORDER_TYPE_KEYS } from './OrderCard';
 
 function OrderTypeIcon({ type }: { type: Order['type'] }) {
   const cls = 'shrink-0 text-muted-foreground';
@@ -29,11 +29,15 @@ export function OrdersMasterList({
   selectedOrderId,
   onSelect,
   now,
+  onUpdatePrepStatus,
+  updatingPrepOrderId,
 }: {
   orders: Order[];
   selectedOrderId: number | null;
   onSelect: (orderId: number) => void;
   now: number;
+  onUpdatePrepStatus?: (orderId: number, targetStatus: 'ready' | 'served') => void;
+  updatingPrepOrderId?: number | null;
 }) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -50,23 +54,27 @@ export function OrdersMasterList({
     <ul className="flex-1 min-h-0 overflow-y-auto divide-y divide-border">
       {orders.map((order) => {
         const badge = orderStatusBadge[order.status];
+        const effectivePrepStatus = getOrderEffectivePrepStatus(order, now);
         const active = order.status !== 'cancelled';
         const itemCount = (order.items || []).filter(
           (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status),
         ).length;
         return (
-          <li key={order.id}>
+          <li
+            key={order.id}
+            className={cn(
+              'transition-colors',
+              selectedOrderId === order.id
+                ? 'bg-brand/10 ring-1 ring-inset ring-brand'
+                : 'bg-card hover:bg-muted/60',
+              !active && 'opacity-80',
+            )}
+          >
             <button
               type="button"
               onClick={() => onSelect(order.id)}
               aria-current={selectedOrderId === order.id}
-              className={cn(
-                'w-full text-start px-3 py-2.5 flex flex-col gap-1 transition-colors touch-manipulation',
-                selectedOrderId === order.id
-                  ? 'bg-brand/10 ring-1 ring-inset ring-brand'
-                  : 'bg-card hover:bg-muted/60',
-                !active && 'opacity-80',
-              )}
+              className="w-full text-start px-3 py-2.5 flex flex-col gap-1 touch-manipulation"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-bold text-sm text-foreground tracking-tight">
@@ -119,6 +127,34 @@ export function OrdersMasterList({
                 </span>
               </div>
             </button>
+            {onUpdatePrepStatus &&
+              (effectivePrepStatus === 'pending' ||
+                effectivePrepStatus === 'preparing' ||
+                effectivePrepStatus === 'ready') && (
+                <div className="px-3 pb-2.5 flex justify-end">
+                  {effectivePrepStatus === 'ready' ? (
+                    <button
+                      type="button"
+                      data-testid={`order-mark-picked-up-${order.id}`}
+                      onClick={() => onUpdatePrepStatus(order.id, 'served')}
+                      disabled={updatingPrepOrderId === order.id}
+                      className="px-2.5 py-1 rounded-md border border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-950/40 disabled:opacity-50 font-semibold text-xs touch-manipulation"
+                    >
+                      {tOrders('pickedUp')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`order-mark-ready-${order.id}`}
+                      onClick={() => onUpdatePrepStatus(order.id, 'ready')}
+                      disabled={updatingPrepOrderId === order.id}
+                      className="px-2.5 py-1 rounded-md border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40 disabled:opacity-50 font-semibold text-xs touch-manipulation"
+                    >
+                      {tOrders('markReady')}
+                    </button>
+                  )}
+                </div>
+              )}
           </li>
         );
       })}

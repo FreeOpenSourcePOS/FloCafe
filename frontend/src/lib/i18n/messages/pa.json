@@ -271,7 +271,13 @@
     "pairFailed": "ਡਿਸਪਲੇ ਪੇਅਰ ਨਹੀਂ ਹੋ ਸਕਿਆ",
     "tokenLimit": "ਨਵਾਂ ਡਿਸਪਲੇ ਪੇਅਰ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਕਿਸੇ ਨਾ-ਵਰਤੇ ਡਿਸਪਲੇ ਨੂੰ ਰੱਦ ਕਰੋ",
     "unpairedTitle": "ਇਹ ਡਿਸਪਲੇ ਪੇਅਰ ਨਹੀਂ ਹੈ",
-    "unpairedHint": "ਮੈਨੇਜਰ ਤੋਂ ਨਵਾਂ ਪੇਅਰਿੰਗ ਲਿੰਕ ਮੰਗੋ।"
+    "unpairedHint": "ਮੈਨੇਜਰ ਤੋਂ ਨਵਾਂ ਪੇਅਰਿੰਗ ਲਿੰਕ ਮੰਗੋ।",
+    "orderTypesLabel": "ਦਿਖਾਈਆਂ ਜਾਣ ਵਾਲੀਆਂ ਆਰਡਰ ਕਿਸਮਾਂ",
+    "orderTypeTakeaway": "ਟੇਕਅਵੇ / ਪਿਕਅੱਪ",
+    "orderTypeDineIn": "ਡਾਈਨ-ਇਨ",
+    "orderTypeOnline": "ਆਨਲਾਈਨ",
+    "orderTypeDelivery": "ਡਿਲੀਵਰੀ",
+    "atLeastOneOrderType": "ਘੱਟੋ-ਘੱਟ ਇੱਕ ਆਰਡਰ ਕਿਸਮ ਚੁਣੋ"
   },
   "dashboard": {
     "aov": "ਔਸਤ ਆਰਡਰ ਮੁੱਲ",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "ਭੁਗਤਾਨ ਵਿਧੀ ਅੱਪਡੇਟ ਹੋ ਗਈ",
     "correctPaymentMethodFailed": "ਭੁਗਤਾਨ ਵਿਧੀ ਅੱਪਡੇਟ ਨਹੀਂ ਹੋ ਸਕੀ",
     "releaseScheduled": "ਨਿਰਧਾਰਤ",
-    "releaseBlocked": "ਰਿਲੀਜ਼ ਰੋਕੀ ਗਈ"
+    "releaseBlocked": "ਰਿਲੀਜ਼ ਰੋਕੀ ਗਈ",
+    "markReady": "ਤਿਆਰ ਵਜੋਂ ਚਿੰਨ੍ਹਿਤ ਕਰੋ",
+    "pickedUp": "ਚੁੱਕ ਲਿਆ ਗਿਆ",
+    "markedReady": "ਆਰਡਰ ਤਿਆਰ ਵਜੋਂ ਚਿੰਨ੍ਹਿਤ ਕੀਤਾ ਗਿਆ",
+    "markedPickedUp": "ਆਰਡਰ ਚੁੱਕਿਆ ਗਿਆ ਵਜੋਂ ਚਿੰਨ੍ਹਿਤ ਕੀਤਾ ਗਿਆ",
+    "updateStatusFailed": "ਆਰਡਰ ਸਥਿਤੀ ਅੱਪਡੇਟ ਕਰਨ ਵਿੱਚ ਅਸਫਲ"
   },
   "pos": {
     "addCustomer": "ਗਾਹਕ ਜੋੜੋ",

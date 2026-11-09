@@ -271,7 +271,13 @@
     "pairFailed": "Layar ora bisa disambungake",
     "tokenLimit": "Jabut layar sing ora kanggo sadurunge nyambungake sing liyane",
     "unpairedTitle": "Layar iki durung nyambung",
-    "unpairedHint": "Jaluk pranala panyambungan anyar marang manajer."
+    "unpairedHint": "Jaluk pranala panyambungan anyar marang manajer.",
+    "orderTypesLabel": "Jinis pesenan sing ditampilake",
+    "orderTypeTakeaway": "Gawa mulih / Jupuk dhewe",
+    "orderTypeDineIn": "Mangan ing papan",
+    "orderTypeOnline": "Pesenan daring",
+    "orderTypeDelivery": "Kiriman",
+    "atLeastOneOrderType": "Pilih paling ora siji jinis pesenan"
   },
   "dashboard": {
     "aov": "Rata-rata Biji Pesenan",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Cara pambayaran dianyari",
     "correctPaymentMethodFailed": "Ora bisa nganyari cara pambayaran",
     "releaseScheduled": "Dijadwalake",
-    "releaseBlocked": "Wetokake katahan"
+    "releaseBlocked": "Wetokake katahan",
+    "markReady": "Tandhani siap",
+    "pickedUp": "Wis dijupuk",
+    "markedReady": "Pesenan ditandhani siap",
+    "markedPickedUp": "Pesenan ditandhani wis dijupuk",
+    "updateStatusFailed": "Gagal nganyari status pesenan"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",

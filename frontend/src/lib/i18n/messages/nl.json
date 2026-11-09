@@ -271,7 +271,13 @@
     "pairFailed": "Scherm kon niet worden gekoppeld",
     "tokenLimit": "Trek een ongebruikt scherm in voordat u een ander koppelt",
     "unpairedTitle": "Dit scherm is niet gekoppeld",
-    "unpairedHint": "Vraag een leidinggevende om een nieuwe koppelingslink."
+    "unpairedHint": "Vraag een leidinggevende om een nieuwe koppelingslink.",
+    "orderTypesLabel": "Getoonde besteltypen",
+    "orderTypeTakeaway": "Afhalen / Meenemen",
+    "orderTypeDineIn": "Ter plaatse eten",
+    "orderTypeOnline": "Online bestellingen",
+    "orderTypeDelivery": "Bezorgen",
+    "atLeastOneOrderType": "Selecteer minimaal één besteltype"
   },
   "dashboard": {
     "aov": "Gemiddelde bestelwaarde",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Betaalmethode bijgewerkt",
     "correctPaymentMethodFailed": "Betaalmethode kon niet worden bijgewerkt",
     "releaseScheduled": "Ingepland",
-    "releaseBlocked": "Vrijgave geblokkeerd"
+    "releaseBlocked": "Vrijgave geblokkeerd",
+    "markReady": "Markeer als klaar",
+    "pickedUp": "Opgehaald",
+    "markedReady": "Bestelling gemarkeerd als klaar",
+    "markedPickedUp": "Bestelling gemarkeerd als opgehaald",
+    "updateStatusFailed": "Bestelstatus bijwerken mislukt"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",

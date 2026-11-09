@@ -271,7 +271,13 @@
     "pairFailed": "Hindi ma-pair ang display",
     "tokenLimit": "Bawiin muna ang hindi ginagamit na display bago mag-pair ng iba",
     "unpairedTitle": "Hindi naka-pair ang display na ito",
-    "unpairedHint": "Humingi ng bagong pairing link sa manager."
+    "unpairedHint": "Humingi ng bagong pairing link sa manager.",
+    "orderTypesLabel": "Mga uri ng order na ipinapakita",
+    "orderTypeTakeaway": "Takeout / Kunin sa counter",
+    "orderTypeDineIn": "Kakain sa loob",
+    "orderTypeOnline": "Order sa internet",
+    "orderTypeDelivery": "Paghahatid",
+    "atLeastOneOrderType": "Pumili ng kahit isang uri ng order"
   },
   "dashboard": {
     "aov": "Average na Halaga ng Order",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Na-update ang paraan ng bayad",
     "correctPaymentMethodFailed": "Hindi ma-update ang paraan ng bayad",
     "releaseScheduled": "Naka-iskedyul",
-    "releaseBlocked": "Naka-hold ang pagpapadala"
+    "releaseBlocked": "Naka-hold ang pagpapadala",
+    "markReady": "Markahang handa na",
+    "pickedUp": "Nakuha na",
+    "markedReady": "Minarkahan nang handa ang order",
+    "markedPickedUp": "Minarkahan nang nakuha ang order",
+    "updateStatusFailed": "Hindi na-update ang status ng order"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",

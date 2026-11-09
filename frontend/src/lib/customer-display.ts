@@ -4,19 +4,23 @@ import {
 } from '../../../shared/order-item-status';
 
 export const CUSTOMER_DISPLAY_STATUSES = ['pending', 'preparing', 'ready'] as const;
+export const CUSTOMER_DISPLAY_ORDER_TYPES = ['takeaway', 'dine_in', 'online', 'delivery'] as const;
 
 export const MAX_DISPLAY_FEED_PAGES = 50;
 
 export type CustomerDisplayStatus = (typeof CUSTOMER_DISPLAY_STATUSES)[number];
+export type CustomerDisplayOrderType = (typeof CUSTOMER_DISPLAY_ORDER_TYPES)[number];
 
 export interface CustomerDisplayConfig {
   statuses: CustomerDisplayStatus[];
+  order_types: CustomerDisplayOrderType[];
   refresh_seconds: number;
   show_updated: boolean;
 }
 
 export const CUSTOMER_DISPLAY_DEFAULTS: CustomerDisplayConfig = {
   statuses: [...CUSTOMER_DISPLAY_STATUSES],
+  order_types: ['takeaway'],
   refresh_seconds: 3,
   show_updated: true,
 };
@@ -24,15 +28,37 @@ export const CUSTOMER_DISPLAY_DEFAULTS: CustomerDisplayConfig = {
 export const CUSTOMER_DISPLAY_PATH = '/customer-display/';
 
 export function isCustomerDisplayConfig(value: unknown): value is CustomerDisplayConfig {
-  if (!value || typeof value !== 'object') return false;
-  const { statuses, refresh_seconds, show_updated } = value as Record<string, unknown>;
-  return (
-    Array.isArray(statuses) &&
-    statuses.length > 0 &&
-    statuses.every((s) => (CUSTOMER_DISPLAY_STATUSES as readonly unknown[]).includes(s)) &&
-    typeof refresh_seconds === 'number' &&
-    typeof show_updated === 'boolean'
-  );
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const { statuses, order_types, refresh_seconds, show_updated } = record;
+  if (
+    !Array.isArray(statuses) ||
+    statuses.length === 0 ||
+    !statuses.every((s) => (CUSTOMER_DISPLAY_STATUSES as readonly unknown[]).includes(s)) ||
+    typeof refresh_seconds !== 'number' ||
+    typeof show_updated !== 'boolean'
+  ) {
+    return false;
+  }
+  if (order_types === undefined) {
+    if (Object.isExtensible(record)) {
+      record.order_types = [...CUSTOMER_DISPLAY_DEFAULTS.order_types];
+    }
+    return true;
+  }
+  if (
+    !Array.isArray(order_types) ||
+    order_types.length === 0 ||
+    !order_types.every((t) => (CUSTOMER_DISPLAY_ORDER_TYPES as readonly unknown[]).includes(t))
+  ) {
+    return false;
+  }
+  const normalizedOrderTypes = CUSTOMER_DISPLAY_ORDER_TYPES.filter((t) => order_types.includes(t));
+  if (normalizedOrderTypes.length === 0) return false;
+  if (!Object.isFrozen(record)) {
+    record.order_types = normalizedOrderTypes;
+  }
+  return true;
 }
 
 export const CUSTOMER_DISPLAY_FEED_PATH = '/customer-display/feed';
@@ -76,6 +102,7 @@ export interface SignedInBoardOrderSource {
   id: number | string;
   order_number: string;
   status: string;
+  type?: string | null;
   created_at: string;
   bill?: { bill_number?: string | null } | null;
   items?: readonly OrderItemStatusLike[] | null;
@@ -84,6 +111,7 @@ export interface SignedInBoardOrderSource {
 export interface SignedInOrdersQueryParams {
   view: 'active';
   board_status?: string;
+  type?: string;
   per_page: number;
   before_id?: number | string;
 }
@@ -118,11 +146,18 @@ export function toBoardOrder(order: SignedInBoardOrderSource, status: string): B
 }
 
 export async function fetchSignedInBoardOrders(options: {
-  config: CustomerDisplayConfig;
+  config: Omit<CustomerDisplayConfig, 'order_types'> & {
+    order_types?: CustomerDisplayOrderType[];
+  };
   fetchPage: (params: SignedInOrdersQueryParams) => Promise<SignedInOrdersPageResponse>;
   isStale?: () => boolean;
 }): Promise<{ orders: BoardOrder[]; stale: boolean }> {
   const { config, fetchPage, isStale } = options;
+  const orderTypes =
+    config.order_types && config.order_types.length > 0
+      ? config.order_types
+      : CUSTOMER_DISPLAY_DEFAULTS.order_types;
+  const allowedOrderTypes = new Set<string>(orderTypes);
   const seenById = new Map<string, { order: SignedInBoardOrderSource; projectedStatus: string }>();
   let beforeId: number | string | null = null;
 
@@ -130,6 +165,7 @@ export async function fetchSignedInBoardOrders(options: {
     const page = await fetchPage({
       view: 'active',
       board_status: config.statuses.join(','),
+      type: orderTypes.join(','),
       per_page: 100,
       ...(beforeId !== null ? { before_id: beforeId } : {}),
     });
@@ -137,6 +173,13 @@ export async function fetchSignedInBoardOrders(options: {
       return { orders: [], stale: true };
     }
     for (const order of page.orders ?? []) {
+      if (
+        typeof order.type === 'string' &&
+        order.type.length > 0 &&
+        !allowedOrderTypes.has(order.type)
+      ) {
+        continue;
+      }
       const projectedStatus = resolveOrderBoardStatus(order);
       if (projectedStatus && (config.statuses as string[]).includes(projectedStatus)) {
         seenById.set(String(order.id), { order, projectedStatus });

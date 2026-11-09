@@ -271,7 +271,13 @@
     "pairFailed": "Не вдалося підключити екран",
     "tokenLimit": "Відкличте невикористовуваний екран перед підключенням іншого",
     "unpairedTitle": "Цей екран не підключено",
-    "unpairedHint": "Попросіть у менеджера нове посилання для підключення."
+    "unpairedHint": "Попросіть у менеджера нове посилання для підключення.",
+    "orderTypesLabel": "Показані типи замовлень",
+    "orderTypeTakeaway": "З собою / Самовивіз",
+    "orderTypeDineIn": "У закладі",
+    "orderTypeOnline": "Онлайн",
+    "orderTypeDelivery": "Доставка",
+    "atLeastOneOrderType": "Виберіть принаймні один тип замовлення"
   },
   "dashboard": {
     "aov": "Середній чек",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "Спосіб оплати оновлено",
     "correctPaymentMethodFailed": "Не вдалося оновити спосіб оплати",
     "releaseScheduled": "Заплановано",
-    "releaseBlocked": "Випуск заблоковано"
+    "releaseBlocked": "Випуск заблоковано",
+    "markReady": "Позначити готовим",
+    "pickedUp": "Видано",
+    "markedReady": "Замовлення позначено як готове",
+    "markedPickedUp": "Замовлення позначено як видане",
+    "updateStatusFailed": "Не вдалося оновити статус замовлення"
   },
   "pos": {
     "addCustomer": "Додати клієнта",

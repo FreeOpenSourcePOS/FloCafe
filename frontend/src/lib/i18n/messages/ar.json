@@ -271,7 +271,13 @@
     "pairFailed": "تعذّر اقتران الشاشة",
     "tokenLimit": "ألغِ شاشة غير مستخدمة قبل اقتران شاشة أخرى",
     "unpairedTitle": "هذه الشاشة غير مقترنة",
-    "unpairedHint": "اطلب من المدير رابط اقتران جديدًا."
+    "unpairedHint": "اطلب من المدير رابط اقتران جديدًا.",
+    "orderTypesLabel": "أنواع الطلبات المعروضة",
+    "orderTypeTakeaway": "سفري / استلام",
+    "orderTypeDineIn": "محلي",
+    "orderTypeOnline": "عبر الإنترنت",
+    "orderTypeDelivery": "توصيل",
+    "atLeastOneOrderType": "اختر نوع طلب واحداً على الأقل"
   },
   "dashboard": {
     "aov": "متوسط قيمة الطلب",
@@ -855,7 +861,12 @@
     "paymentMethodCorrected": "تم تحديث طريقة الدفع",
     "correctPaymentMethodFailed": "تعذر تحديث طريقة الدفع",
     "releaseScheduled": "مجدول",
-    "releaseBlocked": "الإرسال متوقف"
+    "releaseBlocked": "الإرسال متوقف",
+    "markReady": "تحديد كجاهز",
+    "pickedUp": "تم الاستلام",
+    "markedReady": "تم تحديد الطلب كجاهز",
+    "markedPickedUp": "تم تحديد الطلب كمستلم",
+    "updateStatusFailed": "تعذر تحديث حالة الطلب"
   },
   "pos": {
     "addCustomer": "إضافة عميل",

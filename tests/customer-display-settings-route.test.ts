@@ -38,7 +38,12 @@ Module._load = function (request: string, parent: any, isMain: boolean) {
 };
 
 const ROUTE = '/api/settings/customer-display';
-const VALID = { statuses: ['pending', 'ready'], refresh_seconds: 5, show_updated: false };
+const VALID = {
+  statuses: ['pending', 'ready'],
+  order_types: ['takeaway', 'dine_in'],
+  refresh_seconds: 5,
+  show_updated: false,
+};
 
 function request(
   baseUrl: string,
@@ -145,6 +150,7 @@ async function main() {
       assert.equal(res.status, 200);
       assert.deepEqual(res.data, {
         statuses: ['pending', 'preparing', 'ready'],
+        order_types: ['takeaway'],
         refresh_seconds: 3,
         show_updated: true,
       });
@@ -156,6 +162,8 @@ async function main() {
         {},
         { ...VALID, statuses: [] },
         { ...VALID, statuses: ['cancelled'] },
+        { ...VALID, order_types: [] },
+        { ...VALID, order_types: ['catering'] },
         { ...VALID, refresh_seconds: 1 },
         { ...VALID, refresh_seconds: 61 },
         { ...VALID, refresh_seconds: 2.5 },
@@ -171,7 +179,11 @@ async function main() {
 
     console.log('3. PUT accepts a valid body, normalizes it, and GET returns it');
     {
-      const res = await put(baseUrl, { ...VALID, statuses: ['ready', 'pending'] });
+      const res = await put(baseUrl, {
+        ...VALID,
+        statuses: ['ready', 'pending'],
+        order_types: ['dine_in', 'takeaway'],
+      });
       assert.equal(res.status, 200);
       assert.deepEqual(res.data, VALID);
       assert.deepEqual(JSON.parse(readStored() as string), VALID, 'persisted canonical config');

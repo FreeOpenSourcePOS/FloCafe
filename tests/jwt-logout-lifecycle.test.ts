@@ -14,6 +14,7 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-jwt-test-'));
 
+let mockSafeStorageEnabled = false;
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
@@ -22,19 +23,27 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         getPath: () => testDir,
         getVersion: () => 'test',
       },
+      safeStorage: {
+        isEncryptionAvailable: () => mockSafeStorageEnabled,
+        encryptString: (v: string) => Buffer.from(v, 'utf8'),
+        decryptString: (b: Buffer) => b.toString('utf8'),
+      },
     };
   }
   return originalLoad.apply(this, arguments as any);
 };
 
 const bcrypt = require('bcryptjs');
+const Database = require('better-sqlite3');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const {
   initTestDb,
   createApp,
   assertEqual,
+  assertEqualOrThrow,
   assert,
+  assertOrThrow,
   getResults,
   closeDatabase,
   now,
@@ -42,12 +51,18 @@ const {
 
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
 const {
+  createBackup,
+  getCurrentSchemaVersion,
   getDatabase,
   initDatabase,
+  nextAuthTimestampMs,
   nextTokenIatSeconds,
   nextTokensValidAfterTimestamp,
   resetAuthClockForTests,
+  restoreBackup,
 } = require('../main/db');
+const { databaseRoutes } = require('../main/routes/database');
+const { resetMasterPin } = require('../main/services/master-pin');
 const { staffRoutes } = require('../main/routes/staff');
 const {
   clearRevokedTokens,
@@ -93,6 +108,7 @@ async function run() {
   const app = createApp({
     '/api/auth': authRoutes,
     '/api/staff': staffRoutes,
+    '/api/database': databaseRoutes,
   });
 
   // Step 1: Login to get token
@@ -812,6 +828,259 @@ async function run() {
     Date.now = realDateNow;
     await stopServerApp();
     await stopKdsServer();
+  }
+
+  // Step 11: auth_clock_high_water_ms bounds validation & backup export/import/restore isolation
+  console.log(
+    '\nStep 11: auth_clock_high_water_ms bounds validation & backup export/import/restore',
+  );
+  {
+    const liveDb = getDatabase();
+    liveDb.prepare('UPDATE users SET tokens_valid_after = NULL').run();
+
+    try {
+      const safeNowMs = 1_760_500_000_123;
+      Date.now = () => safeNowMs;
+
+      for (const invalidHighWater of [
+        '8639999999999001',
+        '8640000000000001',
+        '9007199254740992',
+        '99999999999999999999',
+        '-500',
+        '0',
+        '1760500999000abc',
+        'NaN',
+      ]) {
+        resetAuthClockForTests();
+        liveDb
+          .prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('auth_clock_high_water_ms', ?, ?)",
+          )
+          .run(invalidHighWater, now());
+
+        const validAfterStr = nextTokensValidAfterTimestamp();
+        assertOrThrow(
+          typeof validAfterStr === 'string' && validAfterStr.length > 0,
+          `nextTokensValidAfterTimestamp does not throw RangeError for invalid high-water '${invalidHighWater}'`,
+        );
+        assertEqualOrThrow(
+          validAfterStr,
+          new Date(safeNowMs).toISOString().replace('T', ' ').replace('Z', ''),
+          `invalid high-water '${invalidHighWater}' is ignored in favor of safe wall clock`,
+        );
+        const healedRow = liveDb
+          .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+          .get() as { value?: string } | undefined;
+        assertEqualOrThrow(
+          healedRow?.value,
+          String(safeNowMs),
+          `invalid high-water '${invalidHighWater}' is overwritten with valid safe millisecond value`,
+        );
+      }
+
+      // Max valid boundary (8_639_999_999_999_000) advances safely without RangeError
+      resetAuthClockForTests();
+      liveDb
+        .prepare(
+          "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('auth_clock_high_water_ms', '8639999999999000', ?)",
+        )
+        .run(now());
+      const boundaryCutoff = nextTokensValidAfterTimestamp();
+      assertEqualOrThrow(
+        boundaryCutoff,
+        '+275760-09-12 23:59:59.001',
+        'boundary max high-water 8_639_999_999_999_000 produces valid extended-year timestamp without RangeError',
+      );
+      assertOrThrow(
+        isTokenStale(8_639_999_999_999_000 / 1000, boundaryCutoff),
+        'isTokenStale marks token at 8_639_999_999_999_000ms stale against boundary cutoff',
+      );
+      const clampedRow = liveDb
+        .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+        .get() as { value?: string } | undefined;
+      assertEqualOrThrow(
+        clampedRow?.value,
+        '8639999999999000',
+        'persisted high-water stays clamped at <= 8_639_999_999_999_000',
+      );
+
+      // Out-of-range Date.now() is also clamped safely without throwing RangeError
+      resetAuthClockForTests();
+      liveDb.prepare("DELETE FROM settings WHERE key = 'auth_clock_high_water_ms'").run();
+      Date.now = () => 9_000_000_000_000_000;
+      const clampedWallCutoff = nextTokensValidAfterTimestamp();
+      assertOrThrow(
+        typeof clampedWallCutoff === 'string' && clampedWallCutoff.startsWith('+275760-09-12'),
+        'out-of-range Date.now() clamps safely without throwing RangeError',
+      );
+    } finally {
+      Date.now = realDateNow;
+      resetAuthClockForTests();
+    }
+
+    // Reset local auth_clock_high_water_ms to a clean current value and test export/import/restore
+    const localClockMs = nextAuthTimestampMs();
+    liveDb
+      .prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('auth_clock_high_water_ms', ?, ?)",
+      )
+      .run(String(localClockMs), now());
+
+    clearLoginRateLimits();
+    const exportOwnerLogin = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'corrected-owner@test.local', password: 'CorrectedPass123!' });
+    assertEqualOrThrow(exportOwnerLogin.status, 200, 'Owner login for export/import test succeeds');
+    const ownerAuth = { Authorization: `Bearer ${exportOwnerLogin.body.access_token}` };
+    const afterLoginClockRow = liveDb
+      .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+      .get() as { value?: string } | undefined;
+    const expectedPreservedLocalClock = String(afterLoginClockRow?.value || '');
+    assertOrThrow(
+      /^\d+$/.test(expectedPreservedLocalClock),
+      'local auth_clock_high_water_ms is populated before export',
+    );
+
+    const exportRes = await request(app).get('/api/database/export').set(ownerAuth);
+    assertEqualOrThrow(exportRes.status, 200, 'GET /api/database/export succeeds');
+    assertOrThrow(
+      Array.isArray(exportRes.body.redacted_fields) &&
+        exportRes.body.redacted_fields.includes('settings.auth_clock_high_water_ms'),
+      'GET /api/database/export records settings.auth_clock_high_water_ms in redacted_fields',
+    );
+    const exportedAuthClockRow = (exportRes.body.data?.settings || []).find(
+      (row: any) => row.key === 'auth_clock_high_water_ms',
+    );
+    assertEqualOrThrow(
+      exportedAuthClockRow?.value,
+      '[REDACTED]',
+      'GET /api/database/export redacts auth_clock_high_water_ms value',
+    );
+
+    // Non-overwrite import with injected foreign/out-of-range auth_clock_high_water_ms preserves local value
+    const poisonedImportPayload = {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [
+          {
+            key: 'auth_clock_high_water_ms',
+            value: '99999999999999999999',
+            updated_at: now(),
+          },
+        ],
+        categories: [],
+        products: [],
+        users: [],
+      },
+    };
+    const mergeImportRes = await request(app)
+      .post('/api/database/import')
+      .set(ownerAuth)
+      .send({ overwrite: false, data: poisonedImportPayload });
+    assertEqualOrThrow(
+      mergeImportRes.status,
+      200,
+      'non-overwrite import with foreign auth_clock_high_water_ms succeeds without constraint error',
+    );
+    const afterMergeClockRow = getDatabase()
+      .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+      .get() as { value?: string } | undefined;
+    assertEqualOrThrow(
+      afterMergeClockRow?.value,
+      expectedPreservedLocalClock,
+      'non-overwrite import preserves local auth_clock_high_water_ms and ignores foreign value',
+    );
+
+    // Overwrite import with injected foreign future auth_clock_high_water_ms also preserves local value
+    mockSafeStorageEnabled = true;
+    try {
+      resetMasterPin('1234');
+      const foreignFutureImportPayload = {
+        schema_version: String(getCurrentSchemaVersion()),
+        data: {
+          settings: [
+            {
+              key: 'auth_clock_high_water_ms',
+              value: '4102444800123',
+              updated_at: now(),
+            },
+          ],
+          categories: [],
+          products: [],
+          users: [],
+        },
+      };
+      const overwriteImportRes = await request(app)
+        .post('/api/database/import')
+        .set(ownerAuth)
+        .send({ overwrite: true, master_pin: '1234', data: foreignFutureImportPayload });
+      assertEqualOrThrow(
+        overwriteImportRes.status,
+        200,
+        'overwrite import with foreign future auth_clock_high_water_ms succeeds',
+      );
+      const afterOverwriteClockRow = getDatabase()
+        .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+        .get() as { value?: string } | undefined;
+      assertEqualOrThrow(
+        afterOverwriteClockRow?.value,
+        expectedPreservedLocalClock,
+        'overwrite import preserves local auth_clock_high_water_ms instead of adopting foreign clock',
+      );
+
+      // When local install has no auth_clock_high_water_ms row, import strips foreign auth_clock_high_water_ms
+      getDatabase().prepare("DELETE FROM settings WHERE key = 'auth_clock_high_water_ms'").run();
+      const emptyLocalImportRes = await request(app)
+        .post('/api/database/import')
+        .set(ownerAuth)
+        .send({ overwrite: false, data: foreignFutureImportPayload });
+      assertEqualOrThrow(
+        emptyLocalImportRes.status,
+        200,
+        'import when local auth_clock_high_water_ms is absent succeeds',
+      );
+      const afterEmptyLocalClockRow = getDatabase()
+        .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+        .get() as { value?: string } | undefined;
+      assertEqualOrThrow(
+        afterEmptyLocalClockRow,
+        undefined,
+        'import strips foreign auth_clock_high_water_ms when absent locally',
+      );
+
+      // SQLite .db restoreBackup strips out-of-range/foreign auth_clock_high_water_ms without RangeError
+      const { path: sqliteBackupPath } = await createBackup();
+      const poisonedBackupDb = new Database(sqliteBackupPath);
+      try {
+        poisonedBackupDb
+          .prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('auth_clock_high_water_ms', '99999999999999999999', ?)",
+          )
+          .run(now());
+      } finally {
+        poisonedBackupDb.close();
+      }
+      resetAuthClockForTests();
+      const restoreRes = restoreBackup(sqliteBackupPath, true);
+      assertEqualOrThrow(
+        restoreRes.success,
+        true,
+        'restoreBackup succeeds even when backup .db contains out-of-range auth_clock_high_water_ms',
+      );
+      const restoredClockRow = getDatabase()
+        .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+        .get() as { value?: string } | undefined;
+      const restoredClockMs = Number(restoredClockRow?.value);
+      assertOrThrow(
+        Number.isSafeInteger(restoredClockMs) &&
+          restoredClockMs > 0 &&
+          restoredClockMs <= 8_639_999_999_999_000,
+        'restoreBackup writes a valid local auth_clock_high_water_ms instead of keeping poisoned backup value',
+      );
+    } finally {
+      mockSafeStorageEnabled = false;
+    }
   }
 
   const results = getResults();

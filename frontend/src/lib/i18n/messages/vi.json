@@ -271,7 +271,13 @@
     "pairFailed": "Không thể ghép nối màn hình",
     "tokenLimit": "Hãy thu hồi một màn hình không dùng trước khi ghép nối màn hình khác",
     "unpairedTitle": "Màn hình này chưa được ghép nối",
-    "unpairedHint": "Hãy nhờ quản lý cấp liên kết ghép nối mới."
+    "unpairedHint": "Hãy nhờ quản lý cấp liên kết ghép nối mới.",
+    "orderTypesLabel": "Loại đơn hàng hiển thị",
+    "orderTypeTakeaway": "Mang đi / Tự lấy",
+    "orderTypeDineIn": "Ăn tại chỗ",
+    "orderTypeOnline": "Trực tuyến",
+    "orderTypeDelivery": "Giao hàng",
+    "atLeastOneOrderType": "Chọn ít nhất một loại đơn hàng"
   },
   "dashboard": {
     "aov": "Giá trị đơn hàng trung bình",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán",
     "releaseScheduled": "Hẹn giờ",
     "releaseBlocked": "Chặn gửi bếp",
+    "markReady": "Đánh dấu sẵn sàng",
+    "pickedUp": "Đã nhận món",
+    "markedReady": "Đã đánh dấu đơn hàng sẵn sàng",
+    "markedPickedUp": "Đã đánh dấu đơn hàng đã nhận",
+    "updateStatusFailed": "Không thể cập nhật trạng thái đơn hàng",
     "refundOwnerOnlyNotice": "Phê duyệt hoàn tiền của quản lý đã bị tắt — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này.",
     "refundOutsideWindowNotice": "Đơn hàng này đã quá thời hạn phê duyệt của quản lý — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này."
   },

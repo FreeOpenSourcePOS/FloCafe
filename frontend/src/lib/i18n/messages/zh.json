@@ -271,7 +271,13 @@
     "pairFailed": "无法配对显示屏",
     "tokenLimit": "配对新显示屏前，请先撤销未使用的显示屏",
     "unpairedTitle": "此显示屏未配对",
-    "unpairedHint": "请向经理索取新的配对链接。"
+    "unpairedHint": "请向经理索取新的配对链接。",
+    "orderTypesLabel": "显示的订单类型",
+    "orderTypeTakeaway": "外带 / 自提",
+    "orderTypeDineIn": "堂食",
+    "orderTypeOnline": "线上订单",
+    "orderTypeDelivery": "外卖配送",
+    "atLeastOneOrderType": "请至少选择一种订单类型"
   },
   "dashboard": {
     "aov": "客单价",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "无法更新付款方式",
     "releaseScheduled": "已预约",
     "releaseBlocked": "送厨受阻",
+    "markReady": "标记为可取餐",
+    "pickedUp": "已取餐",
+    "markedReady": "订单已标记为可取餐",
+    "markedPickedUp": "订单已标记为已取餐",
+    "updateStatusFailed": "更新订单状态失败",
     "refundOwnerOnlyNotice": "经理退款审批已禁用 — 需要店主 PIN 码才能批准此退款。",
     "refundOutsideWindowNotice": "此订单已超出经理审批时限 — 需要店主 PIN 码才能批准此退款。"
   },

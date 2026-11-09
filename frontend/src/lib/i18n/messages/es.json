@@ -271,7 +271,13 @@
     "pairFailed": "No se pudo vincular la pantalla",
     "tokenLimit": "Revoque una pantalla sin usar antes de vincular otra",
     "unpairedTitle": "Esta pantalla no está vinculada",
-    "unpairedHint": "Pida un nuevo enlace de vinculación a un encargado."
+    "unpairedHint": "Pida un nuevo enlace de vinculación a un encargado.",
+    "orderTypesLabel": "Tipos de pedido mostrados",
+    "orderTypeTakeaway": "Para llevar / Recoger",
+    "orderTypeDineIn": "En mesa",
+    "orderTypeOnline": "En línea",
+    "orderTypeDelivery": "Entrega a domicilio",
+    "atLeastOneOrderType": "Selecciona al menos un tipo de pedido"
   },
   "dashboard": {
     "aov": "Valor Prom. de Pedido",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "No se pudo actualizar el método de pago",
     "releaseScheduled": "Programado",
     "releaseBlocked": "Envío bloqueado",
+    "markReady": "Marcar listo",
+    "pickedUp": "Recogido",
+    "markedReady": "Pedido marcado como listo",
+    "markedPickedUp": "Pedido marcado como recogido",
+    "updateStatusFailed": "No se pudo actualizar el estado del pedido",
     "refundOwnerOnlyNotice": "Las aprobaciones de reembolso de gerentes están desactivadas — se requiere el PIN de un propietario para aprobar este reembolso.",
     "refundOutsideWindowNotice": "Este pedido está fuera de la ventana de aprobación del gerente — se requiere el PIN de un propietario para aprobar este reembolso."
   },

@@ -1,10 +1,13 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { getDatabase, isKdsEnabled, now } from '../db';
+import { getDatabase, now } from '../db';
 import {
+  CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_KEY,
+  CUSTOMER_DISPLAY_ORDER_TYPES,
   CUSTOMER_DISPLAY_STATUSES,
   readStoredCustomerDisplayConfig,
   type CustomerDisplayConfig,
+  type CustomerDisplayOrderType,
 } from './customer-display-config';
 import { projectBoardStatusFromItems } from '../../shared/order-item-status';
 import { completedKdsProjectionCutoff } from './orders';
@@ -59,6 +62,18 @@ export function parseBoardStatuses(raw: unknown): CustomerDisplayBoardStatus[] |
     return null;
   }
   return CUSTOMER_DISPLAY_STATUSES.filter((status) => parts.includes(status));
+}
+
+export function parseBoardOrderTypes(raw: unknown): CustomerDisplayOrderType[] | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  const parts = raw.split(',');
+  if (
+    parts.length === 0 ||
+    parts.some((part) => !(CUSTOMER_DISPLAY_ORDER_TYPES as readonly string[]).includes(part))
+  ) {
+    return null;
+  }
+  return CUSTOMER_DISPLAY_ORDER_TYPES.filter((orderType) => parts.includes(orderType));
 }
 
 export class DisplayFeedPaginationError extends Error {
@@ -177,20 +192,30 @@ export function touchDisplayToken(id: string): void {
 function collectProjectedCompletedRows(
   db: ReturnType<typeof getDatabase>,
   allowedStatuses: ReadonlySet<string>,
-  options: { cursor: DisplayFeedCursor | null; maxRows: number },
+  options: {
+    cursor: DisplayFeedCursor | null;
+    maxRows: number;
+    orderTypes?: ReadonlyArray<CustomerDisplayOrderType>;
+  },
 ): BoardEligibleOrderRow[] {
   const projectedCompletedRows: BoardEligibleOrderRow[] = [];
-  if (!isKdsEnabled() || options.maxRows <= 0) {
+  const orderTypes =
+    options.orderTypes && options.orderTypes.length > 0
+      ? options.orderTypes
+      : CUSTOMER_DISPLAY_DEFAULTS.order_types;
+  if (options.maxRows <= 0 || orderTypes.length === 0) {
     return projectedCompletedRows;
   }
 
   const completedCutoff = completedKdsProjectionCutoff();
+  const orderTypePlaceholders = orderTypes.map(() => '?').join(', ');
   const completedBaseSql = `SELECT co.id AS id,
                 co.order_number AS order_number,
                 co.created_at AS created_at
          FROM orders co
          WHERE +co.status = 'completed'
            AND co.release_status = 'released'
+           AND +co.type IN (${orderTypePlaceholders})
            AND co.created_at >= ?`;
   const completedExistsSql = `AND EXISTS (
            SELECT 1 FROM order_items oi
@@ -213,6 +238,7 @@ function collectProjectedCompletedRows(
                  AND (co.created_at < ? OR (co.created_at = ? AND co.id < ?))
                ${completedExistsSql}`,
           )).all(
+            ...orderTypes,
             completedCutoff,
             batchCursor.created_at,
             batchCursor.created_at,
@@ -225,7 +251,7 @@ function collectProjectedCompletedRows(
               `${completedBaseSql}
                  ${completedExistsSql}`,
             )
-            .all(completedCutoff, COMPLETED_CANDIDATE_BATCH_SIZE)
+            .all(...orderTypes, completedCutoff, COMPLETED_CANDIDATE_BATCH_SIZE)
     ) as Array<{ id: number; order_number: string; created_at: string }>;
 
     if (batch.length === 0) break;
@@ -279,10 +305,12 @@ export function collectProjectedCompletedOrderIds(
   db: ReturnType<typeof getDatabase>,
   statuses: ReadonlyArray<CustomerDisplayBoardStatus>,
   cursor: DisplayFeedCursor | null = null,
+  orderTypes?: ReadonlyArray<CustomerDisplayOrderType>,
 ): number[] {
   return collectProjectedCompletedRows(db, new Set(statuses), {
     cursor,
     maxRows: Number.POSITIVE_INFINITY,
+    orderTypes,
   }).map((row) => row.id);
 }
 
@@ -290,6 +318,7 @@ export function selectBoardEligibleOrderPage(
   db: ReturnType<typeof getDatabase>,
   options: {
     statuses: ReadonlyArray<CustomerDisplayBoardStatus>;
+    orderTypes?: ReadonlyArray<CustomerDisplayOrderType>;
     cursor?: DisplayFeedCursor | null;
     limit: number;
   },
@@ -299,7 +328,12 @@ export function selectBoardEligibleOrderPage(
   nextCursor: DisplayFeedCursor | null;
 } {
   const decodedCursor = options.cursor ?? null;
+  const orderTypes =
+    options.orderTypes && options.orderTypes.length > 0
+      ? options.orderTypes
+      : CUSTOMER_DISPLAY_DEFAULTS.order_types;
   const placeholders = options.statuses.map(() => '?').join(', ');
+  const orderTypePlaceholders = orderTypes.map(() => '?').join(', ');
   const selectColumns = `SELECT o.id AS id,
               o.order_number AS order_number,
               o.status AS status,
@@ -312,6 +346,7 @@ export function selectBoardEligibleOrderPage(
             `${selectColumns}
              WHERE o.release_status = 'released'
                AND o.status IN (${placeholders})
+               AND +o.type IN (${orderTypePlaceholders})
                AND o.created_at <= ?
                AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
              ORDER BY o.created_at DESC, o.id DESC
@@ -319,6 +354,7 @@ export function selectBoardEligibleOrderPage(
           )
           .all(
             ...options.statuses,
+            ...orderTypes,
             decodedCursor.created_at,
             decodedCursor.created_at,
             decodedCursor.created_at,
@@ -330,15 +366,17 @@ export function selectBoardEligibleOrderPage(
             `${selectColumns}
              WHERE o.release_status = 'released'
                AND o.status IN (${placeholders})
+               AND +o.type IN (${orderTypePlaceholders})
              ORDER BY o.created_at DESC, o.id DESC
              LIMIT ?`,
           )
-          .all(...options.statuses, options.limit + 1)
+          .all(...options.statuses, ...orderTypes, options.limit + 1)
   ) as BoardEligibleOrderRow[];
 
   const projectedCompletedRows = collectProjectedCompletedRows(db, new Set(options.statuses), {
     cursor: decodedCursor,
     maxRows: options.limit + 1,
+    orderTypes,
   });
 
   let mergedRows = rows;
@@ -380,6 +418,7 @@ export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): Customer
   const config = readStoredCustomerDisplayConfig(settings[CUSTOMER_DISPLAY_KEY]);
   const { pageRows, hasMore, nextCursor } = selectBoardEligibleOrderPage(db, {
     statuses: config.statuses,
+    orderTypes: config.order_types,
     cursor: decodedCursor,
     limit: FEED_ORDER_LIMIT,
   });

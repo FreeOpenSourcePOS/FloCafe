@@ -271,7 +271,13 @@
     "pairFailed": "Ekrani nuk u çiftua dot",
     "tokenLimit": "Anuloni një ekran të papërdorur para se të çiftoni një tjetër",
     "unpairedTitle": "Ky ekran nuk është i çiftuar",
-    "unpairedHint": "Kërkoni një lidhje të re çiftimi nga menaxheri."
+    "unpairedHint": "Kërkoni një lidhje të re çiftimi nga menaxheri.",
+    "orderTypesLabel": "Llojet e porosive të shfaqura",
+    "orderTypeTakeaway": "Me vete / Tërheqje",
+    "orderTypeDineIn": "Në lokal",
+    "orderTypeOnline": "Porosi në internet",
+    "orderTypeDelivery": "Dërgesë",
+    "atLeastOneOrderType": "Zgjidhni të paktën një lloj porosie"
   },
   "dashboard": {
     "aov": "Vlera mesatare e porosisë",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Mënyra e pagesës nuk mund të përditësohej",
     "releaseScheduled": "E planifikuar",
     "releaseBlocked": "Dërgimi i bllokuar",
+    "markReady": "Shëno gati",
+    "pickedUp": "Tërhequr",
+    "markedReady": "Porosia u shënua gati",
+    "markedPickedUp": "Porosia u shënua e tërhequr",
+    "updateStatusFailed": "Përditësimi i statusit të porosisë dështoi",
     "refundOwnerOnlyNotice": "Miratimet e rimbursimit nga menaxheri janë të çaktivizuara — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim.",
     "refundOutsideWindowNotice": "Kjo porosi është jashtë afatit të miratimit të menaxherit — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim."
   },

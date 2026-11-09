@@ -271,7 +271,13 @@
     "pairFailed": "ڈسپلے نہیں جوڑا جا سکا",
     "tokenLimit": "دوسرا جوڑنے سے پہلے غیر استعمال شدہ ڈسپلے منسوخ کریں",
     "unpairedTitle": "یہ ڈسپلے جوڑا ہوا نہیں ہے",
-    "unpairedHint": "منیجر سے نیا جوڑنے کا لنک مانگیں۔"
+    "unpairedHint": "منیجر سے نیا جوڑنے کا لنک مانگیں۔",
+    "orderTypesLabel": "دکھائی جانے والی آرڈر اقسام",
+    "orderTypeTakeaway": "ٹیک اوے / پک اپ",
+    "orderTypeDineIn": "ڈائن اِن",
+    "orderTypeOnline": "آن لائن",
+    "orderTypeDelivery": "ڈیلیوری",
+    "atLeastOneOrderType": "کم از کم ایک آرڈر قسم منتخب کریں"
   },
   "dashboard": {
     "aov": "اوسط آرڈر کی مالیت",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "ادائیگی کا طریقہ اپ ڈیٹ نہیں ہو سکا",
     "releaseScheduled": "شیڈول شدہ",
     "releaseBlocked": "اجرا مسدود",
+    "markReady": "تیار نشان زد کریں",
+    "pickedUp": "وصول کر لیا گیا",
+    "markedReady": "آرڈر کو تیار نشان زد کر دیا گیا",
+    "markedPickedUp": "آرڈر کو وصول شدہ نشان زد کر دیا گیا",
+    "updateStatusFailed": "آرڈر کی حالت اپ ڈیٹ نہیں ہو سکی",
     "refundOwnerOnlyNotice": "مینیجر کی جانب سے رقم واپسی کی منظوری غیر فعال ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔",
     "refundOutsideWindowNotice": "یہ آرڈر مینیجر کی منظوری کے وقت سے باہر ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔"
   },

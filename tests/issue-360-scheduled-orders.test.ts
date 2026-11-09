@@ -646,6 +646,16 @@ async function main() {
         'unreleased order excluded from /api/kitchen/orders',
       );
 
+      setStoreSetting(
+        db,
+        'customer_display',
+        JSON.stringify({
+          statuses: ['pending', 'preparing', 'ready'],
+          order_types: ['takeaway', 'delivery'],
+          refresh_seconds: 3,
+          show_updated: true,
+        }),
+      );
       const displayFeed = buildDisplayFeed();
       assertOrThrow(
         !displayFeed.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),

@@ -271,7 +271,13 @@
     "pairFailed": "Impossible d'associer l'écran",
     "tokenLimit": "Révoquez un écran inutilisé avant d'en associer un autre",
     "unpairedTitle": "Cet écran n'est pas associé",
-    "unpairedHint": "Demandez un nouveau lien d'association à un responsable."
+    "unpairedHint": "Demandez un nouveau lien d'association à un responsable.",
+    "orderTypesLabel": "Types de commandes affichés",
+    "orderTypeTakeaway": "À emporter / Retrait",
+    "orderTypeDineIn": "Sur place",
+    "orderTypeOnline": "En ligne",
+    "orderTypeDelivery": "Livraison",
+    "atLeastOneOrderType": "Sélectionnez au moins un type de commande"
   },
   "dashboard": {
     "aov": "Panier moyen",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Impossible de mettre à jour le mode de paiement",
     "releaseScheduled": "Planifiée",
     "releaseBlocked": "Envoi bloqué",
+    "markReady": "Marquer prêt",
+    "pickedUp": "Récupéré",
+    "markedReady": "Commande marquée comme prête",
+    "markedPickedUp": "Commande marquée comme récupérée",
+    "updateStatusFailed": "Impossible de mettre à jour le statut de la commande",
     "refundOwnerOnlyNotice": "Les approbations de remboursement par le responsable sont désactivées — le code PIN du propriétaire est requis pour approuver ce remboursement.",
     "refundOutsideWindowNotice": "Cette commande dépasse la fenêtre d’approbation du responsable — le code PIN du propriétaire est requis pour approuver ce remboursement."
   },

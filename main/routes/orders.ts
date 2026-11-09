@@ -16,8 +16,9 @@ import {
   utcDayBounds,
   utcTodayDate,
   recordOrderAudit,
-  isKdsEnabled,
   registerOrderSearchFunctions,
+  completeSettledReleasedOrderIfServed,
+  isKdsEnabled,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import {
@@ -41,10 +42,15 @@ import {
 } from '../services/orders';
 import {
   collectProjectedCompletedOrderIds,
+  parseBoardOrderTypes,
   parseBoardStatuses,
   selectBoardEligibleOrderPage,
   type DisplayFeedCursor,
 } from '../services/customer-display-tokens';
+import {
+  CUSTOMER_DISPLAY_ORDER_TYPES,
+  readStoredCustomerDisplayConfig,
+} from '../services/customer-display-config';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -97,7 +103,11 @@ import {
   validateScheduledOrderRequest,
 } from '../services/scheduled-orders';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import {
+  isTerminalItemStatus,
+  isWithinCompletedKdsProjectionWindow,
+  projectBoardStatusFromItems,
+} from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   checkKitchenDeliveryStatus,
@@ -653,18 +663,32 @@ router.get(
       if (req.query.board_status !== undefined && boardStatuses === null) {
         return res.status(400).json({ error: 'Invalid board_status parameter.' });
       }
+      const boardOrderTypes =
+        boardStatuses !== null
+          ? req.query.type !== undefined
+            ? parseBoardOrderTypes(req.query.type)
+            : CUSTOMER_DISPLAY_ORDER_TYPES
+          : null;
+      if (boardStatuses !== null && boardOrderTypes === null) {
+        return res.status(400).json({ error: 'Invalid type parameter.' });
+      }
       const statusQuery = typeof req.query.status === 'string' ? req.query.status : '';
       const statuses = statusQuery ? statusQuery.split(',') : [];
       const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
       if (boardStatuses === null && (view === 'active' || statusIsActive)) {
+        const kdsEnabled = isKdsEnabled();
+        const completedOrderTypes = kdsEnabled
+          ? CUSTOMER_DISPLAY_ORDER_TYPES
+          : readStoredCustomerDisplayConfig(getSettingValue('customer_display')).order_types;
+        const completedTypePlaceholders = completedOrderTypes.map(() => '?').join(',');
         wheres.push(`orders.id IN (
           SELECT ao.id FROM orders AS ao
           WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
           UNION ALL
           SELECT co.id FROM orders AS co
-          WHERE ? = 1
-            AND +co.status = 'completed'
+          WHERE +co.status = 'completed'
             AND co.created_at >= ?
+            ${kdsEnabled ? '' : `AND +co.type IN (${completedTypePlaceholders})`}
             AND EXISTS (
               SELECT 1 FROM order_items AS active_item
               WHERE active_item.order_id = co.id
@@ -672,7 +696,7 @@ router.get(
                 AND active_item.quantity > 0
             )
         )`);
-        params.push(isKdsEnabled() ? 1 : 0, completedKdsProjectionCutoff());
+        params.push(completedKdsProjectionCutoff(), ...(kdsEnabled ? [] : completedOrderTypes));
       }
       if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
@@ -696,9 +720,19 @@ router.get(
           params.push(...statuses);
         }
       }
-      if (req.query.type) {
-        wheres.push('orders.type = ?');
-        params.push(req.query.type);
+      if (boardStatuses === null && req.query.type) {
+        const typeValues =
+          typeof req.query.type === 'string' ? req.query.type.split(',').filter(Boolean) : [];
+        if (typeValues.length === 1) {
+          wheres.push('orders.type = ?');
+          params.push(typeValues[0]);
+        } else if (typeValues.length > 1) {
+          wheres.push(`orders.type IN (${typeValues.map(() => '?').join(',')})`);
+          params.push(...typeValues);
+        } else {
+          wheres.push('orders.type = ?');
+          params.push(req.query.type);
+        }
       }
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
       if (search) {
@@ -816,9 +850,10 @@ router.get(
           ? Math.min(requestedPerPage, 500)
           : 50;
 
-      if (boardStatuses !== null && wheres.length === 0) {
+      if (boardStatuses !== null && boardOrderTypes !== null && wheres.length === 0) {
         const { pageRows, hasMore } = selectBoardEligibleOrderPage(db, {
           statuses: boardStatuses,
+          orderTypes: boardOrderTypes,
           cursor: beforeCursor,
           limit: perPage,
         });
@@ -843,29 +878,33 @@ router.get(
         });
       }
 
-      if (boardStatuses !== null) {
+      if (boardStatuses !== null && boardOrderTypes !== null) {
         const boardPlaceholders = boardStatuses.map(() => '?').join(',');
+        const boardOrderTypePlaceholders = boardOrderTypes.map(() => '?').join(',');
         const projectedCompletedIds = collectProjectedCompletedOrderIds(
           db,
           boardStatuses,
           beforeCursor,
+          boardOrderTypes,
         );
         if (projectedCompletedIds.length > 0) {
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao
             WHERE ao.status IN (${boardPlaceholders})
               AND ao.release_status = 'released'
+              AND +ao.type IN (${boardOrderTypePlaceholders})
             UNION ALL
             SELECT CAST(value AS INTEGER) FROM json_each(?)
           )`);
-          params.push(...boardStatuses, JSON.stringify(projectedCompletedIds));
+          params.push(...boardStatuses, ...boardOrderTypes, JSON.stringify(projectedCompletedIds));
         } else {
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao
             WHERE ao.status IN (${boardPlaceholders})
               AND ao.release_status = 'released'
+              AND +ao.type IN (${boardOrderTypePlaceholders})
           )`);
-          params.push(...boardStatuses);
+          params.push(...boardStatuses, ...boardOrderTypes);
         }
       }
       if (beforeCursor) {
@@ -3552,7 +3591,7 @@ router.patch(
 
       const nowStr = now();
 
-      const { updatedOrder, orderItems, table, changed } = withTxn(() => {
+      const { updatedOrder, orderItems, table, changed, autoCompleted } = withTxn(() => {
         const currentOrder = db
           .prepare('SELECT * FROM orders WHERE id = ?')
           .get(req.params.id) as any;
@@ -3565,7 +3604,42 @@ router.patch(
           throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
         }
 
-        if (currentOrder.status === status) {
+        const canBulkUpdatePreparationItems =
+          !isKdsEnabled() || hasPermission(authUser.userId, 'kitchen.status.update');
+        const isWithinCompletedProjectionWindow =
+          currentOrder.status === 'completed' &&
+          isWithinCompletedKdsProjectionWindow(currentOrder.created_at);
+
+        const existingItemRows = db
+          .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
+          .all(req.params.id) as Array<{ status: string | null; quantity: number | null }>;
+        const projectedCompletedBoardStatus = isWithinCompletedProjectionWindow
+          ? projectBoardStatusFromItems(existingItemRows)
+          : null;
+        const hasPendingOrPreparingItems = existingItemRows.some(
+          (item) =>
+            (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
+            (item.status === 'pending' || item.status === 'preparing'),
+        );
+        const hasActivePickupItems = existingItemRows.some(
+          (item) =>
+            (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
+            (item.status === 'pending' || item.status === 'preparing' || item.status === 'ready'),
+        );
+
+        const isSameOrderState =
+          (currentOrder.status === status &&
+            !(
+              canBulkUpdatePreparationItems &&
+              ((status === 'ready' && hasPendingOrPreparingItems) ||
+                (status === 'served' && hasActivePickupItems))
+            )) ||
+          (canBulkUpdatePreparationItems &&
+            isWithinCompletedProjectionWindow &&
+            ((status === 'ready' && projectedCompletedBoardStatus === 'ready') ||
+              (status === 'served' && !hasActivePickupItems)));
+
+        if (isSameOrderState) {
           // Idempotent same-state request for order
           const items = attachEffectiveAddons(
             db,
@@ -3583,6 +3657,7 @@ router.patch(
             orderItems: items,
             table: tableObj,
             changed: false,
+            autoCompleted: false,
           };
         }
 
@@ -3595,8 +3670,20 @@ router.patch(
           cancelled: [],
         };
 
+        const rawCanTransitionPreparation =
+          (currentOrder.status === 'ready' ||
+            currentOrder.status === 'served' ||
+            isWithinCompletedProjectionWindow) &&
+          ((status === 'ready' && hasPendingOrPreparingItems) ||
+            (status === 'served' && hasActivePickupItems));
+        const canTransitionPreparation =
+          canBulkUpdatePreparationItems && rawCanTransitionPreparation;
+
         const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
-        if (!allowedTargets.includes(status)) {
+        if (!allowedTargets.includes(status) && !canTransitionPreparation) {
+          if (rawCanTransitionPreparation && !canBulkUpdatePreparationItems) {
+            throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+          }
           throw Object.assign(
             new Error(
               `Cannot transition order status from '${currentOrder.status}' to '${status}'`,
@@ -3765,6 +3852,7 @@ router.patch(
           approvedByUserId = user.id;
         }
 
+        let autoCompleted = false;
         switch (status) {
           case 'preparing':
             db.prepare(
@@ -3773,15 +3861,50 @@ router.patch(
             break;
 
           case 'ready':
-            db.prepare(
-              'UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?',
-            ).run(status, nowStr, nowStr, req.params.id);
+            if (canBulkUpdatePreparationItems) {
+              db.prepare(`
+              UPDATE order_items SET status = 'ready', updated_at = ?
+              WHERE order_id = ? AND status IN ('pending', 'preparing')
+            `).run(nowStr, req.params.id);
+            }
+            if (currentOrder.status === 'completed') {
+              db.prepare('UPDATE orders SET ready_at = ?, updated_at = ? WHERE id = ?').run(
+                nowStr,
+                nowStr,
+                req.params.id,
+              );
+            } else {
+              db.prepare(
+                'UPDATE orders SET status = ?, ready_at = ?, served_at = NULL, updated_at = ? WHERE id = ?',
+              ).run(status, nowStr, nowStr, req.params.id);
+            }
             break;
 
           case 'served':
-            db.prepare(
-              'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
-            ).run(status, nowStr, nowStr, req.params.id);
+            if (canBulkUpdatePreparationItems) {
+              db.prepare(`
+              UPDATE order_items SET status = 'served', updated_at = ?
+              WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
+            `).run(nowStr, req.params.id);
+            }
+            if (currentOrder.status === 'completed') {
+              db.prepare('UPDATE orders SET served_at = ?, updated_at = ? WHERE id = ?').run(
+                nowStr,
+                nowStr,
+                req.params.id,
+              );
+            } else {
+              db.prepare(
+                'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
+              ).run(status, nowStr, nowStr, req.params.id);
+              if (canBulkUpdatePreparationItems) {
+                autoCompleted = completeSettledReleasedOrderIfServed(
+                  db,
+                  req.params.id as string,
+                  nowStr,
+                );
+              }
+            }
             break;
 
           case 'completed':
@@ -3912,11 +4035,14 @@ router.patch(
           ? (db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any)
           : null;
         const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
-        return { updatedOrder, orderItems, table, changed: true };
+        return { updatedOrder, orderItems, table, changed: true, autoCompleted };
       });
 
       if (changed) {
         cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
+        if (autoCompleted) {
+          cloudSync.recordOrderChanged(req.params.id as string, 'order.completed');
+        }
         if (isUnreleasedOrderRow(updatedOrder)) {
           notifyOrderUpdated();
         } else {

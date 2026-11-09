@@ -271,7 +271,13 @@
     "pairFailed": "ディスプレイをペアリングできませんでした",
     "tokenLimit": "別のディスプレイをペアリングする前に、未使用のものを無効にしてください",
     "unpairedTitle": "このディスプレイはペアリングされていません",
-    "unpairedHint": "マネージャーに新しいペアリングリンクを依頼してください。"
+    "unpairedHint": "マネージャーに新しいペアリングリンクを依頼してください。",
+    "orderTypesLabel": "表示する注文タイプ",
+    "orderTypeTakeaway": "テイクアウト / 受取",
+    "orderTypeDineIn": "イートイン",
+    "orderTypeOnline": "オンライン",
+    "orderTypeDelivery": "デリバリー",
+    "atLeastOneOrderType": "注文タイプを1つ以上選択してください"
   },
   "dashboard": {
     "aov": "平均注文額",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "支払方法を更新できませんでした",
     "releaseScheduled": "予約済",
     "releaseBlocked": "送信保留",
+    "markReady": "準備完了にする",
+    "pickedUp": "受取済み",
+    "markedReady": "注文を準備完了にしました",
+    "markedPickedUp": "注文を受取済みにしました",
+    "updateStatusFailed": "注文ステータスの更新に失敗しました",
     "refundOwnerOnlyNotice": "マネージャーによる返金承認は無効になっています — この返金を承認するにはオーナーのPINが必要です。",
     "refundOutsideWindowNotice": "この注文はマネージャーの承認可能時間を過ぎています — この返金を承認するにはオーナーのPINが必要です。"
   },

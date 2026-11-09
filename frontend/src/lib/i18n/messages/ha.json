@@ -271,7 +271,13 @@
     "pairFailed": "Ba a iya haɗa allon ba",
     "tokenLimit": "Soke wani allon da ba a amfani da shi kafin haɗa wani",
     "unpairedTitle": "Ba a haɗa wannan allon ba",
-    "unpairedHint": "Tambayi manaja sabuwar hanyar haɗi."
+    "unpairedHint": "Tambayi manaja sabuwar hanyar haɗi.",
+    "orderTypesLabel": "Nau’o’in odar da ake nunawa",
+    "orderTypeTakeaway": "Tafi da shi / Ɗauka",
+    "orderTypeDineIn": "Ci a wuri",
+    "orderTypeOnline": "Kan layi",
+    "orderTypeDelivery": "Isarwa",
+    "atLeastOneOrderType": "Zaɓi aƙalla nau’in oda ɗaya"
   },
   "dashboard": {
     "aov": "Matsakaicin Kimar Oda",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Ba a iya sabunta hanyar biyan kuɗi ba",
     "releaseScheduled": "An tsara lokaci",
     "releaseBlocked": "An dakatar da turawa",
+    "markReady": "Alama a shirye",
+    "pickedUp": "An karɓa",
+    "markedReady": "An yi wa oda alama a shirye",
+    "markedPickedUp": "An yi wa oda alama an karɓa",
+    "updateStatusFailed": "An kasa sabunta matsayin oda",
     "refundOwnerOnlyNotice": "An kashe amincewar mayar da kuɗi na manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi.",
     "refundOutsideWindowNotice": "Wannan odar ta wuce lokacin amincewar manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi."
   },

@@ -271,7 +271,13 @@
     "pairFailed": "Anzeige konnte nicht gekoppelt werden",
     "tokenLimit": "Widerrufen Sie eine ungenutzte Anzeige, bevor Sie eine weitere koppeln",
     "unpairedTitle": "Diese Anzeige ist nicht gekoppelt",
-    "unpairedHint": "Fragen Sie eine Führungskraft nach einem neuen Kopplungslink."
+    "unpairedHint": "Fragen Sie eine Führungskraft nach einem neuen Kopplungslink.",
+    "orderTypesLabel": "Angezeigte Bestellarten",
+    "orderTypeTakeaway": "Zum Mitnehmen / Abholung",
+    "orderTypeDineIn": "Vor Ort essen",
+    "orderTypeOnline": "Online-Bestellungen",
+    "orderTypeDelivery": "Lieferung",
+    "atLeastOneOrderType": "Wählen Sie mindestens eine Bestellart aus"
   },
   "dashboard": {
     "aov": "Durchschnittlicher Bestellwert",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Zahlungsart konnte nicht aktualisiert werden",
     "releaseScheduled": "Geplant",
     "releaseBlocked": "Freigabe blockiert",
+    "markReady": "Als bereit markieren",
+    "pickedUp": "Abgeholt",
+    "markedReady": "Bestellung als bereit markiert",
+    "markedPickedUp": "Bestellung als abgeholt markiert",
+    "updateStatusFailed": "Bestellstatus konnte nicht aktualisiert werden",
     "refundOwnerOnlyNotice": "Rückerstattungsgenehmigungen durch Manager sind deaktiviert — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich.",
     "refundOutsideWindowNotice": "Diese Bestellung liegt außerhalb des Genehmigungszeitfensters für Manager — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich."
   },

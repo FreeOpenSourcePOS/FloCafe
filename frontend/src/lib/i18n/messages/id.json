@@ -271,7 +271,13 @@
     "pairFailed": "Layar tidak dapat dihubungkan",
     "tokenLimit": "Cabut layar yang tidak terpakai sebelum menghubungkan yang lain",
     "unpairedTitle": "Layar ini belum terhubung",
-    "unpairedHint": "Minta tautan penghubungan baru kepada manajer."
+    "unpairedHint": "Minta tautan penghubungan baru kepada manajer.",
+    "orderTypesLabel": "Jenis pesanan yang ditampilkan",
+    "orderTypeTakeaway": "Bawa pulang / Ambil sendiri",
+    "orderTypeDineIn": "Makan di tempat",
+    "orderTypeOnline": "Pesanan daring",
+    "orderTypeDelivery": "Pesan antar",
+    "atLeastOneOrderType": "Pilih setidaknya satu jenis pesanan"
   },
   "dashboard": {
     "aov": "Rata-rata Nilai Pesanan",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Tidak dapat memperbarui metode pembayaran",
     "releaseScheduled": "Terjadwal",
     "releaseBlocked": "Rilis tertahan",
+    "markReady": "Tandai siap",
+    "pickedUp": "Sudah diambil",
+    "markedReady": "Pesanan ditandai siap",
+    "markedPickedUp": "Pesanan ditandai sudah diambil",
+    "updateStatusFailed": "Gagal memperbarui status pesanan",
     "refundOwnerOnlyNotice": "Persetujuan pengembalian dana oleh manajer dinonaktifkan — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini.",
     "refundOutsideWindowNotice": "Pesanan ini berada di luar batas waktu persetujuan manajer — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini."
   },

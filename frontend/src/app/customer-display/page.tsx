@@ -29,6 +29,7 @@ type OrderGroup = 'priority' | 'ordinary';
 interface OrderBoardPage {
   orderIds: string[];
   group: OrderGroup;
+  cycle: number;
 }
 
 interface OrderBoardSectionProps {
@@ -152,7 +153,11 @@ function OrderBoardSection({
     rowHeights: Map<string, number>;
     rowGap: number;
   }>({ availableHeight: 0, rowHeights: new Map(), rowGap: ORDER_ROW_GAP_FALLBACK });
-  const [activePage, setActivePage] = useState<OrderBoardPage>({ orderIds: [], group: 'ordinary' });
+  const [activePage, setActivePage] = useState<OrderBoardPage>({
+    orderIds: [],
+    group: 'ordinary',
+    cycle: 0,
+  });
   const activePageRef = useRef(activePage);
   const ordinaryPageCursorRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -164,13 +169,43 @@ function OrderBoardSection({
     () => new Map(orders.map((order) => [getOrderId(order), order])),
     [orders],
   );
+  const activePriorityIdSet = useMemo(
+    () =>
+      isReady && activePage.group === 'priority' ? new Set(activePage.orderIds) : new Set<string>(),
+    [activePage.group, activePage.orderIds, isReady],
+  );
   const priorityOrders = useMemo(
-    () => (isReady ? orders.filter((order) => newlyReadyOrderIds.has(getOrderId(order))) : []),
-    [isReady, newlyReadyOrderIds, orders],
+    () =>
+      isReady
+        ? orders.filter(
+            (order) =>
+              newlyReadyOrderIds.has(getOrderId(order)) &&
+              !activePriorityIdSet.has(getOrderId(order)),
+          )
+        : [],
+    [activePriorityIdSet, isReady, newlyReadyOrderIds, orders],
+  );
+  const activePriorityOrders = useMemo(
+    () =>
+      isReady && activePriorityIdSet.size > 0
+        ? orders.filter((order) => activePriorityIdSet.has(getOrderId(order)))
+        : [],
+    [activePriorityIdSet, isReady, orders],
   );
   const ordinaryOrders = useMemo(
     () => (isReady ? orders.filter((order) => !newlyReadyOrderIds.has(getOrderId(order))) : orders),
     [isReady, newlyReadyOrderIds, orders],
+  );
+  const displayOrdinaryOrders = useMemo(
+    () =>
+      isReady
+        ? orders.filter(
+            (order) =>
+              !newlyReadyOrderIds.has(getOrderId(order)) &&
+              !activePriorityIdSet.has(getOrderId(order)),
+          )
+        : orders,
+    [activePriorityIdSet, isReady, newlyReadyOrderIds, orders],
   );
   const areOrdersMeasured = useMemo(
     () =>
@@ -200,6 +235,24 @@ function OrderBoardSection({
       priorityOrders,
     ],
   );
+  const activePriorityPages = useMemo(
+    () =>
+      combinedPages.length <= 1 || activePriorityOrders.length === 0
+        ? []
+        : paginateOrders(
+            activePriorityOrders,
+            metrics.availableHeight,
+            metrics.rowHeights,
+            metrics.rowGap,
+          ),
+    [
+      activePriorityOrders,
+      combinedPages.length,
+      metrics.availableHeight,
+      metrics.rowGap,
+      metrics.rowHeights,
+    ],
+  );
   const ordinaryPages = useMemo(
     () =>
       combinedPages.length <= 1 || priorityOrders.length === 0
@@ -219,7 +272,39 @@ function OrderBoardSection({
       priorityOrders.length,
     ],
   );
+  const displayOrdinaryPages = useMemo(
+    () =>
+      combinedPages.length <= 1 ||
+      (priorityOrders.length === 0 && activePriorityOrders.length === 0)
+        ? combinedPages
+        : paginateOrders(
+            displayOrdinaryOrders,
+            metrics.availableHeight,
+            metrics.rowHeights,
+            metrics.rowGap,
+          ),
+    [
+      activePriorityOrders.length,
+      combinedPages,
+      displayOrdinaryOrders,
+      metrics.availableHeight,
+      metrics.rowGap,
+      metrics.rowHeights,
+      priorityOrders.length,
+    ],
+  );
   const hasMultiplePages = isPagedLayout && combinedPages.length > 1;
+  const allPages = useMemo(
+    () =>
+      activePriorityPages.length > 0 || priorityPages.length > 0
+        ? [
+            ...displayOrdinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
+            ...activePriorityPages.map((page) => ({ page, group: 'priority' as const })),
+            ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
+          ]
+        : combinedPages.map((page) => ({ page, group: 'ordinary' as const })),
+    [activePriorityPages, combinedPages, displayOrdinaryPages, priorityPages],
+  );
   const priorityPagesRef = useRef(priorityPages);
   const ordinaryPagesRef = useRef(ordinaryPages);
 
@@ -229,17 +314,24 @@ function OrderBoardSection({
     ordinaryPagesRef.current = ordinaryPages;
   }, [onPriorityOrdersShown, ordinaryPages, priorityPages]);
 
-  const updateActivePage = useCallback((nextPage: OrderBoardPage) => {
-    const current = activePageRef.current;
-    if (
-      current.group === nextPage.group &&
-      getPageKey(current.orderIds) === getPageKey(nextPage.orderIds)
-    ) {
-      return;
-    }
-    activePageRef.current = nextPage;
-    setActivePage(nextPage);
-  }, []);
+  const updateActivePage = useCallback(
+    (nextPage: Omit<OrderBoardPage, 'cycle'>, resetTimer = true) => {
+      const current = activePageRef.current;
+      if (
+        current.group === nextPage.group &&
+        getPageKey(current.orderIds) === getPageKey(nextPage.orderIds)
+      ) {
+        return;
+      }
+      const updated: OrderBoardPage = {
+        ...nextPage,
+        cycle: resetTimer ? current.cycle + 1 : current.cycle,
+      };
+      activePageRef.current = updated;
+      setActivePage(updated);
+    },
+    [],
+  );
 
   const selectNextPage = useCallback(
     (currentPriorityPages: BoardOrder[][], currentOrdinaryPages: BoardOrder[][]) => {
@@ -361,30 +453,33 @@ function OrderBoardSection({
 
     if (!isPagedLayout) {
       if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
-        updateActivePage({ ...active, orderIds: retainedIds });
+        updateActivePage({ group: active.group, orderIds: retainedIds }, false);
       }
       return;
     }
 
     if (orders.length === 0) {
-      updateActivePage({ orderIds: [], group: 'ordinary' });
+      updateActivePage({ orderIds: [], group: 'ordinary' }, false);
       ordinaryPageCursorRef.current = 0;
       return;
     }
 
     if (!areOrdersMeasured) {
       if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
-        updateActivePage({ ...active, orderIds: retainedIds });
+        updateActivePage({ group: active.group, orderIds: retainedIds }, false);
       }
       return;
     }
 
     if (combinedPages.length === 1) {
       const orderIds = combinedPages[0].map(getOrderId);
-      updateActivePage({
-        orderIds,
-        group: 'ordinary',
-      });
+      updateActivePage(
+        {
+          orderIds,
+          group: 'ordinary',
+        },
+        false,
+      );
       ordinaryPageCursorRef.current = 0;
       if (priorityOrders.length > 0) {
         priorityCallbackRef.current(priorityOrders.map(getOrderId));
@@ -397,15 +492,10 @@ function OrderBoardSection({
       orderIdsFit(retainedIds, metrics.availableHeight, metrics.rowHeights, metrics.rowGap)
     ) {
       if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
-        updateActivePage({ ...active, orderIds: retainedIds });
+        updateActivePage({ group: active.group, orderIds: retainedIds }, false);
       }
       return;
     }
-
-    const allPages = [
-      ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
-      ...ordinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
-    ];
 
     if (retainedIds.length > 0) {
       const currentPage = allPages.find(({ page }) =>
@@ -428,6 +518,7 @@ function OrderBoardSection({
 
     selectNextPage(priorityPages, ordinaryPages);
   }, [
+    allPages,
     areOrdersMeasured,
     combinedPages,
     isPagedLayout,
@@ -449,13 +540,32 @@ function OrderBoardSection({
       selectNextPage(priorityPagesRef.current, ordinaryPagesRef.current);
     }, ORDER_PAGE_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [hasMultiplePages, isPagedLayout, isPageVisible, selectNextPage]);
+  }, [activePage.cycle, hasMultiplePages, isPagedLayout, isPageVisible, selectNextPage]);
 
   const visibleOrders = isPagedLayout
     ? activePage.orderIds
         .map((id) => orderById.get(id))
         .filter((order): order is BoardOrder => !!order)
     : orders;
+  const totalPages = allPages.length;
+  const activePageIndex = useMemo(() => {
+    if (allPages.length === 0) return 0;
+    const activeIdsKey = getPageKey(activePage.orderIds);
+    const exactMatch = allPages.findIndex(
+      (entry) =>
+        entry.group === activePage.group && getPageKey(entry.page.map(getOrderId)) === activeIdsKey,
+    );
+    if (exactMatch >= 0) return exactMatch;
+    if (activePage.orderIds.length > 0) {
+      const firstId = activePage.orderIds[0];
+      const byFirstOrder = allPages.findIndex((entry) =>
+        entry.page.some((order) => getOrderId(order) === firstId),
+      );
+      if (byFirstOrder >= 0) return byFirstOrder;
+    }
+    return 0;
+  }, [activePage.group, activePage.orderIds, allPages]);
+  const hiddenOrderCount = Math.max(0, orders.length - visibleOrders.length);
   const dataTestId = isReady
     ? 'customer-display-ready-scroll'
     : 'customer-display-preparing-scroll';
@@ -465,16 +575,91 @@ function OrderBoardSection({
       className={`flex min-w-0 flex-col overflow-hidden rounded-3xl border ${accent === 'blue' ? 'border-blue-900/70 bg-blue-950/60' : 'border-emerald-900/70 bg-emerald-950/60'}`}
     >
       <div
-        className={`shrink-0 border-b px-5 py-4 md:px-6 md:py-5 ${accent === 'blue' ? 'border-blue-800/60 bg-blue-900/50' : 'border-emerald-800/60 bg-emerald-900/50'}`}
+        className={`relative shrink-0 border-b px-5 py-4 md:px-6 md:py-5 ${accent === 'blue' ? 'border-blue-800/60 bg-blue-900/50' : 'border-emerald-800/60 bg-emerald-900/50'}`}
       >
-        <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">
-          {title}
-        </h2>
-        <p
-          className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}
-        >
-          {hint}
-        </p>
+        <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">
+              {title}
+            </h2>
+            <p
+              className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}
+            >
+              {hint}
+            </p>
+          </div>
+          {hasMultiplePages && (
+            <div
+              data-testid="customer-display-page-indicator"
+              className="ltr-island flex shrink-0 flex-col items-end gap-1.5 pt-1"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 text-sm font-bold tabular-nums md:px-3 md:py-1 md:text-base ${
+                    accent === 'blue'
+                      ? 'border-blue-400/40 bg-blue-950/80 text-blue-100'
+                      : 'border-emerald-400/40 bg-emerald-950/80 text-emerald-100'
+                  }`}
+                >
+                  {activePageIndex + 1} / {totalPages}
+                </span>
+                {hiddenOrderCount > 0 && (
+                  <span
+                    data-testid="customer-display-overflow-count"
+                    className={`rounded-full border px-2.5 py-0.5 text-sm font-extrabold tabular-nums md:px-3 md:py-1 md:text-base ${
+                      accent === 'blue'
+                        ? 'border-blue-300/50 bg-blue-500/25 text-blue-100'
+                        : 'border-emerald-300/50 bg-emerald-500/25 text-emerald-100'
+                    }`}
+                  >
+                    +{hiddenOrderCount}
+                  </span>
+                )}
+              </div>
+              <div className="flex max-w-44 flex-wrap items-center justify-end gap-1.5">
+                {allPages.map((entry, index) => {
+                  const isActive = index === activePageIndex;
+                  return (
+                    <span
+                      key={`${entry.group}:${getPageKey(entry.page.map(getOrderId))}`}
+                      data-testid="customer-display-page-dot"
+                      data-active={isActive ? 'true' : 'false'}
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        isActive
+                          ? accent === 'blue'
+                            ? 'w-5 bg-blue-300'
+                            : 'w-5 bg-emerald-300'
+                          : accent === 'blue'
+                            ? 'w-2 bg-blue-300/35'
+                            : 'w-2 bg-emerald-300/35'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+        {hasMultiplePages && (
+          <div
+            data-testid="customer-display-page-timer"
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-x-0 bottom-0 h-1.5 w-full overflow-hidden ${
+              accent === 'blue' ? 'bg-blue-950/80' : 'bg-emerald-950/80'
+            }`}
+          >
+            {isPageVisible && (
+              <div
+                key={activePage.cycle}
+                data-testid="customer-display-page-timer-bar"
+                className={`flo-display-page-timer-bar ${
+                  accent === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'
+                }`}
+                style={{ animationDuration: `${ORDER_PAGE_INTERVAL_MS}ms` }}
+              />
+            )}
+          </div>
+        )}
       </div>
       <div
         ref={listRef}

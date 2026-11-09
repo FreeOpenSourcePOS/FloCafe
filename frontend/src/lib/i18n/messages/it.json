@@ -271,7 +271,13 @@
     "pairFailed": "Impossibile associare il display",
     "tokenLimit": "Revoca un display inutilizzato prima di associarne un altro",
     "unpairedTitle": "Questo display non è associato",
-    "unpairedHint": "Chiedi un nuovo link di associazione a un responsabile."
+    "unpairedHint": "Chiedi un nuovo link di associazione a un responsabile.",
+    "orderTypesLabel": "Tipi di ordine mostrati",
+    "orderTypeTakeaway": "Asporto / Ritiro",
+    "orderTypeDineIn": "Al tavolo",
+    "orderTypeOnline": "Ordini web",
+    "orderTypeDelivery": "Consegna a domicilio",
+    "atLeastOneOrderType": "Seleziona almeno un tipo di ordine"
   },
   "dashboard": {
     "aov": "Valore medio ordine",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "Impossibile aggiornare il metodo di pagamento",
     "releaseScheduled": "Programmato",
     "releaseBlocked": "Invio bloccato",
+    "markReady": "Segna pronto",
+    "pickedUp": "Ritirato",
+    "markedReady": "Ordine segnato come pronto",
+    "markedPickedUp": "Ordine segnato come ritirato",
+    "updateStatusFailed": "Impossibile aggiornare lo stato dell’ordine",
     "refundOwnerOnlyNotice": "Le approvazioni dei rimborsi da parte del responsabile sono disabilitate — è richiesto il PIN del titolare per approvare questo rimborso.",
     "refundOutsideWindowNotice": "Questo ordine è fuori dalla finestra di approvazione del responsabile — è richiesto il PIN del titolare per approvare questo rimborso."
   },

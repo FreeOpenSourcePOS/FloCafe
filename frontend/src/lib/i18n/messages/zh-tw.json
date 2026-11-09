@@ -271,7 +271,13 @@
     "pairFailed": "無法配對顯示螢幕",
     "tokenLimit": "配對新螢幕前，請先撤銷未使用的顯示螢幕",
     "unpairedTitle": "此顯示螢幕尚未配對",
-    "unpairedHint": "請向經理索取新的配對連結。"
+    "unpairedHint": "請向經理索取新的配對連結。",
+    "orderTypesLabel": "顯示的訂單類型",
+    "orderTypeTakeaway": "外帶 / 自取",
+    "orderTypeDineIn": "內用",
+    "orderTypeOnline": "線上訂單",
+    "orderTypeDelivery": "外送",
+    "atLeastOneOrderType": "請至少選擇一種訂單類型"
   },
   "dashboard": {
     "aov": "客單價",
@@ -856,6 +862,11 @@
     "correctPaymentMethodFailed": "無法更新付款方式",
     "releaseScheduled": "已預約",
     "releaseBlocked": "送廚受阻",
+    "markReady": "標記為可取餐",
+    "pickedUp": "已取餐",
+    "markedReady": "訂單已標記為可取餐",
+    "markedPickedUp": "訂單已標記為已取餐",
+    "updateStatusFailed": "更新訂單狀態失敗",
     "refundOwnerOnlyNotice": "經理退款核准已停用 — 需要店主 PIN 碼才能核准此退款。",
     "refundOutsideWindowNotice": "此訂單已超出經理核准時限 — 需要店主 PIN 碼才能核准此退款。"
   },

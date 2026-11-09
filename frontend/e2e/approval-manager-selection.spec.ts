@@ -155,6 +155,8 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     await page.locator('#email').fill('owner@flo.local');
     await page.locator('#password').fill('E2ePass123!');
     await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 20000 });
+    await page.waitForFunction(() => !!localStorage.getItem('token'));
     await setLanguage(page, 'en');
     await setOrdersLayout(page, 'cards', BASE, ownerToken);
   });

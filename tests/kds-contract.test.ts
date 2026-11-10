@@ -1268,19 +1268,23 @@ async function main() {
       'finishing requeued item stamps fresh ready_at instead of keeping premature timestamp',
     );
 
-    const requeuePendingRes = await request(app)
+    const completedRequeuePendingRes = await request(app)
       .patch(`/api/order-items/${prepaidItemId}/status`)
       .set(authHeader)
       .send({ status: 'pending' });
-    assertEqualOrThrow(requeuePendingRes.status, 200, 'completed item requeue -> pending succeeds');
-    const afterRequeuePending = readOrderState(prepaidCompletedOrderId);
     assertEqualOrThrow(
-      afterRequeuePending.ready_at,
+      completedRequeuePendingRes.status,
+      200,
+      'completed item requeue -> pending succeeds',
+    );
+    const afterCompletedRequeuePending = readOrderState(prepaidCompletedOrderId);
+    assertEqualOrThrow(
+      afterCompletedRequeuePending.ready_at,
       null,
       'requeue to pending clears stale ready_at on completed order',
     );
     assertEqualOrThrow(
-      afterRequeuePending.served_at,
+      afterCompletedRequeuePending.served_at,
       null,
       'requeue to pending clears stale served_at on completed order',
     );

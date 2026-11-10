@@ -421,14 +421,14 @@ export default function POSPage() {
       typeof useAuthStore.getState === 'function'
         ? useAuthStore.getState()
         : { currentTenant, user, token };
-    const liveTenantId = authState.currentTenant?.id;
+    const liveTenantId = authState.currentTenant?.id ?? currentTenant?.id;
     if (initialStoreIdRef.current === 'default' && liveTenantId != null) {
       initialStoreIdRef.current = liveTenantId;
     }
     const liveUserId = authState.user?.id == null ? null : String(authState.user.id);
     const liveToken = authState.token ?? readStoredAuthToken();
     return {
-      storeId: String(liveTenantId || 'default'),
+      storeId: String(liveTenantId || currentStoreId),
       initialStoreId: initialStoreIdRef.current,
       userId: liveUserId,
       token: liveToken,
@@ -476,46 +476,15 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!supportError) return;
-    const authState =
-      typeof useAuthStore.getState === 'function'
-        ? useAuthStore.getState()
-        : {
-            currentTenant: { id: currentStoreId },
-            user: { id: activeUserId },
-            token: activeToken,
-          };
-    const liveTenantId = authState.currentTenant?.id;
-    const liveUserId = authState.user?.id == null ? null : String(authState.user.id);
-    let storedToken: string | null = null;
-    try {
-      storedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
-    } catch {
-      storedToken = null;
-    }
-    if (
-      !isSupportErrorContextCurrent(supportError.context, {
-        storeId: String(liveTenantId || currentStoreId),
-        initialStoreId: initialStoreIdRef.current,
-        userId: liveUserId ?? activeUserId,
-        token: authState.token ?? activeToken ?? storedToken,
-        sessionEpoch: sessionEpochRef.current,
-      })
-    ) {
-      supportSubmitTokenRef.current = null;
-      setSupportSubmitting(false);
-      setSupportError(null);
-      setSentTicketId(null);
-      supportLogSnapshotRef.current = null;
+    if (!isSupportErrorContextCurrent(supportError.context, readLiveSupportContext())) {
+      clearSupportErrorState();
     }
   }, [supportError, currentStoreId, activeUserId, activeToken]);
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
     authToken ? { Authorization: `Bearer ${authToken}` } : {};
-  const checkSessionCurrent = (originEpoch: number, originUserId: string | null): boolean => {
-    if (sessionEpochRef.current !== originEpoch) return false;
-    const currentUser = useAuthStore.getState().user;
-    const currentUserId = currentUser?.id == null ? null : String(currentUser.id);
-    return currentUserId === originUserId;
+  const checkSessionCurrent = (originContext: SupportErrorContextSnapshot): boolean => {
+    return isSupportErrorContextCurrent(originContext, readLiveSupportContext());
   };
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
@@ -808,7 +777,13 @@ export default function POSPage() {
     subject?: string;
     extraDiagnostics?: Record<string, unknown>;
     suppressToast?: boolean;
+    originContext?: SupportErrorContextSnapshot;
   }) => {
+    const liveContext = readLiveSupportContext();
+    const originContext = entry.originContext || liveContext;
+    if (!isSupportErrorContextCurrent(originContext, liveContext)) {
+      return;
+    }
     const correlationId = isOperationReference(entry.correlationId)
       ? entry.correlationId
       : undefined;
@@ -826,7 +801,6 @@ export default function POSPage() {
     });
     const subject = entry.subject || presentation.subject;
     const category = entry.category || presentation.category;
-    const liveContext = readLiveSupportContext();
     const matchedOperationFailure =
       correlationId && entry.operationFailure?.operation_id === correlationId
         ? entry.operationFailure
@@ -853,10 +827,10 @@ export default function POSPage() {
       ticketCorrelationId,
       clientTicketId,
       context: {
-        storeId: liveContext.storeId,
-        userId: liveContext.userId,
-        token: liveContext.token,
-        sessionEpoch: liveContext.sessionEpoch,
+        storeId: originContext.storeId,
+        userId: originContext.userId,
+        token: originContext.token,
+        sessionEpoch: originContext.sessionEpoch,
       },
       presentation,
       payload: {
@@ -885,6 +859,7 @@ export default function POSPage() {
     title: string,
     operation: 'order.create' | 'payment.create' | 'order.append' = 'order.create',
     correlationId: string | null = null,
+    originContext?: SupportErrorContextSnapshot,
   ) => {
     if (correlationId)
       void captureClientOperationFailure({ operation, phase: 'retry_storage', correlationId });
@@ -917,6 +892,7 @@ export default function POSPage() {
             outcome: 'not_applied',
           }
         : undefined,
+      originContext,
     });
   };
 
@@ -926,6 +902,7 @@ export default function POSPage() {
     operation: string,
     stage: string,
     correlationId: string | null,
+    originContext?: SupportErrorContextSnapshot,
   ) => {
     const registeredOperation = isSupportedFailureOperation(operation) ? operation : 'order.create';
     const expectedReference = operation === registeredOperation ? correlationId || '' : '';
@@ -1107,6 +1084,7 @@ export default function POSPage() {
       displayCode: failure.displayCode,
       correlationId,
       operationFailure: helpOperationFailure,
+      originContext,
     });
   };
   const newIdempotencyKey = () =>
@@ -1122,13 +1100,10 @@ export default function POSPage() {
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;
 
-  const printKotIfEnabled = async (order: Order) => {
+  const printKotIfEnabled = async (order: Order, originContext?: SupportErrorContextSnapshot) => {
+    const origin = originContext || readLiveSupportContext();
     if (order.release_status && order.release_status !== 'released') return;
-    if (
-      currentTenant &&
-      typeof useAuthStore.getState === 'function' &&
-      useAuthStore.getState().currentTenant?.id !== currentTenant.id
-    ) {
+    if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) {
       return;
     }
     // Master kot_printing_enabled check gates both manual and automatic prints.
@@ -1140,6 +1115,7 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
+      if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) return;
       console.error('[POS] KOT print failed:', err);
       const printFailure = buildPrinterOperationFailureSupportPayload(err, {
         kind: 'kot',
@@ -1169,6 +1145,7 @@ export default function POSPage() {
           connection_type: printFailure.connection_type,
         },
         suppressToast: true,
+        originContext: origin,
       });
       toast.error(
         formatKotErrorToast(
@@ -1235,10 +1212,15 @@ export default function POSPage() {
     return data.bill as Bill;
   };
 
-  const printBillForTenant = async (bill: Bill, force = false, reservedWindow?: Window | null) => {
+  const printBillForTenant = async (
+    bill: Bill,
+    force = false,
+    reservedWindow?: Window | null,
+    originContext?: SupportErrorContextSnapshot,
+  ) => {
+    const origin = originContext || readLiveSupportContext();
     if (
-      !currentTenant ||
-      useAuthStore.getState().currentTenant?.id !== currentTenant.id ||
+      !isSupportErrorContextCurrent(origin, readLiveSupportContext()) ||
       (!force && !autoPrintBill)
     ) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
@@ -1250,6 +1232,7 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
+      if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) return;
       // Non-fatal: print failure should not block the checkout flow.
       console.error('[POS] Receipt print failed:', err);
       const printFailure = buildPrinterOperationFailureSupportPayload(err, {
@@ -1280,6 +1263,7 @@ export default function POSPage() {
           connection_type: printFailure.connection_type,
         },
         suppressToast: true,
+        originContext: origin,
       });
       toast.error(
         formatReceiptErrorToast(
@@ -1379,6 +1363,7 @@ export default function POSPage() {
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
+    const originContext = readLiveSupportContext();
 
     let pendingAttempt: AppendAttempt | null = null;
     try {
@@ -1390,6 +1375,7 @@ export default function POSPage() {
             t('addItemsFailed'),
             'order.append',
             createOperationReference(),
+            originContext,
           ),
         0,
       );
@@ -1407,7 +1393,13 @@ export default function POSPage() {
         );
       } catch {
         window.setTimeout(
-          () => reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId),
+          () =>
+            reportOrderStorageFailure(
+              t('addItemsFailed'),
+              'order.append',
+              operationId,
+              originContext,
+            ),
           0,
         );
         return;
@@ -1456,6 +1448,7 @@ export default function POSPage() {
             outcome: 'applied',
             reasonCode: 'order.append.retry_state.cleanup_failed',
             correlationId: pendingAttempt!.operationId,
+            originContext,
           });
         }
         refreshTables();
@@ -1467,6 +1460,7 @@ export default function POSPage() {
           'order.append',
           'recovery',
           pendingAttempt!.operationId || null,
+          originContext,
         );
       });
     // Runs once per user session to recover persisted append state.
@@ -2006,15 +2000,14 @@ export default function POSPage() {
 
     // Postpaid store / unpaid order → place order, kitchen gets the ticket, payment collected later
     setSubmitting(true);
-    const originEpoch = sessionEpochRef.current;
-    const originUserId = activeUserId;
-    const originStoreId = currentStoreId;
-    const originToken =
-      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const originContext = readLiveSupportContext();
+    const originUserId = originContext.userId;
+    const originStoreId = originContext.storeId;
+    const originToken = originContext.token;
     const submissionToken = Symbol('pos-place-order');
     activeSubmissionTokenRef.current = submissionToken;
 
-    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+    const isSessionCurrent = () => checkSessionCurrent(originContext);
 
     let failureOperation = pendingOrder ? 'order.append' : 'order.create';
     let failureStage = 'submission';
@@ -2111,6 +2104,7 @@ export default function POSPage() {
             outcome: 'applied',
             reasonCode: 'order.append.retry_state.cleanup_failed',
             correlationId: itemAttempt.operationId,
+            originContext,
           });
         }
         addItemsAttemptRef.current = null;
@@ -2193,6 +2187,7 @@ export default function POSPage() {
               ? 'order.retry_state.cleanup_failed'
               : 'order.retry_state.pending',
             correlationId: priorOrderAttempt.operationId,
+            originContext,
           });
           return;
         }
@@ -2210,6 +2205,7 @@ export default function POSPage() {
             outcome: 'applied',
             reasonCode: 'order.retry_state.cleanup_failed',
             correlationId: priorOrderAttempt.operationId,
+            originContext,
           });
           return;
         }
@@ -2326,6 +2322,7 @@ export default function POSPage() {
                     outcome: 'applied',
                   }
                 : undefined,
+            originContext,
           });
         }
       }
@@ -2355,6 +2352,7 @@ export default function POSPage() {
           outcome: 'applied',
           reasonCode: 'order.retry_state.cleanup_failed',
           correlationId: postpaidOperationId,
+          originContext,
         });
       }
       setMobileCartOpen(false);
@@ -2362,7 +2360,7 @@ export default function POSPage() {
       void refreshScheduledOrders();
 
       if (!isSessionCurrent()) return;
-      await printKotIfEnabled(orderForKot);
+      await printKotIfEnabled(orderForKot, originContext);
     } catch (error) {
       if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError)
@@ -2370,6 +2368,7 @@ export default function POSPage() {
           t('placeOrderFailed'),
           failureOperation === 'order.append' ? 'order.append' : 'order.create',
           failureCorrelationId,
+          originContext,
         );
       else {
         if (
@@ -2395,6 +2394,7 @@ export default function POSPage() {
           failureOperation,
           failureStage,
           failureCorrelationId,
+          originContext,
         );
       }
     } finally {
@@ -2421,24 +2421,12 @@ export default function POSPage() {
 
     isSendingToPaymentRef.current = true;
     setSubmitting(true);
-    const originEpoch = sessionEpochRef.current;
-    const originUserId = activeUserId;
-    const originToken =
-      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
-    const originTenantId = currentTenant?.id == null ? null : String(currentTenant.id);
+    const originContext = readLiveSupportContext();
+    const originUserId = originContext.userId;
+    const originToken = originContext.token;
     const submissionToken = Symbol('pos-send-to-payment');
     activeSubmissionTokenRef.current = submissionToken;
-    const isOriginSessionCurrent = () => {
-      const session = useAuthStore.getState();
-      const userId = session.user?.id == null ? null : String(session.user.id);
-      const tenantId = session.currentTenant?.id == null ? null : String(session.currentTenant.id);
-      return (
-        sessionEpochRef.current === originEpoch &&
-        userId === originUserId &&
-        session.token === originToken &&
-        tenantId === originTenantId
-      );
-    };
+    const isOriginSessionCurrent = () => checkSessionCurrent(originContext);
 
     let sendToPaymentOperationId: string | null = null;
     let attemptedScheduledFor: string | undefined;
@@ -2453,7 +2441,7 @@ export default function POSPage() {
         storedAttempt?.userId === originUserId &&
         doesAttemptMatchStore(
           storedAttempt,
-          originTenantId ?? currentStoreId,
+          originContext.storeId,
           initialStoreIdRef.current,
         ) &&
         fingerprintsMatchAcrossScheduleToggle(storedAttempt.fingerprint, cartFingerprint);
@@ -2470,6 +2458,7 @@ export default function POSPage() {
           outcome: 'applied',
           reasonCode: 'order.retry_state.cleanup_failed',
           correlationId: storedAttempt.operationId,
+          originContext,
         });
         return;
       }
@@ -2555,6 +2544,7 @@ export default function POSPage() {
           outcome: 'applied',
           reasonCode: 'order.retry_state.read_failed',
           correlationId: attempt.operationId || null,
+          originContext,
         });
         return;
       }
@@ -2611,6 +2601,7 @@ export default function POSPage() {
           outcome: 'applied',
           reasonCode: 'order.retry_state.cleanup_failed',
           correlationId: attempt.operationId || null,
+          originContext,
         });
       } else {
         toast.success(t('orderSentToPaymentSuccess', { number: createdOrder.order_number }));
@@ -2618,7 +2609,7 @@ export default function POSPage() {
     } catch (err: unknown) {
       if (!isOriginSessionCurrent()) return;
       if (err instanceof OrderAttemptStorageError) {
-        reportOrderStorageFailure(t('placeOrderFailed'), 'order.create');
+        reportOrderStorageFailure(t('placeOrderFailed'), 'order.create', null, originContext);
       } else {
         if (attemptedScheduledFor && isDefinitiveScheduleRejection(err, sendToPaymentOperationId)) {
           clearPostpaidAttempt(originUserId);
@@ -2658,14 +2649,13 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
-    const originEpoch = sessionEpochRef.current;
-    const originUserId = activeUserId;
-    const originToken =
-      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const originContext = readLiveSupportContext();
+    const originUserId = originContext.userId;
+    const originToken = originContext.token;
     const submissionToken = Symbol('pos-prepaid-checkout');
     activeSubmissionTokenRef.current = submissionToken;
 
-    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+    const isSessionCurrent = () => checkSessionCurrent(originContext);
 
     const orderItems = cart.items.map(cartItemToOrderItem);
     let paymentLines = payments
@@ -2690,7 +2680,7 @@ export default function POSPage() {
       // An unreadable attempt cannot be safely replaced with a fresh key.
       if (!(error instanceof OrderAttemptStorageError)) throw error;
       if (isSessionCurrent()) {
-        reportOrderStorageFailure(t('processOrderFailed'));
+        reportOrderStorageFailure(t('processOrderFailed'), 'order.create', null, originContext);
         setSubmitting(false);
       }
       return;
@@ -2726,6 +2716,7 @@ export default function POSPage() {
           outcome: 'unknown',
           reasonCode: 'request.outcome_unknown',
           correlationId: existingAttempt.operationId,
+          originContext,
         });
         setSubmitting(false);
       }
@@ -2769,6 +2760,7 @@ export default function POSPage() {
           outcome: 'unknown',
           reasonCode: 'request.outcome_unknown',
           correlationId: recoveryOperationId,
+          originContext,
         });
         setSubmitting(false);
         return;
@@ -2814,7 +2806,7 @@ export default function POSPage() {
     // order response if this renderer loses the response or restarts.
     if (!savePrepaidAttempt(attempt, originUserId)) {
       if (!isSessionCurrent()) return;
-      reportOrderStorageFailure(t('processOrderFailed'), 'order.create', operationId || null);
+      reportOrderStorageFailure(t('processOrderFailed'), 'order.create', operationId || null, originContext);
       setSubmitting(false);
       return;
     }
@@ -3057,6 +3049,7 @@ export default function POSPage() {
           outcome: 'partial',
           reasonCode: 'payment.incomplete',
           correlationId: operationId,
+          originContext,
         });
         return;
       }
@@ -3094,6 +3087,7 @@ export default function POSPage() {
                 outcome: 'applied',
               }
             : undefined,
+          originContext,
         });
       }
 
@@ -3140,6 +3134,7 @@ export default function POSPage() {
                       outcome: 'applied',
                     }
                   : undefined,
+              originContext,
             });
           }
         }
@@ -3170,6 +3165,7 @@ export default function POSPage() {
           outcome: 'applied',
           reasonCode: 'payment.retry_state.cleanup_failed',
           correlationId: operationId,
+          originContext,
         });
       }
       setMobileCartOpen(false);
@@ -3177,10 +3173,10 @@ export default function POSPage() {
       void refreshScheduledOrders();
       if (!isSessionCurrent()) return;
 
-      await printKotIfEnabled(order);
+      await printKotIfEnabled(order, originContext);
       if (!isSessionCurrent()) return;
 
-      await printBillForTenant(paidBill, isPrepaidCheckout);
+      await printBillForTenant(paidBill, isPrepaidCheckout, undefined, originContext);
     } catch (error) {
       if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError && committedOrder) {
@@ -3243,12 +3239,14 @@ export default function POSPage() {
                   outcome: 'applied',
                 }
               : undefined,
+          originContext,
         });
       } else if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(
           t('processOrderFailed'),
           failureOperation === 'payment.create' ? 'payment.create' : 'order.create',
           failureCorrelationId,
+          originContext,
         );
       else {
         if (
@@ -3295,6 +3293,7 @@ export default function POSPage() {
           failureOperation,
           failureStage,
           failureCorrelationId,
+          originContext,
         );
       }
     } finally {
@@ -3425,14 +3424,13 @@ export default function POSPage() {
       return;
     }
     setSubmitting(true);
-    const originEpoch = sessionEpochRef.current;
-    const originUserId = activeUserId;
-    const originToken =
-      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const originContext = readLiveSupportContext();
+    const originUserId = originContext.userId;
+    const originToken = originContext.token;
     const submissionToken = Symbol('pos-add-cart-to-order');
     activeSubmissionTokenRef.current = submissionToken;
 
-    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+    const isSessionCurrent = () => checkSessionCurrent(originContext);
 
     const operationId = createOperationReference();
     try {
@@ -3496,6 +3494,7 @@ export default function POSPage() {
           outcome: 'applied',
           reasonCode: 'order.append.retry_state.cleanup_failed',
           correlationId: itemAttempt.operationId,
+          originContext,
         });
       }
       addItemsAttemptRef.current = null;
@@ -3508,6 +3507,7 @@ export default function POSPage() {
           : (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
       await printKotIfEnabled(
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
+        originContext,
       );
       if (!isSessionCurrent()) {
         if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
@@ -3521,7 +3521,7 @@ export default function POSPage() {
     } catch (error) {
       if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError)
-        reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId);
+        reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId, originContext);
       else
         reportOrderRequestFailure(
           error,
@@ -3529,6 +3529,7 @@ export default function POSPage() {
           'order.append',
           'append_items',
           operationId,
+          originContext,
         );
     } finally {
       if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
@@ -3539,9 +3540,8 @@ export default function POSPage() {
   };
 
   const handlePaymentComplete = async () => {
-    const originEpoch = sessionEpochRef.current;
-    const originUserId = activeUserId;
-    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+    const originContext = readLiveSupportContext();
+    const isSessionCurrent = () => checkSessionCurrent(originContext);
 
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
@@ -3556,7 +3556,7 @@ export default function POSPage() {
       try {
         const latestBill = await fetchLatestBill(bill.id);
         if (!isSessionCurrent()) return;
-        await printBillForTenant(latestBill);
+        await printBillForTenant(latestBill, false, undefined, originContext);
       } catch {
         if (isSessionCurrent()) {
           toast.error(t('receiptPrintFailed'));
@@ -3610,7 +3610,8 @@ export default function POSPage() {
   const handleScheduledOrderReleased = async (releasedOrder: Order, kotAutoPrinted: boolean) => {
     await refreshScheduledOrders();
     if (!kotAutoPrinted) {
-      await printKotIfEnabled({ ...releasedOrder, release_status: 'released' });
+      const originContext = readLiveSupportContext();
+      await printKotIfEnabled({ ...releasedOrder, release_status: 'released' }, originContext);
     }
   };
 
@@ -4352,7 +4353,8 @@ export default function POSPage() {
           }}
           onAddItems={handleAddItemsToOrder}
           onPrintBill={async (bill, reservedWindow) => {
-            await printBillForTenant(bill, true, reservedWindow);
+            const originContext = readLiveSupportContext();
+            await printBillForTenant(bill, true, reservedWindow, originContext);
           }}
           reservePrintWindow={() => {
             const printer = usePrinterStore.getState();

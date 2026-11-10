@@ -746,6 +746,7 @@ async function runTests() {
           kdsInfoFetchCount += 1;
           return { ok: false, status: 401 };
         }) as any;
+        storage.set(KDS_THEME_OVERRIDE_KEY, 'dark');
         useThemeMode.setState({ mode: 'light', userSelected: false, serverSynced: true });
         const effects: Array<() => void | (() => void)> = [];
         React.useEffect = ((fn: () => void | (() => void)) => {

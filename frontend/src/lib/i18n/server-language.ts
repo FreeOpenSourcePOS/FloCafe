@@ -142,8 +142,8 @@ export async function fetchServerInfo(
 export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
   useEffect(() => {
-    hydrateKdsThemeOverride(infoPath);
     if (isDashboardPosContext(infoPath)) return;
+    hydrateKdsThemeOverride(infoPath);
     let cancelled = false;
     fetchServerInfo('', 1500, infoPath).then((info) => {
       if (cancelled) return;

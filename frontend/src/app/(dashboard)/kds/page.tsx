@@ -84,10 +84,15 @@ export default function KdsPage() {
   if (kdsEnabled === false) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-3 text-center px-6">
-        <ChefHat size={40} className="text-gray-300" />
-        <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
-        <p className="text-sm text-gray-500 max-w-sm">{t('disabledHintDashboard')}</p>
-        <Link href="/settings?tab=kds" className="text-sm text-brand hover:underline mt-1">
+        <ChefHat size={40} className="text-slate-500 dark:text-slate-400" />
+        <h1 className="text-lg font-semibold text-foreground">{t('disabledTitle')}</h1>
+        <p className="text-sm text-slate-700 dark:text-slate-300 max-w-sm">
+          {t('disabledHintDashboard')}
+        </p>
+        <Link
+          href="/settings?tab=kds"
+          className="text-sm text-brand dark:text-indigo-300 hover:underline mt-1"
+        >
           {t('goToSettings')}
         </Link>
       </div>

@@ -236,16 +236,19 @@ function run(): void {
     return /\b(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b/.test(src);
   });
   for (const file of iconFiles) {
-    const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');
-    lines.forEach((line, i) => {
-      // Only flag JSX usage (`<Arrow…`, `<Chevron…`), not the lucide import statement.
-      if (
-        /<(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b/.test(line) &&
-        !line.includes('rtl-flip')
-      ) {
-        assert(false, `${file}:${i + 1} uses a directional icon without rtl-flip: ${line.trim()}`);
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    // Match the full JSX opening tag (`<Arrow…`, `<Chevron…`) across line wraps, not imports.
+    for (const match of src.matchAll(
+      /<(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b(?:[^>"'<]|"[^"]*"|'[^']*')*>/g,
+    )) {
+      if (!match[0].includes('rtl-flip')) {
+        const line = src.slice(0, match.index ?? 0).split('\n').length;
+        assert(
+          false,
+          `${file}:${line} uses a directional icon without rtl-flip: ${match[0].trim()}`,
+        );
       }
-    });
+    }
   }
   console.log(
     `  ✓ directional icons carry rtl-flip (${iconFiles.length} file(s) with directional icons)`,

@@ -352,8 +352,11 @@ export class PrinterOperationError extends Error {
         ? init.code.trim()
         : expectedCode;
     this.code = normalizedCode;
+    const backendCorrelationId = isOperationReference(init.correlation_id)
+      ? init.correlation_id
+      : null;
     const hasTrustedBackendCapture =
-      isOperationReference(init.correlation_id) &&
+      backendCorrelationId !== null &&
       (init.stage === 'prepare' || init.stage === 'dispatch') &&
       normalizedCode === expectedCode;
     const failureClass =
@@ -361,7 +364,7 @@ export class PrinterOperationError extends Error {
         ? init.failure_class
         : classifyPrinterFailureClass(sanitizedDetail || effectiveDetail, init.failure_class);
     this.failure_class = failureClass;
-    this.correlation_id = hasTrustedBackendCapture ? init.correlation_id : null;
+    this.correlation_id = hasTrustedBackendCapture ? backendCorrelationId : null;
     const outcome: PrintFailureOutcome =
       init.outcome === 'not_applied' || init.outcome === 'partial' || init.outcome === 'unknown'
         ? init.outcome

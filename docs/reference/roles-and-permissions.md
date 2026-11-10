@@ -254,6 +254,7 @@ at narrow desktop widths. The pattern follows
 
 ```sh
 npm run test:authorization-permissions
+npm run test:self-service-credentials
 npm run test:staff-authz
 npm run test:orders-authz
 npm run test:kds-integration

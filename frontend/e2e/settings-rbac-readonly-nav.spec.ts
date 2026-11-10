@@ -339,10 +339,9 @@ test.describe('Settings RBAC read-only enforcement & unsaved-changes navigation 
     ).toBeDisabled();
 
     await page.goto(`${BASE}/settings?tab=privacy`);
-    for (const radio of await page
-      .getByTestId('product-analytics-level')
-      .locator('input[type="radio"]')
-      .all()) {
+    const radios = page.getByTestId('product-analytics-level').locator('input[type="radio"]');
+    await expect(radios.first()).toBeVisible({ timeout: 15_000 });
+    for (const radio of await radios.all()) {
       await expect(radio).toBeDisabled();
     }
     await expect(
@@ -351,12 +350,17 @@ test.describe('Settings RBAC read-only enforcement & unsaved-changes navigation 
 
     // 6. Deep-link DB actions (`restore-from-file` & `initialize-db`) are blocked for cashier
     await page.goto(`${BASE}/settings?tab=data&action=restore-from-file`);
-    await expect(page.getByText(/do not have access|owner/i).first()).toBeVisible({
+    await expect(page.getByTestId('database-access-denied')).toBeVisible({
       timeout: 15_000,
     });
+    await page.waitForTimeout(300);
     expect(await page.evaluate(() => window.__floPickerCalls ?? 0)).toBe(0);
 
     await page.goto(`${BASE}/settings?tab=data&action=initialize-db`);
+    await expect(page.getByTestId('database-access-denied')).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForTimeout(300);
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     // Final navigation check away from Settings to /orders
@@ -472,7 +476,7 @@ test.describe('Settings RBAC read-only enforcement & unsaved-changes navigation 
     ).toBeDisabled();
 
     await page.goto(`${BASE}/settings?tab=data`);
-    await expect(page.getByText(/do not have access|owner/i).first()).toBeVisible();
+    await expect(page.getByTestId('database-access-denied')).toBeVisible({ timeout: 15_000 });
 
     // 3. Granular override: cashier granted `printers.manage` (without `settings.manage`) can save printing settings cleanly
     await setUserOverrides(page, cashierId, [

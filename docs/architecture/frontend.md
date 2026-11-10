@@ -391,6 +391,7 @@ Every other setting is written over a permission-gated HTTP route, where the act
 The read side, `get-settings`, masks `jwt_secret`, `auth_clock_high_water_ms`, `cloud_api_key`,
 `cloud_device_secret`, `cloud_deletion_status_token`, and `cloud_last_error`, and collapses
 `cloud_last_error` to a generic string.
+
 ### The database channels
 
 Five channels do database work, and they are gated two different ways on purpose.

@@ -5,8 +5,10 @@ import {
   parseCustomerDisplayConfig,
   readStoredCustomerDisplayConfig,
 } from '../main/services/customer-display-config';
-import { isCustomerDisplayConfig } from '../frontend/src/lib/customer-display';
-import { getOrderEffectivePrepStatus } from '../shared/order-item-status';
+import {
+  isCustomerDisplayConfig,
+  resolveOrderBoardStatus,
+} from '../frontend/src/lib/customer-display';
 
 const valid = {
   statuses: ['ready', 'pending'],
@@ -114,38 +116,29 @@ assert.deepEqual(readStoredCustomerDisplayConfig(JSON.stringify(legacyValid)).or
   'takeaway',
 ]);
 
-// Effective preparation status for POS Orders page Mark Ready / Picked Up controls
+// Board status projection for signed-in Customer Display
 assert.equal(
-  getOrderEffectivePrepStatus({ status: 'pending', items: [] as any }),
+  resolveOrderBoardStatus({ status: 'pending', items: [] as any }),
   'pending',
   'active pending order returns pending',
 );
 assert.equal(
-  getOrderEffectivePrepStatus({ status: 'preparing', items: [] as any }),
+  resolveOrderBoardStatus({ status: 'preparing', items: [] as any }),
   'preparing',
   'active preparing order returns preparing',
 );
 assert.equal(
-  getOrderEffectivePrepStatus({ status: 'ready', items: [] as any }),
+  resolveOrderBoardStatus({ status: 'ready', items: [] as any }),
   'ready',
   'active ready order returns ready',
 );
 assert.equal(
-  getOrderEffectivePrepStatus({ status: 'served', items: [] as any }),
+  resolveOrderBoardStatus({ status: 'served', items: [] as any }),
   null,
   'served order returns null',
 );
 assert.equal(
-  getOrderEffectivePrepStatus({
-    status: 'pending',
-    release_status: 'scheduled',
-    items: [] as any,
-  }),
-  null,
-  'unreleased scheduled order returns null',
-);
-assert.equal(
-  getOrderEffectivePrepStatus({
+  resolveOrderBoardStatus({
     status: 'completed',
     items: [{ status: 'preparing', quantity: 1 }] as any,
   }),
@@ -153,7 +146,7 @@ assert.equal(
   'completed order with preparing item projects preparing',
 );
 assert.equal(
-  getOrderEffectivePrepStatus({
+  resolveOrderBoardStatus({
     status: 'completed',
     items: [{ status: 'ready', quantity: 1 }] as any,
   }),
@@ -161,7 +154,7 @@ assert.equal(
   'completed order with ready item projects ready',
 );
 assert.equal(
-  getOrderEffectivePrepStatus({
+  resolveOrderBoardStatus({
     status: 'completed',
     items: [{ status: 'served', quantity: 1 }] as any,
   }),
@@ -169,7 +162,7 @@ assert.equal(
   'completed order with all served items projects null',
 );
 assert.equal(
-  getOrderEffectivePrepStatus(
+  resolveOrderBoardStatus(
     {
       status: 'completed',
       created_at: '2020-01-01 00:00:00',
@@ -181,7 +174,7 @@ assert.equal(
   'completed order older than 24h completedKdsProjectionCutoff window projects null',
 );
 assert.equal(
-  getOrderEffectivePrepStatus(
+  resolveOrderBoardStatus(
     {
       status: 'completed',
       created_at: '2026-01-01 12:00:00',
@@ -191,39 +184,6 @@ assert.equal(
   ),
   'pending',
   'completed order within 24h completedKdsProjectionCutoff window projects pending',
-);
-assert.equal(
-  getOrderEffectivePrepStatus({
-    status: 'ready',
-    items: [
-      { status: 'ready', quantity: 1 },
-      { status: 'pending', quantity: 1 },
-    ] as any,
-  }),
-  'preparing',
-  'ready order with newly appended pending item projects preparing so Mark Ready is shown',
-);
-assert.equal(
-  getOrderEffectivePrepStatus({
-    status: 'served',
-    items: [
-      { status: 'served', quantity: 1 },
-      { status: 'pending', quantity: 1 },
-    ] as any,
-  }),
-  'preparing',
-  'served order with newly appended pending item projects preparing so Mark Ready is shown',
-);
-assert.equal(
-  getOrderEffectivePrepStatus({
-    status: 'served',
-    items: [
-      { status: 'served', quantity: 1 },
-      { status: 'ready', quantity: 1 },
-    ] as any,
-  }),
-  'ready',
-  'served order with ready item projects ready so Picked Up is shown',
 );
 
 console.log('customer-display-config: all assertions passed');

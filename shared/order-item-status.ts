@@ -99,37 +99,3 @@ export function isWithinCompletedKdsProjectionWindow(
   const normalized = createdAt.trim().replace('T', ' ').replace(/\..*$/, '').replace(/Z$/, '');
   return normalized >= completedKdsProjectionCutoff(nowMs);
 }
-
-export function getOrderEffectivePrepStatus(
-  order: {
-    status?: string | null;
-    release_status?: string | null;
-    created_at?: string | null;
-    items?: readonly OrderItemStatusLike[] | null;
-  },
-  nowMs: number = Date.now(),
-): CustomerDisplayProjectedStatus | null {
-  if (order.release_status && order.release_status !== 'released') {
-    return null;
-  }
-  if (order.status === 'completed') {
-    if (!isWithinCompletedKdsProjectionWindow(order.created_at, nowMs)) {
-      return null;
-    }
-    return projectBoardStatusFromItems(order.items);
-  }
-  if (order.status === 'served') {
-    return projectBoardStatusFromItems(order.items);
-  }
-  if (order.status === 'ready') {
-    const projected = projectBoardStatusFromItems(order.items);
-    if (projected === 'pending' || projected === 'preparing') {
-      return projected;
-    }
-    return 'ready';
-  }
-  if (order.status === 'pending' || order.status === 'preparing') {
-    return order.status;
-  }
-  return null;
-}

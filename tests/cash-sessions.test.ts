@@ -70,9 +70,9 @@ async function waitForDiagnostic(
   reasonCode: string,
   matches: (metadata: any) => boolean,
 ): Promise<any | null> {
-  const deadline = Date.now() + 3000;
+  const deadline = RealDate.now() + 3000;
   let row = latestDiagnostic(db, reasonCode);
-  while ((!row || !matches(row.metadata)) && Date.now() < deadline) {
+  while ((!row || !matches(row.metadata)) && RealDate.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));
     row = latestDiagnostic(db, reasonCode);
   }
@@ -89,6 +89,7 @@ function isNativeAbiMismatch(error: any): boolean {
 const RealDate = global.Date;
 const withFixedClock = async <T>(isoUtc: string, fn: () => Promise<T>): Promise<T> => {
   const fixedMs = RealDate.parse(isoUtc);
+  const prevDate = global.Date;
   class FixedDate extends RealDate {
     constructor(...args: any[]) {
       if (args.length === 0) {
@@ -105,7 +106,7 @@ const withFixedClock = async <T>(isoUtc: string, fn: () => Promise<T>): Promise<
   try {
     return await fn();
   } finally {
-    global.Date = RealDate;
+    global.Date = prevDate;
   }
 };
 
@@ -218,7 +219,7 @@ async function main() {
     });
     app.use('/api/cash-sessions', cashSessionRoutes);
     const token = (userId: string, email: string, role: string) =>
-      jwt.sign({ userId, email, role }, getJWTSecret(), { expiresIn: '1h' });
+      jwt.sign({ userId, email, role }, getJWTSecret(), { expiresIn: '365d' });
     cashierToken = token('cashier-sess', 'cashier-sess@test.local', 'cashier');
     cashier2Token = token('cashier2-sess', 'cashier2-sess@test.local', 'cashier');
     const serverToken = token('server-sess', 'server-sess@test.local', 'server');
@@ -417,7 +418,7 @@ async function main() {
   const ownerSettingsToken = jwt.sign(
     { userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' },
     getJWTSecret(),
-    { expiresIn: '1h' },
+    { expiresIn: '365d' },
   );
 
   function seedUnpaidBill(tag: string): number {
@@ -753,7 +754,7 @@ async function main() {
   const ownedOwnerToken = jwt.sign(
     { userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' },
     getJWTSecret(),
-    { expiresIn: '1h' },
+    { expiresIn: '365d' },
   );
   const ownedRefundBill = seedUnpaidBill('owned-refund');
   const ownedRefundPay = await request(app)
@@ -1090,19 +1091,18 @@ async function main() {
     `DELETE FROM orders WHERE order_number IN ('ORD-GUARD-SAME', 'ORD-GUARD-CANCELLED')`,
   ).run();
 
+  const oldActivity = past(8 * 86400_000);
   const activeStaleOpen = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ opening_float_cents: 100 });
   assert(activeStaleOpen.status === 200, 'active stale-candidate session opens (200)');
   const activeStaleId = activeStaleOpen.body?.id;
-  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
-    activeStaleId,
-  );
+  db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(oldActivity, activeStaleId);
   db.prepare(
     `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
-    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', datetime('now'))`,
-  ).run(todayLocal);
+    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', ?)`,
+  ).run(todayLocal, now());
   const activeStaleBlocked = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1123,7 +1123,7 @@ async function main() {
     activeStaleClose.status === 200,
     'active stale candidate closes normally after the guard test',
   );
-  db.prepare(`UPDATE cash_drawer_movements SET created_at = datetime('now', '-8 days')`).run();
+  db.prepare(`UPDATE cash_drawer_movements SET created_at = ?`).run(oldActivity);
 
   const paidBillStaleOpen = await request(app)
     .post('/api/cash-sessions/open')
@@ -1131,7 +1131,8 @@ async function main() {
     .send({ opening_float_cents: 0 });
   assert(paidBillStaleOpen.status === 200, 'paid-bill stale-candidate session opens (200)');
   const paidBillStaleId = paidBillStaleOpen.body?.id;
-  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
+  db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(
+    oldActivity,
     paidBillStaleId,
   );
   const recentPaidBill = seedUnpaidBill('stale-paid');
@@ -1161,7 +1162,6 @@ async function main() {
     'paid-bill stale candidate closes normally after the guard test',
   );
 
-  const oldActivity = past(8 * 86400_000);
   const backdateStoreActivity = () => {
     db.prepare('UPDATE bills SET paid_at = ? WHERE paid_at IS NOT NULL').run(oldActivity);
     db.prepare('UPDATE cash_drawer_movements SET created_at = ?').run(oldActivity);
@@ -1186,7 +1186,8 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ opening_float_cents: 0 });
   assert(partialStaleOpen.status === 200, 'partial-payment stale candidate opens');
-  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
+  db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(
+    oldActivity,
     partialStaleOpen.body?.id,
   );
   const partialStaleBill = seedUnpaidBill('stale-partial');
@@ -1220,7 +1221,8 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ opening_float_cents: 0 });
   assert(refundStaleOpen.status === 200, 'refund stale candidate opens');
-  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
+  db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(
+    oldActivity,
     refundStaleOpen.body?.id,
   );
   const refundStaleBill = seedUnpaidBill('stale-refund');
@@ -1258,9 +1260,7 @@ async function main() {
     .send({ opening_float_cents: 100 });
   assert(staleOpen.status === 200, 'stale-candidate session opens (200)');
   const staleId = staleOpen.body?.id;
-  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
-    staleId,
-  );
+  db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(oldActivity, staleId);
   // Store-wide inactivity is part of the stale rule.
   backdateStoreActivity();
   const freshOpen = await request(app)
@@ -1309,12 +1309,12 @@ async function main() {
       role: 'manager',
     },
     getJWTSecret(),
-    { expiresIn: '1h' },
+    { expiresIn: '365d' },
   );
   const chefToken = jwt.sign(
     { userId: 'chef-sess', email: 'chef-sess@test.local', role: 'chef' },
     getJWTSecret(),
-    { expiresIn: '1h' },
+    { expiresIn: '365d' },
   );
   const mcOpen = await request(app)
     .post('/api/cash-sessions/open')
@@ -1389,7 +1389,7 @@ async function main() {
   const ownerToken = jwt.sign(
     { userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' },
     getJWTSecret(),
-    { expiresIn: '1h' },
+    { expiresIn: '365d' },
   );
   const prOpen = await request(app)
     .post('/api/cash-sessions/open')
@@ -4960,10 +4960,13 @@ async function main() {
 
   console.log('='.repeat(50));
   console.log(`Passed ${passed}/${total}, failed ${failed}`);
-  process.exit(failed > 0 ? 1 : 0);
 }
 
-main().catch((error) => {
-  console.error('FATAL', error);
-  process.exit(1);
-});
+withFixedClock('2026-05-15T12:00:00.000Z', main)
+  .then(() => {
+    process.exit(failed > 0 ? 1 : 0);
+  })
+  .catch((error) => {
+    console.error('FATAL', error);
+    process.exit(1);
+  });

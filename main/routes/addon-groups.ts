@@ -42,9 +42,16 @@ const addonGroupReadRateLimit = expressRateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const configuredAddonGroupWriteLimit = Number.parseInt(
+  process.env.FLO_ADDON_GROUP_WRITE_RATE_LIMIT_MAX || '',
+  10,
+);
 const addonGroupWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit:
+    Number.isFinite(configuredAddonGroupWriteLimit) && configuredAddonGroupWriteLimit > 0
+      ? configuredAddonGroupWriteLimit
+      : 60,
   standardHeaders: true,
   legacyHeaders: false,
 });

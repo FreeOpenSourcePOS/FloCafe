@@ -366,17 +366,19 @@ enforce sender validation.
 
 ### What the settings channel may write
 
-One key. `set-setting` checks the key against `ALLOWED_IPC_KEYS`, which contains `theme_mode` and
-nothing else, and rejects a value that is not one of `light`, `dark`, or `system`. Every other
+Two keys. `set-setting` checks the key against `ALLOWED_IPC_KEYS`, which contains `theme_mode` and
+`orders_layout` and nothing else, and rejects `theme_mode` values outside `light`, `dark`, or
+`system` and `orders_layout` values outside `split` or `cards`. Every other
 setting is written over a permission-gated HTTP route, where the acting user is known. The read
-side, `get-settings`, masks `jwt_secret`, `cloud_api_key`, `cloud_device_secret`,
-`cloud_deletion_status_token`, and `cloud_last_error`, and collapses `cloud_last_error` to a
-generic string.
+side, `get-settings`, masks `jwt_secret`, `auth_clock_high_water_ms`, `cloud_api_key`,
+`cloud_device_secret`, `cloud_deletion_status_token`, and `cloud_last_error`, and collapses
+`cloud_last_error` to a generic string.
 
-The renderer writes the theme over HTTP too, with `PUT /api/settings/theme_mode`, which requires
-`settings.manage`. The IPC settings channel exists with the theme key allowed; no renderer code
-calls it today. Widening `ALLOWED_IPC_KEYS` means moving an authorization decision from a
-permission-gated route onto a window-origin check, which is a different and weaker boundary.
+The renderer writes those preferences over HTTP too (`PUT /api/settings/theme_mode` and
+`PUT /api/settings/orders_layout`, which require `settings.manage`). The IPC settings channel exists
+with those two keys allowed; no renderer code calls it today. Widening `ALLOWED_IPC_KEYS` means
+moving an authorization decision from a permission-gated route onto a window-origin check, which is
+a different and weaker boundary.
 
 ### The database channels
 
@@ -400,12 +402,12 @@ The HTTP twins of those repairs are gated separately, and not uniformly, by
 requires `database.manage`. Four of them add `requireMasterPin` (reading `master_pin` from the
 request body or `x-master-pin` header):
 
-| Route                                         | Extra requirement                                      |
-| --------------------------------------------- | ------------------------------------------------------ |
-| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase           |
-| `POST /api/db-tools/currency-reset`           | the Master PIN                                         |
-| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                                         |
-| `POST /api/db-tools/master-pin/reset`         | the current Master PIN when one is already configured  |
+| Route                                         | Extra requirement                                     |
+| --------------------------------------------- | ----------------------------------------------------- |
+| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase          |
+| `POST /api/db-tools/currency-reset`           | the Master PIN                                        |
+| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                                        |
+| `POST /api/db-tools/master-pin/reset`         | the current Master PIN when one is already configured |
 
 Of the remaining six, one matters here because its IPC twin is gated the other way:
 
@@ -593,12 +595,8 @@ Kitchen Display apply without reloading the board. The tenant-wide config sets w
 (`statuses`, defaulting to `['pending', 'preparing', 'ready']`), which order types show
 (`order_types`, defaulting to `['takeaway']` so Dine-in, Online, and Delivery orders stay off the
 pickup screen unless enabled), the refresh interval (`refresh_seconds`), and whether the
-last-updated time is shown (`show_updated`). On the POS Orders screen (`/orders`), each released
-order derives its effective preparation status via `getOrderEffectivePrepStatus` in
-[`shared/order-item-status.ts`](../../shared/order-item-status.ts) and exposes **Mark Ready** (when
-`pending` or `preparing`) and **Picked Up** (when `ready`), calling `PATCH /api/orders/:id/status`
-with `'ready'` or `'served'` to advance active `order_items` and clear picked-up orders from
-`/customer-display` even when KDS is disabled. Deduplicated orders are sorted oldest first and applied atomically once all pages complete in a cycle, preserving the ten-second TV
+last-updated time is shown (`show_updated`). Deduplicated orders are sorted oldest first and
+applied atomically once all pages complete in a cycle, preserving the ten-second TV
 visual page rotation. At desktop widths, each column renders complete bill or order numbers in
 readable rows and independently rotates measured pages every ten seconds when needed, showing a
 multi-page indicator (`1 / N`, page dots, and a `+count` overflow pill) and a ten-second progress

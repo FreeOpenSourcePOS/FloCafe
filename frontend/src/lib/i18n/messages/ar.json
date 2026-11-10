@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "تعذر تحديث طريقة الدفع",
     "releaseScheduled": "مجدول",
     "releaseBlocked": "الإرسال متوقف",
-    "markReady": "تحديد كجاهز",
-    "pickedUp": "تم الاستلام",
-    "markedReady": "تم تحديد الطلب كجاهز",
-    "markedPickedUp": "تم تحديد الطلب كمستلم",
-    "updateStatusFailed": "تعذر تحديث حالة الطلب",
     "refundOwnerOnlyNotice": "موافقات استرداد المدير معطلة — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد.",
     "refundOutsideWindowNotice": "هذا الطلب خارج نافذة موافقة المدير — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد."
   },

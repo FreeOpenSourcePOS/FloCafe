@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi",
     "releaseScheduled": "Planlı",
     "releaseBlocked": "İletim engellendi",
-    "markReady": "Hazır işaretle",
-    "pickedUp": "Teslim alındı",
-    "markedReady": "Sipariş hazır olarak işaretlendi",
-    "markedPickedUp": "Sipariş teslim alındı olarak işaretlendi",
-    "updateStatusFailed": "Sipariş durumu güncellenemedi",
     "refundOwnerOnlyNotice": "Yönetici iade onayları devre dışı — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir.",
     "refundOutsideWindowNotice": "Bu sipariş yönetici onay süresinin dışında — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir."
   },

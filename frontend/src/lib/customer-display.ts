@@ -1,4 +1,5 @@
 import {
+  isWithinCompletedKdsProjectionWindow,
   projectBoardStatusFromItems,
   type OrderItemStatusLike,
 } from '../../../shared/order-item-status';
@@ -130,11 +131,22 @@ export function compareBoardOrderIds(a: number | string, b: number | string): nu
   return String(a).localeCompare(String(b));
 }
 
-export function resolveOrderBoardStatus(order: SignedInBoardOrderSource): string | null {
+export function resolveOrderBoardStatus(
+  order: Pick<SignedInBoardOrderSource, 'status' | 'items'> & {
+    created_at?: string | null;
+  },
+  nowMs?: number,
+): string | null {
   if (order.status === 'completed') {
+    if (!isWithinCompletedKdsProjectionWindow(order.created_at, nowMs)) {
+      return null;
+    }
     return projectBoardStatusFromItems(order.items);
   }
-  return order.status;
+  if (order.status === 'pending' || order.status === 'preparing' || order.status === 'ready') {
+    return order.status;
+  }
+  return null;
 }
 
 export function toBoardOrder(order: SignedInBoardOrderSource, status: string): BoardOrder {

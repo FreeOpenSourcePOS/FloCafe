@@ -652,13 +652,13 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
     }
   });
 
-  test('filters customer display by order_types and advances paid takeaway order via POS Orders Mark Ready and Picked Up when KDS is disabled', async ({
+  test('filters customer display by order_types and advances paid takeaway order via KDS item completion without POS Orders prep buttons', async ({
     page,
     browser,
     request,
   }) => {
     await writeSetting(request, 'billing_type', 'prepaid');
-    await writeSetting(request, 'kds_enabled', 'false');
+    await writeSetting(request, 'kds_enabled', 'true');
     await writeSetting(request, 'require_kitchen_delivered_before_settlement', 'false');
 
     const { espressoId } = catalog;
@@ -700,7 +700,7 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
     try {
       const tokenRes = await request.post(`${BASE}/api/settings/customer-display/tokens`, {
         headers: ownerHeaders(),
-        data: { label: 'E2E POS Ready Pickup TV' },
+        data: { label: 'E2E KDS Ready Pickup TV' },
       });
       expect(tokenRes.status()).toBe(201);
       const { token } = (await tokenRes.json()) as { token: string };
@@ -755,9 +755,12 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
       });
       expect(takeawayOrderRes.status()).toBe(201);
       const takeawayOrder = (
-        (await takeawayOrderRes.json()) as { order: { id: number; order_number: string } }
+        (await takeawayOrderRes.json()) as {
+          order: { id: number; order_number: string; items: Array<{ id: number }> };
+        }
       ).order;
       cleanupOrderIds.push(takeawayOrder.id);
+      const takeawayItemId = takeawayOrder.items[0].id;
 
       const genBillRes = await request.post(`${BASE}/api/bills/generate`, {
         headers: ownerHeaders(),
@@ -775,7 +778,7 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
       expect(payRes.ok()).toBeTruthy();
       const displayNumber = bill.bill_number || takeawayOrder.order_number;
 
-      // Paid takeaway order appears in Preparing even with KDS disabled; delivery & dine_in stay excluded
+      // Paid takeaway order appears in Preparing while KDS is enabled; delivery & dine_in stay excluded
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-preparing-scroll')).toContainText(
           displayNumber,
@@ -842,30 +845,25 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         );
       }
 
-      // Open POS /orders page, select the paid Takeaway order so both master list and detail panel controls are visible
+      // Open POS /orders page and verify Mark Ready / Picked Up controls are NOT present on POS Orders
       await page.goto(`${BASE}/orders`);
-      const markReadyButton = page.getByTestId(`order-mark-ready-${takeawayOrder.id}`);
-      await expect(markReadyButton).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(`#${takeawayOrder.order_number}`).first()).toBeVisible({
+        timeout: 15_000,
+      });
       await page.getByText(`#${takeawayOrder.order_number}`).first().click();
-      const detailMarkReadyButton = page.getByTestId(`order-detail-mark-ready-${takeawayOrder.id}`);
-      await expect(detailMarkReadyButton).toBeVisible({ timeout: 15_000 });
-
-      if (evidenceDir) {
-        await page.screenshot({
-          path: path.join(evidenceDir, '03-pos-orders-mark-ready.png'),
-        });
-      }
-
-      // Click Mark Ready -> moves order to Ready for pickup on both boards and switches buttons to Picked Up
-      await markReadyButton.click();
-
-      const pickedUpButton = page.getByTestId(`order-mark-picked-up-${takeawayOrder.id}`);
-      const detailPickedUpButton = page.getByTestId(
-        `order-detail-mark-picked-up-${takeawayOrder.id}`,
+      await expect(page.getByTestId(`order-mark-ready-${takeawayOrder.id}`)).toHaveCount(0);
+      await expect(page.getByTestId(`order-detail-mark-ready-${takeawayOrder.id}`)).toHaveCount(0);
+      await expect(page.getByTestId(`order-mark-picked-up-${takeawayOrder.id}`)).toHaveCount(0);
+      await expect(page.getByTestId(`order-detail-mark-picked-up-${takeawayOrder.id}`)).toHaveCount(
+        0,
       );
-      await expect(pickedUpButton).toBeVisible({ timeout: 15_000 });
-      await expect(detailPickedUpButton).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByText('This order is no longer in the current list.')).toBeHidden();
+
+      // Advance KDS item to ready -> moves order to Ready for pickup on both boards
+      const readyRes = await request.patch(`${BASE}/api/order-items/${takeawayItemId}/status`, {
+        headers: ownerHeaders(),
+        data: { status: 'ready' },
+      });
+      expect(readyRes.status()).toBe(200);
 
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-ready-scroll')).toContainText(
@@ -877,19 +875,12 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         );
       }
 
-      if (evidenceDir) {
-        await page.screenshot({
-          path: path.join(evidenceDir, '04-pos-orders-picked-up.png'),
-        });
-        await pairedDisplayPage.screenshot({
-          path: path.join(evidenceDir, '05-customer-display-ready-for-pickup.png'),
-        });
-      }
-
-      // Click Picked Up in the detail panel -> clears order from both Customer Display boards
-      await detailPickedUpButton.click();
-      await expect(pickedUpButton).toBeHidden({ timeout: 15_000 });
-      await expect(detailPickedUpButton).toBeHidden({ timeout: 15_000 });
+      // Advance KDS item to served -> clears order from both Customer Display boards
+      const servedRes = await request.patch(`${BASE}/api/order-items/${takeawayItemId}/status`, {
+        headers: ownerHeaders(),
+        data: { status: 'served' },
+      });
+      expect(servedRes.status()).toBe(200);
 
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-preparing-scroll')).not.toContainText(
@@ -900,12 +891,6 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
           displayNumber,
           { timeout: 15_000 },
         );
-      }
-
-      if (evidenceDir) {
-        await pairedDisplayPage.screenshot({
-          path: path.join(evidenceDir, '06-customer-display-cleared-after-pickup.png'),
-        });
       }
     } finally {
       await staffDisplayPage.close().catch(() => {});

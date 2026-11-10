@@ -6,9 +6,16 @@ import { cloudSync } from '../services/cloud-sync';
 import { serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
+const configuredCategoryWriteLimit = Number.parseInt(
+  process.env.FLO_CATEGORY_WRITE_RATE_LIMIT_MAX || '',
+  10,
+);
 const categoryWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit:
+    Number.isFinite(configuredCategoryWriteLimit) && configuredCategoryWriteLimit > 0
+      ? configuredCategoryWriteLimit
+      : 60,
   standardHeaders: true,
   legacyHeaders: false,
 });

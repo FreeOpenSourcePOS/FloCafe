@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "无法更新付款方式",
     "releaseScheduled": "已预约",
     "releaseBlocked": "送厨受阻",
-    "markReady": "标记为可取餐",
-    "pickedUp": "已取餐",
-    "markedReady": "订单已标记为可取餐",
-    "markedPickedUp": "订单已标记为已取餐",
-    "updateStatusFailed": "更新订单状态失败",
     "refundOwnerOnlyNotice": "经理退款审批已禁用 — 需要店主 PIN 码才能批准此退款。",
     "refundOutsideWindowNotice": "此订单已超出经理审批时限 — 需要店主 PIN 码才能批准此退款。"
   },

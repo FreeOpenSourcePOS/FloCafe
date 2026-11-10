@@ -111,9 +111,11 @@ throws, the token is rejected rather than accepted.
 
 **Staleness.** `tokens_valid_after` on the `users` row is written via `nextTokensValidAfterTimestamp()`
 as a monotonically advancing UTC millisecond timestamp (`YYYY-MM-DD HH:MM:SS.SSS`) using the same
-shared monotonic clock (`nextAuthTimestampMs()`) as `nextTokenIatSeconds()`, bounded above both the
-last logical timestamp (even across backward system clock jumps) and the maximum persisted
-`users.tokens_valid_after` cutoff in SQLite across process restarts. Password changes, PIN changes,
+shared monotonic clock (`nextAuthTimestampMs()`) as `nextTokenIatSeconds()`, where the last logical timestamp
+(even across backward system clock jumps), the maximum persisted `users.tokens_valid_after` cutoff,
+and the persisted `auth_clock_high_water_ms` setting in SQLite (persisted across process restarts,
+redacted from database exports, preserved locally across structured imports, and reset on SQLite
+backup restores) serve as lower bounds that the next value is strictly greater than. Password changes, PIN changes,
 owner recovery, account deactivations, and backup restores bump this column, invalidating every token
 issued before the update without needing to enumerate them. `isTokenStale` compares sub-second `iat`
 claims against `tokens_valid_after` with `<=` at millisecond resolution so pre-change tokens are
@@ -350,11 +352,12 @@ assignments are configured for the user and the resolved list is empty, authenti
 than granting unrestricted access. An exception is thrown if the station lookup itself returns
 `null`, so a failed query is an error, not a grant.
 
-**The gate is re-read inside the transaction.** The station decision for a status update is made
-inside a `withTxn` callback, after resolving the order's `kitchen_station_id` and calling
-`getKdsStationRoutingScope` and `isKdsStationItemAllowed`. Re-reading inside the transaction is what
-makes the decision correct against the data being written. Do not cache the station scope across
-the transaction boundary or move this check above it.
+**The gate is re-read inside the transaction.** The station and category decision for a status
+update is made inside a `withTxn` callback (on item-level KDS endpoints and across all
+`PATCH /api/orders/:id/status` transitions), after resolving the order's `kitchen_station_id` and
+calling `getKdsStationRoutingScope` and `isKdsStationItemAllowed`. Re-reading inside the
+transaction is what makes the decision correct against the data being written. Do not cache the
+station scope across the transaction boundary or move this check above it.
 
 ## Server App authorization
 

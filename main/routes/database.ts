@@ -56,6 +56,7 @@ const router = Router();
 // allow token forgery or cloud credential theft (vuln-0005).
 const EXPORT_SETTINGS_REDACT = new Set([
   'jwt_secret',
+  'auth_clock_high_water_ms',
   'cloud_api_key',
   'cloud_device_secret',
   'cloud_pos_hash',
@@ -565,6 +566,8 @@ router.post(
                   throwIfDatabaseMaintenanceAborted(signal);
                   // Exported secret fields are deliberately redacted. Never import the
                   // marker itself as a real credential (which would make it known).
+                  if (tableName === 'settings' && String(row.key) === 'auth_clock_high_water_ms')
+                    continue;
                   if (
                     tableName === 'settings' &&
                     EXPORT_SETTINGS_REDACT.has(String(row.key)) &&

@@ -69,6 +69,7 @@ const ALLOWED_IPC_KEYS = new Set(['theme_mode', 'orders_layout']);
 
 const SENSITIVE_SETTING_KEYS = new Set([
   'jwt_secret',
+  'auth_clock_high_water_ms',
   'cloud_api_key',
   'cloud_device_secret',
   'cloud_deletion_status_token',

@@ -1,5 +1,6 @@
 import { Router, Request, Response, RequestHandler } from 'express';
 import expressRateLimit from 'express-rate-limit';
+import { isAllowedPrivateIp } from '../middleware/security';
 import { randomUUID } from 'crypto';
 import {
   getDatabase,
@@ -106,6 +107,7 @@ const settingsReadRateLimit = expressRateLimit({
       : 120,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 const configuredSettingsWriteLimit = Number.parseInt(
   process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX || '',
@@ -119,6 +121,7 @@ const settingsWriteRateLimit = expressRateLimit({
       : 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────

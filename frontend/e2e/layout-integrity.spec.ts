@@ -1059,6 +1059,7 @@ interface SyntheticInventory {
   /** Supplies created by this invocation; the cleanup owns exactly these. */
   supplyIds: string[];
   recipeProductIds: string[];
+  visibleSupplyName?: string;
 }
 
 /** Supplies fill the Supplies tab, one movement per supply fills Movements,
@@ -1077,6 +1078,7 @@ async function seedSyntheticInventory(
   const seededSupplyIds = seededSupplies.map((supply) => supply.id);
   const existingSupplyNames = new Set(supplies.map((supply) => supply.name));
   const supplyIds: string[] = [];
+  const createdSupplyNames: string[] = [];
   let nextSupplyIndex = 1;
   let movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
   expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
@@ -1116,6 +1118,7 @@ async function seedSyntheticInventory(
       expect(created.status(), `synthetic supply ${name} is created`).toBe(201);
       const createdId = (await created.json()).supply.id as string;
       supplyIds.push(createdId);
+      createdSupplyNames.push(name);
       seededSupplyIds.push(createdId);
     }
 
@@ -1143,7 +1146,12 @@ async function seedSyntheticInventory(
     expect(saved.status(), 'synthetic recipe is saved').toBe(200);
   }
 
-  return { supplyIds, recipeProductIds };
+  const visibleSupplyName =
+    createdSupplyNames[0] ??
+    seededSupplies[0]?.name ??
+    supplies[0]?.name ??
+    'Scroll Layout Supply 01';
+  return { supplyIds, recipeProductIds, visibleSupplyName };
 }
 
 async function removeSyntheticRecipes(api: APIRequestContext, productIds: string[]): Promise<void> {
@@ -1674,6 +1682,7 @@ test.describe('management lists keep their controls visible while records scroll
     await loginAsManager(page);
     await page.goto(`${BASE}/inventory`);
 
+    const targetSupplyName = inventory?.visibleSupplyName ?? 'Scroll Layout Supply 01';
     const region = page.getByTestId('inventory-supplies-scroll');
     await expect(region).toBeVisible();
     await expect(
@@ -1681,15 +1690,15 @@ test.describe('management lists keep their controls visible while records scroll
       'the supply list rows are loaded',
     ).toBeVisible();
     await expect(
-      page.getByText(`${SYNTHETIC_SUPPLY_PREFIX} 24`, { exact: true }),
-      'the seeded supply directory is loaded',
+      page.getByText(targetSupplyName, { exact: true }),
+      'the seeded supply inventory is loaded',
     ).toBeVisible();
     const scrolled = await scrollToEnd(region);
     expect(scrolled.scrollTop, 'the supply list region owns the scroll').toBeGreaterThan(0);
 
     // The pinned search keeps filtering the scrolled list.
     const search = page.getByPlaceholder('Search').first();
-    await search.fill('Scroll Layout Supply 01');
+    await search.fill(targetSupplyName);
     await expect(region.locator('tbody tr'), 'the pinned search filters the list').toHaveCount(1);
     await search.fill('');
     await expect

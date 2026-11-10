@@ -1303,7 +1303,18 @@
     "selectCounter": "카운터 선택",
     "decreaseQuantity": "수량 감소",
     "increaseQuantity": "수량 증가",
-    "distributeEvenly": "균등 배분"
+    "distributeEvenly": "균등 배분",
+    "validationStockGuidanceItem": "주문을 다시 제출하기 전에 상품에서 \"{item}\" 재고를 보충하거나 재고 추적을 업데이트하세요.",
+    "validationStockGuidance": "주문을 다시 제출하기 전에 상품에서 품절 항목의 재고를 보충하거나 재고 추적을 업데이트하세요.",
+    "validationOpenProducts": "상품 및 재고 열기",
+    "validationOpenInventory": "재고 및 레시피 열기",
+    "validationStockEvidenceHint": "상품을 확인한 후에도 재고 수량이 잘못 표시되는 경우에만 지원팀에 문의하세요(항목명과 예상 수량 포함).",
+    "validationShiftRequiredGuidance": "이 작업을 완료하려면 시작된 근무 교대가 필요합니다. 이 단말기에서 근무를 시작한 후 다시 시도하세요.",
+    "validationOpenShiftAction": "근무 시작",
+    "validationShiftEvidenceHint": "이 단말기에서 이미 근무가 시작되었는데도 오류가 계속되는 경우에만 지원팀에 문의하세요.",
+    "validationClosedBooksGuidance": "오늘 영업일은 마감되었으며 다시 열 수 없습니다. 새 주문과 현금 거래는 다음 영업일에 재개됩니다.",
+    "validationClosedBooksEvidenceHint": "매장 날짜나 시간대가 잘못되어 오늘 영업일이 마감된 것으로 표시되는 경우에만 지원팀에 문의하세요.",
+    "validationGenericEvidenceHint": "이 유효성 검사가 정상적인 요청을 거부했다고 판단되는 경우에만 지원팀에 문의하세요."
   },
   "printTest": {
     "amt": "금액",

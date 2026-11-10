@@ -209,8 +209,8 @@ tickets do not use the bill logo setting.
 | WebUSB | The browser WebUSB API through the frontend bridge. |
 
 Dispatch failures are classified by `classifyPrintFailure()` into a stable, privacy-safe set:
-`not_configured`, `offline`, `queue_unavailable`, `spooler_error`, `driver_error`,
-`permission_denied`, `timeout`, and `unknown`. The classification is what fleet telemetry reports,
+`not_configured`, `offline`, `needs_attention`, `queue_unavailable`, `spooler_error`, `driver_error`,
+`permission_denied`, `timeout`, `write_error`, `unsupported`, and `unknown`. The classification is what fleet telemetry reports,
 so it must not embed device names or user data.
 
 ## Printer profiles

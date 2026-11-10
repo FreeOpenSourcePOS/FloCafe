@@ -1303,7 +1303,18 @@
     "selectCounter": "Zgjidh sportelin",
     "decreaseQuantity": "Zbrit sasinë",
     "increaseQuantity": "Rrit sasinë",
-    "distributeEvenly": "Shpërndaj në mënyrë të barabartë"
+    "distributeEvenly": "Shpërndaj në mënyrë të barabartë",
+    "validationStockGuidanceItem": "Rimbushni \"{item}\" ose përditësoni gjurmimin e stokut te Produktet ose Inventari përpara se ta dërgoni përsëri porosinë.",
+    "validationStockGuidance": "Rimbushni artikullin që mungon ose përditësoni gjurmimin e stokut te Produktet ose Inventari përpara se ta dërgoni përsëri porosinë.",
+    "validationOpenProducts": "Hap Produktet dhe stokun",
+    "validationOpenInventory": "Hap Inventarin dhe recetat",
+    "validationStockEvidenceHint": "Kontaktoni mbështetjen vetëm nëse sasitë e stokut duken ende të pasakta pas kontrollit te Produktet ose Inventari (përfshini emrin e artikullit dhe sasinë e pritur).",
+    "validationShiftRequiredGuidance": "Kërkohet një turn i hapur përpara përfundimit të këtij veprimi. Hapni një turn në këtë terminal dhe provoni përsëri.",
+    "validationOpenShiftAction": "Hap turnin",
+    "validationShiftEvidenceHint": "Kontaktoni mbështetjen vetëm nëse një turn është tashmë i hapur në këtë terminal dhe ky gabim vazhdon.",
+    "validationClosedBooksGuidance": "Dita e sotme e punës është mbyllur dhe nuk mund të rihapet. Porositë e reja dhe veprimet me para në dorë rifillojnë ditën tjetër të punës.",
+    "validationClosedBooksEvidenceHint": "Kontaktoni mbështetjen vetëm nëse dita e sotme e punës shfaqet e mbyllur në datën ose zonën kohore të gabuar të dyqanit.",
+    "validationGenericEvidenceHint": "Kontaktoni mbështetjen vetëm nëse mendoni se ky kontroll verifikimi refuzoi një kërkesë të vlefshme."
   },
   "printTest": {
     "amt": "Shuma",

@@ -20,6 +20,7 @@ import type { PrintWarning } from '@print/warnings';
 import { displayCellWidth, wrapToDisplayCells } from '@print/width';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES } from '@/lib/i18n/languages';
+import { sanitizePrinterErrorDetail } from '../operation-failure';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
 export type { PrintWarning } from '@print/warnings';
@@ -334,16 +335,20 @@ export function extractPrinterErrorMessage(err: unknown): string {
   if (!err) return '';
   const maybeAxios = err as {
     response?: { data?: { detail?: unknown; error?: unknown } };
+    detail?: unknown;
     message?: unknown;
   };
   const detail = maybeAxios.response?.data?.detail;
-  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (typeof detail === 'string' && detail.trim()) return sanitizePrinterErrorDetail(detail.trim());
   const error = maybeAxios.response?.data?.error;
-  if (typeof error === 'string' && error.trim()) return error.trim();
-  if (err instanceof Error && typeof err.message === 'string' && err.message.trim()) {
-    return err.message.trim();
+  if (typeof error === 'string' && error.trim()) return sanitizePrinterErrorDetail(error.trim());
+  if (typeof maybeAxios.detail === 'string' && maybeAxios.detail.trim()) {
+    return sanitizePrinterErrorDetail(maybeAxios.detail.trim());
   }
-  return typeof err === 'string' ? err.trim() : '';
+  if (err instanceof Error && typeof err.message === 'string' && err.message.trim()) {
+    return sanitizePrinterErrorDetail(err.message.trim());
+  }
+  return typeof err === 'string' ? sanitizePrinterErrorDetail(err.trim()) : '';
 }
 
 /** Matches only the Windows PRINTER_ATTRIBUTE_WORK_OFFLINE message (main/printers/thermal.ts), not generic offline/disconnected statuses. */
@@ -367,7 +372,7 @@ export function formatReceiptErrorToast(
   detail?: string,
   fallbackTranslation = 'Receipt print failed',
 ): string {
-  const msg = String(detail || '').trim();
+  const msg = sanitizePrinterErrorDetail(detail);
   if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg.startsWith('Receipt not printed:')) return msg;
   if (msg && msg !== 'print failed' && msg !== 'Print failed') {
@@ -381,7 +386,7 @@ export function formatKotErrorToast(
   detail?: string,
   fallbackTranslation = 'KOT print failed',
 ): string {
-  const msg = String(detail || '').trim();
+  const msg = sanitizePrinterErrorDetail(detail);
   if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg && msg !== 'print failed' && msg !== 'KOT print failed') {
     return `${fallbackTranslation}: ${msg}`;

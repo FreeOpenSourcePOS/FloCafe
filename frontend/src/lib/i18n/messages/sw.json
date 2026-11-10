@@ -1303,7 +1303,18 @@
     "selectCounter": "Chagua Kaunta",
     "decreaseQuantity": "Punguza idadi",
     "increaseQuantity": "Ongeza idadi",
-    "distributeEvenly": "Gawanya sawasawa"
+    "distributeEvenly": "Gawanya sawasawa",
+    "validationStockGuidanceItem": "Ongeza akiba ya \"{item}\" au sasisha ufuatiliaji wa akiba kwenye Bidhaa au Akiba kabla ya kutuma tena oda.",
+    "validationStockGuidance": "Ongeza akiba ya bidhaa isiyopatikana au sasisha ufuatiliaji wa akiba kwenye Bidhaa au Akiba kabla ya kutuma tena oda.",
+    "validationOpenProducts": "Fungua Bidhaa na Akiba",
+    "validationOpenInventory": "Fungua Akiba na Mapishi",
+    "validationStockEvidenceHint": "Wasiliana na usaidizi tu ikiwa idadi ya akiba bado inaonekana si sahihi baada ya kukagua Bidhaa au Akiba (jumuisha jina la bidhaa na idadi inayotarajiwa).",
+    "validationShiftRequiredGuidance": "Zamu iliyofunguliwa inahitajika kabla ya kukamilisha hatua hii. Fungua zamu kwenye kifaa hiki kisha ujaribu tena.",
+    "validationOpenShiftAction": "Fungua zamu",
+    "validationShiftEvidenceHint": "Wasiliana na usaidizi tu ikiwa zamu tayari imefunguliwa kwenye kifaa hiki na hitilafu hii inaendelea.",
+    "validationClosedBooksGuidance": "Siku ya biashara ya leo imefungwa na haiwezi kufunguliwa tena. Oda mpya na shughuli za pesa taslimu zitaendelea siku inayofuata ya biashara.",
+    "validationClosedBooksEvidenceHint": "Wasiliana na usaidizi tu ikiwa siku ya biashara ya leo inaonekana imefungwa kwa tarehe au saa za eneo zisizo sahihi za duka.",
+    "validationGenericEvidenceHint": "Wasiliana na usaidizi tu ikiwa unaamini ukaguzi huu umekataa ombi halali."
   },
   "printTest": {
     "amt": "Kiasi",

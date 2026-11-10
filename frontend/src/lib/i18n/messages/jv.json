@@ -1303,7 +1303,18 @@
     "selectCounter": "Pilih kasir",
     "decreaseQuantity": "Kurangi cacahe",
     "increaseQuantity": "Tambah cacahe",
-    "distributeEvenly": "Bagi kanthi rata"
+    "distributeEvenly": "Bagi kanthi rata",
+    "validationStockGuidanceItem": "Isi maneh stok \"{item}\" utawa anyari pelacakan stoke ing Produk utawa Pasokan sadurunge ngirim pesenan maneh.",
+    "validationStockGuidance": "Isi maneh item sing entek utawa anyari pelacakan stoke ing Produk utawa Pasokan sadurunge ngirim pesenan maneh.",
+    "validationOpenProducts": "Bukak Produk & Stok",
+    "validationOpenInventory": "Bukak Pasokan & Resep",
+    "validationStockEvidenceHint": "Hubungi dhukungan mung yen cacah stok isih katon salah sawise mriksa Produk utawa Pasokan (lebokake jeneng item lan stok sing dikarepake).",
+    "validationShiftRequiredGuidance": "Shift sing bukak dibutuhake sadurunge nindakake iki. Bukak shift ing terminal iki banjur coba maneh.",
+    "validationOpenShiftAction": "Bukak shift",
+    "validationShiftEvidenceHint": "Hubungi dhukungan mung yen shift wis dibukak ing terminal iki nanging masalah iki isih ana.",
+    "validationClosedBooksGuidance": "Dina bisnis dina iki wis ditutup lan ora bisa dibukak maneh. Pesenan anyar lan transaksi tunai bakal dilanjutake ing dina bisnis sabanjure.",
+    "validationClosedBooksEvidenceHint": "Hubungi dhukungan mung yen dina bisnis dina iki katon ditutup ing tanggal utawa zona wektu toko sing salah.",
+    "validationGenericEvidenceHint": "Hubungi dhukungan mung yen sampeyan yakin pamriksan validasi iki nolak panjalukan sing bener."
   },
   "printTest": {
     "amt": "Gng",

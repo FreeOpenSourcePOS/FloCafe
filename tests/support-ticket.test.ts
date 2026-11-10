@@ -33,6 +33,16 @@ const {
 const { registerRoutes } = require('../main/routes/index');
 const { cloudSync } = require('../main/services/cloud-sync');
 const { sanitizeLogTail } = require('../main/lib/log-sanitizer');
+const {
+  SUPPORT_LOG_TAIL_MAX_CHARS,
+  buildPosSupportTicketRequestBody,
+  buildPrinterOperationFailureSupportPayload,
+  extractQuotedItemName,
+  isSupportErrorContextCurrent,
+  readBoundedSupportLogTail,
+  resolvePosFailureSupportMetadata,
+  resolvePosValidationAction,
+} = require('../frontend/src/lib/operation-failure');
 
 async function main() {
   console.log('Support Ticket Outbox Integration Tests');
@@ -575,6 +585,521 @@ async function main() {
     assert(
       !storedBoundaryTail.includes(boundarySecret),
       'credential crossing 200KB truncation boundary is redacted before slicing',
+    );
+
+    console.log(
+      '\n9. POS one-click Get Help attaches bounded log_tail when opted in and guards tenant/session context (#1463)',
+    );
+    const oversizedLog =
+      'HEADER_SHOULD_BE_DROPPED\n' + 'L'.repeat(SUPPORT_LOG_TAIL_MAX_CHARS + 512);
+    const boundedLog = await readBoundedSupportLogTail(true, async () => ({
+      text: oversizedLog,
+      truncated: true,
+    }));
+    assertEqual(
+      boundedLog?.length,
+      SUPPORT_LOG_TAIL_MAX_CHARS,
+      'readBoundedSupportLogTail bounds log tail to 16KB',
+    );
+    assert(
+      !boundedLog?.includes('HEADER_SHOULD_BE_DROPPED'),
+      'readBoundedSupportLogTail keeps the most recent tail characters',
+    );
+    assertEqual(
+      await readBoundedSupportLogTail(false, async () => ({ text: 'should not be read' })),
+      undefined,
+      'readBoundedSupportLogTail skips IPC when attachLog is unchecked',
+    );
+    assertEqual(
+      await readBoundedSupportLogTail(true, undefined),
+      undefined,
+      'readBoundedSupportLogTail returns undefined when Electron API is unavailable',
+    );
+    assertEqual(
+      await readBoundedSupportLogTail(true, async () => {
+        throw new Error('IPC channel closed');
+      }),
+      undefined,
+      'readBoundedSupportLogTail swallows IPC errors so ticket queueing still succeeds',
+    );
+
+    const originContext = {
+      storeId: 'tenant-a',
+      userId: 'user-1',
+      token: 'tok-tenant-a',
+      sessionEpoch: 3,
+    };
+    assert(
+      isSupportErrorContextCurrent(originContext, {
+        storeId: 'tenant-a',
+        initialStoreId: 'tenant-a',
+        userId: 'user-1',
+        token: 'tok-tenant-a',
+        sessionEpoch: 3,
+      }),
+      'matching tenant, user, token, and sessionEpoch is current',
+    );
+    assert(
+      !isSupportErrorContextCurrent(originContext, {
+        storeId: 'tenant-b',
+        initialStoreId: 'tenant-a',
+        userId: 'user-1',
+        token: 'tok-tenant-b',
+        sessionEpoch: 3,
+      }),
+      'tenant switch invalidates the captured supportError context',
+    );
+    assert(
+      !isSupportErrorContextCurrent(originContext, {
+        storeId: 'tenant-a',
+        initialStoreId: 'tenant-a',
+        userId: 'user-1',
+        token: 'tok-tenant-b',
+        sessionEpoch: 3,
+      }),
+      'token rotation invalidates the captured supportError context even before epoch/store refs update',
+    );
+    assert(
+      !isSupportErrorContextCurrent(originContext, {
+        storeId: 'tenant-a',
+        initialStoreId: 'tenant-a',
+        userId: 'user-2',
+        token: 'tok-tenant-a',
+        sessionEpoch: 3,
+      }),
+      'user switch invalidates the captured supportError context',
+    );
+    assert(
+      isSupportErrorContextCurrent(
+        { storeId: 'default', userId: 'user-1', token: 'tok-tenant-a', sessionEpoch: 1 },
+        {
+          storeId: 'tenant-a',
+          initialStoreId: 'tenant-a',
+          userId: 'user-1',
+          token: 'tok-tenant-a',
+          sessionEpoch: 1,
+        },
+      ),
+      'initial default store hydration to the active tenant preserves context',
+    );
+
+    const posHelpTicketId = require('crypto').randomUUID();
+    const posHelpCorrelationId = require('crypto').randomUUID();
+    const posHelpBodyWithLog = buildPosSupportTicketRequestBody({
+      payload: {
+        event_code: 'order.create.failed',
+        message: 'Database busy while creating order',
+        category: 'bug',
+      },
+      subject: 'FloCafe order problem',
+      ticketCorrelationId: posHelpCorrelationId,
+      clientTicketId: posHelpTicketId,
+      attachLog: true,
+      logTail: '[2026-11-09 12:00:00] [error] SQLITE_BUSY in orders.ts',
+    });
+    const posHelpRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: posHelpBodyWithLog,
+    });
+    assertEqual(posHelpRes.status, 202, 'POS one-click help ticket with log_tail is queued');
+    const posHelpStored = JSON.parse(
+      (
+        db
+          .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+          .get(posHelpTicketId) as { payload: string }
+      ).payload,
+    );
+    assert(
+      typeof posHelpStored.log_tail === 'string' &&
+        posHelpStored.log_tail.includes('SQLITE_BUSY in orders.ts'),
+      'POS one-click help ticket stores attached log_tail in outbox',
+    );
+
+    const posHelpNoLogTicketId = require('crypto').randomUUID();
+    const posHelpBodyWithoutLog = buildPosSupportTicketRequestBody({
+      payload: {
+        event_code: 'order.create.failed',
+        message: 'Database busy while creating order',
+        category: 'bug',
+      },
+      subject: 'FloCafe order problem',
+      ticketCorrelationId: require('crypto').randomUUID(),
+      clientTicketId: posHelpNoLogTicketId,
+      attachLog: false,
+      logTail: '[2026-11-09 12:00:00] [error] should be omitted when opted out',
+    });
+    assertEqual(
+      'log_tail' in posHelpBodyWithoutLog,
+      false,
+      'buildPosSupportTicketRequestBody omits log_tail when attachLog is false',
+    );
+
+    console.log(
+      '\n10. POS print Get Help preserves backend failure_class, connection_type, and sanitized detail (#1465)',
+    );
+    const receiptCorrelationId = require('crypto').randomUUID();
+    const receiptPrintFailure = buildPrinterOperationFailureSupportPayload(
+      {
+        response: {
+          status: 502,
+          data: {
+            error: 'Print failed',
+            detail:
+              'Command failed: powershell -NoProfile -EncodedCommand SQBuAHYAbwBrAGUA\nPrinter is set to Use Printer Offline in Windows at C:\\Users\\Cashier\\AppData\\Local\\Temp\\flo_print_77.bin',
+            failure_class: 'offline',
+            connection_type: 'usb',
+            code: 'print.receipt.failed',
+            stage: 'dispatch',
+            correlation_id: receiptCorrelationId,
+          },
+        },
+      },
+      {
+        kind: 'receipt',
+        fallbackDetail: 'Receipt printing failed after payment was completed',
+      },
+    );
+    assert(
+      !receiptPrintFailure.detail.includes('EncodedCommand') &&
+        !receiptPrintFailure.detail.includes('C:\\Users\\Cashier'),
+      'printer failure detail strips PowerShell command flags and redacts paths',
+    );
+    const printerTicketId = require('crypto').randomUUID();
+    const printerTicketRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        client_ticket_id: printerTicketId,
+        subject: 'FloCafe printer problem',
+        message: receiptPrintFailure.detail,
+        category: 'printer',
+        event_code: receiptPrintFailure.code,
+        correlation_id: receiptPrintFailure.correlation_id,
+        diagnostics: {
+          operation: 'printer.print',
+          stage: receiptPrintFailure.stage,
+          outcome: receiptPrintFailure.outcome,
+          failure_class: receiptPrintFailure.failure_class,
+          connection_type: receiptPrintFailure.connection_type,
+        },
+        operation_failure: receiptPrintFailure.operation_failure,
+      },
+    });
+    assertEqual(
+      printerTicketRes.status,
+      202,
+      'printer Get Help payload with operation_failure is accepted by /api/support-ticket',
+    );
+    const storedPrinterPayload = JSON.parse(
+      (
+        db
+          .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+          .get(printerTicketId) as { payload: string }
+      ).payload,
+    );
+    assertEqual(
+      storedPrinterPayload.diagnostics.operation_failure.capture_point,
+      'fc.backend.printer.receipt.queue',
+      'receipt queue failure uses registered fc.backend.printer.receipt.queue capture point',
+    );
+    assertEqual(
+      storedPrinterPayload.diagnostics.operation_failure.facts.failure_class,
+      'offline',
+      'printer operation_failure preserves allowlisted failure_class',
+    );
+    assertEqual(
+      storedPrinterPayload.diagnostics.operation_failure.facts.connection_type,
+      'usb',
+      'printer operation_failure preserves allowlisted connection_type',
+    );
+
+    const clientFallbackPrintFailure = buildPrinterOperationFailureSupportPayload(
+      new Error('Please allow popups to print'),
+      {
+        kind: 'kot',
+        connectionType: 'unknown',
+        fallbackDetail: 'Kitchen ticket printing failed after the order was created',
+      },
+    );
+    assertEqual(
+      clientFallbackPrintFailure.operation_failure,
+      undefined,
+      'client-side popup fallback omits fabricated backend operation_failure',
+    );
+    assertEqual(
+      clientFallbackPrintFailure.correlation_id,
+      null,
+      'client-side popup fallback omits fabricated backend correlation_id',
+    );
+    const fallbackPrinterTicketId = require('crypto').randomUUID();
+    const fallbackPrinterTicketRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        client_ticket_id: fallbackPrinterTicketId,
+        subject: 'FloCafe printer problem',
+        message: clientFallbackPrintFailure.detail,
+        category: 'printer',
+        event_code: clientFallbackPrintFailure.code,
+        correlation_id: require('crypto').randomUUID(),
+        diagnostics: {
+          operation: 'printer.print',
+          stage: clientFallbackPrintFailure.stage,
+          outcome: clientFallbackPrintFailure.outcome,
+          failure_class: clientFallbackPrintFailure.failure_class,
+          connection_type: clientFallbackPrintFailure.connection_type,
+        },
+      },
+    });
+    assertEqual(
+      fallbackPrinterTicketRes.status,
+      202,
+      'client-side printer fallback ticket queues cleanly without operation_failure',
+    );
+    const storedFallbackPrinterPayload = JSON.parse(
+      (
+        db
+          .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+          .get(fallbackPrinterTicketId) as { payload: string }
+      ).payload,
+    );
+    assertEqual(
+      storedFallbackPrinterPayload.diagnostics.failure_class,
+      'unsupported',
+      'client-side printer fallback ticket preserves failure_class in diagnostics',
+    );
+    assertEqual(
+      storedFallbackPrinterPayload.diagnostics.operation_failure,
+      undefined,
+      'client-side printer fallback ticket stores no synthetic operation_failure',
+    );
+
+    console.log(
+      '\n11. Expected order rejections use validation presentation and non-bug support metadata (#1466)',
+    );
+    const stockMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.create',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'order.stock_insufficient',
+      code: 'order.stock_insufficient',
+      message: 'Insufficient stock for "Double Cheeseburger"',
+      detail: 'Insufficient stock for "Double Cheeseburger"',
+    });
+    assertEqual(stockMetadata.variant, 'validation', 'stock rejection uses validation variant');
+    assertEqual(stockMetadata.category, 'general', 'stock rejection uses non-bug category');
+    assertEqual(
+      stockMetadata.subject,
+      'FloCafe inventory or stock validation help',
+      'stock rejection uses inventory validation subject',
+    );
+    assertEqual(
+      stockMetadata.affectedItem,
+      'Double Cheeseburger',
+      'stock rejection extracts quoted affected item name',
+    );
+    const catalogAction = resolvePosValidationAction('stock_insufficient', {
+      canManageCatalog: true,
+      canViewInventory: true,
+    });
+    assertEqual(
+      catalogAction?.kind === 'link' ? catalogAction.href : null,
+      '/products',
+      'stock rejection links to /products when catalog.manage is granted',
+    );
+    const inventoryOnlyAction = resolvePosValidationAction('stock_insufficient', {
+      canManageCatalog: false,
+      canViewInventory: true,
+    });
+    assertEqual(
+      inventoryOnlyAction,
+      null,
+      'stock rejection returns null when catalog.manage is not granted even if inventory.view is granted',
+    );
+    assertEqual(
+      resolvePosValidationAction('stock_insufficient', {
+        canManageCatalog: false,
+        canViewInventory: false,
+      }),
+      null,
+      'stock rejection hides navigation link for roles without catalog or inventory access',
+    );
+
+    const appendStockMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.append',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'validation.rejected',
+      code: 'validation.rejected',
+      message: 'Insufficient stock for "1/2 Roasted Chicken"',
+      detail: 'Insufficient stock for "1/2 Roasted Chicken"',
+    });
+    assertEqual(
+      appendStockMetadata.rejectionKind,
+      'stock_insufficient',
+      'order.append stock rejection resolves as stock_insufficient',
+    );
+    assertEqual(
+      appendStockMetadata.affectedItem,
+      '1/2 Roasted Chicken',
+      'order.append stock rejection extracts fractional/slashed menu item name',
+    );
+    assertEqual(
+      appendStockMetadata.subject,
+      'FloCafe inventory or stock validation help',
+      'order.append stock rejection uses inventory validation subject',
+    );
+
+    const addonOutOfStockMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.create',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'order.addon_unavailable',
+      code: 'order.addon_unavailable',
+      message: 'Add-on "Chef\'s Select Burger Sauce" is out of stock (requested 2, available 0)',
+      detail: 'Add-on "Chef\'s Select Burger Sauce" is out of stock (requested 2, available 0)',
+    });
+    assertEqual(
+      addonOutOfStockMetadata.rejectionKind,
+      'stock_insufficient',
+      'add-on out-of-stock rejection resolves as stock_insufficient',
+    );
+    assertEqual(
+      addonOutOfStockMetadata.affectedItem,
+      "Chef's Select Burger Sauce",
+      'add-on out-of-stock rejection preserves item names containing SQL-like English words',
+    );
+    assertEqual(
+      extractQuotedItemName('Insufficient stock for "Chicken/Beef Wrap"'),
+      'Chicken/Beef Wrap',
+      'extractQuotedItemName accepts slashed menu item names',
+    );
+    assertEqual(
+      extractQuotedItemName('Error reading "/etc/passwd"'),
+      null,
+      'extractQuotedItemName rejects filesystem paths',
+    );
+    assertEqual(
+      extractQuotedItemName('Failed "SELECT * FROM products"'),
+      null,
+      'extractQuotedItemName rejects SQL statements',
+    );
+
+    const closedBooksMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.create',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'validation.rejected',
+      code: 'validation.rejected',
+      message: 'Books are closed for 2026-11-09.',
+      detail: 'Books are closed for 2026-11-09.',
+    });
+    assertEqual(
+      closedBooksMetadata.variant,
+      'validation',
+      'closed-books rejection uses validation variant',
+    );
+    assertEqual(
+      closedBooksMetadata.category,
+      'general',
+      'closed-books rejection uses non-bug category',
+    );
+    assertEqual(
+      closedBooksMetadata.rejectionKind,
+      'closed_books',
+      'closed-books rejection resolves as immutable closed_books',
+    );
+    assertEqual(
+      resolvePosValidationAction('closed_books', {
+        canManageCatalog: true,
+        canViewInventory: true,
+        canUseShift: true,
+      }),
+      null,
+      'closed-books rejection never links to /dashboard or offers reopening',
+    );
+
+    const shiftRequiredMetadata = resolvePosFailureSupportMetadata({
+      operation: 'payment.create',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'payment.invalid',
+      displayCode: 'cash_session_required',
+      code: 'payment.invalid',
+      message: 'No open shift: open a shift before taking cash',
+      detail: 'No open shift: open a shift before taking cash',
+    });
+    assertEqual(
+      shiftRequiredMetadata.rejectionKind,
+      'shift_required',
+      'cash_session_required resolves as shift_required',
+    );
+    const shiftRequiredAction = resolvePosValidationAction('shift_required', { canUseShift: true });
+    assertEqual(
+      shiftRequiredAction?.kind ?? null,
+      'open_shift',
+      'shift_required offers inline open_shift modal action when canUseShift is true',
+    );
+    assertEqual(
+      resolvePosValidationAction('shift_required', { canUseShift: false }),
+      null,
+      'shift_required hides open_shift action when canUseShift is false',
+    );
+
+    const unexpectedMetadata = resolvePosFailureSupportMetadata({
+      operation: 'order.create',
+      classification: 'unexpected_failure',
+      outcome: 'unknown',
+      reasonCode: 'persistence.failed',
+      code: 'persistence.failed',
+      message: 'Order outcome could not be confirmed.',
+      detail: 'Order persistence failed',
+    });
+    assertEqual(unexpectedMetadata.variant, 'error', 'unexpected failure keeps red error variant');
+    assertEqual(unexpectedMetadata.category, 'bug', 'unexpected failure keeps bug category');
+    assertEqual(
+      unexpectedMetadata.subject,
+      'FloCafe order problem',
+      'unexpected failure keeps FloCafe order problem subject',
+    );
+
+    const validationTicketId = require('crypto').randomUUID();
+    const validationOpId = require('crypto').randomUUID();
+    const validationTicketRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        client_ticket_id: validationTicketId,
+        subject: stockMetadata.subject,
+        message: 'Insufficient stock for "Double Cheeseburger"',
+        category: stockMetadata.category,
+        event_code: 'order.stock_insufficient',
+        correlation_id: validationOpId,
+        operation_failure: {
+          capture_point: 'fc.backend.order.create.stock_validation',
+          operation_id: validationOpId,
+          outcome: 'not_applied',
+        },
+      },
+    });
+    assertEqual(validationTicketRes.status, 202, 'validation help ticket is accepted');
+    const storedValidationTicket = JSON.parse(
+      (
+        db
+          .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+          .get(validationTicketId) as { payload: string }
+      ).payload,
+    );
+    assertEqual(
+      storedValidationTicket.diagnostics.category,
+      'general',
+      'validation help ticket is stored with non-bug category',
+    );
+    assertEqual(
+      storedValidationTicket.subject,
+      'FloCafe inventory or stock validation help',
+      'validation help ticket preserves inventory validation subject',
     );
   } finally {
     server.close();

@@ -57,8 +57,14 @@ import {
   isPrintCancelledOnTenantChangeError,
 } from '@/hooks/useReceiptSettingsSync';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+import { PrinterOperationError, toPrinterOperationError } from '@/lib/operation-failure';
 
-export { PrintCancelledOnTenantChangeError, isPrintCancelledOnTenantChangeError };
+export {
+  PrintCancelledOnTenantChangeError,
+  isPrintCancelledOnTenantChangeError,
+  PrinterOperationError,
+  toPrinterOperationError,
+};
 
 type CoreBillTemplate = 'classic' | 'compact';
 
@@ -289,6 +295,7 @@ export const usePrinterStore = create<PrinterState>()(
       printBill: async (bill, tenant, opts, reservedWindow) => {
         set({ lastError: null });
         let windowTransferred = false;
+        let activeConnectionType = 'unknown';
         const authTenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
         const isSameTenant = () =>
           (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
@@ -413,6 +420,8 @@ export const usePrinterStore = create<PrinterState>()(
               windowTransferred = true;
               return response.data.warnings || [];
             } catch (err: unknown) {
+              if (isPrintCancelledOnTenantChangeError(err)) throw err;
+              throwIfTenantChanged();
               const e = err as {
                 response?: { data?: { error?: string; detail?: string } };
                 message?: string;
@@ -423,7 +432,12 @@ export const usePrinterStore = create<PrinterState>()(
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
                 return await executeBrowserPrint();
               }
-              throw new Error(errorMsg);
+              throw toPrinterOperationError(err, {
+                kind: 'receipt',
+                connectionType: hw.connection_type,
+                stage: 'dispatch',
+                fallbackDetail: 'Print failed',
+              });
             }
           }
 
@@ -444,6 +458,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
           windowTransferred = true;
+          activeConnectionType = 'webusb';
 
           // ESC/POS thermal path: load requested language bundles before resolving labels.
           const languages = opts?.languages ?? resolveBillPrintLanguages();
@@ -578,7 +593,14 @@ export const usePrinterStore = create<PrinterState>()(
 
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
-            throw new Error(refusal);
+            throw new PrinterOperationError({
+              kind: 'receipt',
+              code: 'print.receipt.failed',
+              failure_class: 'unsupported',
+              connection_type: 'webusb',
+              stage: 'prepare',
+              detail: refusal,
+            });
           }
           throwIfTenantChanged();
 
@@ -588,10 +610,20 @@ export const usePrinterStore = create<PrinterState>()(
         } catch (err) {
           if (!windowTransferred && reservedWindow && !reservedWindow.closed)
             reservedWindow.close();
-          if (!isPrintCancelledOnTenantChangeError(err)) {
-            set({ lastError: (err as Error).message });
+          if (isPrintCancelledOnTenantChangeError(err)) {
+            throw err;
           }
-          throw err;
+          if (!isSameTenant()) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
+          const printerErr = toPrinterOperationError(err, {
+            kind: 'receipt',
+            connectionType: activeConnectionType,
+            stage: 'dispatch',
+            fallbackDetail: 'Print failed',
+          });
+          set({ lastError: printerErr.message });
+          throw printerErr;
         }
       },
 
@@ -735,15 +767,28 @@ export const usePrinterStore = create<PrinterState>()(
           await printerService.print(bytes);
           return warnings;
         } catch (err) {
-          if (!isPrintCancelledOnTenantChangeError(err)) {
-            set({ lastError: (err as Error).message });
+          if (isPrintCancelledOnTenantChangeError(err)) {
+            throw err;
           }
+          if (!isSameTenant()) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
+          set({ lastError: (err as Error).message });
           throw err;
         }
       },
 
       printKot: async (order, opts) => {
         set({ lastError: null });
+        let activeConnectionType = 'unknown';
+        const authTenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
+        const isSameTenant = () =>
+          (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
+        const throwIfTenantChanged = (): void => {
+          if (!isSameTenant()) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
+        };
         // Enforce master kot_printing_enabled toggle for all automatic and manual prints.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } =
           usePosSettingsStore.getState();
@@ -769,31 +814,34 @@ export const usePrinterStore = create<PrinterState>()(
                   arabicShaping: printerArabicShaping,
                 },
               );
+              throwIfTenantChanged();
               return response.data.warnings || [];
             } catch (err: unknown) {
-              const e = err as {
-                response?: { data?: { error?: string; detail?: string } };
-                message?: string;
-              };
-              throw new Error(
-                e.response?.data?.detail ||
-                  e.response?.data?.error ||
-                  e.message ||
-                  'KOT print failed',
-              );
+              if (isPrintCancelledOnTenantChangeError(err)) throw err;
+              throwIfTenantChanged();
+              throw toPrinterOperationError(err, {
+                kind: 'kot',
+                connectionType: hw.connection_type,
+                stage: 'dispatch',
+                fallbackDetail: 'KOT print failed',
+              });
             }
           }
 
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
           const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+          throwIfTenantChanged();
           const kotLanguage = resolveKotTicketLanguage();
           const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
+          throwIfTenantChanged();
 
           // Await startup silent reconnect before checking isConnected
           // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
+          throwIfTenantChanged();
           if (get().printMethod === 'escpos' && printerService.isConnected) {
+            activeConnectionType = 'webusb';
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
             const encoderWarnings: PrintWarning[] = [];
@@ -813,10 +861,13 @@ export const usePrinterStore = create<PrinterState>()(
             if (useRaster && (orderForPrint.table_id || orderForPrint.customer_id)) {
               try {
                 const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
+                throwIfTenantChanged();
                 rasterOrder = orderForPrint.items
                   ? { ...response.data.order, items: orderForPrint.items }
                   : response.data.order;
               } catch (error) {
+                if (isPrintCancelledOnTenantChangeError(error)) throw error;
+                throwIfTenantChanged();
                 rasterHydrationError = error;
               }
             }
@@ -868,6 +919,7 @@ export const usePrinterStore = create<PrinterState>()(
                     textSize: rasterKotTextSize,
                   },
                 });
+                throwIfTenantChanged();
                 if (!rasterResult.ok || !rasterResult.data) {
                   warnings.push(
                     makeRasterFallbackWarning(rasterResult.ok ? undefined : rasterResult.error),
@@ -889,6 +941,8 @@ export const usePrinterStore = create<PrinterState>()(
                   }
                 }
               } catch (error) {
+                if (isPrintCancelledOnTenantChangeError(error)) throw error;
+                throwIfTenantChanged();
                 warnings.push(makeRasterFallbackWarning(error));
                 warnings.push(...encoderWarnings);
               }
@@ -898,10 +952,19 @@ export const usePrinterStore = create<PrinterState>()(
             if (hasFinancialPrintWarning(warnings)) {
               const refusal = makeFinancialPrintRefusalMessage(warnings);
               toast.error(refusal);
-              throw new Error(refusal);
+              throw new PrinterOperationError({
+                kind: 'kot',
+                code: 'print.kot.failed',
+                failure_class: 'unsupported',
+                connection_type: 'webusb',
+                stage: 'prepare',
+                detail: refusal,
+              });
             }
+            throwIfTenantChanged();
             set({ lastPrintedBytes: output });
             await printerService.print(output);
+            throwIfTenantChanged();
             return [
               ...failedLanguages.map((language) => ({
                 field: 'kot language',
@@ -917,6 +980,7 @@ export const usePrinterStore = create<PrinterState>()(
           // Ensure target KOT language bundle is loaded to avoid fallback to English labels.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
           const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
+          throwIfTenantChanged();
           const html = generateKotHtml(orderForPrint, {
             paperWidth,
             textSize: activeTextSize,
@@ -925,6 +989,7 @@ export const usePrinterStore = create<PrinterState>()(
             timezone: tenantTimezone ?? opts?.timezone,
           });
           await printerService.printViaBrowser(html, paperWidth);
+          throwIfTenantChanged();
           // Surface failed locale loads as warnings when falling back to English labels.
           return failedLanguages.map((language) => ({
             field: 'kot language',
@@ -933,8 +998,20 @@ export const usePrinterStore = create<PrinterState>()(
             kind: 'locale' as const,
           })) as PrintWarning[];
         } catch (err) {
-          set({ lastError: (err as Error).message });
-          throw err;
+          if (isPrintCancelledOnTenantChangeError(err)) {
+            throw err;
+          }
+          if (!isSameTenant()) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
+          const printerErr = toPrinterOperationError(err, {
+            kind: 'kot',
+            connectionType: activeConnectionType,
+            stage: 'dispatch',
+            fallbackDetail: 'KOT print failed',
+          });
+          set({ lastError: printerErr.message });
+          throw printerErr;
         }
       },
 

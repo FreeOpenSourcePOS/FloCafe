@@ -111,11 +111,11 @@ throws, the token is rejected rather than accepted.
 
 **Staleness.** `tokens_valid_after` on the `users` row is written via `nextTokensValidAfterTimestamp()`
 as a monotonically advancing UTC millisecond timestamp (`YYYY-MM-DD HH:MM:SS.SSS`) using the same
-shared monotonic clock (`nextAuthTimestampMs()`) as `nextTokenIatSeconds()`, bounded above the
-last logical timestamp (even across backward system clock jumps) and both the maximum persisted
-`users.tokens_valid_after` cutoff and the persisted `auth_clock_high_water_ms` setting in SQLite
-(persisted across process restarts, redacted from database exports, preserved locally across
-structured imports, and reset on SQLite backup restores). Password changes, PIN changes,
+shared monotonic clock (`nextAuthTimestampMs()`) as `nextTokenIatSeconds()`, where the last logical timestamp
+(even across backward system clock jumps), the maximum persisted `users.tokens_valid_after` cutoff,
+and the persisted `auth_clock_high_water_ms` setting in SQLite (persisted across process restarts,
+redacted from database exports, preserved locally across structured imports, and reset on SQLite
+backup restores) serve as lower bounds that the next value is strictly greater than. Password changes, PIN changes,
 owner recovery, account deactivations, and backup restores bump this column, invalidating every token
 issued before the update without needing to enumerate them. `isTokenStale` compares sub-second `iat`
 claims against `tokens_valid_after` with `<=` at millisecond resolution so pre-change tokens are

@@ -11631,7 +11631,9 @@ export function nextAuthTimestampMs(): number {
         now(),
         MAX_AUTH_CLOCK_HIGH_WATER_MS,
       );
-    } catch {}
+    } catch (error) {
+      console.warn('[DB] Could not persist auth clock high-water mark:', error);
+    }
   }
   return nextMs;
 }

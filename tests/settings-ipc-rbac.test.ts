@@ -15,6 +15,7 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import jwt from 'jsonwebtoken';
+const { isTokenStale } = require('../main/middleware/security');
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -46,13 +47,12 @@ class MockBrowserWindow {
 
 const mainWin = new MockBrowserWindow();
 
-function makeSenderEvent(storageToken: string | null) {
+function makeSenderEvent(_storageToken?: unknown) {
   return {
     sender: {
       ownerWindow: mainWin,
       mainFrame,
       getURL: () => 'http://localhost:3001/',
-      executeJavaScript: async () => storageToken,
     },
     senderFrame: mainFrame,
   };
@@ -101,8 +101,8 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       BrowserWindow: MockBrowserWindow,
     };
   }
-  if (request === './middleware/security') {
-    return { clearInMemoryRevokedTokens: () => {}, clearUserAuthCache: () => {} };
+  if (request === './middleware/security' || request === '../middleware/security') {
+    return { clearInMemoryRevokedTokens: () => {}, clearUserAuthCache: () => {}, isTokenStale };
   }
   if (request === './server') return { getLocalIP: () => '127.0.0.1' };
   if (request === './kds-server') return { getKdsPort: () => 3002 };
@@ -332,42 +332,52 @@ async function main() {
       db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run('u-owner');
     }
 
-    // 4. Non-admin roles (cashier, server, chef) are rejected on BOTH explicit token AND storage fallback
+    // 4. Non-admin roles (cashier, server, chef) are rejected on explicit token; missing token fails closed
     for (const [label, token] of [
       ['cashier', cashierToken],
       ['server', serverToken],
       ['chef', chefToken],
     ] as const) {
-      const senderWithStorage = makeSenderEvent(token);
+      const senderEvent = makeSenderEvent();
       assert.deepEqual(
-        await setSettingHandler(senderWithStorage, 'theme_mode', 'light', token),
+        await setSettingHandler(senderEvent, 'theme_mode', 'light', token),
         { success: false, error: 'Insufficient permissions' },
         `${label} explicit token must be rejected on set-setting(theme_mode)`,
       );
       assert.deepEqual(
-        await setSettingHandler(senderWithStorage, 'orders_layout', 'cards'),
+        await setSettingHandler(senderEvent, 'orders_layout', 'cards', token),
         { success: false, error: 'Insufficient permissions' },
-        `${label} storage fallback must be rejected on set-setting(orders_layout)`,
+        `${label} explicit token must be rejected on set-setting(orders_layout)`,
       );
       assert.deepEqual(
-        await updateHandlers['updates:set-auto-check'](senderWithStorage, false, token),
+        await updateHandlers['updates:set-auto-check'](senderEvent, false, token),
         { success: false, error: 'Insufficient permissions' },
         `${label} explicit token must be rejected on updates:set-auto-check`,
       );
       assert.deepEqual(
-        await updateHandlers['updates:set-auto-check'](senderWithStorage, false),
-        { success: false, error: 'Insufficient permissions' },
-        `${label} storage fallback must be rejected on updates:set-auto-check`,
-      );
-      assert.deepEqual(
-        await updateHandlers['updates:set-beta-channel'](senderWithStorage, true, token),
+        await updateHandlers['updates:set-beta-channel'](senderEvent, true, token),
         { success: false, error: 'Insufficient permissions' },
         `${label} explicit token must be rejected on updates:set-beta-channel`,
       );
+    }
+
+    // Missing token fails closed with 'Authentication required'
+    {
+      const senderEvent = makeSenderEvent();
       assert.deepEqual(
-        await updateHandlers['updates:set-beta-channel'](senderWithStorage, true),
-        { success: false, error: 'Insufficient permissions' },
-        `${label} storage fallback must be rejected on updates:set-beta-channel`,
+        await setSettingHandler(senderEvent, 'orders_layout', 'cards'),
+        { success: false, error: 'Authentication required' },
+        'omitted token must fail closed on set-setting(orders_layout)',
+      );
+      assert.deepEqual(
+        await updateHandlers['updates:set-auto-check'](senderEvent, false),
+        { success: false, error: 'Authentication required' },
+        'omitted token must fail closed on updates:set-auto-check',
+      );
+      assert.deepEqual(
+        await updateHandlers['updates:set-beta-channel'](senderEvent, true),
+        { success: false, error: 'Authentication required' },
+        'omitted token must fail closed on updates:set-beta-channel',
       );
     }
     assert.equal(autoCheckPersisted, true);

@@ -23,7 +23,7 @@ import { useAuthStore } from '@/store/auth';
 export default function UpdateAvailableDialog() {
   const t = useTranslations('update');
   const currentTenant = useAuthStore((s) => s.currentTenant);
-  const canManageUpdates = currentTenant ? tenantCan(currentTenant, 'settings.manage') : true;
+  const canManageUpdates = Boolean(currentTenant && tenantCan(currentTenant, 'settings.manage'));
   const { updateStatus, downloadUpdate } = useUpdateStatus();
   const autoCheck = useAutoUpdateCheck();
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);

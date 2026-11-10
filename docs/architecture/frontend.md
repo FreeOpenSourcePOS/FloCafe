@@ -363,9 +363,12 @@ Every privileged channel in [`main/ipc.ts`](../../main/ipc.ts) is registered thr
 wrapper, which calls `isTrustedMainWindowSender` before the listener runs and returns
 `{ error: 'Unauthorized sender' }` to anything else. `isTrustedMainWindowSender` requires the caller
 to be the active main `BrowserWindow`, its current top-level `mainFrame`, and `http:` on `localhost`
-or `127.0.0.1` at the active Express server port. That establishes **which window is calling**. It
-does not establish **who is signed in**, and the single POS window serves every role from chef to
-owner. Everything else in this section follows from that gap.
+or `127.0.0.1` at the active Express server port. That establishes **which window is calling**. To
+establish **who is signed in** for renderer mutations, privileged IPC channels (`set-setting`,
+`updates:set-auto-check`, `updates:set-beta-channel`) receive the caller's JWT forwarded from
+renderer storage via [`main/preload.ts`](../../main/preload.ts) and authorize it through
+`authorizeRendererPermission` in [`main/security/ipc-auth.ts`](../../main/security/ipc-auth.ts),
+checking active status, revocation, staleness, and permissions against the database.
 
 Registering a privileged channel with a bare `ipcMain.handle` skips the check. All privileged
 channels in [`main/ipc.ts`](../../main/ipc.ts) go through the `handle` wrapper, and direct update
@@ -375,20 +378,19 @@ enforce sender validation.
 
 ### What the settings channel may write
 
-Two keys. `set-setting` checks the key against `ALLOWED_IPC_KEYS`, which contains `theme_mode` and
-`orders_layout` and nothing else, and rejects `theme_mode` values outside `light`, `dark`, or
-`system` and `orders_layout` values outside `split` or `cards`. Every other
-setting is written over a permission-gated HTTP route, where the acting user is known. The read
-side, `get-settings`, masks `jwt_secret`, `auth_clock_high_water_ms`, `cloud_api_key`,
+`set-setting` checks the key against `ALLOWED_IPC_KEYS`, which contains `theme_mode` (accepted
+values: `light`, `dark`, `system`) and `orders_layout` (accepted values: `split`, `cards`). Writes
+require `settings.manage` via `authorizeRendererPermission`. Before initial setup creates any users,
+unauthenticated writes are allowed for `theme_mode` only (`allowPreSetup: true`) so initial theme
+preference can be applied; once users exist, `settings.manage` is strictly enforced. Desktop update
+settings written via IPC (`updates:set-auto-check` and `updates:set-beta-channel` in
+[`main/update-ipc.ts`](../../main/update-ipc.ts)) similarly require sender validation and
+`settings.manage` authorization.
+
+Every other setting is written over a permission-gated HTTP route, where the acting user is known.
+The read side, `get-settings`, masks `jwt_secret`, `auth_clock_high_water_ms`, `cloud_api_key`,
 `cloud_device_secret`, `cloud_deletion_status_token`, and `cloud_last_error`, and collapses
 `cloud_last_error` to a generic string.
-
-The renderer writes those preferences over HTTP too (`PUT /api/settings/theme_mode` and
-`PUT /api/settings/orders_layout`, which require `settings.manage`). The IPC settings channel exists
-with those two keys allowed; no renderer code calls it today. Widening `ALLOWED_IPC_KEYS` means
-moving an authorization decision from a permission-gated route onto a window-origin check, which is
-a different and weaker boundary.
-
 ### The database channels
 
 Five channels do database work, and they are gated two different ways on purpose.
@@ -443,8 +445,10 @@ Write it on the HTTP settings route, gated on the same permission as its neighbo
 through `api`. Use the IPC settings channel for nothing. A genuinely new native capability needs
 three things together: a `contextBridge` entry in `preload.ts`, a `handle` wrapper in `ipc.ts` so
 `isTrustedMainWindowSender` applies, and a matching entry in `ElectronAPI`. If it is a privileged
-write, it also needs an authorization step that can see the signed-in user, because the origin check
-cannot.
+write, it also needs an authorization step that verifies the signed-in user against the backend
+permission model via `authorizeRendererPermission` in
+[`main/security/ipc-auth.ts`](../../main/security/ipc-auth.ts), because the window-origin check
+establishes only the calling window.
 
 ## State stores
 
@@ -711,6 +715,7 @@ frontend/src/
 | A message key, a new locale, or a changed label | `npm run i18n:check`                                                                                                                                     |
 | A permission the renderer gates on              | `npm run test:authorization-permissions` and `npm run test:auth-ui-deterministic`                                                                        |
 | A new or renamed IPC channel                    | `npm run test:electron-api-contract` and `npm run test:printer-ipc`                                                                                      |
+| An IPC permission or settings authorization gate | `npm run test:settings-ipc-rbac` and `npm run test:update-ipc-sender-validation`                                                                         |
 | The sender check on a database channel          | `npm run test:kds-window-hardening`, which drives `pick-restore-file`, `backup-database`, `restore-backup`, and `db-initialize` from an untrusted sender |
 | A print path, template, or column width         | `npm run test:receipt-column-oracle`                                                                                                                     |
 | The courier slip                                | `npm run test:delivery-slip`                                                                                                                             |

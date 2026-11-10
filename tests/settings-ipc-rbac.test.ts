@@ -15,7 +15,6 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import jwt from 'jsonwebtoken';
-const { isTokenStale } = require('../main/middleware/security');
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -61,6 +60,7 @@ function makeSenderEvent(_storageToken?: unknown) {
 const preloadCalls: Array<{ channel: string; args: unknown[] }> = [];
 let exposedPreloadApi: Record<string, (...args: unknown[]) => Promise<unknown>> | undefined;
 let testingPreload = true;
+let staleHelper: ((iat: number | undefined, tokensValidAfter: string | null | undefined) => boolean) | undefined;
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -102,7 +102,12 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
     };
   }
   if (request === './middleware/security' || request === '../middleware/security') {
-    return { clearInMemoryRevokedTokens: () => {}, clearUserAuthCache: () => {}, isTokenStale };
+    return {
+      clearInMemoryRevokedTokens: () => {},
+      clearUserAuthCache: () => {},
+      isTokenStale: (iat: number | undefined, tokensValidAfter: string | null | undefined) =>
+        staleHelper ? staleHelper(iat, tokensValidAfter) : false,
+    };
   }
   if (request === './server') return { getLocalIP: () => '127.0.0.1' };
   if (request === './kds-server') return { getKdsPort: () => 3002 };
@@ -126,6 +131,52 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, [request, parent, isMain]);
 };
 
+// 1. Preload forwards token from window.localStorage when available
+{
+  const globalWithWindow = globalThis as {
+    window?: { localStorage?: { getItem: (key: string) => string | null } };
+  };
+  let currentBrowserToken: string | null = 'preload-test-jwt';
+  globalWithWindow.window = {
+    localStorage: {
+      getItem: (key: string) => (key === 'token' ? currentBrowserToken : null),
+    },
+  };
+  try {
+    require('../main/preload');
+    assert.ok(exposedPreloadApi, 'preload must expose electronAPI');
+
+    exposedPreloadApi.setSetting('theme_mode', 'dark');
+    exposedPreloadApi.setBetaChannel(true);
+    exposedPreloadApi.setAutoUpdateCheck(false);
+    assert.deepEqual(preloadCalls, [
+      { channel: 'set-setting', args: ['theme_mode', 'dark', 'preload-test-jwt'] },
+      { channel: 'updates:set-beta-channel', args: [true, 'preload-test-jwt'] },
+      { channel: 'updates:set-auto-check', args: [false, 'preload-test-jwt'] },
+    ]);
+
+    currentBrowserToken = null;
+    preloadCalls.length = 0;
+    exposedPreloadApi.setSetting('theme_mode', 'light');
+    exposedPreloadApi.setBetaChannel(false);
+    exposedPreloadApi.setAutoUpdateCheck(true);
+    assert.deepEqual(preloadCalls, [
+      { channel: 'set-setting', args: ['theme_mode', 'light'] },
+      { channel: 'updates:set-beta-channel', args: [false] },
+      { channel: 'updates:set-auto-check', args: [true] },
+    ]);
+  } finally {
+    testingPreload = false;
+    delete globalWithWindow.window;
+    try {
+      delete require.cache[require.resolve('electron')];
+    } catch {}
+  }
+}
+
+const { isTokenStale } = require('../main/middleware/security');
+staleHelper = isTokenStale;
+
 function mintToken(userId: string, role: string, iatOffsetSeconds = 0): string {
   const iat = Math.floor(Date.now() / 1000) + iatOffsetSeconds;
   return jwt.sign(
@@ -136,47 +187,6 @@ function mintToken(userId: string, role: string, iatOffsetSeconds = 0): string {
 }
 
 async function main() {
-  // 1. Preload forwards token from window.localStorage when available (before loading main-process modules)
-  {
-    const globalWithWindow = globalThis as {
-      window?: { localStorage?: { getItem: (key: string) => string | null } };
-    };
-    let currentBrowserToken: string | null = 'preload-test-jwt';
-    globalWithWindow.window = {
-      localStorage: {
-        getItem: (key: string) => (key === 'token' ? currentBrowserToken : null),
-      },
-    };
-    try {
-      require('../main/preload');
-      assert.ok(exposedPreloadApi, 'preload must expose electronAPI');
-
-      preloadCalls.length = 0;
-      await exposedPreloadApi.setSetting('theme_mode', 'dark');
-      await exposedPreloadApi.setBetaChannel(true);
-      await exposedPreloadApi.setAutoUpdateCheck(false);
-      assert.deepEqual(preloadCalls, [
-        { channel: 'set-setting', args: ['theme_mode', 'dark', 'preload-test-jwt'] },
-        { channel: 'updates:set-beta-channel', args: [true, 'preload-test-jwt'] },
-        { channel: 'updates:set-auto-check', args: [false, 'preload-test-jwt'] },
-      ]);
-
-      currentBrowserToken = null;
-      preloadCalls.length = 0;
-      await exposedPreloadApi.setSetting('theme_mode', 'light');
-      await exposedPreloadApi.setBetaChannel(false);
-      await exposedPreloadApi.setAutoUpdateCheck(true);
-      assert.deepEqual(preloadCalls, [
-        { channel: 'set-setting', args: ['theme_mode', 'light'] },
-        { channel: 'updates:set-beta-channel', args: [false] },
-        { channel: 'updates:set-auto-check', args: [true] },
-      ]);
-    } finally {
-      testingPreload = false;
-      delete globalWithWindow.window;
-    }
-  }
-
   const {
     initDatabase,
     getDatabase,
@@ -393,7 +403,7 @@ async function main() {
       assert.deepEqual(await setSettingHandler(ownerEvent, 'theme_mode', 'light', ownerToken), {
         success: true,
       });
-      assert.deepEqual(await setSettingHandler(managerEvent, 'orders_layout', 'cards'), {
+      assert.deepEqual(await setSettingHandler(managerEvent, 'orders_layout', 'cards', freshManagerToken), {
         success: true,
       });
       assert.deepEqual(

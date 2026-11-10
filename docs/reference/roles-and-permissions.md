@@ -239,6 +239,15 @@ Staff management for quick user switching on shared terminals, while only active
 **Conditional surfaces.** Business type, feature settings such as KDS or WhatsApp, and account
 state can hide or disable a surface independently of whether the permission is granted.
 
+**Settings controls and navigation.** Staff holding `settings.view` (shipped to all roles) can view
+the Settings page. Tabs, cards, and individual configuration controls that require administrative or
+domain-specific permissions (such as `settings.manage`, `tax-configuration.manage`, `printers.manage`,
+`cloud.manage`, `whatsapp.manage`, `database.manage`, or the `owner` role) are rendered strictly
+read-only or disabled for users lacking the matching grant. Desktop update controls (such as
+automatic check toggling and beta channel opt-in) require `settings.manage` both in the interface
+and at the Electron IPC boundary. Unsaved-change navigation intercepts activate only when saveable
+dirty changes exist for the current user, preventing read-only users from being trapped on `/settings`.
+
 ## Presentation
 
 The in-app editor uses roles or one selected staff member as the subject, and permissions as rows,
@@ -257,6 +266,7 @@ npm run test:authorization-permissions
 npm run test:self-service-credentials
 npm run test:staff-authz
 npm run test:orders-authz
+npm run test:settings-ipc-rbac
 npm run test:kds-integration
 npm run test:server-app-server-role
 ```

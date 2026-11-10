@@ -76,7 +76,10 @@ export async function authorizeRendererPermission(
       return { ok: false, error: 'Authentication required' };
     }
     if (
-      isTokenStale(typeof decoded.iat === 'number' ? decoded.iat : undefined, user.tokens_valid_after)
+      isTokenStale(
+        typeof decoded.iat === 'number' ? decoded.iat : undefined,
+        user.tokens_valid_after,
+      )
     ) {
       return { ok: false, error: 'Authentication required' };
     }

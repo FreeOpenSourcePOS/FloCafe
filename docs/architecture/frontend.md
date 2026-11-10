@@ -140,11 +140,20 @@ transient notices and ignores late-settling responses from another order.
 
 ### Split-check availability is a state, not a hidden button
 
-The POS payment modal derives split-check availability through explicit states rather than a boolean
-that silently hid the control. The feature setting (`split_checks_enabled`) lookup reports loading,
-ready, and failed states: while loading the section stays hidden, on failure it
-replaces the section with an error and a retry action, and a `settings.view` denial explains the
-account cannot check availability. Only a successfully read `false` removes the section.
+The POS payment modal consolidates equal-amount shares and item-based check splitting into a unified
+Split card above the payment action, rather than splitting controls across separate panels. It derives
+item-based split-check availability through explicit states rather than a boolean that silently hid the
+control. The feature setting (`split_checks_enabled`) lookup reports loading, ready, and error states:
+while loading the item-split panel stays hidden, on failure it displays an inline error with a retry
+action, and a `settings.view` denial explains the account cannot check availability. When enabled, a
+two-tab mode switcher toggles between item-based check splitting and equal-amount shares. A successfully
+read `false` removes the item-split mode switcher and controls, leaving only the equal-amount share
+calculator when a balance remains.
+
+Both equal-amount sharing and [`SplitCheckModal`](../../frontend/src/components/pos/SplitCheckModal.tsx)
+provide touch-friendly `-` / `+` steppers and quick presets (`2`, `3`, `4`) for all numeric values,
+eliminating manual typing. In table mode, check allocators rebalance quantities across checks or reset
+evenly in a single tap without over-allocating.
 
 Eligibility resolves in a fixed order so staff always see the same reason for the same bill:
 billing permissions, an unresolved payment or split in progress, anything other than an untouched

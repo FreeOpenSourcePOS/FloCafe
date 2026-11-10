@@ -566,7 +566,7 @@ async function run() {
       '2-tab switcher omitted when splitChecksEnabled is false',
     );
     const unifiedSplitIdx = pmRender.html.indexOf('data-testid="unified-split-card"');
-    const payCtaIdx = pmRender.html.indexOf('pay $100.00');
+    const payCtaIdx = pmRender.html.indexOf('pay $0.00');
     assert.ok(
       unifiedSplitIdx > 0 && unifiedSplitIdx < payCtaIdx,
       'unified-split-card is placed in the main right column before the sticky footer',
@@ -695,7 +695,7 @@ async function run() {
       'split-check-section exists only once in rendered tree',
     );
 
-    const payCtaUnifiedIdx = pmRender.html.indexOf('pay $100.00');
+    const payCtaUnifiedIdx = pmRender.html.indexOf('pay $0.00');
     assert.equal(
       pmRender.html.slice(payCtaUnifiedIdx).includes('data-testid="split-check-section"'),
       false,

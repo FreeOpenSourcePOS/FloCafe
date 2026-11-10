@@ -1178,18 +1178,116 @@ async function main() {
         .prepare('SELECT id FROM order_items WHERE order_id = ?')
         .get(prepaidCompletedOrderId) as any
     ).id;
+    let prepaidCookingStartedAt: string | null = null;
     for (const st of ['preparing', 'ready', 'served']) {
       const prepRes = await request(app)
         .patch(`/api/order-items/${prepaidItemId}/status`)
         .set(authHeader)
         .send({ status: st });
       assertEqualOrThrow(prepRes.status, 200, `prepaid completed item -> ${st} succeeds`);
+      const prepaidState = readOrderState(prepaidCompletedOrderId);
       assertEqualOrThrow(
-        readOrderState(prepaidCompletedOrderId).status,
+        prepaidState.status,
         'completed',
         `completed order status is never mutated when item moves to ${st}`,
       );
+      if (st === 'preparing') {
+        assertOrThrow(
+          prepaidState.cooking_started_at !== null,
+          'prepaid completed order stamps cooking_started_at when KDS item reaches preparing',
+        );
+        prepaidCookingStartedAt = prepaidState.cooking_started_at;
+        assertEqualOrThrow(prepaidState.ready_at, null, 'preparing keeps ready_at null');
+        assertEqualOrThrow(prepaidState.served_at, null, 'preparing keeps served_at null');
+      }
+      if (st === 'ready') {
+        assertEqualOrThrow(
+          prepaidState.cooking_started_at,
+          prepaidCookingStartedAt,
+          'ready preserves cooking_started_at on completed order',
+        );
+        assertOrThrow(
+          prepaidState.ready_at !== null,
+          'prepaid completed order stamps ready_at when KDS item reaches ready',
+        );
+        assertEqualOrThrow(prepaidState.served_at, null, 'ready keeps served_at null');
+      }
+      if (st === 'served') {
+        assertEqualOrThrow(
+          prepaidState.cooking_started_at,
+          prepaidCookingStartedAt,
+          'served preserves cooking_started_at on completed order',
+        );
+        assertOrThrow(
+          prepaidState.served_at !== null,
+          'prepaid completed order stamps served_at when KDS item reaches served',
+        );
+      }
     }
+
+    const prematureReadyStamp = '2020-01-01 00:00:00';
+    db.prepare('UPDATE orders SET ready_at = ? WHERE id = ?').run(
+      prematureReadyStamp,
+      prepaidCompletedOrderId,
+    );
+    const requeuePrepRes = await request(app)
+      .patch(`/api/order-items/${prepaidItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'preparing' });
+    assertEqualOrThrow(requeuePrepRes.status, 200, 'completed item requeue -> preparing succeeds');
+    const afterRequeuePrep = readOrderState(prepaidCompletedOrderId);
+    assertEqualOrThrow(
+      afterRequeuePrep.status,
+      'completed',
+      'requeue to preparing keeps completed order status intact',
+    );
+    assertEqualOrThrow(
+      afterRequeuePrep.cooking_started_at,
+      prepaidCookingStartedAt,
+      'requeue to preparing preserves original cooking_started_at',
+    );
+    assertEqualOrThrow(
+      afterRequeuePrep.ready_at,
+      null,
+      'requeue to preparing clears premature ready_at on completed order',
+    );
+    assertEqualOrThrow(
+      afterRequeuePrep.served_at,
+      null,
+      'requeue to preparing clears stale served_at on completed order',
+    );
+
+    const reReadyRes = await request(app)
+      .patch(`/api/order-items/${prepaidItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'ready' });
+    assertEqualOrThrow(reReadyRes.status, 200, 'completed item re-ready succeeds');
+    const afterReReady = readOrderState(prepaidCompletedOrderId);
+    assertOrThrow(
+      afterReReady.ready_at !== null && afterReReady.ready_at !== prematureReadyStamp,
+      'finishing requeued item stamps fresh ready_at instead of keeping premature timestamp',
+    );
+
+    const completedRequeuePendingRes = await request(app)
+      .patch(`/api/order-items/${prepaidItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'pending' });
+    assertEqualOrThrow(
+      completedRequeuePendingRes.status,
+      200,
+      'completed item requeue -> pending succeeds',
+    );
+    const afterCompletedRequeuePending = readOrderState(prepaidCompletedOrderId);
+    assertEqualOrThrow(
+      afterCompletedRequeuePending.ready_at,
+      null,
+      'requeue to pending clears stale ready_at on completed order',
+    );
+    assertEqualOrThrow(
+      afterCompletedRequeuePending.served_at,
+      null,
+      'requeue to pending clears stale served_at on completed order',
+    );
 
     // KDS disabled preserves manual parent-status workflow without automatic item reconciliation
     db.prepare(

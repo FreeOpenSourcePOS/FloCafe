@@ -16,9 +16,13 @@ import {
   utcDayBounds,
   utcTodayDate,
   recordOrderAudit,
-  registerOrderSearchFunctions,
-  completeSettledReleasedOrderIfServed,
   isKdsEnabled,
+  registerOrderSearchFunctions,
+  expandCategoryIdsWithSubcategories,
+  getKdsStationRoutingScope,
+  getUserKdsStationIds,
+  hasUserKdsStationAssignments,
+  isKdsStationItemAllowed,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import {
@@ -47,10 +51,7 @@ import {
   selectBoardEligibleOrderPage,
   type DisplayFeedCursor,
 } from '../services/customer-display-tokens';
-import {
-  CUSTOMER_DISPLAY_ORDER_TYPES,
-  readStoredCustomerDisplayConfig,
-} from '../services/customer-display-config';
+import { CUSTOMER_DISPLAY_ORDER_TYPES } from '../services/customer-display-config';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -103,11 +104,8 @@ import {
   validateScheduledOrderRequest,
 } from '../services/scheduled-orders';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
-import {
-  isTerminalItemStatus,
-  isWithinCompletedKdsProjectionWindow,
-  projectBoardStatusFromItems,
-} from '../../shared/order-item-status';
+import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { parseCategoryIds } from './auth';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   checkKitchenDeliveryStatus,
@@ -676,19 +674,14 @@ router.get(
       const statuses = statusQuery ? statusQuery.split(',') : [];
       const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
       if (boardStatuses === null && (view === 'active' || statusIsActive)) {
-        const kdsEnabled = isKdsEnabled();
-        const completedOrderTypes = kdsEnabled
-          ? CUSTOMER_DISPLAY_ORDER_TYPES
-          : readStoredCustomerDisplayConfig(getSettingValue('customer_display')).order_types;
-        const completedTypePlaceholders = completedOrderTypes.map(() => '?').join(',');
         wheres.push(`orders.id IN (
           SELECT ao.id FROM orders AS ao
           WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
           UNION ALL
           SELECT co.id FROM orders AS co
-          WHERE +co.status = 'completed'
+          WHERE ? = 1
+            AND +co.status = 'completed'
             AND co.created_at >= ?
-            ${kdsEnabled ? '' : `AND +co.type IN (${completedTypePlaceholders})`}
             AND EXISTS (
               SELECT 1 FROM order_items AS active_item
               WHERE active_item.order_id = co.id
@@ -696,7 +689,7 @@ router.get(
                 AND active_item.quantity > 0
             )
         )`);
-        params.push(completedKdsProjectionCutoff(), ...(kdsEnabled ? [] : completedOrderTypes));
+        params.push(isKdsEnabled() ? 1 : 0, completedKdsProjectionCutoff());
       }
       if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
@@ -3591,7 +3584,7 @@ router.patch(
 
       const nowStr = now();
 
-      const { updatedOrder, orderItems, table, changed, autoCompleted } = withTxn(() => {
+      const { updatedOrder, orderItems, table, changed } = withTxn(() => {
         const currentOrder = db
           .prepare('SELECT * FROM orders WHERE id = ?')
           .get(req.params.id) as any;
@@ -3604,42 +3597,95 @@ router.patch(
           throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
         }
 
-        const canBulkUpdatePreparationItems =
-          !isKdsEnabled() || hasPermission(authUser.userId, 'kitchen.status.update');
-        const isWithinCompletedProjectionWindow =
-          currentOrder.status === 'completed' &&
-          isWithinCompletedKdsProjectionWindow(currentOrder.created_at);
+        const liveUser = db
+          .prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1')
+          .get(authUser.userId) as { role: string; category_ids: string | null } | undefined;
+        if (!liveUser) {
+          throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+        }
+        const categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager)
+          ? []
+          : expandCategoryIdsWithSubcategories(db, parseCategoryIds(liveUser.category_ids));
+        const stationIds = getUserKdsStationIds(db, authUser.userId);
+        const hasStationAssignments = hasUserKdsStationAssignments(db, authUser.userId);
+        if (!stationIds || hasStationAssignments === null) {
+          throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+        }
+        if (hasStationAssignments && stationIds.length === 0) {
+          throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+        }
+        if (categoryIds.length > 0 || stationIds.length > 0) {
+          const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+          if (!stationScope) {
+            throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+          }
+          const orderStationRow = currentOrder.table_id
+            ? (db
+                .prepare('SELECT kitchen_station_id FROM tables WHERE id = ?')
+                .get(currentOrder.table_id) as { kitchen_station_id: string | null } | undefined)
+            : undefined;
+          const orderStationId = orderStationRow?.kitchen_station_id;
+          if (
+            stationIds.length > 0 &&
+            orderStationId &&
+            !stationIds.includes(String(orderStationId))
+          ) {
+            throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+          }
+          const activeItemCategories = db
+            .prepare(`
+              SELECT oi.id, p.category_id
+              FROM order_items oi
+              LEFT JOIN products p ON p.id = oi.product_id
+              WHERE oi.order_id = ?
+                AND oi.status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+                AND oi.quantity > 0
+            `)
+            .all(req.params.id) as Array<{ id: number; category_id: string | null }>;
+          if (activeItemCategories.length === 0) {
+            if (
+              categoryIds.length > 0 ||
+              (stationIds.length > 0 &&
+                !isKdsStationItemAllowed(
+                  stationIds,
+                  stationScope.tablelessCategoryIds,
+                  orderStationId,
+                  null,
+                  orderStationId
+                    ? stationScope.categoryIdsByStation[String(orderStationId)]
+                    : undefined,
+                  stationScope.hasUnrestrictedStation,
+                ))
+            ) {
+              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+            }
+          }
+          for (const item of activeItemCategories) {
+            if (
+              categoryIds.length > 0 &&
+              (!item.category_id || !categoryIds.includes(String(item.category_id)))
+            ) {
+              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+            }
+            if (
+              stationIds.length > 0 &&
+              !isKdsStationItemAllowed(
+                stationIds,
+                stationScope.tablelessCategoryIds,
+                orderStationId,
+                item.category_id,
+                orderStationId
+                  ? stationScope.categoryIdsByStation[String(orderStationId)]
+                  : undefined,
+                stationScope.hasUnrestrictedStation,
+              )
+            ) {
+              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+            }
+          }
+        }
 
-        const existingItemRows = db
-          .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
-          .all(req.params.id) as Array<{ status: string | null; quantity: number | null }>;
-        const projectedCompletedBoardStatus = isWithinCompletedProjectionWindow
-          ? projectBoardStatusFromItems(existingItemRows)
-          : null;
-        const hasPendingOrPreparingItems = existingItemRows.some(
-          (item) =>
-            (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
-            (item.status === 'pending' || item.status === 'preparing'),
-        );
-        const hasActivePickupItems = existingItemRows.some(
-          (item) =>
-            (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
-            (item.status === 'pending' || item.status === 'preparing' || item.status === 'ready'),
-        );
-
-        const isSameOrderState =
-          (currentOrder.status === status &&
-            !(
-              canBulkUpdatePreparationItems &&
-              ((status === 'ready' && hasPendingOrPreparingItems) ||
-                (status === 'served' && hasActivePickupItems))
-            )) ||
-          (canBulkUpdatePreparationItems &&
-            isWithinCompletedProjectionWindow &&
-            ((status === 'ready' && projectedCompletedBoardStatus === 'ready') ||
-              (status === 'served' && !hasActivePickupItems)));
-
-        if (isSameOrderState) {
+        if (currentOrder.status === status) {
           // Idempotent same-state request for order
           const items = attachEffectiveAddons(
             db,
@@ -3657,7 +3703,6 @@ router.patch(
             orderItems: items,
             table: tableObj,
             changed: false,
-            autoCompleted: false,
           };
         }
 
@@ -3670,20 +3715,8 @@ router.patch(
           cancelled: [],
         };
 
-        const rawCanTransitionPreparation =
-          (currentOrder.status === 'ready' ||
-            currentOrder.status === 'served' ||
-            isWithinCompletedProjectionWindow) &&
-          ((status === 'ready' && hasPendingOrPreparingItems) ||
-            (status === 'served' && hasActivePickupItems));
-        const canTransitionPreparation =
-          canBulkUpdatePreparationItems && rawCanTransitionPreparation;
-
         const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
-        if (!allowedTargets.includes(status) && !canTransitionPreparation) {
-          if (rawCanTransitionPreparation && !canBulkUpdatePreparationItems) {
-            throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-          }
+        if (!allowedTargets.includes(status)) {
           throw Object.assign(
             new Error(
               `Cannot transition order status from '${currentOrder.status}' to '${status}'`,
@@ -3852,7 +3885,6 @@ router.patch(
           approvedByUserId = user.id;
         }
 
-        let autoCompleted = false;
         switch (status) {
           case 'preparing':
             db.prepare(
@@ -3861,50 +3893,15 @@ router.patch(
             break;
 
           case 'ready':
-            if (canBulkUpdatePreparationItems) {
-              db.prepare(`
-              UPDATE order_items SET status = 'ready', updated_at = ?
-              WHERE order_id = ? AND status IN ('pending', 'preparing')
-            `).run(nowStr, req.params.id);
-            }
-            if (currentOrder.status === 'completed') {
-              db.prepare('UPDATE orders SET ready_at = ?, updated_at = ? WHERE id = ?').run(
-                nowStr,
-                nowStr,
-                req.params.id,
-              );
-            } else {
-              db.prepare(
-                'UPDATE orders SET status = ?, ready_at = ?, served_at = NULL, updated_at = ? WHERE id = ?',
-              ).run(status, nowStr, nowStr, req.params.id);
-            }
+            db.prepare(
+              'UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?',
+            ).run(status, nowStr, nowStr, req.params.id);
             break;
 
           case 'served':
-            if (canBulkUpdatePreparationItems) {
-              db.prepare(`
-              UPDATE order_items SET status = 'served', updated_at = ?
-              WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
-            `).run(nowStr, req.params.id);
-            }
-            if (currentOrder.status === 'completed') {
-              db.prepare('UPDATE orders SET served_at = ?, updated_at = ? WHERE id = ?').run(
-                nowStr,
-                nowStr,
-                req.params.id,
-              );
-            } else {
-              db.prepare(
-                'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
-              ).run(status, nowStr, nowStr, req.params.id);
-              if (canBulkUpdatePreparationItems) {
-                autoCompleted = completeSettledReleasedOrderIfServed(
-                  db,
-                  req.params.id as string,
-                  nowStr,
-                );
-              }
-            }
+            db.prepare(
+              'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
+            ).run(status, nowStr, nowStr, req.params.id);
             break;
 
           case 'completed':
@@ -4035,14 +4032,11 @@ router.patch(
           ? (db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any)
           : null;
         const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
-        return { updatedOrder, orderItems, table, changed: true, autoCompleted };
+        return { updatedOrder, orderItems, table, changed: true };
       });
 
       if (changed) {
         cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
-        if (autoCompleted) {
-          cloudSync.recordOrderChanged(req.params.id as string, 'order.completed');
-        }
         if (isUnreleasedOrderRow(updatedOrder)) {
           notifyOrderUpdated();
         } else {

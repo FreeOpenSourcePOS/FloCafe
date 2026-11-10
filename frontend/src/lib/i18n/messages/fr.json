@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Impossible de mettre à jour le mode de paiement",
     "releaseScheduled": "Planifiée",
     "releaseBlocked": "Envoi bloqué",
-    "markReady": "Marquer prêt",
-    "pickedUp": "Récupéré",
-    "markedReady": "Commande marquée comme prête",
-    "markedPickedUp": "Commande marquée comme récupérée",
-    "updateStatusFailed": "Impossible de mettre à jour le statut de la commande",
     "refundOwnerOnlyNotice": "Les approbations de remboursement par le responsable sont désactivées — le code PIN du propriétaire est requis pour approuver ce remboursement.",
     "refundOutsideWindowNotice": "Cette commande dépasse la fenêtre d’approbation du responsable — le code PIN du propriétaire est requis pour approuver ce remboursement."
   },

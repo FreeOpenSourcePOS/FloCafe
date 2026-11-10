@@ -63,7 +63,6 @@ import {
 } from '@/lib/order-payment-state';
 import PendingOrderItemEdits from './PendingOrderItemEdits';
 import {
-  getOrderEffectivePrepStatus,
   orderStatusBadge,
   paymentStatusBadge,
   itemStatusDot,
@@ -123,8 +122,6 @@ export interface OrderDetailPanelProps {
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
   onRestoreItem?: (orderId: number, itemId: number) => void;
   onItemEditResolved?: (orderId: number) => Promise<boolean> | void;
-  onUpdatePrepStatus?: (orderId: number, targetStatus: 'ready' | 'served') => void;
-  updatingPrepOrderId?: number | null;
 }
 
 type PaymentDetailLine = NonNullable<Bill['payment_details']>[number];
@@ -185,8 +182,6 @@ function OrderDetailContent({
   onVoidItem,
   onRestoreItem,
   onItemEditResolved,
-  onUpdatePrepStatus,
-  updatingPrepOrderId,
 }: OrderDetailPanelProps & { order: Order }) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -282,7 +277,6 @@ function OrderDetailContent({
   ).filter((charge) => charge.id !== 'service_charge' && charge.id !== 'packaging_charge');
 
   const statusBadgeInfo = orderStatusBadge[order.status];
-  const effectivePrepStatus = getOrderEffectivePrepStatus(order, now);
   const orderPrints = bill?.id ? printHistory[bill.id] || [] : [];
   const printCount = orderPrints.length;
 
@@ -1070,30 +1064,6 @@ function OrderDetailContent({
               <Bike size={15} className="me-1.5 text-muted-foreground" />
             )}
             {tOrders('printDeliverySlip')}
-          </Button>
-        )}
-
-        {onUpdatePrepStatus &&
-          (effectivePrepStatus === 'pending' || effectivePrepStatus === 'preparing') && (
-            <Button
-              variant="outline"
-              data-testid={`order-detail-mark-ready-${order.id}`}
-              onClick={() => onUpdatePrepStatus(order.id, 'ready')}
-              disabled={updatingPrepOrderId === order.id}
-              className="mt-2 w-full h-10 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40 font-semibold text-xs"
-            >
-              {tOrders('markReady')}
-            </Button>
-          )}
-        {onUpdatePrepStatus && effectivePrepStatus === 'ready' && (
-          <Button
-            variant="outline"
-            data-testid={`order-detail-mark-picked-up-${order.id}`}
-            onClick={() => onUpdatePrepStatus(order.id, 'served')}
-            disabled={updatingPrepOrderId === order.id}
-            className="mt-2 w-full h-10 border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-950/40 font-semibold text-xs"
-          >
-            {tOrders('pickedUp')}
           </Button>
         )}
       </div>

@@ -153,6 +153,7 @@ function validBusinessLocation(timezone: unknown, currency: unknown, country: un
 const SENSITIVE_SETTING_KEYS = new Set([
   'mobile_pairing_code',
   'jwt_secret',
+  'auth_clock_high_water_ms',
   'cloud_api_key',
   'cloud_device_secret',
   'cloud_deletion_status_token',
@@ -228,7 +229,7 @@ function maskSetting(key: string, value: string): string {
 function publicSettingsShape(settings: Record<string, string>): Record<string, string> {
   const publicSettings: Record<string, string> = {};
   for (const [key, value] of Object.entries(settings)) {
-    if (isGoogleDriveSettingKey(key)) continue;
+    if (isGoogleDriveSettingKey(key) || key === 'auth_clock_high_water_ms') continue;
     publicSettings[key] = maskSetting(key, value);
   }
   return publicSettings;

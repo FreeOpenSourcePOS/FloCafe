@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Hindi ma-update ang paraan ng bayad",
     "releaseScheduled": "Naka-iskedyul",
     "releaseBlocked": "Naka-hold ang pagpapadala",
-    "markReady": "Markahang handa na",
-    "pickedUp": "Nakuha na",
-    "markedReady": "Minarkahan nang handa ang order",
-    "markedPickedUp": "Minarkahan nang nakuha ang order",
-    "updateStatusFailed": "Hindi na-update ang status ng order",
     "refundOwnerOnlyNotice": "Naka-disable ang pag-apruba ng refund ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito.",
     "refundOutsideWindowNotice": "Lampas na ang order na ito sa window ng pag-apruba ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito."
   },

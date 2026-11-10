@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Betaalmethode kon niet worden bijgewerkt",
     "releaseScheduled": "Ingepland",
     "releaseBlocked": "Vrijgave geblokkeerd",
-    "markReady": "Markeer als klaar",
-    "pickedUp": "Opgehaald",
-    "markedReady": "Bestelling gemarkeerd als klaar",
-    "markedPickedUp": "Bestelling gemarkeerd als opgehaald",
-    "updateStatusFailed": "Bestelstatus bijwerken mislukt",
     "refundOwnerOnlyNotice": "Terugbetalingsgoedkeuringen door managers zijn uitgeschakeld — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren.",
     "refundOutsideWindowNotice": "Deze bestelling valt buiten het goedkeuringsvenster voor managers — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren."
   },

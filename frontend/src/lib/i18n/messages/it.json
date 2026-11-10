@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Impossibile aggiornare il metodo di pagamento",
     "releaseScheduled": "Programmato",
     "releaseBlocked": "Invio bloccato",
-    "markReady": "Segna pronto",
-    "pickedUp": "Ritirato",
-    "markedReady": "Ordine segnato come pronto",
-    "markedPickedUp": "Ordine segnato come ritirato",
-    "updateStatusFailed": "Impossibile aggiornare lo stato dell’ordine",
     "refundOwnerOnlyNotice": "Le approvazioni dei rimborsi da parte del responsabile sono disabilitate — è richiesto il PIN del titolare per approvare questo rimborso.",
     "refundOutsideWindowNotice": "Questo ordine è fuori dalla finestra di approvazione del responsabile — è richiesto il PIN del titolare per approvare questo rimborso."
   },

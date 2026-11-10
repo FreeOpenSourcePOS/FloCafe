@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "تم إنشاء التذكرة وإرسالها إلى قائمة انتظار الدفع.",
     "ticketNumber": "رقم التذكرة",
     "paymentTicketInstruction": "تفضل بأخذ هذه التذكرة إلى الصندوق لإتمام الدفع.",
-    "selectCounter": "اختيار المحطة"
+    "selectCounter": "اختيار المحطة",
+    "decreaseQuantity": "تقليل الكمية",
+    "increaseQuantity": "زيادة الكمية",
+    "distributeEvenly": "توزيع بالتساوي"
   },
   "printTest": {
     "amt": "المبلغ",

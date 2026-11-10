@@ -1476,6 +1476,7 @@ async function main() {
     `day close allowed after shift closed (got ${allowedDayClose.status}, code=${allowedDayClose.body?.display_code})`,
   );
   db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(allowedDayClose.body?.zReport?.id);
+  db.prepare(`DELETE FROM cash_drawer_movements WHERE business_date = ?`).run(todayLocal);
 
   console.log('Section Phase-1 validation: multi-shift same day + pending order carry-over');
   const turnA = await request(app)

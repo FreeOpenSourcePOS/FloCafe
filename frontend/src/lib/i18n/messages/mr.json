@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "तिकीट तयार केले आणि पेमेंट रांगेत पाठवले.",
     "ticketNumber": "तिकीट क्रमांक",
     "paymentTicketInstruction": "पेमेंट करण्यासाठी हे तिकीट पेमेंट काउंटरवर घेऊन जा.",
-    "selectCounter": "काउंटर निवडा"
+    "selectCounter": "काउंटर निवडा",
+    "decreaseQuantity": "प्रमाण कमी करा",
+    "increaseQuantity": "प्रमाण वाढवा",
+    "distributeEvenly": "समान विभागा"
   },
   "printTest": {
     "amt": "रक्कम",

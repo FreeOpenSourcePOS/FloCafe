@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "टिकट तयार गरी भुक्तानी लाममा पठाइयो।",
     "ticketNumber": "टिकट नम्बर",
     "paymentTicketInstruction": "भुक्तानी गर्न यो टिकट भुक्तानी काउन्टरमा लैजानुहोस्।",
-    "selectCounter": "काउन्टर छान्नुहोस्"
+    "selectCounter": "काउन्टर छान्नुहोस्",
+    "decreaseQuantity": "मात्रा घटाउनुहोस्",
+    "increaseQuantity": "मात्रा बढाउनुहोस्",
+    "distributeEvenly": "समान रूपमा बाँड्नुहोस्"
   },
   "printTest": {
     "amt": "रकम",

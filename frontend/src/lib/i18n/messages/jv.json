@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "Tiket digawe lan dikirim menyang antrian pambayaran.",
     "ticketNumber": "Nomer tiket",
     "paymentTicketInstruction": "Gawa tiket iki menyang meja kasir kanggo mbayar.",
-    "selectCounter": "Pilih kasir"
+    "selectCounter": "Pilih kasir",
+    "decreaseQuantity": "Kurangi cacahe",
+    "increaseQuantity": "Tambah cacahe",
+    "distributeEvenly": "Bagi kanthi rata"
   },
   "printTest": {
     "amt": "Gng",

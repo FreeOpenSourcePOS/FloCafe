@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "टिकट बनाया गया और भुगतान कतार में भेजा गया।",
     "ticketNumber": "टिकट संख्या",
     "paymentTicketInstruction": "भुगतान के लिए यह टिकट भुगतान काउंटर पर ले जाएं।",
-    "selectCounter": "काउंटर चुनें"
+    "selectCounter": "काउंटर चुनें",
+    "decreaseQuantity": "मात्रा घटाएँ",
+    "increaseQuantity": "मात्रा बढ़ाएँ",
+    "distributeEvenly": "समान रूप से बाँटें"
   },
   "printTest": {
     "amt": "राशि",

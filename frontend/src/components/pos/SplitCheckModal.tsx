@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { Minus, Plus, X } from 'lucide-react';
+import { Minus, Plus, RotateCcw, X } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,52 @@ function selectableItems(order: Order | null): OrderItem[] {
 
 function clampLabel(value: string, fallback: string): string {
   return value.trim().slice(0, MAX_LABEL_LENGTH) || fallback.slice(0, MAX_LABEL_LENGTH);
+}
+
+export function buildEvenAllocations(
+  items: OrderItem[],
+  checkCount: number,
+): Record<number, number[]> {
+  let nextSlot = 0;
+  return Object.fromEntries(
+    items.map((item) => {
+      const slots = Array(checkCount).fill(0);
+      for (let unit = 0; unit < Number(item.quantity); unit++) slots[nextSlot++ % checkCount]++;
+      return [item.id, slots];
+    }),
+  );
+}
+
+/**
+ * Updates one check's item count and pulls any excess from other checks so a
+ * single tap transfers units cleanly without leaving the row over-allocated.
+ */
+export function rebalanceRowAllocation(
+  slots: number[],
+  targetIndex: number,
+  nextValue: number,
+  itemQuantity: number,
+): number[] {
+  const maxQty = Math.max(0, Math.trunc(Number(itemQuantity) || 0));
+  const clamped = Math.max(
+    0,
+    Math.min(maxQty, Number.isFinite(nextValue) ? Math.trunc(nextValue) : 0),
+  );
+  const nextSlots = slots.map((qty, idx) => (idx === targetIndex ? clamped : qty));
+  let excess = nextSlots.reduce((sum, qty) => sum + qty, 0) - maxQty;
+  while (excess > 0) {
+    let donorIndex = -1;
+    for (let idx = 0; idx < nextSlots.length; idx++) {
+      if (idx === targetIndex || nextSlots[idx] <= 0) continue;
+      if (donorIndex === -1 || nextSlots[idx] >= nextSlots[donorIndex]) {
+        donorIndex = idx;
+      }
+    }
+    if (donorIndex === -1) break;
+    nextSlots[donorIndex] -= 1;
+    excess -= 1;
+  }
+  return nextSlots;
 }
 
 /**
@@ -74,16 +120,9 @@ export function SplitCheckModal({
   const [labels, setLabels] = useState(() =>
     Array.from({ length: initialCount }, (_, i) => `Guest ${i + 1}`),
   );
-  const [allocations, setAllocations] = useState<Record<number, number[]>>(() => {
-    let nextSlot = 0;
-    return Object.fromEntries(
-      items.map((item) => {
-        const slots = Array(initialCount).fill(0);
-        for (let unit = 0; unit < item.quantity; unit++) slots[nextSlot++ % initialCount]++;
-        return [item.id, slots];
-      }),
-    );
-  });
+  const [allocations, setAllocations] = useState<Record<number, number[]>>(() =>
+    buildEvenAllocations(items, initialCount),
+  );
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [guestLabel, setGuestLabel] = useState(() =>
     t('leavingGuestLabel').slice(0, MAX_LABEL_LENGTH),
@@ -110,6 +149,21 @@ export function SplitCheckModal({
       ),
     );
     setCount(next);
+  };
+
+  const distributeEvenly = () => {
+    if (!canSplitTable || saving) return;
+    setAllocations(buildEvenAllocations(items, count));
+  };
+
+  const updateTableCell = (item: OrderItem, checkIndex: number, value: number) => {
+    setAllocations((old) => {
+      const currentSlots = Array.from({ length: count }, (_, idx) => old[item.id]?.[idx] || 0);
+      return {
+        ...old,
+        [item.id]: rebalanceRowAllocation(currentSlots, checkIndex, value, Number(item.quantity)),
+      };
+    });
   };
 
   const totals = useMemo(
@@ -273,30 +327,76 @@ export function SplitCheckModal({
             {t('splitModeAll')}
           </Button>
           {mode === 'table' ? (
-            <div className="flex items-center gap-3 ms-auto">
-              <span className="text-sm text-muted-foreground">{t('numberOfChecks')}</span>
-              <button
-                onClick={() => resize(count - 1)}
-                disabled={saving || count <= MIN_CHECKS}
-                className="size-7 rounded-full bg-muted flex items-center justify-center disabled:opacity-50"
+            <div className="flex flex-wrap items-center gap-2 ms-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={distributeEvenly}
+                disabled={saving || !canSplitTable || items.length === 0}
+                data-testid="split-distribute-evenly"
               >
-                <Minus size={13} />
-              </button>
-              <strong>{count}</strong>
-              <button
-                onClick={() => resize(count + 1)}
-                disabled={saving || count >= maxTableChecks}
-                className="size-7 rounded-full bg-muted flex items-center justify-center disabled:opacity-50"
-              >
-                <Plus size={13} />
-              </button>
+                <RotateCcw size={14} className="me-1.5" />
+                {t('distributeEvenly')}
+              </Button>
+              <span className="text-sm text-muted-foreground ms-1">{t('numberOfChecks')}</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-label={t('decreasePax')}
+                  data-testid="split-check-count-decrement"
+                  onClick={() => resize(count - 1)}
+                  disabled={saving || count <= MIN_CHECKS}
+                  className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                >
+                  <Minus size={15} />
+                </button>
+                <input
+                  type="number"
+                  min={MIN_CHECKS}
+                  max={maxTableChecks}
+                  step={1}
+                  inputMode="numeric"
+                  aria-label={t('numberOfChecks')}
+                  data-testid="split-check-count"
+                  disabled={saving || !canSplitTable}
+                  value={count}
+                  onChange={(e) => {
+                    const parsed = Number(e.target.value);
+                    if (Number.isFinite(parsed) && parsed >= MIN_CHECKS) resize(Math.trunc(parsed));
+                  }}
+                  className="min-h-9 w-14 rounded-lg border bg-card px-2 py-1 text-center font-semibold tabular-nums"
+                />
+                <button
+                  type="button"
+                  aria-label={t('increasePax')}
+                  data-testid="split-check-count-increment"
+                  onClick={() => resize(count + 1)}
+                  disabled={saving || count >= maxTableChecks}
+                  className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3 ms-auto text-sm">
+            <div className="flex flex-wrap items-center gap-3 ms-auto text-sm">
               <span className="text-muted-foreground">{t('selectedQuantity')}</span>
               <strong>{selectedUnits}</strong>
               <span className="text-muted-foreground">{t('remainingQuantity')}</span>
               <strong>{remainingUnits}</strong>
+              {selectedUnits > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelected({})}
+                  disabled={saving}
+                  data-testid="guest-split-clear"
+                >
+                  {tCommon('clear')}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -307,9 +407,10 @@ export function SplitCheckModal({
                 <tr>
                   <th className="text-start p-2 sticky start-0 bg-card">{t('items')}</th>
                   {Array.from({ length: count }, (_, i) => (
-                    <th key={i} className="p-2 min-w-28">
+                    <th key={i} className="p-2 min-w-36">
                       <input
                         value={labels[i]}
+                        disabled={saving}
                         onChange={(e) =>
                           setLabels((old) =>
                             old.map((label, n) =>
@@ -317,50 +418,90 @@ export function SplitCheckModal({
                             ),
                           )
                         }
-                        className="w-full text-center border rounded px-2 py-1"
+                        className="min-h-9 w-full text-center border rounded-lg px-2 py-1 bg-card"
                       />
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {items.map((item: OrderItem) => (
-                  <tr key={item.id} className="border-t">
-                    <td className="p-2 sticky start-0 bg-card">
-                      <div className="font-medium">{item.product_name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {item.quantity} × {fmt(Number(item.total) / item.quantity)}
-                      </div>
-                    </td>
-                    {Array.from({ length: count }, (_, i) => (
-                      <td key={i} className="p-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max={item.quantity}
-                          value={allocations[item.id]?.[i] || 0}
-                          onChange={(e) => {
-                            const value = Math.min(
-                              item.quantity,
-                              Math.max(0, Number(e.target.value) || 0),
-                            );
-                            setAllocations((old) => ({
-                              ...old,
-                              [item.id]: old[item.id].map((qty, n) => (n === i ? value : qty)),
-                            }));
-                          }}
-                          className="w-full text-center border rounded px-2 py-1"
-                        />
+                {items.map((item: OrderItem) => {
+                  const maxItemQty = Number(item.quantity);
+                  const rowAssigned = (allocations[item.id] || []).reduce(
+                    (sum, value) => sum + value,
+                    0,
+                  );
+                  const rowUnassigned = maxItemQty - rowAssigned;
+                  return (
+                    <tr key={item.id} className="border-t">
+                      <td className="p-2 sticky start-0 bg-card">
+                        <div className="font-medium">{item.product_name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {item.quantity} × {fmt(Number(item.total) / item.quantity)}
+                        </div>
+                        {rowUnassigned > 0 && (
+                          <div className="mt-1">
+                            <span
+                              data-testid={`split-row-unassigned-${item.id}`}
+                              className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                            >
+                              {t('remainingCount', { count: rowUnassigned })}
+                            </span>
+                          </div>
+                        )}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      {Array.from({ length: count }, (_, i) => {
+                        const cellQty = allocations[item.id]?.[i] || 0;
+                        return (
+                          <td key={i} className="p-2">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                aria-label={t('decreaseQuantity')}
+                                data-testid={`split-cell-dec-${item.id}-${i}`}
+                                disabled={saving || cellQty <= 0}
+                                onClick={() => updateTableCell(item, i, cellQty - 1)}
+                                className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                              >
+                                <Minus size={15} />
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max={maxItemQty}
+                                step={1}
+                                inputMode="numeric"
+                                disabled={saving}
+                                aria-label={`${item.product_name} - ${labels[i] || `Guest ${i + 1}`}`}
+                                value={cellQty}
+                                onChange={(e) =>
+                                  updateTableCell(item, i, Number(e.target.value) || 0)
+                                }
+                                className="min-h-9 w-12 text-center border rounded-lg px-1 py-1 font-semibold tabular-nums bg-card"
+                              />
+                              <button
+                                type="button"
+                                aria-label={t('increaseQuantity')}
+                                data-testid={`split-cell-inc-${item.id}-${i}`}
+                                disabled={saving || cellQty >= maxItemQty}
+                                onClick={() => updateTableCell(item, i, cellQty + 1)}
+                                className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                              >
+                                <Plus size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t font-semibold">
                   <td className="p-2">{t('estimatedItemsTotal')}</td>
                   {totals.map((total, i) => (
-                    <td key={i} className="p-2 text-center">
+                    <td key={i} className="p-2 text-center tabular-nums">
                       {fmt(total)}
                     </td>
                   ))}
@@ -378,52 +519,66 @@ export function SplitCheckModal({
                   <tr>
                     <th className="text-start p-2 sticky start-0 bg-card">{t('items')}</th>
                     <th className="p-2 min-w-28">{t('sourceQuantity')}</th>
-                    <th className="p-2 min-w-40">{t('selectedQuantity')}</th>
+                    <th className="p-2 min-w-44">{t('selectedQuantity')}</th>
                     <th className="p-2 min-w-28">{t('remainingQuantity')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item: OrderItem) => (
-                    <tr key={item.id} className="border-t">
-                      <td className="p-2 sticky start-0 bg-card">
-                        <div className="font-medium">{item.product_name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {item.quantity} × {fmt(Number(item.total) / item.quantity)}
-                        </div>
-                      </td>
-                      <td className="p-2 text-center">{item.quantity}</td>
-                      <td className="p-2">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setQuantity(item, (selected[item.id] || 0) - 1)}
-                            className="size-7 rounded-full bg-muted flex items-center justify-center"
-                          >
-                            <Minus size={13} />
-                          </button>
-                          <input
-                            type="number"
-                            min="0"
-                            max={item.quantity}
-                            aria-label={t('selectedQuantity')}
-                            value={selected[item.id] || 0}
-                            onChange={(e) => setQuantity(item, Number(e.target.value))}
-                            className="w-16 text-center border rounded px-2 py-1"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setQuantity(item, (selected[item.id] || 0) + 1)}
-                            className="size-7 rounded-full bg-muted flex items-center justify-center"
-                          >
-                            <Plus size={13} />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="p-2 text-center">
-                        {Number(item.quantity) - (selected[item.id] || 0)}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((item: OrderItem) => {
+                    const selectedQty = selected[item.id] || 0;
+                    const maxItemQty = Number(item.quantity);
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`border-t transition-colors ${selectedQty > 0 ? 'bg-brand/5' : ''}`}
+                      >
+                        <td className="p-2 sticky start-0 bg-card">
+                          <div className="font-medium">{item.product_name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {item.quantity} × {fmt(Number(item.total) / item.quantity)}
+                          </div>
+                        </td>
+                        <td className="p-2 text-center tabular-nums">{item.quantity}</td>
+                        <td className="p-2">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              aria-label={t('decreaseQuantity')}
+                              data-testid={`guest-item-dec-${item.id}`}
+                              disabled={saving || selectedQty <= 0}
+                              onClick={() => setQuantity(item, selectedQty - 1)}
+                              className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                            >
+                              <Minus size={15} />
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.quantity}
+                              step={1}
+                              inputMode="numeric"
+                              disabled={saving}
+                              aria-label={t('selectedQuantity')}
+                              value={selectedQty}
+                              onChange={(e) => setQuantity(item, Number(e.target.value))}
+                              className="min-h-9 w-16 text-center border rounded-lg px-2 py-1 font-semibold tabular-nums bg-card"
+                            />
+                            <button
+                              type="button"
+                              aria-label={t('increaseQuantity')}
+                              data-testid={`guest-item-inc-${item.id}`}
+                              disabled={saving || selectedQty >= maxItemQty}
+                              onClick={() => setQuantity(item, selectedQty + 1)}
+                              className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                            >
+                              <Plus size={15} />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="p-2 text-center tabular-nums">{maxItemQty - selectedQty}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

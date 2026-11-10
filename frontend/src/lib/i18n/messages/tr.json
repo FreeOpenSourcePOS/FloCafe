@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "Fiş oluşturuldu ve ödeme kuyruğuna gönderildi.",
     "ticketNumber": "Fiş numarası",
     "paymentTicketInstruction": "Ödeme yapmak için bu fişi ödeme bankosuna götürün.",
-    "selectCounter": "Banko seç"
+    "selectCounter": "Banko seç",
+    "decreaseQuantity": "Miktarı azalt",
+    "increaseQuantity": "Miktarı artır",
+    "distributeEvenly": "Eşit dağıt"
   },
   "printTest": {
     "amt": "Tutar",

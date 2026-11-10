@@ -126,6 +126,15 @@ const HELP_FAILURE_CLASSES = new Set([
   'invalid_response',
   'unknown',
 ]);
+const HELP_PERSISTENCE_FAILURE_CLASSES = new Set([
+  'busy_or_locked',
+  'constraint',
+  'read_only',
+  'disk_full',
+  'io_error',
+  'schema_or_migration',
+  'unknown',
+]);
 
 function operationFailureForHelp(failure: LocalFailure): {
   correlationId?: string;
@@ -156,6 +165,14 @@ function operationFailureForHelp(failure: LocalFailure): {
     capturePoint.endsWith('.transport') &&
     typeof metadata.failure_class === 'string' &&
     HELP_FAILURE_CLASSES.has(metadata.failure_class)
+  ) {
+    facts.failure_class = metadata.failure_class;
+  }
+  if (
+    (capturePoint === 'fc.backend.order.create.persistence' ||
+      capturePoint === 'fc.backend.bill.generate.failure') &&
+    typeof metadata.failure_class === 'string' &&
+    HELP_PERSISTENCE_FAILURE_CLASSES.has(metadata.failure_class)
   ) {
     facts.failure_class = metadata.failure_class;
   }

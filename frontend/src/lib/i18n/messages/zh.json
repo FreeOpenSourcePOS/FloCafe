@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "票据已创建并发送至待结账队列。",
     "ticketNumber": "小票编号",
     "paymentTicketInstruction": "请凭此小票前往收银台结账。",
-    "selectCounter": "选择柜台"
+    "selectCounter": "选择柜台",
+    "decreaseQuantity": "减少数量",
+    "increaseQuantity": "增加数量",
+    "distributeEvenly": "平均分配"
   },
   "printTest": {
     "amt": "金额",

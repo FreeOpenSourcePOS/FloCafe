@@ -1300,7 +1300,10 @@
     "paymentTicketDesc": "ٹکٹ تیار کر کے ادائیگی کی قطار میں بھیج دیا گیا ہے۔",
     "ticketNumber": "ٹکٹ نمبر",
     "paymentTicketInstruction": "ادائیگی کے لیے یہ ٹکٹ کیش کاؤنٹر پر لے جائیں۔",
-    "selectCounter": "کاؤنٹر منتخب کریں"
+    "selectCounter": "کاؤنٹر منتخب کریں",
+    "decreaseQuantity": "مقدار کم کریں",
+    "increaseQuantity": "مقدار بڑھائیں",
+    "distributeEvenly": "برابر تقسیم کریں"
   },
   "printTest": {
     "amt": "رقم",

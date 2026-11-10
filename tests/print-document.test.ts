@@ -1370,6 +1370,24 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
       !offText.includes('ORDER #ORD-20261109-0012'),
       `${label} omits ORDER #ORD-20261109-0012 when showLargeOrderNumber is false`,
     );
+    const warnings58: any[] = [];
+    const on58Text = escPosToText(
+      buildFn(
+        feBill,
+        feTenant,
+        { paperWidth: 58, columns: 32, showLargeOrderNumber: true } as any,
+        warnings58,
+      ),
+    );
+    assert(
+      on58Text.includes('ORDER #ORD-20261109-0012'),
+      `${label} preserves full ORDER #ORD-20261109-0012 on 58mm (32 columns)`,
+    );
+    assert.equal(
+      warnings58.length,
+      0,
+      `${label} emits no false skipped-line warnings when downgrading double-width banner on 58mm`,
+    );
   }
 
   const htmlOn = webPrint.generateBillHtml(feBill, feTenant, {
@@ -1384,9 +1402,22 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
     languages: ['en'],
     showLargeOrderNumber: false,
   });
+  const htmlRtl = webPrint.generateBillHtml(feBill, feTenant, {
+    paperSize: 'thermal58',
+    columns: 32,
+    languages: ['ar'],
+    showLargeOrderNumber: true,
+  });
   assert(
     htmlOn.includes('class="order-number-banner"') && htmlOn.includes('ORDER #ORD-20261109-0012'),
     'generateBillHtml renders .order-number-banner with ORDER #ORD-20261109-0012 when enabled',
+  );
+  assert(
+    htmlRtl.includes('dir="rtl"') &&
+      /<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate;[^"]*">ORDER #ORD-20261109-0012<\/div>/.test(
+        htmlRtl,
+      ),
+    'generateBillHtml isolates .order-number-banner as dir="ltr" inside RTL receipts',
   );
   assert(
     !htmlOff.includes('class="order-number-banner"') &&

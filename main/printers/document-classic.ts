@@ -669,12 +669,9 @@ export function renderBillDocumentToClassicLines(
         segment.main.push(dash);
         segment.sourceLines.main.push(dash);
         segment.sourceControlLines.main.push(dash);
-        if (
-          block.showLargeOrderNumber === true &&
-          block.orderNumber &&
-          block.orderNumber.text.trim().length > 0
-        ) {
-          const orderBannerText = `ORDER #${block.orderNumber.text.trim().replace(/^#/, '')}`;
+        const cleanOrderNumber = block.orderNumber?.text.trim().replace(/^#/, '') ?? '';
+        if (block.showLargeOrderNumber === true && cleanOrderNumber.length > 0) {
+          const orderBannerText = `ORDER #${cleanOrderNumber}`;
           const layout = layoutStyledUnit(
             { text: orderBannerText, widthMultiplier: 2, field: 'order number banner' },
             {

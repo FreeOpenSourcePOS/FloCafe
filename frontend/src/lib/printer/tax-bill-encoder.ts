@@ -367,7 +367,6 @@ export function buildTaxBillBytes(
           capabilities: opts.capabilities,
         },
       );
-      warnings?.push(...layout.warnings);
       enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
       for (const line of layout.lines) {
         safePrinterText(

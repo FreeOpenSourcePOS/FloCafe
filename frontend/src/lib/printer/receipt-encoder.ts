@@ -179,7 +179,6 @@ function printLargeOrderNumberBanner(
     },
     { logicalColumns: cols, direction: 'ltr', languages: [language ?? 'en'], capabilities },
   );
-  warnings?.push(...layout.warnings);
   enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
   for (const line of layout.lines) {
     writeSafePrinterText(

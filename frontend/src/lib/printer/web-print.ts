@@ -345,6 +345,10 @@ export function generateBillHtml(
     formatNumberForTenant(Number(value) || 0, tenant.country, { digits: tenant.number_digits });
 
   const hasTax = totals?.tax != null || (breakdown != null && breakdown.lines.length > 0);
+  const largeOrderNumber =
+    meta?.showLargeOrderNumber === true
+      ? (meta.orderNumber?.text ?? '').trim().replace(/^#/, '')
+      : '';
 
   return `<!DOCTYPE html>
 <html lang="${localeTag}" dir="${dir}">
@@ -373,7 +377,7 @@ export function generateBillHtml(
     </div>
 
     <!-- Bill Details -->
-    ${meta?.showLargeOrderNumber === true && meta.orderNumber?.text ? `<div class="order-number-banner" style="font-size: 1.5em; font-weight: 800; text-align: center; border: 2px solid #000; padding: 4px 8px; margin: 6px 0;">ORDER #${directionalValue({ ...meta.orderNumber, text: meta.orderNumber.text.trim().replace(/^#/, '') }, base)}</div>` : ''}
+    ${largeOrderNumber ? `<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate; font-size: 1.5em; font-weight: 800; text-align: center; border: 2px solid #000; padding: 4px 8px; margin: 6px 0;">ORDER #${escapeHtml(largeOrderNumber)}</div>` : ''}
     <div class="bill-details">
       <table>
         <tr>

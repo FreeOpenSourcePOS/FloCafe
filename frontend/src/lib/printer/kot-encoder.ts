@@ -25,6 +25,7 @@ import {
 } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
+import { layoutStyledUnit } from '@print/layout';
 import { formatItemHeading } from './item-heading';
 
 export interface KotOptions {
@@ -188,19 +189,19 @@ export function buildKotBytes(
       opts.capabilities,
     );
     if (safeLargeOrderNum && safeLargeOrderNum !== '[UNSUPPORTED]') {
-      const largeBannerText = truncateText(`#${safeLargeOrderNum}`, cols);
-      const bannerWidth = displayCellWidth(largeBannerText) * 2 <= cols ? 2 : 1;
-      enc.align('center').bold(true).width(bannerWidth).height(2);
-      safePrinterText(
-        enc,
-        largeBannerText,
-        warnings,
-        false,
-        arabicShaping,
-        undefined,
-        cols,
-        language,
-      ).newline();
+      const layout = layoutStyledUnit(
+        { text: `#${safeLargeOrderNum}`, widthMultiplier: 2, field: 'order number banner' },
+        {
+          logicalColumns: cols,
+          direction: 'ltr',
+          languages: [language],
+          capabilities: opts.capabilities,
+        },
+      );
+      enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
+      for (const line of layout.lines) {
+        safePrinterText(enc, line, warnings, false, arabicShaping, cols, cols, language).newline();
+      }
       enc.width(1).height(1).bold(false);
     }
   }

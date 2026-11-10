@@ -28,6 +28,7 @@ import { displayCellWidth } from '../../shared/print/width';
 import {
   buildKotDocument,
   isKotItemPending,
+  layoutStyledUnit,
   type DirectionalText,
   type KotDocument,
   type KotDocumentBlock,
@@ -298,19 +299,31 @@ function kotHeaderLines(
     );
     if (safeLargeOrderNum && safeLargeOrderNum !== UNSUPPORTED_METADATA_PLACEHOLDER) {
       const largeBannerText = `#${safeLargeOrderNum}`;
-      lines.push(
-        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' +
-          truncateShapedLine(
-            largeBannerText,
-            cols,
-            options.arabicShaping,
-            options.language,
-            options.capabilities,
-          ) +
-          '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      const layout = layoutStyledUnit(
+        { text: largeBannerText, widthMultiplier: 2, field: 'order number banner' },
+        {
+          logicalColumns: cols,
+          direction: 'ltr',
+          languages: [options.language],
+          capabilities: options.capabilities,
+        },
       );
-      sourceLines?.push(`#${cleanOrderNumber}`);
-      sourceControlLines?.push(lines.at(-1) ?? '');
+      const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
+      const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
+      for (const bannerLine of layout.lines) {
+        const renderedBannerLine = truncateShapedLine(
+          bannerLine,
+          cols,
+          options.arabicShaping,
+          options.language,
+          options.capabilities,
+        );
+        lines.push(
+          `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${renderedBannerLine}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`,
+        );
+        sourceLines?.push(bannerLine);
+        sourceControlLines?.push(lines.at(-1) ?? '');
+      }
     }
   }
   lines.push('');

@@ -280,12 +280,9 @@ export function renderBillDocumentToCompactLines(
   const metaStart = lines.length;
   const metaSourceLines: string[] = [];
   if (meta) {
-    if (
-      meta.showLargeOrderNumber === true &&
-      meta.orderNumber &&
-      meta.orderNumber.text.trim().length > 0
-    ) {
-      const orderBannerText = `ORDER #${meta.orderNumber.text.trim().replace(/^#/, '')}`;
+    const cleanOrderNumber = meta.orderNumber?.text.trim().replace(/^#/, '') ?? '';
+    if (meta.showLargeOrderNumber === true && cleanOrderNumber.length > 0) {
+      const orderBannerText = `ORDER #${cleanOrderNumber}`;
       const layout = layoutStyledUnit(
         { text: orderBannerText, widthMultiplier: 2, field: 'order number banner' },
         {

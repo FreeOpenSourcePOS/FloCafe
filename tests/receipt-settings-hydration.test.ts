@@ -59,6 +59,7 @@ function loadFrontendModules() {
     return {
       posSettings: require('../frontend/src/store/pos-settings'),
       webPrint: require('../frontend/src/lib/printer/web-print'),
+      printerServiceModule: require('../frontend/src/lib/printer/PrinterService'),
       i18n: require('../frontend/src/lib/i18n'),
       receiptSync: require('../frontend/src/hooks/useReceiptSettingsSync'),
       printerHook: require('../frontend/src/hooks/usePrinter'),
@@ -70,8 +71,16 @@ function loadFrontendModules() {
   }
 }
 
-const { posSettings, webPrint, i18n, receiptSync, printerHook, authStore, frontendApi } =
-  loadFrontendModules();
+const {
+  posSettings,
+  webPrint,
+  printerServiceModule,
+  i18n,
+  receiptSync,
+  printerHook,
+  authStore,
+  frontendApi,
+} = loadFrontendModules();
 const { usePosSettingsStore } = posSettings;
 const { generateBillHtml } = webPrint;
 const {
@@ -1244,6 +1253,124 @@ async function runTests() {
         usePrinterStore.getState().lastError,
         null,
         'printTaxBill leaves lastError null when cancelled by tenant change',
+      );
+
+      resetReceiptSettingsSyncForTests();
+      usePosSettingsStore.setState({ kotPrintingEnabled: true, billShowLargeOrderNumber: true });
+      usePrinterStore.getState().setPrintMethod('browser');
+      frontendApi.get = () =>
+        Promise.resolve({
+          data: { ...tenantResponses['tenant-b'], bill_show_large_order_number: false },
+        });
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      const capturedKotHtml: string[] = [];
+      const printerService = printerServiceModule.printerService as {
+        printViaBrowser: (html: string, paperWidth: 58 | 80) => Promise<void>;
+      };
+      const originalPrintViaBrowser = printerService.printViaBrowser.bind(printerService);
+      (printerService as any).printViaBrowser = async (html: string): Promise<void> => {
+        capturedKotHtml.push(html);
+      };
+      const prevResolve = Module._resolveFilename;
+      Module._resolveFilename = function (
+        request: string,
+        parent: any,
+        isMain: boolean,
+        options?: any,
+      ) {
+        let resolvedRequest = request;
+        if (request === '@countries') {
+          resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+        } else if (request.startsWith('@/')) {
+          resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+        } else if (request.startsWith('@print/')) {
+          resolvedRequest = path.resolve(
+            __dirname,
+            '../shared/print',
+            request.slice('@print/'.length),
+          );
+        } else if (request.startsWith('@shared/')) {
+          resolvedRequest = path.resolve(__dirname, '../shared', request.slice('@shared/'.length));
+        }
+        return prevResolve.call(this, resolvedRequest, parent, isMain, options);
+      };
+      try {
+        await usePrinterStore.getState().printKot({
+          id: 901,
+          order_number: 'ORD-KOT-HYDRATE-901',
+          type: 'dine_in',
+          created_at: '2026-11-09 12:00:00',
+          items: [{ id: 1, product_name: 'Espresso', quantity: 1, status: 'pending', addons: [] }],
+        } as any);
+      } finally {
+        Module._resolveFilename = prevResolve;
+        (printerService as any).printViaBrowser = originalPrintViaBrowser;
+      }
+      assertEqualOrThrow(capturedKotHtml.length, 1, 'printKot produced browser KOT HTML');
+      assertEqualOrThrow(
+        capturedKotHtml[0].includes('class="kot-order-banner"'),
+        false,
+        'printKot awaits ensureReceiptSettingsLoaded and respects hydrated bill_show_large_order_number: false',
+      );
+
+      resetReceiptSettingsSyncForTests();
+      let resolveCancelledKotPrintA!: (value: any) => void;
+      const cancelledKotPrintAPromise = new Promise((resolve) => {
+        resolveCancelledKotPrintA = resolve;
+      });
+      frontendApi.get = () => {
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        if (activeTenantId === 'tenant-a') {
+          return cancelledKotPrintAPromise;
+        }
+        return Promise.resolve({ data: tenantResponses[activeTenantId] });
+      };
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      const printKotPromise = usePrinterStore.getState().printKot({
+        id: 902,
+        order_number: 'ORD-KOT-CANCEL-902',
+        type: 'dine_in',
+        created_at: '2026-11-09 12:00:00',
+        items: [{ id: 1, product_name: 'Latte', quantity: 1, status: 'pending', addons: [] }],
+      } as any);
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      resolveCancelledKotPrintA({ data: tenantResponses['tenant-a'] });
+      let caughtPrintKotErr: unknown = null;
+      try {
+        await printKotPromise;
+      } catch (err) {
+        caughtPrintKotErr = err;
+      }
+      assertOrThrow(
+        caughtPrintKotErr instanceof PrintCancelledOnTenantChangeError &&
+          isPrintCancelledOnTenantChangeError(caughtPrintKotErr),
+        'printKot rejects with PrintCancelledOnTenantChangeError when tenant changes mid-print',
+      );
+      assertEqualOrThrow(
+        usePrinterStore.getState().lastError,
+        null,
+        'printKot leaves lastError null when cancelled by tenant change',
       );
     } finally {
       frontendApi.get = originalGetForTenantSwitch;

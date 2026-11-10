@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "An ƙirƙiri tikiti kuma an tura shi zuwa layin biya.",
     "ticketNumber": "Lambar Tikiti",
     "paymentTicketInstruction": "Kai wannan tikitin zuwa kantar biya don biyan kuɗi.",
-    "selectCounter": "Zaɓi Kanta"
+    "selectCounter": "Zaɓi Kanta",
+    "decreaseQuantity": "Rage yawa",
+    "increaseQuantity": "Ƙara yawa",
+    "distributeEvenly": "Raba daidai"
   },
   "printTest": {
     "amt": "Kuɗi",

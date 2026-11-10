@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "Bileta u krijua dhe u dërgua në radhën e pagesave.",
     "ticketNumber": "Numri i biletës",
     "paymentTicketInstruction": "Dërgojeni këtë biletë te sporteli i pagesave për të paguar.",
-    "selectCounter": "Zgjidh sportelin"
+    "selectCounter": "Zgjidh sportelin",
+    "decreaseQuantity": "Zbrit sasinë",
+    "increaseQuantity": "Rrit sasinë",
+    "distributeEvenly": "Shpërndaj në mënyrë të barabartë"
   },
   "printTest": {
     "amt": "Shuma",

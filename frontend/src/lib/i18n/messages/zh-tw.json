@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "單據已建立並送至待結帳佇列。",
     "ticketNumber": "單據編號",
     "paymentTicketInstruction": "請持此單據至收銀台付款。",
-    "selectCounter": "選擇櫃檯"
+    "selectCounter": "選擇櫃檯",
+    "decreaseQuantity": "減少數量",
+    "increaseQuantity": "增加數量",
+    "distributeEvenly": "平均分配"
   },
   "printTest": {
     "amt": "金額",

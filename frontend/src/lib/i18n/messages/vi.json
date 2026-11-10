@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "Phiếu đã được tạo và gửi đến hàng đợi thanh toán.",
     "ticketNumber": "Số phiếu",
     "paymentTicketInstruction": "Mang phiếu này đến quầy thu ngân để thanh toán.",
-    "selectCounter": "Chọn quầy"
+    "selectCounter": "Chọn quầy",
+    "decreaseQuantity": "Giảm số lượng",
+    "increaseQuantity": "Tăng số lượng",
+    "distributeEvenly": "Chia đều"
   },
   "printTest": {
     "amt": "Số tiền",

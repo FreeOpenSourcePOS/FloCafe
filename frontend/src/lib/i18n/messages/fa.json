@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "قبض ایجاد شد و به صف پرداخت ارسال گردید.",
     "ticketNumber": "شماره قبض",
     "paymentTicketInstruction": "این قبض را جهت پرداخت به صندوق ببرید.",
-    "selectCounter": "انتخاب پیشخوان"
+    "selectCounter": "انتخاب پیشخوان",
+    "decreaseQuantity": "کاهش تعداد",
+    "increaseQuantity": "افزایش تعداد",
+    "distributeEvenly": "تقسیم برابر"
   },
   "printTest": {
     "amt": "مبلغ",

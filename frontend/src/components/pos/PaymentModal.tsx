@@ -12,6 +12,8 @@ import {
   Send,
   ChevronDown,
   Users,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api, {
@@ -260,6 +262,7 @@ export default function PaymentModal({
   const [splitOpenReason, setSplitOpenReason] = useState<SplitReasonKey | null>(null);
   const [splitCheckBill, setSplitCheckBill] = useState<Bill | null>(null);
   const [chargeStateUncertain, setChargeStateUncertain] = useState(false);
+  const [splitSectionCollapsed, setSplitSectionCollapsed] = useState(false);
   const [showEqualShare, setShowEqualShare] = useState(false);
   // Session-only remaining payer count: reopening the dialog asks again rather
   // than remembering who has paid.
@@ -636,6 +639,33 @@ export default function PaymentModal({
   const equalShareSharesDiffer =
     equalShareShares.length > 1 &&
     equalShareShares[0] !== equalShareShares[equalShareShares.length - 1];
+  const hasSplitChecksPanel =
+    splitSettingState === 'error' || (splitSettingState === 'ready' && splitChecksEnabled);
+  const canDecrementEqualShare =
+    !processing &&
+    !attemptLocked &&
+    !(equalSharePayers.trim() !== '' && Number(equalSharePayers) <= MIN_EQUAL_SHARE_PAYERS);
+  const canIncrementEqualShare =
+    !processing &&
+    !attemptLocked &&
+    !(equalSharePayers.trim() !== '' && Number(equalSharePayers) >= MAX_EQUAL_SHARE_PAYERS);
+  const stepEqualSharePayers = (delta: -1 | 1) => {
+    if (processing || attemptLocked) return;
+    const trimmed = equalSharePayers.trim();
+    const parsed = Number(trimmed);
+    if (!trimmed || !Number.isFinite(parsed)) {
+      setEqualSharePayers(String(MIN_EQUAL_SHARE_PAYERS));
+      return;
+    }
+    const next =
+      delta < 0
+        ? Math.max(MIN_EQUAL_SHARE_PAYERS, Math.min(MAX_EQUAL_SHARE_PAYERS, Math.ceil(parsed) - 1))
+        : Math.min(
+            MAX_EQUAL_SHARE_PAYERS,
+            Math.max(MIN_EQUAL_SHARE_PAYERS, Math.floor(parsed) + 1),
+          );
+    setEqualSharePayers(String(next));
+  };
   const minorToStored = (minor: number) => minor / minorFactor;
   // A share may only be applied over an empty entry board: the other tenders and
   // the wallet are never overwritten.
@@ -1906,129 +1936,321 @@ export default function PaymentModal({
           </div>
 
           <div className="space-y-4">
-            {/* Equal-share shortcut: divides the remaining balance by payer count */}
-            {remainingMinor > 0 && !justPaid && (
-              <div className="rounded-xl border border-border overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEqualShare((open) => !open);
-                    setEqualShareNotice(null);
-                  }}
-                  aria-expanded={showEqualShare}
-                  className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start"
-                >
-                  <span className="text-sm font-medium text-foreground">
-                    {t('splitPaymentEqually')}
-                  </span>
-                  <ChevronDown
-                    size={16}
-                    className={`text-muted-foreground transition-transform ${showEqualShare ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                {equalShareNotice && (
-                  <p
-                    role="status"
-                    className="border-t border-border bg-muted px-3 py-2 text-[11px] text-muted-foreground"
+            {/* Unified Split section: consolidates equal-amount shares and item-based check splitting */}
+            {!justPaid && (remainingMinor > 0 || hasSplitChecksPanel) && (
+              <div
+                className="rounded-xl border border-border overflow-hidden"
+                data-testid="unified-split-card"
+              >
+                {hasSplitChecksPanel ? (
+                  <button
+                    type="button"
+                    onClick={() => setSplitSectionCollapsed((collapsed) => !collapsed)}
+                    aria-expanded={!splitSectionCollapsed}
+                    className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start"
                   >
-                    {t(
-                      equalShareNotice === 'lastPayer'
-                        ? 'equalShareLastPayer'
-                        : 'equalShareInvalidated',
-                    )}
-                  </p>
+                    <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Users size={15} className="text-muted-foreground" />
+                      {t('splitPayment')}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-muted-foreground transition-transform ${!splitSectionCollapsed ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEqualShare((open) => !open);
+                      setEqualShareNotice(null);
+                    }}
+                    aria-expanded={showEqualShare}
+                    className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start"
+                  >
+                    <span className="text-sm font-medium text-foreground">
+                      {t('splitPaymentEqually')}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-muted-foreground transition-transform ${showEqualShare ? 'rotate-180' : ''}`}
+                    />
+                  </button>
                 )}
-                {showEqualShare && (
-                  <div className="space-y-2 border-t border-border bg-sky-50 p-3 dark:bg-sky-950/40">
-                    <div className="flex items-center justify-between gap-2">
-                      <label
-                        htmlFor="equal-share-payers"
-                        className="text-sm font-medium text-foreground"
+
+                {(!hasSplitChecksPanel || !splitSectionCollapsed) && (
+                  <>
+                    {hasSplitChecksPanel && remainingMinor > 0 && (
+                      <div className="grid grid-cols-2 gap-1 border-t border-border bg-muted/60 p-1">
+                        <button
+                          type="button"
+                          aria-pressed={!showEqualShare}
+                          data-testid="split-mode-items-tab"
+                          onClick={() => setShowEqualShare(false)}
+                          className={`min-h-9 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            !showEqualShare
+                              ? 'bg-card text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {t('splitItemsIntoChecks')}
+                        </button>
+                        <button
+                          type="button"
+                          aria-expanded={showEqualShare}
+                          data-testid="split-mode-equal-tab"
+                          onClick={() => {
+                            setShowEqualShare((open) => !open);
+                            setEqualShareNotice(null);
+                          }}
+                          className={`min-h-9 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            showEqualShare
+                              ? 'bg-card text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {t('splitPaymentEqually')}
+                        </button>
+                      </div>
+                    )}
+
+                    {equalShareNotice && (
+                      <p
+                        role="status"
+                        className="border-t border-border bg-muted px-3 py-2 text-[11px] text-muted-foreground"
                       >
-                        {t('equalSharePayers')}
-                      </label>
-                      <input
-                        id="equal-share-payers"
-                        type="number"
-                        min={MIN_EQUAL_SHARE_PAYERS}
-                        max={MAX_EQUAL_SHARE_PAYERS}
-                        step={1}
-                        inputMode="numeric"
-                        value={equalSharePayers}
-                        disabled={processing || attemptLocked}
-                        onChange={(event) => {
-                          if (attemptLocked) return;
-                          setEqualSharePayers(event.target.value);
-                        }}
-                        className="min-h-9 w-20 rounded-lg border border-border bg-card px-2 py-1 text-end text-sm font-semibold outline-none focus:ring-2 focus:ring-brand"
-                      />
-                    </div>
-                    {equalShareError ? (
-                      <p role="alert" className="text-[11px] text-red-700 dark:text-red-300">
                         {t(
-                          equalShareError === 'tooManyPayers'
-                            ? 'equalShareTooManyPayers'
-                            : 'equalShareInvalidCount',
+                          equalShareNotice === 'lastPayer'
+                            ? 'equalShareLastPayer'
+                            : 'equalShareInvalidated',
                         )}
                       </p>
-                    ) : (
-                      <>
-                        <ul className="space-y-1 text-sm">
-                          {equalShareShares.map((shareMinor, index) => (
-                            <li key={index} className="flex items-center justify-between gap-2">
-                              <span className="text-muted-foreground">
-                                {index + 1}
-                                {index === 0 && (
-                                  <span className="ms-2 text-[11px] font-medium text-brand">
-                                    {t('equalShareNextShare')}
-                                  </span>
-                                )}
-                              </span>
-                              <span
-                                data-testid={`equal-share-share-${index}`}
-                                className="font-semibold tabular-nums text-foreground"
-                              >
-                                {currencyFmt(minorToStored(shareMinor))}
-                              </span>
-                            </li>
-                          ))}
-                          <li className="flex items-center justify-between gap-2 border-t border-border pt-1 font-semibold">
-                            <span>{t('total')}</span>
-                            <span data-testid="equal-share-total" className="tabular-nums">
-                              {currencyFmt(remaining)}
-                            </span>
-                          </li>
-                        </ul>
-                        {equalShareSharesDiffer && (
-                          <p className="text-[11px] text-muted-foreground">
-                            {t('equalShareRoundingNote')}
-                          </p>
-                        )}
-                        {equalShareConflict && (
-                          <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                            {t('equalShareConflicts')}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          {payments.map((payment, idx) => (
-                            <Button
-                              key={
-                                payment.payment_method_id === undefined
-                                  ? payment.method
-                                  : `custom:${payment.payment_method_id}`
-                              }
-                              variant="outline"
-                              size="sm"
-                              disabled={processing || attemptLocked || tenderHasConflict(idx)}
-                              onClick={() => applyEqualShare(idx)}
-                            >
-                              {t('equalShareApplyTo', { method: tenderLabel(payment) })}
-                            </Button>
-                          ))}
-                        </div>
-                      </>
                     )}
-                  </div>
+
+                    {showEqualShare && remainingMinor > 0 ? (
+                      <div className="space-y-2 border-t border-border bg-sky-50 p-3 dark:bg-sky-950/40">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label
+                            htmlFor="equal-share-payers"
+                            className="text-sm font-medium text-foreground"
+                          >
+                            {t('equalSharePayers')}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              aria-label={t('decreasePax')}
+                              data-testid="equal-share-decrement"
+                              disabled={!canDecrementEqualShare}
+                              onClick={() => stepEqualSharePayers(-1)}
+                              className="min-h-9 min-w-9 rounded-lg border border-border bg-card flex items-center justify-center text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                            >
+                              <Minus size={15} />
+                            </button>
+                            <input
+                              id="equal-share-payers"
+                              type="number"
+                              min={MIN_EQUAL_SHARE_PAYERS}
+                              max={MAX_EQUAL_SHARE_PAYERS}
+                              step={1}
+                              inputMode="numeric"
+                              value={equalSharePayers}
+                              disabled={processing || attemptLocked}
+                              onChange={(event) => {
+                                if (attemptLocked) return;
+                                setEqualSharePayers(event.target.value);
+                              }}
+                              className="min-h-9 w-16 rounded-lg border border-border bg-card px-2 py-1 text-center text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-brand"
+                            />
+                            <button
+                              type="button"
+                              aria-label={t('increasePax')}
+                              data-testid="equal-share-increment"
+                              disabled={!canIncrementEqualShare}
+                              onClick={() => stepEqualSharePayers(1)}
+                              className="min-h-9 min-w-9 rounded-lg border border-border bg-card flex items-center justify-center text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                            >
+                              <Plus size={15} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {[2, 3, 4].map((preset) => {
+                            const activePreset = equalShareCount === preset;
+                            return (
+                              <button
+                                key={preset}
+                                type="button"
+                                aria-pressed={activePreset}
+                                data-testid={`equal-share-preset-${preset}`}
+                                disabled={processing || attemptLocked}
+                                onClick={() => {
+                                  if (attemptLocked) return;
+                                  setEqualSharePayers(String(preset));
+                                }}
+                                className={`min-h-9 min-w-9 rounded-lg border px-3 py-1 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
+                                  activePreset
+                                    ? 'border-brand bg-brand text-white'
+                                    : 'border-border bg-card text-foreground hover:border-brand hover:text-brand'
+                                }`}
+                              >
+                                {preset}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {equalShareError ? (
+                          <p role="alert" className="text-[11px] text-red-700 dark:text-red-300">
+                            {t(
+                              equalShareError === 'tooManyPayers'
+                                ? 'equalShareTooManyPayers'
+                                : 'equalShareInvalidCount',
+                            )}
+                          </p>
+                        ) : (
+                          <>
+                            <ul className="space-y-1 text-sm">
+                              {equalShareShares.map((shareMinor, index) => (
+                                <li key={index} className="flex items-center justify-between gap-2">
+                                  <span className="text-muted-foreground">
+                                    {index + 1}
+                                    {index === 0 && (
+                                      <span className="ms-2 text-[11px] font-medium text-brand">
+                                        {t('equalShareNextShare')}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span
+                                    data-testid={`equal-share-share-${index}`}
+                                    className="font-semibold tabular-nums text-foreground"
+                                  >
+                                    {currencyFmt(minorToStored(shareMinor))}
+                                  </span>
+                                </li>
+                              ))}
+                              <li className="flex items-center justify-between gap-2 border-t border-border pt-1 font-semibold">
+                                <span>{t('total')}</span>
+                                <span data-testid="equal-share-total" className="tabular-nums">
+                                  {currencyFmt(remaining)}
+                                </span>
+                              </li>
+                            </ul>
+                            {equalShareSharesDiffer && (
+                              <p className="text-[11px] text-muted-foreground">
+                                {t('equalShareRoundingNote')}
+                              </p>
+                            )}
+                            {equalShareConflict && (
+                              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                {t('equalShareConflicts')}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              {payments.map((payment, idx) => (
+                                <Button
+                                  key={
+                                    payment.payment_method_id === undefined
+                                      ? payment.method
+                                      : `custom:${payment.payment_method_id}`
+                                  }
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={processing || attemptLocked || tenderHasConflict(idx)}
+                                  onClick={() => applyEqualShare(idx)}
+                                >
+                                  {t('equalShareApplyTo', { method: tenderLabel(payment) })}
+                                </Button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      hasSplitChecksPanel && (
+                        <div className="border-t border-border bg-card p-3">
+                          {splitSettingState === 'error' ? (
+                            <div className="w-full space-y-2" data-testid="split-check-section">
+                              <p className="text-xs text-amber-600 dark:text-amber-400">
+                                {splitSettingDenied
+                                  ? t('splitCheckSettingDenied')
+                                  : t('splitCheckAvailabilityFailed')}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={loadSplitCheckSetting}
+                                className="w-full"
+                                size="lg"
+                              >
+                                {t('splitCheckCheckAvailability')}
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="w-full space-y-2" data-testid="split-check-section">
+                              {remainingMinor <= 0 && (
+                                <p className="text-xs font-semibold text-foreground">
+                                  {t('splitItemsIntoChecks')}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground">{t('splitCheckHint')}</p>
+                              {'open' in splitEligibility ? (
+                                <Button
+                                  variant="outline"
+                                  onClick={handleOpenSplitCheck}
+                                  disabled={
+                                    openingSplitCheck ||
+                                    processing ||
+                                    attemptLocked ||
+                                    applyingDiscount ||
+                                    Boolean(updatingChargeId) ||
+                                    chargeStateUncertain
+                                  }
+                                  className="w-full"
+                                  size="lg"
+                                >
+                                  <Users size={16} className="me-2" />
+                                  {t('splitCheck')}
+                                </Button>
+                              ) : 'unknown' in splitEligibility ? (
+                                <Button
+                                  variant="outline"
+                                  onClick={handleOpenSplitCheck}
+                                  disabled={
+                                    openingSplitCheck ||
+                                    processing ||
+                                    attemptLocked ||
+                                    applyingDiscount ||
+                                    Boolean(updatingChargeId) ||
+                                    chargeStateUncertain
+                                  }
+                                  className="w-full"
+                                  size="lg"
+                                >
+                                  <Users size={16} className="me-2" />
+                                  {t('splitCheckCheckAvailability')}
+                                </Button>
+                              ) : (
+                                <div className="w-full space-y-1">
+                                  <Button variant="outline" disabled className="w-full" size="lg">
+                                    <Users size={16} className="me-2" />
+                                    {t('splitCheck')}
+                                  </Button>
+                                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                                    {t(splitEligibility.reason)}
+                                  </p>
+                                </div>
+                              )}
+                              {splitOpenReason && (
+                                <p className="text-xs text-red-600 dark:text-red-400">
+                                  {t(splitOpenReason)}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -2266,112 +2488,34 @@ export default function PaymentModal({
               </Button>
             </>
           ) : (
-            <>
-              {splitSettingState === 'error' && (
-                <div className="w-full space-y-1" data-testid="split-check-section">
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    {splitSettingDenied
-                      ? t('splitCheckSettingDenied')
-                      : t('splitCheckAvailabilityFailed')}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={loadSplitCheckSetting}
-                    className="w-full"
-                    size="lg"
-                  >
-                    {t('splitCheckCheckAvailability')}
-                  </Button>
-                </div>
-              )}
-              {splitSettingState === 'ready' && splitChecksEnabled && (
-                <div className="w-full space-y-1" data-testid="split-check-section">
-                  <p className="text-xs font-semibold text-foreground">
-                    {t('splitItemsIntoChecks')}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{t('splitCheckHint')}</p>
-                  {'open' in splitEligibility ? (
-                    <Button
-                      variant="outline"
-                      onClick={handleOpenSplitCheck}
-                      disabled={
-                        openingSplitCheck ||
-                        processing ||
-                        attemptLocked ||
-                        applyingDiscount ||
-                        Boolean(updatingChargeId) ||
-                        chargeStateUncertain
-                      }
-                      className="w-full"
-                      size="lg"
-                    >
-                      <Users size={16} className="me-2" />
-                      {t('splitCheck')}
-                    </Button>
-                  ) : 'unknown' in splitEligibility ? (
-                    <Button
-                      variant="outline"
-                      onClick={handleOpenSplitCheck}
-                      disabled={
-                        openingSplitCheck ||
-                        processing ||
-                        attemptLocked ||
-                        applyingDiscount ||
-                        Boolean(updatingChargeId) ||
-                        chargeStateUncertain
-                      }
-                      className="w-full"
-                      size="lg"
-                    >
-                      <Users size={16} className="me-2" />
-                      {t('splitCheckCheckAvailability')}
-                    </Button>
-                  ) : (
-                    <div className="w-full space-y-1">
-                      <Button variant="outline" disabled className="w-full" size="lg">
-                        <Users size={16} className="me-2" />
-                        {t('splitCheck')}
-                      </Button>
-                      <p className="text-xs text-amber-600 dark:text-amber-400">
-                        {t(splitEligibility.reason)}
-                      </p>
-                    </div>
-                  )}
-                  {splitOpenReason && (
-                    <p className="text-xs text-red-600 dark:text-red-400">{t(splitOpenReason)}</p>
-                  )}
-                </div>
-              )}
-              <Button
-                onClick={handlePay}
-                disabled={
-                  processing ||
-                  openingSplitCheck ||
-                  applyingDiscount ||
-                  Boolean(updatingChargeId) ||
-                  chargeStateUncertain ||
-                  (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
-                  Boolean(
-                    kitchenOverridePin &&
-                    (managerApprovers.loading ||
-                      managerApprovers.loadFailed ||
-                      managerApprovers.approvers.length === 0 ||
-                      !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
-                  )
-                }
-                className="w-full"
-                size="lg"
-              >
-                {processing
-                  ? t('processingPayment')
-                  : paymentOutcomeUnknown
-                    ? t('checkPaymentStatus')
-                    : pendingAttempt
-                      ? t('retrySamePayment')
-                      : `${t('pay')} ${currencyFmt(totalPayment)}`}
-              </Button>
-            </>
+            <Button
+              onClick={handlePay}
+              disabled={
+                processing ||
+                openingSplitCheck ||
+                applyingDiscount ||
+                Boolean(updatingChargeId) ||
+                chargeStateUncertain ||
+                (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
+                Boolean(
+                  kitchenOverridePin &&
+                  (managerApprovers.loading ||
+                    managerApprovers.loadFailed ||
+                    managerApprovers.approvers.length === 0 ||
+                    !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
+                )
+              }
+              className="w-full"
+              size="lg"
+            >
+              {processing
+                ? t('processingPayment')
+                : paymentOutcomeUnknown
+                  ? t('checkPaymentStatus')
+                  : pendingAttempt
+                    ? t('retrySamePayment')
+                    : `${t('pay')} ${currencyFmt(totalPayment)}`}
+            </Button>
           )}
         </div>
       </div>

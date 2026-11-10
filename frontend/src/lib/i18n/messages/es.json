@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "Ticket creado y enviado a la cola de pagos.",
     "ticketNumber": "Número de ticket",
     "paymentTicketInstruction": "Lleve este ticket al mostrador de pago para abonar.",
-    "selectCounter": "Seleccionar mostrador"
+    "selectCounter": "Seleccionar mostrador",
+    "decreaseQuantity": "Reducir cantidad",
+    "increaseQuantity": "Aumentar cantidad",
+    "distributeEvenly": "Distribuir equitativamente"
   },
   "printTest": {
     "amt": "Total",

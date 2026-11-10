@@ -957,4 +957,64 @@ test.describe('split-check availability and eligibility messaging', () => {
     });
     await expect(page.getByRole('button', { name: 'Create checks' })).toHaveCount(0);
   });
+
+  test('all-items table mode transfers units in one tap via +/- steppers and resets evenly', async ({
+    page,
+    request,
+  }) => {
+    const fixture = await ensureUatFixture(request);
+    const created = await request.post(`${BASE}/api/orders`, {
+      headers: managerHeaders,
+      data: {
+        type: 'dine_in',
+        guest_count: 2,
+        special_instructions: 'Table split one-tap stepper rebalance',
+        items: [
+          orderItem(fixture.productId, { variantId: fixture.variants.Large.id }),
+          {
+            ...orderItem(fixture.productId, { variantId: fixture.variants.Small.id }),
+            quantity: 2,
+          },
+        ],
+      },
+    });
+    expect(created.status()).toBe(201);
+    const order = (await created.json()).order as {
+      id: number;
+      order_number: string;
+      items: { id: number; quantity: number }[];
+    };
+    const singleItem = order.items.find((i) => Number(i.quantity) === 1)!;
+
+    await login(page);
+    await openOrderCheckout(page, order.order_number);
+    await page.getByRole('button', { name: 'Split check' }).click();
+
+    // Default table mode starts with 2 checks and singleItem assigned [1, 0].
+    await expect(page.getByTestId('split-check-count')).toHaveValue('2');
+    await expect(page.getByTestId(`split-cell-inc-${singleItem.id}-0`)).toBeDisabled();
+    await expect(page.getByTestId(`split-cell-dec-${singleItem.id}-1`)).toBeDisabled();
+
+    // 1-tap + on Guest 2 transfers singleItem [1, 0] -> [0, 1] without over-allocating.
+    await page.getByTestId(`split-cell-inc-${singleItem.id}-1`).click();
+    await expect(page.getByTestId(`split-cell-dec-${singleItem.id}-0`)).toBeDisabled();
+    await expect(page.getByTestId(`split-cell-inc-${singleItem.id}-1`)).toBeDisabled();
+    await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toHaveCount(0);
+
+    // Decrementing Guest 2 shows the unassigned count pill; Distribute evenly restores [1, 0].
+    await page.getByTestId(`split-cell-dec-${singleItem.id}-1`).click();
+    await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toContainText(
+      '1 remaining',
+    );
+    await page.getByTestId('split-distribute-evenly').click();
+    await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toHaveCount(0);
+
+    // Transfer singleItem to Guest 2 again and submit the split cleanly.
+    await page.getByTestId(`split-cell-inc-${singleItem.id}-1`).click();
+    await submitGuestSplit(page);
+
+    const bills = await readOrderBills(request, order.id);
+    expect(bills).toHaveLength(2);
+    expect(bills.every((b) => b.payment_status === 'unpaid')).toBe(true);
+  });
 });

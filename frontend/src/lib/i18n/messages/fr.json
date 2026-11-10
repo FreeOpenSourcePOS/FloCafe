@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "Ticket créé et envoyé dans la file d'attente.",
     "ticketNumber": "Numéro de ticket",
     "paymentTicketInstruction": "Présentez ce ticket à la caisse pour effectuer le règlement.",
-    "selectCounter": "Sélectionner le comptoir"
+    "selectCounter": "Sélectionner le comptoir",
+    "decreaseQuantity": "Réduire la quantité",
+    "increaseQuantity": "Augmenter la quantité",
+    "distributeEvenly": "Répartir équitablement"
   },
   "printTest": {
     "amt": "Montant",

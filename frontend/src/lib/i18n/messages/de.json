@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "Ticket erstellt und an die Zahlungswarteschlange gesendet.",
     "ticketNumber": "Ticketnummer",
     "paymentTicketInstruction": "Bringen Sie dieses Ticket zur Kasse, um zu bezahlen.",
-    "selectCounter": "Theke auswählen"
+    "selectCounter": "Theke auswählen",
+    "decreaseQuantity": "Menge verringern",
+    "increaseQuantity": "Menge erhöhen",
+    "distributeEvenly": "Gleichmäßig verteilen"
   },
   "printTest": {
     "amt": "Betrag",

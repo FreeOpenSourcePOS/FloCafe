@@ -1285,7 +1285,10 @@
     "paymentTicketDesc": "టికెట్ సృష్టించబడి చెల్లింపు క్యూకు పంపబడింది.",
     "ticketNumber": "టికెట్ నంబర్",
     "paymentTicketInstruction": "చెల్లించడానికి ఈ టికెట్ను చెల్లింపు కౌంటర్కు తీసుకెళ్లండి.",
-    "selectCounter": "కౌంటర్ ఎంచుకోండి"
+    "selectCounter": "కౌంటర్ ఎంచుకోండి",
+    "decreaseQuantity": "పరిమాణం తగ్గించు",
+    "increaseQuantity": "పరిమాణం పెంచు",
+    "distributeEvenly": "సమానంగా పంచు"
   },
   "printTest": {
     "amt": "మొత్తం",

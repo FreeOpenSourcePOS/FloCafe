@@ -60,7 +60,9 @@ function makeSenderEvent(_storageToken?: unknown) {
 const preloadCalls: Array<{ channel: string; args: unknown[] }> = [];
 let exposedPreloadApi: Record<string, (...args: unknown[]) => Promise<unknown>> | undefined;
 let testingPreload = true;
-let staleHelper: ((iat: number | undefined, tokensValidAfter: string | null | undefined) => boolean) | undefined;
+let staleHelper:
+  | ((iat: number | undefined, tokensValidAfter: string | null | undefined) => boolean)
+  | undefined;
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -403,9 +405,12 @@ async function main() {
       assert.deepEqual(await setSettingHandler(ownerEvent, 'theme_mode', 'light', ownerToken), {
         success: true,
       });
-      assert.deepEqual(await setSettingHandler(managerEvent, 'orders_layout', 'cards', freshManagerToken), {
-        success: true,
-      });
+      assert.deepEqual(
+        await setSettingHandler(managerEvent, 'orders_layout', 'cards', freshManagerToken),
+        {
+          success: true,
+        },
+      );
       assert.deepEqual(
         await updateHandlers['updates:set-auto-check'](ownerEvent, false, ownerToken),
         { success: true },

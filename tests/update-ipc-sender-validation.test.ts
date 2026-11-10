@@ -519,6 +519,17 @@ async function runTests() {
   // Test legitimate sender execution and argument validation
   console.log('--- Testing legitimate sender execution & arguments ---');
 
+  const ipcAuth = require('../main/security/ipc-auth');
+  const originalAuthorizeRendererPermission = ipcAuth.authorizeRendererPermission;
+  ipcAuth.authorizeRendererPermission = async (
+    _event: unknown,
+    _token: unknown,
+    permissionId: string,
+  ) => {
+    if (permissionId === 'settings.manage') return { ok: true };
+    return { ok: false, error: 'Insufficient permissions' };
+  };
+
   // 1. get-update-status
   const statusRes: any = await handlersWithValidator['get-update-status'](validEvent);
   assert.equal(statusRes.status, 'idle');
@@ -612,6 +623,8 @@ async function runTests() {
   assert.equal(currentThemeIsDark, true);
   assert.equal(mainWindow.backgroundColor, '#111111');
   assert.equal(mainWindow.titleBarThemeApplied?.isDark, true);
+
+  ipcAuth.authorizeRendererPermission = originalAuthorizeRendererPermission;
 
   console.log('✓ All 10 handlers succeed for legitimate senders and reject malformed arguments');
 

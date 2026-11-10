@@ -2459,6 +2459,8 @@
     "showRestaurantName": "உணவகப் பெயர்",
     "showRestaurantPhone": "உணவகத் தொலைபேசி",
     "showTableNumber": "மேசை எண்",
+    "showLargeOrderNumber": "பெரிய தடித்த ஆர்டர் எண்",
+    "showLargeOrderNumberHint": "ஆர்டரை எளிதாகப் பெறவும் சரிபார்க்கவும் வாடிக்கையாளர் ரசீதுகள் மற்றும் சமையலறை சீட்டுகளில் (KOT) ஆர்டர் எண்ணை பெரிய, தடித்த எழுத்தில் அச்சிடுகிறது.",
     "showTaxBreakdown": "வரி விவரம்",
     "showTaxId": "வரி அடையாள எண் (Tax ID)",
     "softwareUpdates": "மென்பொருள் புதுப்பிப்புகள்",

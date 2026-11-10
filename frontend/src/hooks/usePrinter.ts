@@ -334,6 +334,7 @@ export const usePrinterStore = create<PrinterState>()(
             billShowCustomerPhone,
             billDeliveryShowCustomerPhoneAlways,
             billShowTableNumber,
+            billShowLargeOrderNumber,
             printerPaperSize,
             printerUseUnicode,
             printerArabicShaping,
@@ -393,6 +394,7 @@ export const usePrinterStore = create<PrinterState>()(
                 showCustomerPhone: billShowCustomerPhone,
                 deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
                 showTableNumber: billShowTableNumber,
+                showLargeOrderNumber: opts?.showLargeOrderNumber ?? billShowLargeOrderNumber,
                 useUnicode: printerUseUnicode,
                 isReprint,
                 trimDecimals: printerTrimDecimals,
@@ -505,6 +507,7 @@ export const usePrinterStore = create<PrinterState>()(
             showCustomerPhone: billShowCustomerPhone,
             deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
             showTableNumber: billShowTableNumber,
+            showLargeOrderNumber: opts?.showLargeOrderNumber ?? billShowLargeOrderNumber,
             useUnicode: printerUseUnicode,
             arabicShaping: printerArabicShaping,
             isReprint,
@@ -666,6 +669,7 @@ export const usePrinterStore = create<PrinterState>()(
             billShowCustomerPhone,
             billDeliveryShowCustomerPhoneAlways,
             billShowTableNumber,
+            billShowLargeOrderNumber,
           } = usePosSettingsStore.getState();
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const taxBillColumns = columnsForConfiguredPrinter(
@@ -711,6 +715,7 @@ export const usePrinterStore = create<PrinterState>()(
               showCustomerPhone: billShowCustomerPhone,
               deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
               showTableNumber: billShowTableNumber,
+              showLargeOrderNumber: opts?.showLargeOrderNumber ?? billShowLargeOrderNumber,
               useUnicode: printerUseUnicode,
               trimDecimals: printerTrimDecimals,
             });
@@ -743,6 +748,7 @@ export const usePrinterStore = create<PrinterState>()(
               showCustomerPhone: billShowCustomerPhone,
               deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
               showTableNumber: billShowTableNumber,
+              showLargeOrderNumber: opts?.showLargeOrderNumber ?? billShowLargeOrderNumber,
               useUnicode: printerUseUnicode,
               arabicShaping: printerArabicShaping,
               trimDecimals: printerTrimDecimals,
@@ -790,8 +796,12 @@ export const usePrinterStore = create<PrinterState>()(
           }
         };
         // Enforce master kot_printing_enabled toggle for all automatic and manual prints.
-        const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } =
-          usePosSettingsStore.getState();
+        const {
+          kotPrintingEnabled,
+          printerUseUnicode,
+          printerArabicShaping,
+          billShowLargeOrderNumber,
+        } = usePosSettingsStore.getState();
         const tenant = useAuthStore.getState().currentTenant;
         const tenantTimezone = tenant?.timezone;
         const tenantLocale = getCountryByCode(tenant?.country ?? '')?.locale ?? 'en-US';
@@ -812,6 +822,7 @@ export const usePrinterStore = create<PrinterState>()(
                   stationName: opts?.stationName,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,
+                  showLargeOrderNumber: opts?.showLargeOrderNumber ?? billShowLargeOrderNumber,
                 },
               );
               throwIfTenantChanged();
@@ -827,6 +838,15 @@ export const usePrinterStore = create<PrinterState>()(
               });
             }
           }
+
+          const readyForTenant = await ensureReceiptSettingsLoaded(authTenantIdAtStart).catch(() =>
+            isSameTenant(),
+          );
+          if (!readyForTenant) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
+          throwIfTenantChanged();
+          const hydratedLargeOrderNumber = usePosSettingsStore.getState().billShowLargeOrderNumber;
 
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
@@ -870,6 +890,7 @@ export const usePrinterStore = create<PrinterState>()(
                 throwIfTenantChanged();
                 rasterHydrationError = error;
               }
+              throwIfTenantChanged();
             }
             const bytes = buildKotBytes(
               rasterOrder,
@@ -881,6 +902,7 @@ export const usePrinterStore = create<PrinterState>()(
                 arabicShaping: printerArabicShaping,
                 language: kotLanguage,
                 timezone: tenantTimezone ?? opts?.timezone,
+                showLargeOrderNumber: opts?.showLargeOrderNumber ?? hydratedLargeOrderNumber,
                 capabilities: useRaster
                   ? nativeFallbackCapabilities(webusbCapabilities)
                   : webusbCapabilities,
@@ -902,6 +924,7 @@ export const usePrinterStore = create<PrinterState>()(
                     stationName: opts?.stationName ?? 'Kitchen',
                     columns: layoutColumnsForTextSize(kotColumns, rasterKotTextSize),
                     language: kotLanguage,
+                    showLargeOrderNumber: opts?.showLargeOrderNumber ?? hydratedLargeOrderNumber,
                     ...((tenantTimezone ?? opts?.timezone)
                       ? { timezone: tenantTimezone ?? opts?.timezone }
                       : {}),
@@ -987,6 +1010,7 @@ export const usePrinterStore = create<PrinterState>()(
             language: kotLanguage,
             stationName: opts?.stationName ?? 'Kitchen',
             timezone: tenantTimezone ?? opts?.timezone,
+            showLargeOrderNumber: opts?.showLargeOrderNumber ?? hydratedLargeOrderNumber,
           });
           await printerService.printViaBrowser(html, paperWidth);
           throwIfTenantChanged();

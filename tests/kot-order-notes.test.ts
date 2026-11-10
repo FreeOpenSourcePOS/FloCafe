@@ -509,6 +509,136 @@ async function runAsyncTests() {
     htmlLongItem.includes('line-height:1.4;'),
     'generateKotHtml includes explicit line-height:1.4 on .kot-container',
   );
+
+  // 4. Large bold Order Number banner on KOT (document-kot, kot-encoder, kot-web-print)
+  const kotDefault = renderKotViaDocument(baseOrder, items, 'Kitchen', opts);
+  assert.ok(
+    kotDefault.lines.some((line) =>
+      line.includes(
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#A-1{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      ),
+    ),
+    'renderKotViaDocument renders centered bold double-size #A-1 banner by default',
+  );
+  const kotDisabled = renderKotViaDocument(
+    { ...baseOrder, show_large_order_number: false },
+    items,
+    'Kitchen',
+    opts,
+  );
+  assert.equal(
+    kotDisabled.lines.some((line) => line.includes('#A-1{/DOUBLE_WIDTH}')),
+    false,
+    'renderKotViaDocument omits large #A-1 banner when show_large_order_number is false',
+  );
+  assert.ok(
+    kotDisabled.lines.some((line) => line.includes('Order #A-1')),
+    'renderKotViaDocument retains metadata Order #A-1 line when large banner is disabled',
+  );
+
+  const kotBytesOn = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { ...opts, showLargeOrderNumber: true },
+  );
+  const kotBytesOff = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { ...opts, showLargeOrderNumber: false },
+  );
+  assert.ok(
+    escPosToText(kotBytesOn)
+      .split(/\r?\n/)
+      .some((line) => line.trim() === '#ORD-0042'),
+    'buildKotBytes emits standalone #ORD-0042 banner when showLargeOrderNumber is true',
+  );
+  assert.equal(
+    escPosToText(kotBytesOff)
+      .split(/\r?\n/)
+      .some((line) => line.trim() === '#ORD-0042'),
+    false,
+    'buildKotBytes omits standalone #ORD-0042 banner when showLargeOrderNumber is false',
+  );
+
+  const kotHtmlOn = frontend.kotWebPrint.generateKotHtml(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { showLargeOrderNumber: true },
+  );
+  const kotHtmlOff = frontend.kotWebPrint.generateKotHtml(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { showLargeOrderNumber: false },
+  );
+  assert.ok(
+    kotHtmlOn.includes('class="kot-order-banner"') && kotHtmlOn.includes('>#ORD-0042</div>'),
+    'generateKotHtml renders .kot-order-banner with #ORD-0042 when enabled',
+  );
+  assert.equal(
+    kotHtmlOff.includes('class="kot-order-banner"'),
+    false,
+    'generateKotHtml omits .kot-order-banner when showLargeOrderNumber is false',
+  );
+
+  const kotExtraLargeDoc = renderKotViaDocument(
+    { ...baseOrder, order_number: 'ORD-20261109-0012' },
+    items,
+    'Kitchen',
+    {
+      ...opts,
+      columns: 16,
+      capabilities: {
+        ...require('../shared/print/thermal-capabilities').GENERIC_THERMAL_CAPABILITIES,
+        textSize: 'extra_large',
+      },
+    },
+  );
+  const kotExtraLargeDocText = escPosToText(kotExtraLargeDoc.data);
+  assert.ok(
+    kotExtraLargeDocText.includes('#ORD-20261109-00') &&
+      kotExtraLargeDocText.split(/\r?\n/).some((line: string) => line.trim() === '12'),
+    'renderKotViaDocument wraps overlong #ORD-20261109-0012 on 16-col extra_large KOT without dropping sequence digits',
+  );
+  assert.equal(
+    kotExtraLargeDoc.warnings.length,
+    0,
+    'renderKotViaDocument emits no false warnings when wrapping overlong KOT banner',
+  );
+
+  const kotExtraLargeWarnings: any[] = [];
+  const kotExtraLargeBytes = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, order_number: 'ORD-20261109-0012', items } as any,
+    {
+      ...opts,
+      paperWidth: 58,
+      columns: 32,
+      showLargeOrderNumber: true,
+      capabilities: {
+        ...require('../shared/print/thermal-capabilities').GENERIC_THERMAL_CAPABILITIES,
+        textSize: 'extra_large',
+      },
+    },
+    kotExtraLargeWarnings,
+  );
+  const kotExtraLargeEncoderText = escPosToText(kotExtraLargeBytes);
+  assert.ok(
+    kotExtraLargeEncoderText.includes('#ORD-20261109-00') &&
+      kotExtraLargeEncoderText.split(/\r?\n/).some((line: string) => line.trim() === '12'),
+    'buildKotBytes wraps overlong #ORD-20261109-0012 on 58mm extra_large KOT without dropping sequence digits',
+  );
+  assert.equal(
+    kotExtraLargeWarnings.length,
+    0,
+    'buildKotBytes emits no false warnings when wrapping overlong KOT banner',
+  );
+
+  const kotHtmlRtl = frontend.kotWebPrint.generateKotHtml(
+    { ...baseOrder, order_number: 'ORD-0042', items } as any,
+    { language: 'ar', showLargeOrderNumber: true },
+  );
+  assert.ok(
+    kotHtmlRtl.includes('dir="rtl"') &&
+      /<div class="kot-order-banner" dir="ltr" style="direction:ltr;unicode-bidi:isolate;[^"]*">#ORD-0042<\/div>/.test(
+        kotHtmlRtl,
+      ),
+    'generateKotHtml isolates .kot-order-banner as dir="ltr" inside RTL KOT tickets',
+  );
 }
 
 runAsyncTests()

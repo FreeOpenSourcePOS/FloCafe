@@ -93,6 +93,8 @@ export interface WebPrintOptions {
   showCustomerPhone?: boolean;
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
+  /** Print the Order Number in a large bold callout banner on customer receipts. */
+  showLargeOrderNumber?: boolean;
   /** Ignored for browser receipts: HTML uses locale currency formatting and code fallback. */
   useUnicode?: boolean;
   /** Show a large "REPRINT" banner so a reprinted bill can't be mistaken for the original. */
@@ -283,6 +285,7 @@ export function generateBillHtml(
     showCustomerPhone,
     deliveryShowCustomerPhoneAlways,
     showTableNumber,
+    showLargeOrderNumber: opts.showLargeOrderNumber,
     isReprint,
     trimDecimals,
     languages,
@@ -342,6 +345,10 @@ export function generateBillHtml(
     formatNumberForTenant(Number(value) || 0, tenant.country, { digits: tenant.number_digits });
 
   const hasTax = totals?.tax != null || (breakdown != null && breakdown.lines.length > 0);
+  const largeOrderNumber =
+    meta?.showLargeOrderNumber === true
+      ? (meta.orderNumber?.text ?? '').trim().replace(/^#/, '')
+      : '';
 
   return `<!DOCTYPE html>
 <html lang="${localeTag}" dir="${dir}">
@@ -370,6 +377,7 @@ export function generateBillHtml(
     </div>
 
     <!-- Bill Details -->
+    ${largeOrderNumber ? `<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate; font-size: 1.5em; font-weight: 800; text-align: center; border: 2px solid #000; padding: 4px 8px; margin: 6px 0;">ORDER #${escapeHtml(largeOrderNumber)}</div>` : ''}
     <div class="bill-details">
       <table>
         <tr>

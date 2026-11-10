@@ -205,6 +205,9 @@ export function buildBillPrintData(
       showTableNumber: business?.show_table_number !== false,
       showCustomerName: business?.show_customer_name !== false,
       showCustomerPhone: business?.show_customer_phone !== false,
+      ...(typeof business?.show_large_order_number === 'boolean'
+        ? { showLargeOrderNumber: business.show_large_order_number }
+        : {}),
       showLogo: business?.show_logo === true,
       receiptLogo: typeof business?.receipt_logo === 'string' ? business.receipt_logo : '',
       receiptLogoRaster:
@@ -661,6 +664,28 @@ export function renderBillDocumentToClassicLines(
         segment.main.push(dash);
         segment.sourceLines.main.push(dash);
         segment.sourceControlLines.main.push(dash);
+        const cleanOrderNumber = block.orderNumber?.text.trim().replace(/^#/, '') ?? '';
+        if (block.showLargeOrderNumber === true && cleanOrderNumber.length > 0) {
+          const orderBannerText = `ORDER #${cleanOrderNumber}`;
+          const layout = layoutStyledUnit(
+            { text: orderBannerText, widthMultiplier: 2, field: 'order number banner' },
+            {
+              logicalColumns: cols,
+              direction: 'ltr',
+              languages: document.languages,
+              capabilities: options.capabilities,
+            },
+          );
+          const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
+          const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
+          for (const bannerLine of layout.lines) {
+            segment.main.push(
+              `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalize(bannerLine)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`,
+            );
+            segment.sourceLines.main.push(bannerLine);
+            segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');
+          }
+        }
         const defaultTitle =
           block.title.conceptId === 'print.taxInvoiceTitle'
             ? printLabel(options.language, 'print.taxInvoiceTitle')

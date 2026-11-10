@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Restaurantnaam",
     "showRestaurantPhone": "Restauranttelefoon",
     "showTableNumber": "Tafelnummer",
+    "showLargeOrderNumber": "Groot vetgedrukt bestelnummer",
+    "showLargeOrderNumberHint": "Drukt het bestelnummer af in een grote, vetgedrukte banner op klantbonnen en keukenbonnen (KOT) voor eenvoudig afhalen en controleren.",
     "showTaxBreakdown": "Belastingoverzicht",
     "showTaxId": "Belastingnummer",
     "softwareUpdates": "Software-updates",

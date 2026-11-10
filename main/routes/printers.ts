@@ -1165,6 +1165,7 @@ router.post(
         show_tax_breakdown: settings.bill_show_tax_breakdown !== 'false',
         show_customer_name: settings.bill_show_customer_name !== 'false',
         show_table_number: settings.bill_show_table_number !== 'false',
+        show_large_order_number: settings.bill_show_large_order_number !== 'false',
         show_logo: settings.bill_show_logo === 'true',
         receipt_logo: settings.receipt_logo || '',
         receipt_logo_raster: settings.receipt_logo_raster || '',
@@ -1401,6 +1402,8 @@ router.post(
           .get(order.customer_id) as { name: string } | null;
         if (customer) order.customer = { name: customer.name };
       }
+      order.show_large_order_number =
+        tenantSettingValue(db, 'bill_show_large_order_number') !== 'false';
 
       // Specific station prints one ticket; unassigned item overrides route by station.
       let success = true;
@@ -1874,6 +1877,8 @@ export async function autoPrintReleasedOrderKot(
         .get(order.customer_id) as { name: string } | undefined;
       if (customer) order.customer = { name: customer.name };
     }
+    order.show_large_order_number =
+      tenantSettingValue(db, 'bill_show_large_order_number') !== 'false';
 
     const kotLanguage = resolveTenantKotLanguage(db);
     const useUnicode = tenantSettingValue(db, 'printer_use_unicode') === 'true';

@@ -191,6 +191,7 @@ export interface BusinessSnapshot {
   readonly showTableNumber: boolean;
   readonly showCustomerName: boolean;
   readonly showCustomerPhone: boolean;
+  readonly showLargeOrderNumber?: boolean;
   readonly showLogo?: boolean;
   readonly receiptLogo?: string;
   readonly receiptLogoRaster?: string;
@@ -274,6 +275,10 @@ export interface DocumentMetaBlock {
   /** Date label for layouts that print a labeled date line (e.g. compact). */
   readonly dateLabel: SemanticLabel;
   readonly invoiceNumber: DirectionalText;
+  /** Underlying order number preserved even when billNumber is a distinct INV-... sequence. */
+  readonly orderNumber?: DirectionalText | null;
+  /** Whether the customer receipt should render a large bold order number callout banner. */
+  readonly showLargeOrderNumber?: boolean;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
@@ -615,6 +620,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
         : null,
   });
 
+  const rawOrderNumber = order.orderNumber.trim();
   const meta: DocumentMetaBlock = Object.freeze({
     kind: 'document-meta',
     direction: base,
@@ -626,6 +632,8 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       bill.billNumber.length > 0 ? bill.billNumber : order.orderNumber,
       base,
     ),
+    orderNumber: rawOrderNumber.length > 0 ? directionalText(rawOrderNumber, base) : null,
+    showLargeOrderNumber: business.showLargeOrderNumber === true,
     timestamp: directionalText(order.createdAt, base),
     table:
       business.showTableNumber && order.tableName.length > 0
@@ -880,6 +888,7 @@ export interface KotPrintData {
   readonly stationName: string;
   readonly order: KotOrderSnapshot;
   readonly items: readonly KotItemSnapshot[];
+  readonly showLargeOrderNumber?: boolean;
 }
 
 /** Ticket header: banner, station, order number, table, type, optional customer, time. */
@@ -891,6 +900,8 @@ export interface KotHeaderBlock {
   readonly stationName: DirectionalText;
   readonly orderNumberLabel: SemanticLabel;
   readonly orderNumber: DirectionalText;
+  /** Whether the KOT header should render a large bold order number callout banner. */
+  readonly showLargeOrderNumber?: boolean;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
   readonly orderType: {
@@ -1377,6 +1388,9 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
         isSemanticLabel(value.billNumberLabel) &&
         isSemanticLabel(value.dateLabel) &&
         isDirectionalText(value.invoiceNumber) &&
+        (value.orderNumber === undefined || isOptionalDirectionalText(value.orderNumber)) &&
+        (value.showLargeOrderNumber === undefined ||
+          typeof value.showLargeOrderNumber === 'boolean') &&
         isDirectionalText(value.timestamp) &&
         (value.table === null ||
           (isRecord(value.table) &&
@@ -1529,6 +1543,8 @@ function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
       isDirectionalText(value.stationName) &&
       isSemanticLabel(value.orderNumberLabel) &&
       isDirectionalText(value.orderNumber) &&
+      (value.showLargeOrderNumber === undefined ||
+        typeof value.showLargeOrderNumber === 'boolean') &&
       (value.table === null ||
         (isRecord(value.table) &&
           isSemanticLabel(value.table.label) &&
@@ -1605,6 +1621,9 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     stationName: directionalText(String(printData.stationName ?? ''), base),
     orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
+    ...(typeof printData.showLargeOrderNumber === 'boolean'
+      ? { showLargeOrderNumber: printData.showLargeOrderNumber }
+      : {}),
     table:
       typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
         ? Object.freeze({

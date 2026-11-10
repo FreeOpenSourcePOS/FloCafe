@@ -2459,6 +2459,8 @@
     "showRestaurantName": "اسم المطعم",
     "showRestaurantPhone": "رقم هاتف المطعم",
     "showTableNumber": "رقم الجدول",
+    "showLargeOrderNumber": "رقم الطلب بخط كبير وعريض",
+    "showLargeOrderNumberHint": "يطبع رقم الطلب في لافتة كبيرة وعريضة على إيصالات العملاء وتذاكر المطبخ لتسهيل استلام الطلبات والتحقق منها.",
     "showTaxBreakdown": "تفاصيل الضرائب",
     "showTaxId": "رقم التعريف الضريبي",
     "softwareUpdates": "تحديثات البرامج",

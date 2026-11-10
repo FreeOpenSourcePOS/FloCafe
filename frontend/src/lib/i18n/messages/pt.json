@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Nome do restaurante",
     "showRestaurantPhone": "Telefone do restaurante",
     "showTableNumber": "Número da mesa",
+    "showLargeOrderNumber": "Número do pedido grande e em negrito",
+    "showLargeOrderNumberHint": "Imprime o número do pedido em um destaque grande e em negrito nos recibos de clientes e comandas de cozinha (KOT) para facilitar a retirada e conferência.",
     "showTaxBreakdown": "Detalhamento de impostos",
     "showTaxId": "Número de Inscrição Fiscal",
     "softwareUpdates": "Atualizações de Software",

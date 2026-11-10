@@ -23,6 +23,7 @@ import {
 } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { shouldShowCustomerNumber } from '@print/document';
+import { layoutStyledUnit } from '@print/layout';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import {
   hasUnsupportedPrinterChars,
@@ -67,6 +68,8 @@ export interface TaxBillOptions {
   deliveryShowCustomerPhoneAlways?: boolean;
   /** Show the table number when available. Default: true */
   showTableNumber?: boolean;
+  /** Print the Order Number in a large bold callout banner on customer receipts. */
+  showLargeOrderNumber?: boolean;
   /** State code for tax calculation */
   stateCode?: string;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
@@ -345,6 +348,39 @@ export function buildTaxBillBytes(
   enc.newline();
 
   // ── Bill Details ─────────────────────────────────────────────────────────
+  if (opts.showLargeOrderNumber === true && order?.order_number) {
+    const cleanOrderNum = String(order.order_number).trim().replace(/^#/, '');
+    if (cleanOrderNum.length > 0) {
+      const bannerText = `ORDER #${cleanOrderNum}`;
+      const layout = layoutStyledUnit(
+        {
+          text: bannerText,
+          widthMultiplier: 2,
+          field: 'order number banner',
+        },
+        {
+          logicalColumns: cols,
+          direction: 'ltr',
+          languages: [language ?? 'en'],
+          capabilities: opts.capabilities,
+        },
+      );
+      enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
+      for (const line of layout.lines) {
+        safePrinterText(
+          enc,
+          line,
+          warnings,
+          false,
+          arabicShaping,
+          cols,
+          undefined,
+          language,
+        ).newline();
+      }
+      enc.width(1).height(1).bold(false).align('left');
+    }
+  }
   enc.align('left');
   safePrinterText(
     enc,

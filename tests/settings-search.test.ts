@@ -154,6 +154,7 @@ const enTranslators = createTranslatorsForLocale(enBundle);
   assertTopMatch('instagram', 'store-logo', 'store');
   assertTopMatch('bill content', 'bill-content', 'receipts-printers');
   assertTopMatch('footer message', 'bill-content', 'receipts-printers');
+  assertTopMatch('large bold order number', 'bill-content', 'receipts-printers');
   assertTopMatch('subscription', 'subscription', 'store');
 
   const subscriptionResult = searchSettingsCatalog('subscription', enTranslators)[0];
@@ -260,6 +261,17 @@ const enTranslators = createTranslatorsForLocale(enBundle);
     assert.ok(
       results.some((r) => r.id === 'printers-hardware'),
       `Expected localized printers title "${localizedPrintersTitle}" in locale "${locale}" to match printers-hardware`,
+    );
+
+    const localizedLargeOrderTitle = resolveSettingsKey(
+      'showLargeOrderNumber',
+      undefined,
+      translators,
+    );
+    const largeOrderResults = searchSettingsCatalog(localizedLargeOrderTitle, translators);
+    assert.ok(
+      largeOrderResults.some((r) => r.id === 'bill-content'),
+      `Expected localized showLargeOrderNumber "${localizedLargeOrderTitle}" in locale "${locale}" to match bill-content`,
     );
 
     // Universal keyword search still works in every locale

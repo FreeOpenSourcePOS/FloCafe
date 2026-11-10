@@ -52,6 +52,7 @@ export interface BillBusinessOptions {
   showCustomerPhone?: boolean;
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
+  showLargeOrderNumber?: boolean;
   isReprint?: boolean;
 }
 
@@ -230,6 +231,9 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       showTaxId: showTaxId ? 'force' : 'never',
       showTaxBreakdown: opts.showTaxBreakdown === true,
       showTableNumber: opts.showTableNumber !== false,
+      ...(opts.showLargeOrderNumber !== undefined
+        ? { showLargeOrderNumber: opts.showLargeOrderNumber === true }
+        : {}),
       showCustomerName: opts.showCustomerName !== false,
       showCustomerPhone: shouldShowCustomerNumber({
         showOnReceipts: opts.showCustomerPhone !== false,
@@ -304,6 +308,7 @@ export function buildFrontendKotDocument(
     columns: number;
     language: string;
     timezone?: string;
+    showLargeOrderNumber?: boolean;
   },
 ): KotDocument {
   const orderShape = order as Order & {
@@ -342,6 +347,9 @@ export function buildFrontendKotDocument(
   const items = opts.items ?? order.items ?? [];
   const printData: KotPrintData = {
     stationName: String(opts.stationName ?? ''),
+    ...(typeof opts.showLargeOrderNumber === 'boolean'
+      ? { showLargeOrderNumber: opts.showLargeOrderNumber }
+      : {}),
     order: {
       orderNumber: String(order.order_number ?? ''),
       createdAt: String(order.created_at ?? ''),

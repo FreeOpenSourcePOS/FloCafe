@@ -2459,6 +2459,8 @@
     "showRestaurantName": "ชื่อร้านอาหาร",
     "showRestaurantPhone": "โทรศัพท์ร้านอาหาร",
     "showTableNumber": "หมายเลขโต๊ะ",
+    "showLargeOrderNumber": "หมายเลขคำสั่งซื้อตัวใหญ่และหนา",
+    "showLargeOrderNumberHint": "พิมพ์หมายเลขคำสั่งซื้อในแบนเนอร์ตัวใหญ่และหนาบนใบเสร็จลูกค้าและใบสั่งครัว (KOT) เพื่อความสะดวกในการรับและตรวจสอบออเดอร์",
     "showTaxBreakdown": "รายละเอียดภาษี",
     "showTaxId": "หมายเลขประจำตัวผู้เสียภาษี",
     "softwareUpdates": "การอัปเดตซอฟต์แวร์",

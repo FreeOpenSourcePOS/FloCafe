@@ -2459,6 +2459,8 @@
     "showRestaurantName": "레스토랑 이름",
     "showRestaurantPhone": "레스토랑 전화",
     "showTableNumber": "테이블 번호",
+    "showLargeOrderNumber": "크고 굵은 주문 번호",
+    "showLargeOrderNumberHint": "쉬운 주문 수령 및 확인을 위해 고객 영수증과 주방 주문서(KOT)에 주문 번호를 크고 굵은 배너로 인쇄합니다.",
     "showTaxBreakdown": "세금 내역",
     "showTaxId": "세금 ID 번호",
     "softwareUpdates": "소프트웨어 업데이트",

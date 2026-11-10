@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Restaurant Name",
     "showRestaurantPhone": "Restaurant Phone",
     "showTableNumber": "Table Number",
+    "showLargeOrderNumber": "Large Bold Order Number",
+    "showLargeOrderNumberHint": "Prints the Order Number in a large, bold callout banner on customer receipts and kitchen tickets (KOT) for easy order pickup and verification.",
     "showTaxBreakdown": "Tax Breakdown",
     "showTaxId": "Tax ID Number",
     "softwareUpdates": "Software Updates",

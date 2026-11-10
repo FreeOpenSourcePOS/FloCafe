@@ -248,7 +248,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
       >
         <div className="flex justify-between items-center mb-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-            <Ltr as="span" className="font-bold text-sm shrink-0">
+            <Ltr as="span" className="font-extrabold text-lg tracking-tight shrink-0">
               #{order.order_number}
             </Ltr>
             <Badge
@@ -354,7 +354,7 @@ function VoidedColumn({
             className={`rounded-xl bg-card shadow-sm ring-1 ring-border/50 border-t-4 ${config.border} p-3 flex flex-col`}
           >
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
-              <Ltr as="span" className="font-bold text-sm shrink-0">
+              <Ltr as="span" className="font-extrabold text-lg tracking-tight shrink-0">
                 #{order.order_number}
               </Ltr>
               {order.table?.name && (

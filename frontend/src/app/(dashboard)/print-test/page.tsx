@@ -3,7 +3,12 @@
 import { useMemo, useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
+import {
+  PrintCancelledOnTenantChangeError,
+  isPrintCancelledOnTenantChangeError,
+  usePrinterStore,
+} from '@/hooks/usePrinter';
+import { ensureReceiptSettingsLoaded } from '@/hooks/useReceiptSettingsSync';
 import {
   showPrintLanguageLoadErrorsToast,
   showPrintWarningsToast,
@@ -67,6 +72,20 @@ export default function PrintTestPage() {
   );
   const testCustomer = useMemo(() => createTestCustomer(), []);
 
+  const resolveHydratedShowLargeOrderNumber = async (
+    reservedWindow?: Window | null,
+  ): Promise<boolean> => {
+    const tenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
+    const isSameTenant = () =>
+      (useAuthStore.getState().currentTenant?.id ?? null) === tenantIdAtStart;
+    const ready = await ensureReceiptSettingsLoaded(tenantIdAtStart).catch(() => isSameTenant());
+    if (!ready || !isSameTenant()) {
+      if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+      throw new PrintCancelledOnTenantChangeError();
+    }
+    return usePosSettingsStore.getState().billShowLargeOrderNumber;
+  };
+
   const handlePrint = async () => {
     setTesting(true);
     try {
@@ -75,9 +94,20 @@ export default function PrintTestPage() {
           if (printMethod === 'browser') {
             // Browser test surface runs through the real document-driven
             // web-print path (#444).
-            const printWarnings = await printWebBill(testBill, testTenant, {
-              paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
-            });
+            const reservedWindow =
+              typeof window !== 'undefined'
+                ? window.open('', '_blank', 'width=800,height=600')
+                : null;
+            const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(reservedWindow);
+            const printWarnings = await printWebBill(
+              testBill,
+              testTenant,
+              {
+                paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
+                showLargeOrderNumber,
+              },
+              reservedWindow,
+            );
             toast.success(t('browserDialogOpened'));
             showPrintWarningsToast(printWarnings);
           } else {
@@ -88,13 +118,24 @@ export default function PrintTestPage() {
           break;
         case 'tax':
           if (printMethod === 'browser') {
-            const printWarnings = await printWebBill(testBill, testTenant, {
-              paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
-              includeTaxId: true,
-              taxRegistrationNumber: 'TAXID-0001',
-              address: '123 Main Street, Mumbai - 400001',
-              phone: '+91 9876543210',
-            });
+            const reservedWindow =
+              typeof window !== 'undefined'
+                ? window.open('', '_blank', 'width=800,height=600')
+                : null;
+            const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(reservedWindow);
+            const printWarnings = await printWebBill(
+              testBill,
+              testTenant,
+              {
+                paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
+                includeTaxId: true,
+                taxRegistrationNumber: 'TAXID-0001',
+                address: '123 Main Street, Mumbai - 400001',
+                phone: '+91 9876543210',
+                showLargeOrderNumber,
+              },
+              reservedWindow,
+            );
             toast.success(t('browserDialogOpened'));
             showPrintWarningsToast(printWarnings);
           } else {
@@ -116,25 +157,34 @@ export default function PrintTestPage() {
           }
           if (printMethod === 'browser') {
             // Render semantic KOT HTML and preload ticket locale if different from UI language.
-            const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-            const kotLanguage = resolveKotTicketLanguage();
-            const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
-            const html = generateKotHtml(testOrder, {
-              paperWidth,
-              language: kotLanguage,
-              stationName: t('kitchenStation'),
-              timezone: testTenant.timezone,
-            });
-            await printerService.printViaBrowser(html, paperWidth);
-            toast.success(t('browserDialogOpened'));
-            showPrintWarningsToast(
-              failedLanguages.map((language) => ({
-                field: 'kot language',
-                text: language,
-                message: t('kotLanguageLoadError', { language }),
-                kind: 'locale' as const,
-              })),
-            );
+            const reservedWindow = printerService.reserveBrowserPrintWindow();
+            try {
+              const showLargeOrderNumber =
+                await resolveHydratedShowLargeOrderNumber(reservedWindow);
+              const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+              const kotLanguage = resolveKotTicketLanguage();
+              const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
+              const html = generateKotHtml(testOrder, {
+                paperWidth,
+                language: kotLanguage,
+                stationName: t('kitchenStation'),
+                timezone: testTenant.timezone,
+                showLargeOrderNumber,
+              });
+              await printerService.printViaBrowser(html, paperWidth, reservedWindow);
+              toast.success(t('browserDialogOpened'));
+              showPrintWarningsToast(
+                failedLanguages.map((language) => ({
+                  field: 'kot language',
+                  text: language,
+                  message: t('kotLanguageLoadError', { language }),
+                  kind: 'locale' as const,
+                })),
+              );
+            } catch (err) {
+              if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+              throw err;
+            }
           } else {
             const printWarnings = await printKot(testOrder, {
               paperWidth,
@@ -145,10 +195,21 @@ export default function PrintTestPage() {
           }
           break;
         case 'web-print': {
-          const printWarnings = await printWebBill(testBill, testTenant, {
-            paperSize: printerPaperSize,
-            includeTaxId: true,
-          });
+          const reservedWindow =
+            typeof window !== 'undefined'
+              ? window.open('', '_blank', 'width=800,height=600')
+              : null;
+          const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(reservedWindow);
+          const printWarnings = await printWebBill(
+            testBill,
+            testTenant,
+            {
+              paperSize: printerPaperSize,
+              includeTaxId: true,
+              showLargeOrderNumber,
+            },
+            reservedWindow,
+          );
           toast.success(t('webPrintDialogOpened'));
           showPrintWarningsToast(printWarnings);
           break;
@@ -175,6 +236,14 @@ export default function PrintTestPage() {
   };
 
   const handleDownloadHtml = async () => {
+    let showLargeOrderNumber: boolean;
+    try {
+      showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber();
+    } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
+      toast.error(t('failedWithReason', { message: tCommon('somethingWrong') }));
+      return;
+    }
     const languages = resolveBillPrintLanguages();
     const failedLanguages = await ensurePrintLanguagesLoaded(languages);
     if (failedLanguages.length > 0) {
@@ -187,6 +256,7 @@ export default function PrintTestPage() {
       taxRegistrationNumber: 'TAXID-0001',
       address: '123 Main Street, Mumbai - 400001',
       phone: '+91 9876543210',
+      showLargeOrderNumber,
       languages,
     });
 

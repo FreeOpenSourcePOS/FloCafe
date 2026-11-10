@@ -2459,6 +2459,8 @@
     "showRestaurantName": "रेस्टॉरंटचे नाव",
     "showRestaurantPhone": "रेस्टॉरंटचा फोन",
     "showTableNumber": "टेबल क्रमांक",
+    "showLargeOrderNumber": "मोठा आणि ठळक ऑर्डर क्रमांक",
+    "showLargeOrderNumberHint": "ऑर्डर सहज घेण्यासाठी आणि पडताळणीसाठी ग्राहकांच्या पावत्या आणि किचन तिकिटांवर (KOT) ऑर्डर क्रमांक मोठ्या, ठळक बॅनरमध्ये छापतो.",
     "showTaxBreakdown": "कर तपशील",
     "showTaxId": "कर नोंदणी क्रमांक (Tax ID)",
     "softwareUpdates": "सॉफ्टवेअर अपडेट्स",

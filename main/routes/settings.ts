@@ -173,6 +173,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_template: 'classic',
   bill_footer_message: '',
   bill_show_logo: 'false',
+  bill_show_large_order_number: 'true',
   receipt_logo: '',
   receipt_logo_raster: '',
   printer_trim_decimals: 'false',
@@ -235,6 +236,9 @@ function publicSettingsShape(settings: Record<string, string>): Record<string, s
     if (isGoogleDriveSettingKey(key) || key === 'auth_clock_high_water_ms') continue;
     publicSettings[key] = maskSetting(key, value);
   }
+  if (publicSettings.bill_show_large_order_number === undefined) {
+    publicSettings.bill_show_large_order_number = 'true';
+  }
   return publicSettings;
 }
 
@@ -289,6 +293,7 @@ function businessShape(s: Record<string, string>) {
     bill_delivery_show_customer_phone_always:
       s.bill_delivery_show_customer_phone_always !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
+    bill_show_large_order_number: s.bill_show_large_order_number !== 'false',
     bill_show_logo: s.bill_show_logo === 'true',
     receipt_logo: s.receipt_logo || '',
     receipt_logo_raster: s.receipt_logo_raster || '',
@@ -379,6 +384,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       bill_show_customer_name,
       bill_show_customer_phone,
       bill_show_table_number,
+      bill_show_large_order_number,
       bill_delivery_show_customer_phone_always,
       receipt_logo,
       receipt_logo_raster,
@@ -527,6 +533,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       bill_show_customer_name,
       bill_show_customer_phone,
       bill_show_table_number,
+      bill_show_large_order_number,
       bill_delivery_show_customer_phone_always,
       bill_show_logo: boolFlag(bill_show_logo),
       receipt_logo: normalizedReceiptLogo,
@@ -2018,6 +2025,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'bill_show_customer_name',
   'bill_show_customer_phone',
   'bill_show_table_number',
+  'bill_show_large_order_number',
   'tax_scheme',
   'taxes_enabled',
   'loyalty_enabled',
@@ -2149,6 +2157,7 @@ const PRINTING_BOOLEAN_KEYS = [
 
 const OPTIONAL_PRINTING_BOOLEAN_KEYS = [
   'bill_show_logo',
+  'bill_show_large_order_number',
   'auto_print_kot',
   'printer_use_unicode',
   'printer_arabic_shaping',

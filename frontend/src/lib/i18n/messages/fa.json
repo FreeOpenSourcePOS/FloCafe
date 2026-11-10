@@ -2459,6 +2459,8 @@
     "showRestaurantName": "نام رستوران",
     "showRestaurantPhone": "تلفن رستوران",
     "showTableNumber": "شماره میز",
+    "showLargeOrderNumber": "شماره سفارش بزرگ و پررنگ",
+    "showLargeOrderNumberHint": "شماره سفارش را در یک کادر بزرگ و پررنگ روی رسید مشتری و برگه آشپزخانه (KOT) برای تحویل و بررسی آسان‌تر چاپ می‌کند.",
     "showTaxBreakdown": "تفکیک مالیات",
     "showTaxId": "کد اقتصادی",
     "softwareUpdates": "به‌روزرسانی نرم‌افزار",

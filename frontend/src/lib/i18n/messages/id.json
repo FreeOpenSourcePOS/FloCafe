@@ -2470,6 +2470,8 @@
     "showRestaurantName": "Nama Restoran",
     "showRestaurantPhone": "Telepon Restoran",
     "showTableNumber": "Nomor Meja",
+    "showLargeOrderNumber": "Nomor Pesanan Besar & Tebal",
+    "showLargeOrderNumberHint": "Mencetak Nomor Pesanan dalam banner besar dan tebal pada struk pelanggan dan tiket dapur (KOT) untuk memudahkan pengambilan dan verifikasi pesanan.",
     "showTaxBreakdown": "Rincian Pajak",
     "showTaxId": "Nomor ID Pajak",
     "softwareUpdates": "Pembaruan Perangkat Lunak",

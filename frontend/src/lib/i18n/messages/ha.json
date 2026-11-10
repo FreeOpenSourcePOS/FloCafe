@@ -2459,6 +2459,8 @@
     "showRestaurantName": "Sunan Gidan Abinci",
     "showRestaurantPhone": "Wayar Gidan Abinci",
     "showTableNumber": "Lambar Tebur",
+    "showLargeOrderNumber": "Babban Lambar Oda Mai Kauri",
+    "showLargeOrderNumberHint": "Yana buga Lambar Oda a cikin babban rubutu mai kauri akan rasitin abokin ciniki da tikitin dafa abinci (KOT) don sauƙin karɓa da tantancewa.",
     "showTaxBreakdown": "Rabon Haraji",
     "showTaxId": "Lambar Tantance Haraji (Tax ID)",
     "softwareUpdates": "Sabuntawar Manhaja",

@@ -2470,6 +2470,8 @@
     "showRestaurantName": "Emri i restorantit",
     "showRestaurantPhone": "Telefoni i restorantit",
     "showTableNumber": "Numri i tavolinës",
+    "showLargeOrderNumber": "Numri i porosisë i madh dhe i trashë",
+    "showLargeOrderNumberHint": "Printon numrin e porosisë në një baner të madh e të trashë në faturat e klientit dhe biletat e kuzhinës (KOT) për marrje dhe verifikim të lehtë.",
     "showTaxBreakdown": "Ndarja e taksave",
     "showTaxId": "Numri i ID-së tatimore",
     "softwareUpdates": "Përditësimet e softuerit",

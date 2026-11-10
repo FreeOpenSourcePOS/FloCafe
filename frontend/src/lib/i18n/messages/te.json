@@ -2459,6 +2459,8 @@
     "showRestaurantName": "రెస్టారెంట్ పేరు",
     "showRestaurantPhone": "రెస్టారెంట్ ఫోన్",
     "showTableNumber": "టేబుల్ నంబర్",
+    "showLargeOrderNumber": "పెద్ద మరియు బోల్డ్ ఆర్డర్ నంబర్",
+    "showLargeOrderNumberHint": "సులభమైన ఆర్డర్ పికప్ మరియు ధృవీకరణ కోసం కస్టమర్ రసీదులు మరియు కిచెన్ టిక్కెట్లపై (KOT) ఆర్డర్ నంబరును పెద్ద, బోల్డ్ బ్యానర్లో ముద్రిస్తుంది.",
     "showTaxBreakdown": "పన్ను వివరాలు",
     "showTaxId": "పన్ను ID నంబర్",
     "softwareUpdates": "సాఫ్ట్వేర్ అప్డేట్లు",

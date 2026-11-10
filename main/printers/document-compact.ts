@@ -280,6 +280,27 @@ export function renderBillDocumentToCompactLines(
   const metaStart = lines.length;
   const metaSourceLines: string[] = [];
   if (meta) {
+    const cleanOrderNumber = meta.orderNumber?.text.trim().replace(/^#/, '') ?? '';
+    if (meta.showLargeOrderNumber === true && cleanOrderNumber.length > 0) {
+      const orderBannerText = `ORDER #${cleanOrderNumber}`;
+      const layout = layoutStyledUnit(
+        { text: orderBannerText, widthMultiplier: 2, field: 'order number banner' },
+        {
+          logicalColumns: cols,
+          direction: 'ltr',
+          languages: document.languages,
+          capabilities: options.capabilities,
+        },
+      );
+      const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
+      const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
+      for (const bannerLine of layout.lines) {
+        lines.push(
+          `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalize(bannerLine)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`,
+        );
+        metaSourceLines.push(bannerLine);
+      }
+    }
     lines.push(normalize(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text));
     metaSourceLines.push(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text);
     const date = parseDbTimestamp(meta.timestamp.text);

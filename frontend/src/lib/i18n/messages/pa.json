@@ -2459,6 +2459,8 @@
     "showRestaurantName": "ਰੈਸਟੋਰੈਂਟ ਦਾ ਨਾਮ",
     "showRestaurantPhone": "ਰੈਸਟੋਰੈਂਟ ਦਾ ਫ਼ੋਨ",
     "showTableNumber": "ਟੇਬਲ ਨੰਬਰ",
+    "showLargeOrderNumber": "ਵੱਡਾ ਅਤੇ ਗੂੜ੍ਹਾ ਆਰਡਰ ਨੰਬਰ",
+    "showLargeOrderNumberHint": "ਆਸਾਨ ਆਰਡਰ ਪਿਕਅੱਪ ਅਤੇ ਪੁਸ਼ਟੀ ਲਈ ਗਾਹਕ ਰਸੀਦਾਂ ਅਤੇ ਕਿਚਨ ਟਿਕਟਾਂ (KOT) ਉੱਤੇ ਆਰਡਰ ਨੰਬਰ ਨੂੰ ਵੱਡੇ, ਗੂੜ੍ਹੇ ਬੈਨਰ ਵਿੱਚ ਪ੍ਰਿੰਟ ਕਰਦਾ ਹੈ।",
     "showTaxBreakdown": "ਟੈਕਸ ਵੇਰਵਾ",
     "showTaxId": "ਟੈਕਸ ID ਨੰਬਰ",
     "softwareUpdates": "ਸਾਫਟਵੇਅਰ ਅੱਪਡੇਟ",

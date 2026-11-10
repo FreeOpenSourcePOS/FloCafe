@@ -174,6 +174,7 @@ let capturedCartPanelProps: any = null;
 let capturedPrepaidModalProps: any = null;
 let capturedTopbarProps: any = null;
 let capturedScheduledDrawerProps: any = null;
+const capturedPrintedBills: any[] = [];
 
 const CartPanelStub = (props: any) => {
   capturedCartPanelProps = props;
@@ -248,9 +249,19 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
     return { useCashDrawerMovements: () => ({ open: false, setOpen: () => {} }) };
   if (reqName === '@/hooks/usePrinter')
     return {
-      usePrinterStore: () => ({ isConnected: false, status: 'disconnected' }),
+      usePrinterStore: () => ({
+        isConnected: false,
+        status: 'disconnected',
+        printBill: async (bill: any) => {
+          capturedPrintedBills.push(bill);
+          return [];
+        },
+        printKot: async () => [],
+      }),
       isPrintCancelledOnTenantChangeError: () => false,
     };
+  if (reqName === '@/lib/printer/warnings-toast')
+    return { showPrintWarningsToast: () => {}, showPrintLanguageLoadErrorsToast: () => {} };
   if (reqName === '@/hooks/useBarcodeScanner') return { useBarcodeScanner: () => {} };
   if (reqName === '@/hooks/usePosKeyboardShortcuts') return { usePosKeyboardShortcuts: () => {} };
   if (reqName === '@/hooks/useFormatCurrency')
@@ -1691,6 +1702,76 @@ async function run() {
     useCartStore.getState().items.length,
     1,
     'Cart preserved for checkout rather than blocked or cleared',
+  );
+
+  capturedPrintedBills.length = 0;
+  const prepaidOrderRow = {
+    id: 'order-prepaid-789',
+    order_number: 'ORD-PREPAID-789',
+    type: 'takeaway',
+    created_at: '2026-11-09 12:00:00',
+    items: [
+      {
+        id: 'item-latte-1',
+        product_name: 'Latte',
+        quantity: 1,
+        unit_price: 120,
+        total: 120,
+        status: 'pending',
+      },
+    ],
+  };
+  mockApiHandler = {
+    post: async (url: string) => {
+      if (url === '/orders') return { data: { order: prepaidOrderRow } };
+      if (url === '/bills/generate') {
+        return {
+          data: {
+            bill: {
+              id: 'bill-789',
+              bill_number: 'INV-789',
+              order_id: 'order-prepaid-789',
+              payment_status: 'unpaid',
+              subtotal: 120,
+              total: 120,
+              order: prepaidOrderRow,
+            },
+          },
+        };
+      }
+      if (url.includes('/payments')) {
+        return {
+          data: {
+            bill: {
+              id: 'bill-789',
+              bill_number: 'INV-789',
+              order_id: 'order-prepaid-789',
+              payment_status: 'paid',
+              subtotal: 120,
+              total: 120,
+            },
+          },
+        };
+      }
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+  await managerPrepaidModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  assertEqualOrThrow(
+    capturedPrintedBills.length,
+    1,
+    'Prepaid checkout dispatches receipt print after payment',
+  );
+  assertEqualOrThrow(
+    capturedPrintedBills[0]?.order?.order_number,
+    'ORD-PREPAID-789',
+    'Prepaid checkout preserves order.order_number on bare /payments bill passed to printBill',
+  );
+  assertEqualOrThrow(
+    capturedPrintedBills[0]?.order?.items?.length,
+    1,
+    'Prepaid checkout preserves order.items on bare /payments bill passed to printBill',
   );
 
   const { buildCartFingerprintFromState } = require('../frontend/src/lib/order-attempt');

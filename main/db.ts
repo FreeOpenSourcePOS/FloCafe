@@ -11265,6 +11265,7 @@ function seedInstallDefaults(): void {
   insert('bill_show_customer_phone', 'true');
   insert('bill_delivery_show_customer_phone_always', 'true');
   insert('bill_show_table_number', 'true');
+  insert('bill_show_large_order_number', 'true');
   insert('order_number_prefix', 'ORD');
   insert('order_number_include_date', 'true');
   insert('order_number_reset_daily', 'true');

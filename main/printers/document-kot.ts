@@ -28,6 +28,7 @@ import { displayCellWidth } from '../../shared/print/width';
 import {
   buildKotDocument,
   isKotItemPending,
+  layoutStyledUnit,
   type DirectionalText,
   type KotDocument,
   type KotDocumentBlock,
@@ -47,6 +48,9 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
     : [];
   return {
     stationName: String(stationName ?? ''),
+    ...(typeof order?.show_large_order_number === 'boolean'
+      ? { showLargeOrderNumber: order.show_large_order_number }
+      : {}),
     order: {
       orderNumber: String(order?.order_number ?? ''),
       createdAt: String(order?.created_at ?? ''),
@@ -278,6 +282,44 @@ function kotHeaderLines(
   );
   sourceLines?.push(labelOf(header.banner));
   sourceControlLines?.push(lines.at(-1) ?? '');
+  const showLargeOrderNumber = header.showLargeOrderNumber !== false;
+  const cleanOrderNumber = header.orderNumber.text.trim().replace(/^#/, '');
+  if (showLargeOrderNumber && cleanOrderNumber.length > 0) {
+    const safeLargeOrderNum = thermalSafeMetadataValue(
+      cleanOrderNumber,
+      options.language,
+      options.arabicShaping,
+      options.capabilities,
+    );
+    if (safeLargeOrderNum && safeLargeOrderNum !== UNSUPPORTED_METADATA_PLACEHOLDER) {
+      const largeBannerText = `#${safeLargeOrderNum}`;
+      const layout = layoutStyledUnit(
+        { text: largeBannerText, widthMultiplier: 2, field: 'order number banner' },
+        {
+          logicalColumns: cols,
+          direction: 'ltr',
+          languages: [options.language],
+          capabilities: options.capabilities,
+        },
+      );
+      const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
+      const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
+      for (const bannerLine of layout.lines) {
+        const renderedBannerLine = truncateShapedLine(
+          bannerLine,
+          cols,
+          options.arabicShaping,
+          options.language,
+          options.capabilities,
+        );
+        lines.push(
+          `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${renderedBannerLine}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`,
+        );
+        sourceLines?.push(bannerLine);
+        sourceControlLines?.push(lines.at(-1) ?? '');
+      }
+    }
+  }
   lines.push('');
   sourceLines?.push('');
   sourceControlLines?.push('');

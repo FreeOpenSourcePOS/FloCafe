@@ -612,7 +612,6 @@ export interface PosFailureSupportMetadata {
   subject: string;
   rejectionKind: PosValidationRejectionKind | null;
   affectedItem: string | null;
-  correctiveAction: PosCorrectiveAction | null;
 }
 
 export function resolvePosFailureSupportMetadata(input: {
@@ -624,11 +623,6 @@ export function resolvePosFailureSupportMetadata(input: {
   code: string;
   message: string;
   detail: string;
-  permissions?: {
-    canManageCatalog?: boolean;
-    canViewInventory?: boolean;
-    canUseShift?: boolean;
-  };
 }): PosFailureSupportMetadata {
   const isExpectedRejection = input.classification === 'expected_rejection';
   if (!isExpectedRejection) {
@@ -643,7 +637,6 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: isPrinter ? 'FloCafe printer problem' : 'FloCafe order problem',
       rejectionKind: null,
       affectedItem: null,
-      correctiveAction: null,
     };
   }
 
@@ -665,7 +658,6 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: 'FloCafe inventory or stock validation help',
       rejectionKind: 'stock_insufficient',
       affectedItem,
-      correctiveAction: resolvePosValidationAction('stock_insufficient', input.permissions),
     };
   }
 
@@ -684,7 +676,6 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: 'FloCafe business day or shift validation help',
       rejectionKind: 'closed_books',
       affectedItem: null,
-      correctiveAction: null,
     };
   }
 
@@ -703,7 +694,6 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: 'FloCafe business day or shift validation help',
       rejectionKind: 'shift_required',
       affectedItem: null,
-      correctiveAction: resolvePosValidationAction('shift_required', input.permissions),
     };
   }
 
@@ -721,6 +711,5 @@ export function resolvePosFailureSupportMetadata(input: {
     subject,
     rejectionKind: 'validation',
     affectedItem: null,
-    correctiveAction: null,
   };
 }

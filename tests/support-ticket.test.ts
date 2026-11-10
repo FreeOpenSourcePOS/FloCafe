@@ -886,7 +886,6 @@ async function main() {
       code: 'order.stock_insufficient',
       message: 'Insufficient stock for "Double Cheeseburger"',
       detail: 'Insufficient stock for "Double Cheeseburger"',
-      permissions: { canManageCatalog: true, canViewInventory: true },
     });
     assertEqual(stockMetadata.variant, 'validation', 'stock rejection uses validation variant');
     assertEqual(stockMetadata.category, 'general', 'stock rejection uses non-bug category');
@@ -900,8 +899,12 @@ async function main() {
       'Double Cheeseburger',
       'stock rejection extracts quoted affected item name',
     );
+    const catalogAction = resolvePosValidationAction('stock_insufficient', {
+      canManageCatalog: true,
+      canViewInventory: true,
+    });
     assertEqual(
-      stockMetadata.correctiveAction?.kind === 'link' ? stockMetadata.correctiveAction.href : null,
+      catalogAction?.kind === 'link' ? catalogAction.href : null,
       '/products',
       'stock rejection links to /products when catalog.manage is granted',
     );
@@ -991,7 +994,6 @@ async function main() {
       code: 'validation.rejected',
       message: 'Books are closed for 2026-11-09.',
       detail: 'Books are closed for 2026-11-09.',
-      permissions: { canManageCatalog: true, canViewInventory: true, canUseShift: true },
     });
     assertEqual(
       closedBooksMetadata.variant,
@@ -1009,7 +1011,11 @@ async function main() {
       'closed-books rejection resolves as immutable closed_books',
     );
     assertEqual(
-      closedBooksMetadata.correctiveAction,
+      resolvePosValidationAction('closed_books', {
+        canManageCatalog: true,
+        canViewInventory: true,
+        canUseShift: true,
+      }),
       null,
       'closed-books rejection never links to /dashboard or offers reopening',
     );
@@ -1023,15 +1029,15 @@ async function main() {
       code: 'payment.invalid',
       message: 'No open shift: open a shift before taking cash',
       detail: 'No open shift: open a shift before taking cash',
-      permissions: { canUseShift: true },
     });
     assertEqual(
       shiftRequiredMetadata.rejectionKind,
       'shift_required',
       'cash_session_required resolves as shift_required',
     );
+    const shiftRequiredAction = resolvePosValidationAction('shift_required', { canUseShift: true });
     assertEqual(
-      shiftRequiredMetadata.correctiveAction?.kind ?? null,
+      shiftRequiredAction?.kind ?? null,
       'open_shift',
       'shift_required offers inline open_shift modal action when canUseShift is true',
     );

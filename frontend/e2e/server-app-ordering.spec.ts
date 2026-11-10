@@ -824,8 +824,8 @@ test('Server App locks locally on configured inactivity even if logout fails', a
     return route.fulfill({ status: 503, json: { error: 'offline' } });
   });
   const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
-  const autoLockSettingLoaded = page.waitForResponse(
-    (res) => res.url().includes('/api/settings/auto_lock_minutes'),
+  const autoLockSettingLoaded = page.waitForResponse((res) =>
+    res.url().includes('/api/settings/auto_lock_minutes'),
   );
   await openServerApp(page, serverToken);
   await autoLockSettingLoaded;

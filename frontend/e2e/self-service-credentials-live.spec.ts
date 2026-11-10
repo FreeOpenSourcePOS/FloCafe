@@ -1,10 +1,18 @@
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { E2E_BASE_URL, E2E_KDS_BASE_URL, E2E_SERVER_APP_BASE_URL } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken } from './helpers/test-auth';
 
-const EVIDENCE_DIR = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M71NAA3AJKJCX81VZ1YA2HZ7';
+const DEFAULT_LOCAL_EVIDENCE =
+  '/Users/gurkiratkhaira/.no-mistakes/evidence/01M71NAA3AJKJCX81VZ1YA2HZ7';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  (fs.existsSync(path.dirname(DEFAULT_LOCAL_EVIDENCE))
+    ? DEFAULT_LOCAL_EVIDENCE
+    : path.join(os.tmpdir(), 'no-mistakes-evidence', '01M71NAA3AJKJCX81VZ1YA2HZ7'));
+
 if (!fs.existsSync(EVIDENCE_DIR)) {
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 }
@@ -37,8 +45,8 @@ async function loginViaUi(page: Page, email: string, password: string, baseUrl =
   await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15_000 });
 }
 
-test.describe.serial('Self-Service Password & PIN Change + Staff Credential Reset Live Scenarios', () => {
-
+test.describe
+  .serial('Self-Service Password & PIN Change + Staff Credential Reset Live Scenarios', () => {
   test('Scenario 1: Self-service password change with current password across roles preserves active session', async ({
     page,
     request,
@@ -321,7 +329,12 @@ test.describe.serial('Self-Service Password & PIN Change + Staff Credential Rese
     const waiterPassword = 'WaiterPassword123!';
     const createWaiter = await request.post(`${E2E_BASE_URL}/api/staff`, {
       headers: ownerHeaders(),
-      data: { name: 'Server App Waiter', email: waiterEmail, password: waiterPassword, role: 'server' },
+      data: {
+        name: 'Server App Waiter',
+        email: waiterEmail,
+        password: waiterPassword,
+        role: 'server',
+      },
     });
     expect(createWaiter.status()).toBe(201);
 
@@ -367,10 +380,7 @@ test.describe.serial('Self-Service Password & PIN Change + Staff Credential Rese
     await page.evaluate(
       ([tok]) => {
         localStorage.setItem('flocafe:server-app-token', tok);
-        localStorage.setItem(
-          'pos-settings',
-          JSON.stringify({ state: { language: 'en' } }),
-        );
+        localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'en' } }));
       },
       [saToken],
     );
@@ -400,9 +410,7 @@ test.describe.serial('Self-Service Password & PIN Change + Staff Credential Rese
     await expect(saDialog).toBeHidden({ timeout: 10_000 });
 
     // Verify localStorage has fresh token
-    const storedToken = await page.evaluate(() =>
-      localStorage.getItem('flocafe:server-app-token'),
-    );
+    const storedToken = await page.evaluate(() => localStorage.getItem('flocafe:server-app-token'));
     expect(storedToken).toBeTruthy();
     expect(storedToken).not.toBe(saToken);
   });

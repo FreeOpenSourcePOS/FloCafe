@@ -2438,7 +2438,7 @@ async function main() {
         assert(s1Close.status === 200, '#1339 (setting off): User A closes shift (200)');
       });
       db.prepare(
-        `DELETE FROM cash_drawer_movements WHERE business_date = '2026-11-10' AND movement_type = 'opening_float'`,
+        `DELETE FROM cash_drawer_movements WHERE business_date = '2026-11-10'`,
       ).run();
       db.prepare(`DELETE FROM cash_sessions WHERE opened_at LIKE '2026-11-10%'`).run();
       db.prepare(`DELETE FROM cash_closures WHERE business_date = '2026-11-10'`).run();

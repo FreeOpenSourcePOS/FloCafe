@@ -8,12 +8,13 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { readBetaChannelState, writeBetaChannelState } from '@/lib/updates/beta-channel';
 
-export default function BetaChannelToggle() {
+export default function BetaChannelToggle({ disabled = false }: { disabled?: boolean }) {
   const t = useTranslations('update');
   // Tri-state: null until the initial get resolves (or proves unsupported).
   const [supported, setSupported] = useState<boolean | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const isDisabled = disabled || supported !== true || busy;
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +31,7 @@ export default function BetaChannelToggle() {
   }, []);
 
   const handleChange = async (next: boolean) => {
-    if (!supported || busy) return;
+    if (disabled || !supported || busy) return;
     setBusy(true);
     const result = await writeBetaChannelState(window.electronAPI, next);
     if (result.ok && result.enabled !== null) {
@@ -60,11 +61,13 @@ export default function BetaChannelToggle() {
             <p className="text-xs text-amber-600 mt-2">{t('betaUnavailable')}</p>
           )}
         </div>
-        <label className="inline-flex items-center cursor-pointer">
+        <label
+          className={`inline-flex items-center ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+        >
           <input
             type="checkbox"
             checked={enabled}
-            disabled={supported !== true || busy}
+            disabled={isDisabled}
             onChange={(e) => void handleChange(e.target.checked)}
             data-testid="beta-channel-checkbox"
             aria-label={t('betaTitle')}
@@ -73,7 +76,7 @@ export default function BetaChannelToggle() {
           <span
             className={`relative w-9 h-5 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-brand ${
               enabled ? 'bg-brand' : 'bg-gray-300'
-            } ${supported === true ? '' : 'opacity-40 cursor-not-allowed'}`}
+            } ${!isDisabled ? '' : 'opacity-40 cursor-not-allowed'}`}
           >
             <span
               className={`absolute top-0.5 left-0.5 w-4 h-4 bg-card rounded-full shadow transition-transform ${

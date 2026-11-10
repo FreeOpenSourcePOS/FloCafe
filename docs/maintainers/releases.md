@@ -31,7 +31,8 @@ alpha, is treated as beta and follows the beta feed.
 A stable install leaves the updater channel unset and follows the stable feed. It can opt in to
 beta updates through the in-app switch in **Settings > Updates**, which reads and writes
 `updates.beta_channel_enabled` in the SQLite settings store through the
-`updates:get-beta-channel` and `updates:set-beta-channel` IPC pair. Opting out returns an install to
+`updates:get-beta-channel` and `updates:set-beta-channel` IPC pair. Changing this setting requires
+`settings.manage`; users lacking this permission see a disabled switch. Opting out returns an install to
 the stable feed. A beta-stamped install that opts out does not downgrade immediately: it holds its
 version until the next matching or newer stable release is published, then graduates without a
 database schema rollback.
@@ -39,10 +40,11 @@ database schema rollback.
 Unless the user turns it off, a desktop install checks for updates 5 seconds after startup. The
 **Check for updates automatically** switch in **Settings > Updates** and the checkbox in the update
 prompt both write `updates.auto_check_enabled` through the `updates:get-auto-check` and
-`updates:set-auto-check` IPC pair. With the switch off, only a manual check from Settings or the
-application menu contacts the update feed. Updates never download on their own: when a check finds
-one, a prompt asks the user to download it or defer, and a deferred update stays downloadable from
-the update badge or Settings through the `download-update` IPC call.
+`updates:set-auto-check` IPC pair, also requiring `settings.manage`. With the switch off, only a
+manual check from Settings or the application menu contacts the update feed (with manual checks and
+downloads in Settings disabled for users without `settings.manage`). Updates never download on
+their own: when a check finds one, a prompt asks the user to download it or defer, and a deferred
+update stays downloadable from the update badge or Settings through the `download-update` IPC call.
 
 When a downloaded update is ready, restarting from Settings or the update badge requires manager or
 owner Master PIN approval in the main process. The confirmation warns that POS, KDS, printing, and

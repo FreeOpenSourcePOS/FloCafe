@@ -127,6 +127,7 @@ export type PinGate =
 
 export interface DatabaseSettingsTabProps {
   isOwner: boolean;
+  canManageGoogleDrive?: boolean;
   masterPinStatus: MasterPinStatus;
   backups: BackupInfo[];
   backupsLoading: boolean;
@@ -250,6 +251,7 @@ function formatBackupSize(bytes: number): string {
 
 export function DatabaseSettingsTab({
   isOwner,
+  canManageGoogleDrive = isOwner,
   masterPinStatus,
   backups,
   backupsLoading,
@@ -309,7 +311,10 @@ export function DatabaseSettingsTab({
 
   if (!isOwner) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
+      <div
+        data-testid="database-access-denied"
+        className="flex flex-col items-center justify-center py-24 text-center"
+      >
         <h1 className="text-xl font-bold text-foreground mb-2">{t('tabBackupData')}</h1>
         <p className="text-muted-foreground">{t('noAccessDatabase')}</p>
       </div>
@@ -485,7 +490,7 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Google Drive - automated off-device backups */}
-      {isOwner && (
+      {isOwner && canManageGoogleDrive && (
         <div
           data-setting-section="google-drive-backup"
           className="bg-card rounded-2xl border border-border p-6 space-y-6"

@@ -80,7 +80,11 @@ Module._load = function (request: string, parent: any, isMain: boolean) {
   }
   // Stubs required by main/ipc.ts imports (mirrors theme-mode-settings.test.ts).
   if (request === './middleware/security') {
-    return { clearInMemoryRevokedTokens: () => {}, clearUserAuthCache: () => {} };
+    return {
+      clearInMemoryRevokedTokens: () => {},
+      clearUserAuthCache: () => {},
+      isTokenStale: () => false,
+    };
   }
   if (request === './routes/auth') return { clearJWTSecretCache: () => {} };
   if (request === './server') return { getLocalIP: () => '127.0.0.1' };
@@ -380,10 +384,24 @@ async function main() {
 
     console.log('\n3. IPC set-setting("orders_layout", <invalid>) → { success: false }');
     {
+      const jwt = require('jsonwebtoken');
+      const { getJWTSecret } = require('../main/security/jwt-secret');
+      const ownerToken = jwt.sign(
+        { userId: 'orders-layout-owner', role: 'owner', iat: Math.floor(Date.now() / 1000) },
+        getJWTSecret(),
+        { algorithm: 'HS256' },
+      );
+
       const handler = registered.get('set-setting');
       assert.ok(!!handler, 'set-setting IPC handler is registered');
+
+      // Calling without auth token must fail closed post-setup
+      const unauthResult = await handler(trustedSender, 'orders_layout', 'split');
+      assert.equal(unauthResult?.success, false, 'unauthenticated set-setting fails closed');
+      assert.equal(unauthResult?.error, 'Authentication required');
+
       for (const value of INVALID_STRINGS) {
-        const result = await handler(trustedSender, 'orders_layout', value);
+        const result = await handler(trustedSender, 'orders_layout', value, ownerToken);
         assert.equal(result?.success, false, `rejects ${JSON.stringify(value)}`);
         assert.ok(
           String(result?.error).includes('orders_layout'),
@@ -392,7 +410,7 @@ async function main() {
       }
       // Non-string payloads never reach the enum check; the type guard rejects them.
       for (const value of INVALID_TYPES) {
-        const result = await handler(trustedSender, 'orders_layout', value);
+        const result = await handler(trustedSender, 'orders_layout', value, ownerToken);
         assert.equal(result?.success, false, `rejects non-string ${JSON.stringify(value)}`);
       }
       assert.equal(
@@ -404,9 +422,17 @@ async function main() {
 
     console.log('\n4. IPC set-setting("orders_layout", "split" | "cards") → { success: true }');
     {
+      const jwt = require('jsonwebtoken');
+      const { getJWTSecret } = require('../main/security/jwt-secret');
+      const ownerToken = jwt.sign(
+        { userId: 'orders-layout-owner', role: 'owner', iat: Math.floor(Date.now() / 1000) },
+        getJWTSecret(),
+        { algorithm: 'HS256' },
+      );
+
       const handler = registered.get('set-setting');
       for (const value of VALID) {
-        const result = await handler(trustedSender, 'orders_layout', value);
+        const result = await handler(trustedSender, 'orders_layout', value, ownerToken);
         assert.equal(result?.success, true, `accepts ${value}`);
         assert.equal(readStored('orders_layout'), value, `IPC persisted ${value}`);
       }

@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMain } from 'electron';
 import { isTrustedMainWindowSender } from './ipc';
+import { authorizeRendererPermission } from './security/ipc-auth';
 import {
   initialUpdateState,
   isInstallReady,
@@ -124,14 +125,18 @@ export function createDirectUpdateIpcHandlers(
       return withDatabaseRequest(() => readAutoUpdateCheckEnabled());
     },
 
-    'updates:set-auto-check': (event: unknown, enabled: unknown) => {
+    'updates:set-auto-check': (event: unknown, enabled: unknown, authToken?: unknown) => {
       if (!isSenderAuthorized(event)) {
         return { success: false, error: 'Unauthorized sender' };
       }
       if (typeof enabled !== 'boolean') {
         return { success: false, error: 'enabled must be a boolean' };
       }
-      return withDatabaseRequest(() => {
+      return withDatabaseRequest(async () => {
+        const auth = await authorizeRendererPermission(event, authToken, 'settings.manage');
+        if (!auth.ok) {
+          return { success: false, error: auth.error || 'Insufficient permissions' };
+        }
         try {
           writeAutoUpdateCheckEnabled(enabled);
         } catch (error) {
@@ -148,7 +153,7 @@ export function createDirectUpdateIpcHandlers(
       return withDatabaseRequest(() => readBetaChannelEnabled());
     },
 
-    'updates:set-beta-channel': (event: unknown, enabled: unknown) => {
+    'updates:set-beta-channel': (event: unknown, enabled: unknown, authToken?: unknown) => {
       if (!isSenderAuthorized(event)) {
         return { success: false, error: 'Unauthorized sender' };
       }
@@ -157,6 +162,10 @@ export function createDirectUpdateIpcHandlers(
       }
       return enqueueBetaChannelTransition(() =>
         withDatabaseRequest(async () => {
+          const auth = await authorizeRendererPermission(event, authToken, 'settings.manage');
+          if (!auth.ok) {
+            return { success: false, error: auth.error || 'Insufficient permissions' };
+          }
           if (isInstallReady(getStoredUpdateStatus(), getStagedUpdateReady())) {
             return {
               success: false,

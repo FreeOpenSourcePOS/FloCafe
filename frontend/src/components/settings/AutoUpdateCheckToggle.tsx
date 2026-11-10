@@ -6,11 +6,13 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
 
-export default function AutoUpdateCheckToggle() {
+export default function AutoUpdateCheckToggle({ disabled = false }: { disabled?: boolean }) {
   const t = useTranslations('update');
   const { supported, enabled, busy, setEnabled } = useAutoUpdateCheck();
+  const isDisabled = disabled || supported !== true || busy;
 
   const handleChange = async (next: boolean) => {
+    if (isDisabled) return;
     if (!(await setEnabled(next))) toast.error(t('autoCheckToggleFailed'));
   };
 
@@ -27,11 +29,13 @@ export default function AutoUpdateCheckToggle() {
           <h3 className="font-semibold text-foreground">{t('autoCheckTitle')}</h3>
           <p className="text-sm text-muted-foreground mt-1">{t('autoCheckDescription')}</p>
         </div>
-        <label className="inline-flex items-center cursor-pointer">
+        <label
+          className={`inline-flex items-center ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+        >
           <input
             type="checkbox"
             checked={enabled}
-            disabled={supported !== true || busy}
+            disabled={isDisabled}
             onChange={(e) => void handleChange(e.target.checked)}
             data-testid="auto-update-check-checkbox"
             aria-label={t('autoCheckTitle')}
@@ -40,7 +44,7 @@ export default function AutoUpdateCheckToggle() {
           <span
             className={`relative w-9 h-5 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-brand ${
               enabled ? 'bg-brand' : 'bg-gray-300'
-            } ${supported === true ? '' : 'opacity-40 cursor-not-allowed'}`}
+            } ${!isDisabled ? '' : 'opacity-40 cursor-not-allowed'}`}
           >
             <span
               className={`absolute top-0.5 left-0.5 w-4 h-4 bg-card rounded-full shadow transition-transform ${

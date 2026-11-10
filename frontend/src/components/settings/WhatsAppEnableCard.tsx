@@ -11,7 +11,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 
 /** Opt-in card for WhatsApp integration with acknowledgement checkbox
  * and self-contained submit state. */
-export function WhatsAppEnableCard() {
+export function WhatsAppEnableCard({ canManage = true }: { canManage?: boolean } = {}) {
   const t = useTranslations('whatsapp.enable');
   const tConnect = useTranslations('whatsapp.connect');
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
@@ -19,6 +19,7 @@ export function WhatsAppEnableCard() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleEnable = async () => {
+    if (!canManage) return;
     if (!ack) {
       toast.error(t('ackError'));
       return;
@@ -51,17 +52,23 @@ export function WhatsAppEnableCard() {
           <p>{t('riskNote')}</p>
           <p className="text-muted-foreground">{t('floHelps')}</p>
         </div>
-        <label className="flex items-start gap-3 text-sm cursor-pointer">
+        <label
+          className={`flex items-start gap-3 text-sm ${canManage ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+        >
           <input
             type="checkbox"
-            className="mt-1 size-4 accent-primary"
+            className="mt-1 size-4 accent-primary disabled:cursor-not-allowed"
             checked={ack}
-            onChange={(e) => setAck(e.target.checked)}
+            disabled={!canManage || submitting}
+            onChange={(e) => {
+              if (!canManage) return;
+              setAck(e.target.checked);
+            }}
           />
           <span>{t('acknowledge')}</span>
         </label>
         <div className="flex">
-          <Button onClick={handleEnable} disabled={!ack || submitting}>
+          <Button onClick={handleEnable} disabled={!canManage || !ack || submitting}>
             {submitting ? tConnect('connecting') : t('cta')}
           </Button>
         </div>

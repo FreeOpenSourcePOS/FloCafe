@@ -274,7 +274,7 @@ function SettingsNavItem({
   );
 }
 
-function KdsDefaultViewCard() {
+function KdsDefaultViewCard({ canManage = true }: { canManage?: boolean } = {}) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const [view, setView] = useState<'tabs' | 'kanban'>('kanban');
@@ -298,6 +298,7 @@ function KdsDefaultViewCard() {
   const dirty = view !== savedView;
 
   async function save() {
+    if (!canManage) return;
     setSaving(true);
     try {
       const { data } = await api.put('/settings/kds', { kds_default_view: view });
@@ -332,30 +333,50 @@ function KdsDefaultViewCard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
           type="button"
-          onClick={() => setView('tabs')}
-          className={`text-start rounded-lg border-2 px-4 py-3 transition ${
+          disabled={!canManage}
+          onClick={() => {
+            if (!canManage) return;
+            setView('tabs');
+          }}
+          className={`text-start rounded-lg border-2 px-4 py-3 transition disabled:opacity-60 disabled:cursor-not-allowed ${
             view === 'tabs'
               ? 'border-brand bg-brand/5'
               : 'border-border hover:border-gray-300 dark:border-border'
           }`}
         >
           <div className="flex items-center gap-2 mb-1">
-            <input type="radio" readOnly checked={view === 'tabs'} className="text-brand" />
+            <input
+              type="radio"
+              readOnly
+              disabled={!canManage}
+              checked={view === 'tabs'}
+              className="text-brand disabled:cursor-not-allowed"
+            />
             <span className="font-medium text-foreground">{t('kdsDefaultViewTabs')}</span>
           </div>
           <p className="text-xs text-muted-foreground ms-6">{t('kdsDefaultViewTabsHint')}</p>
         </button>
         <button
           type="button"
-          onClick={() => setView('kanban')}
-          className={`text-start rounded-lg border-2 px-4 py-3 transition ${
+          disabled={!canManage}
+          onClick={() => {
+            if (!canManage) return;
+            setView('kanban');
+          }}
+          className={`text-start rounded-lg border-2 px-4 py-3 transition disabled:opacity-60 disabled:cursor-not-allowed ${
             view === 'kanban'
               ? 'border-brand bg-brand/5'
               : 'border-border hover:border-gray-300 dark:border-border'
           }`}
         >
           <div className="flex items-center gap-2 mb-1">
-            <input type="radio" readOnly checked={view === 'kanban'} className="text-brand" />
+            <input
+              type="radio"
+              readOnly
+              disabled={!canManage}
+              checked={view === 'kanban'}
+              className="text-brand disabled:cursor-not-allowed"
+            />
             <span className="font-medium text-foreground">{t('kdsDefaultViewKanban')}</span>
           </div>
           <p className="text-xs text-muted-foreground ms-6">{t('kdsDefaultViewKanbanHint')}</p>
@@ -366,8 +387,8 @@ function KdsDefaultViewCard() {
         <button
           type="button"
           onClick={save}
-          disabled={!dirty || saving}
-          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
+          disabled={!canManage || !dirty || saving}
+          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
         >
           {saving ? tCommon('saving') : tCommon('save')}
         </button>
@@ -396,12 +417,22 @@ export default function SettingsPage() {
   const isAdmin = tenantCan(currentTenant, 'settings.manage');
   const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
   const canManageRefundPolicy = currentTenant?.role === 'owner' && isAdmin;
+  const canManageCounters = currentTenant?.role === 'owner' && isAdmin;
   const canManageDatabase = tenantCan(currentTenant, 'database.manage');
   const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
+  const canManageTaxConfiguration = tenantCan(currentTenant, 'tax-configuration.manage');
   const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
   const canManageMobileAccess = tenantCan(currentTenant, 'mobile-access.manage');
+  const canManageCloud = tenantCan(currentTenant, 'cloud.manage');
   const canManageGoogleDrive = tenantCan(currentTenant, 'google-drive.manage');
-  const canManageQrMenu = tenantCan(currentTenant, 'catalog.manage') || canManageGoogleDrive;
+  const canManageCatalog = tenantCan(currentTenant, 'catalog.manage');
+  const canManageQrMenu = canManageCatalog || canManageGoogleDrive;
+  const canManagePrinters = tenantCan(currentTenant, 'printers.manage');
+  const canManagePaymentMethods = tenantCan(currentTenant, 'payment-methods.manage');
+  const canManageKitchenStations = tenantCan(currentTenant, 'kitchen.stations.manage');
+  const canManageKdsView = isAdmin || tenantCan(currentTenant, 'kitchen.use');
+  const canManageWhatsapp = tenantCan(currentTenant, 'whatsapp.manage');
+  const canUseWhatsapp = tenantCan(currentTenant, 'whatsapp.use');
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -509,12 +540,12 @@ export default function SettingsPage() {
     schemaVersion: null,
   });
   const [healthCheckOpen, setHealthCheckOpen] = useState(
-    () => searchParams?.get('action') === 'health-check',
+    () => canManageDatabase && searchParams?.get('action') === 'health-check',
   );
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
   const [initializeDbOpen, setInitializeDbOpen] = useState(
-    () => searchParams?.get('action') === 'initialize-db',
+    () => canManageDatabase && searchParams?.get('action') === 'initialize-db',
   );
   const [currencyResetTarget, setCurrencyResetTarget] = useState('');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
@@ -542,7 +573,7 @@ export default function SettingsPage() {
 
   // Optimistically updates theme store and rolls back on API failure.
   const saveThemeMode = async (next: ThemeMode) => {
-    if (savingTheme) return;
+    if (!isAdmin || savingTheme) return;
     const previous = lastCommitted.current;
     const seq = ++saveSeq.current;
     userTouched.current = true;
@@ -878,7 +909,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (requestedAction !== 'master-pin') return;
+    if (requestedAction !== 'master-pin' || !canManageDatabase) return;
     const controller = new AbortController();
     let active = true;
     // oxlint-disable-next-line react-hooks/set-state-in-effect
@@ -889,7 +920,7 @@ export default function SettingsPage() {
       active = false;
       controller.abort();
     };
-  }, [fetchMasterPinStatus, requestedAction]);
+  }, [canManageDatabase, fetchMasterPinStatus, requestedAction]);
 
   const fetchBackups = async (signal?: AbortSignal): Promise<boolean> => {
     const abortSignal = signal instanceof AbortSignal ? signal : undefined;
@@ -946,6 +977,7 @@ export default function SettingsPage() {
   };
 
   const runHealthCheck = async () => {
+    if (!canManageDatabase) return;
     setHealthCheckOpen(true);
     try {
       const { data } = await api.get('/db-tools/health-check');
@@ -957,6 +989,7 @@ export default function SettingsPage() {
   };
 
   const applySafeFixes = async () => {
+    if (!canManageDatabase) return;
     setApplyingFixes(true);
     try {
       const { data } = await api.post('/db-tools/apply-safe-fixes', {});
@@ -1444,7 +1477,11 @@ export default function SettingsPage() {
       if (signal?.aborted) return false;
       setStationCategories(res.data.categories || []);
       return true;
-    } catch {
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 403) {
+        setStationCategories([]);
+        return true;
+      }
       return false;
     }
   };
@@ -1454,11 +1491,16 @@ export default function SettingsPage() {
       if (signal?.aborted) return false;
       setStationStaff(res.data.staff || []);
       return true;
-    } catch {
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 403) {
+        setStationStaff([]);
+        return true;
+      }
       return false;
     }
   };
   const fetchStationUsers = async (stationId: string, signal?: AbortSignal) => {
+    if (!canManageKitchenStations) return;
     try {
       const res = await api.get(`/kitchen-stations/${stationId}`, signal ? { signal } : undefined);
       if (!signal?.aborted) {
@@ -1473,12 +1515,14 @@ export default function SettingsPage() {
   };
 
   const openAddStation = () => {
+    if (!canManageKitchenStations) return;
     setEditingStationId(null);
     setStationForm({ name: '', category_ids: [], printer_id: '', chef_user_ids: [] });
     setShowStationForm(true);
   };
 
   const openEditStation = async (station: KitchenStation) => {
+    if (!canManageKitchenStations) return;
     setEditingStationId(station.id);
     let categoryIds: string[] = [];
     try {
@@ -1511,6 +1555,7 @@ export default function SettingsPage() {
   };
 
   const toggleStationFormValue = (field: 'category_ids', value: string) => {
+    if (!canManageKitchenStations) return;
     setStationForm((prev) => {
       const set = new Set(prev[field]);
       if (set.has(value)) set.delete(value);
@@ -1520,6 +1565,7 @@ export default function SettingsPage() {
   };
 
   const saveStation = async () => {
+    if (!canManageKitchenStations) return;
     if (!stationForm.name.trim()) {
       toast.error(t('stationNameRequired'));
       return;
@@ -1557,6 +1603,7 @@ export default function SettingsPage() {
   };
 
   const deleteStation = async (id: string) => {
+    if (!canManageKitchenStations) return;
     if (
       !(await confirm(t('stationDeleteConfirm'), {
         destructive: true,
@@ -1686,6 +1733,7 @@ export default function SettingsPage() {
   const [savingPrinting, setSavingPrinting] = useState(false);
   const printingSaveInFlight = useRef(false);
   const savePrinting = async (silent: boolean = false) => {
+    if (!canManagePrinters) return;
     if (printingSaveInFlight.current) return;
     printingSaveInFlight.current = true;
     setSavingPrinting(true);
@@ -1810,6 +1858,7 @@ export default function SettingsPage() {
   const billFormRef = useRef(billForm);
   const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
+    if (!isAdmin) return;
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillTemplateSource(billForm.billTemplateSource);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
@@ -2393,7 +2442,11 @@ export default function SettingsPage() {
       try {
         return await get(path);
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+        if (
+          axios.isAxiosError(error) &&
+          (error.response?.status === 404 || error.response?.status === 403)
+        )
+          return null;
         throw error;
       }
     };
@@ -2904,7 +2957,9 @@ export default function SettingsPage() {
       if (tab === 'receipts-printers') {
         const printingAtHydrationStart = { ...printingFormRef.current };
         const billFormAtHydrationStart = { ...billFormRef.current };
-        await loadBusiness();
+        if (tenantCan(currentTenant, 'settings.view')) {
+          await loadBusiness();
+        }
         await Promise.all([
           fetchPrinters(signal),
           loadPrinting(printingAtHydrationStart, billFormAtHydrationStart),
@@ -2920,15 +2975,16 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'kitchen-stations') {
-        const { data } = await get('/settings/kds_enabled');
+        const kdsRes = await readOptional('/settings/kds_enabled');
         if (!active()) return;
-        applyHydratedKitchenSetting('kdsEnabled', data.setting?.value !== 'false');
+        applyHydratedKitchenSetting('kdsEnabled', kdsRes?.data.setting?.value !== 'false');
+        if (!canManageKitchenStations) return;
 
         const [stationsLoaded, categoriesLoaded, staffLoaded, printersLoaded] = await Promise.all([
           fetchStations(signal),
           fetchStationCategories(signal),
           fetchStationStaff(signal),
-          fetchPrinters(signal),
+          fetchPrinters(signal).then(() => true),
         ]);
         if (!stationsLoaded || !categoriesLoaded || !staffLoaded || !printersLoaded) {
           throw new Error('Kitchen station hydration failed');
@@ -3022,7 +3078,9 @@ export default function SettingsPage() {
         const loyaltyAtHydrationStart = { ...loyaltyFormRef.current };
         const [loyaltyResponse, candidatesResponse] = await Promise.all([
           get('/settings/loyalty'),
-          get('/products/loyalty/global-rate-candidates'),
+          canManageCatalog
+            ? get('/products/loyalty/global-rate-candidates')
+            : Promise.resolve({ data: { count: 0 } }),
         ]);
         if (!active()) return;
         const loadedLoyalty = {
@@ -3086,12 +3144,14 @@ export default function SettingsPage() {
           diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true,
         );
         const [cloudLoaded, accountLoaded] = await Promise.all([
-          loadCloud(true)
-            .then(() => true)
-            .catch((error) => {
-              if (isRequestCancelled(error)) throw error;
-              return false;
-            }),
+          canManageCloud
+            ? loadCloud(true)
+                .then(() => true)
+                .catch((error) => {
+                  if (isRequestCancelled(error)) throw error;
+                  return false;
+                })
+            : Promise.resolve(true),
           isOwner ? fetchCloudAccount(signal) : Promise.resolve(true),
         ]);
         if (!cloudLoaded || !accountLoaded) throw new Error('Privacy hydration failed');
@@ -3099,12 +3159,13 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'data') {
+        if (!canManageDatabase) return;
         const [masterPinLoaded, backupsLoaded] = await Promise.all([
           fetchMasterPinStatus(signal),
           fetchBackups(signal),
         ]);
         if (!masterPinLoaded || !backupsLoaded) throw new Error('Data hydration failed');
-        if (isOwner) {
+        if (canManageGoogleDrive) {
           // Drive status stays optional: awaiting it would gate tab caching on a slow
           // integration call and re-request it on every revisit.
           void fetchGoogleDriveStatus(signal)
@@ -3134,7 +3195,7 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'mobile-access' || tab === 'orderflow') {
-        if (tab === 'mobile-access' && includeStatusOnly) {
+        if (tab === 'mobile-access' && includeStatusOnly && canManageMobileAccess) {
           try {
             const revfloResponse = await get('/more-apps/revflo');
             if (active()) setRevflo(revfloResponse.data.app || null);
@@ -3142,7 +3203,9 @@ export default function SettingsPage() {
             if (isRequestCancelled(error)) throw error;
           }
         }
-        await loadCloud(!includeStatusOnly);
+        if (canManageCloud || (tab === 'mobile-access' && canManageMobileAccess)) {
+          await loadCloud(!includeStatusOnly && canManageCloud);
+        }
       }
     } catch (error) {
       if (!isRequestCancelled(error) && active()) {
@@ -3227,7 +3290,7 @@ export default function SettingsPage() {
   }, [activeTab, currentTenant?.id]);
 
   useEffect(() => {
-    if (requestedAction !== 'health-check' || !currentTenant?.id) return;
+    if (requestedAction !== 'health-check' || !currentTenant?.id || !canManageDatabase) return;
     const key = `${currentTenant.id}:health-check`;
     if (healthCheckLoaded.current === key) return;
     const controller = new AbortController();
@@ -3245,12 +3308,13 @@ export default function SettingsPage() {
         }
       });
     return () => controller.abort();
-  }, [activeTab, currentTenant?.id, requestedAction, t]);
+  }, [activeTab, canManageDatabase, currentTenant?.id, requestedAction, t]);
 
   // Restore a backup file the operator picks from anywhere on disk. This is the
   // path a shop on Windows needs so nobody has to hand-copy flo.db over the live
   // database; the app closes and reopens the database itself.
   const handleRestoreFromFile = useCallback(async () => {
+    if (!canManageDatabase) return;
     if (!window.electronAPI?.pickRestoreFile) {
       toast.error(tCommon('notAvailable'));
       return;
@@ -3279,7 +3343,7 @@ export default function SettingsPage() {
         : undefined;
       toast.error(detail || t('restoreFailedGeneric'));
     }
-  }, [confirm, t, tCommon, tRestore]);
+  }, [canManageDatabase, confirm, t, tCommon, tRestore]);
 
   useEffect(() => {
     if (requestedAction !== 'restore-from-file') return;
@@ -3289,10 +3353,12 @@ export default function SettingsPage() {
     // operator cancels, so the next menu click lands on a different address and
     // fires the action again.
     router.replace(`/settings?tab=${activeTabRef.current || 'data'}`, { scroll: false });
+    if (!canManageDatabase) return;
     void handleRestoreFromFile();
-  }, [requestedAction, handleRestoreFromFile, router]);
+  }, [canManageDatabase, requestedAction, handleRestoreFromFile, router]);
 
   const saveCloud = async (silent = false) => {
+    if (!canManageCloud) return;
     setSavingCloud(true);
     try {
       const resumingStoppedCloud = cloudServicesStopped && cloudSettings.cloud_sync_enabled;
@@ -3330,6 +3396,7 @@ export default function SettingsPage() {
   };
 
   const registerCloud = async (email: string) => {
+    if (!canManageCloud) return;
     setRegisteringCloud(true);
     try {
       const res = await api.post('/settings/cloud/register', { email });
@@ -3388,6 +3455,7 @@ export default function SettingsPage() {
   };
 
   const saveAnalyticsLevel = async (level: ProductAnalyticsLevel) => {
+    if (!isAdmin) return;
     const previous = analyticsLevel;
     setAnalyticsLevel(level);
     setSavingAnalytics(true);
@@ -3402,6 +3470,7 @@ export default function SettingsPage() {
   };
 
   const saveDiagnosticsConsent = async (enabled: boolean) => {
+    if (!isAdmin) return;
     const previous = diagnosticsConsent;
     setDiagnosticsConsent(enabled);
     setSavingDiagnosticsConsent(true);
@@ -3416,6 +3485,7 @@ export default function SettingsPage() {
   };
 
   const connectGoogleDrive = async () => {
+    if (!canManageGoogleDrive) return;
     const confirmationMessage = `${t('googleDrivePrivacyAcknowledgement')}\n\n⚠️ ${t('googleDrivePermissionNotice')}`;
     const acknowledged = await confirm(confirmationMessage, {
       title: t('googleDrivePrivacyWarningTitle'),
@@ -3734,6 +3804,7 @@ export default function SettingsPage() {
 
   // Saved immediately because turning KDS off invalidates pairing tokens server-side.
   const saveKdsEnabled = async (enabled: boolean) => {
+    if (!isAdmin) return;
     await saveKitchenSetting('kdsEnabled', enabled, true, '/settings/kds_enabled', {
       on: t('kdsEnabledOn'),
       off: t('kdsEnabledOff'),
@@ -3741,6 +3812,7 @@ export default function SettingsPage() {
   };
 
   const saveRequireKitchenDelivered = async (enabled: boolean) => {
+    if (!isAdmin) return;
     await saveKitchenSetting(
       'requireKitchenDelivered',
       enabled,
@@ -3750,6 +3822,7 @@ export default function SettingsPage() {
   };
 
   const saveServerAppEnabled = async (enabled: boolean) => {
+    if (!isAdmin) return;
     const previous = serverAppEnabledSetting;
     setServerAppEnabledSetting(enabled);
     setSavingServerAppEnabled(true);
@@ -3766,6 +3839,7 @@ export default function SettingsPage() {
   };
 
   const saveServerAppBillPrintingEnabled = async (enabled: boolean) => {
+    if (!isAdmin) return;
     const previous = serverAppBillPrintingEnabledSetting;
     setServerAppBillPrintingEnabledSetting(enabled);
     setSavingServerAppBillPrintingEnabled(true);
@@ -3785,6 +3859,7 @@ export default function SettingsPage() {
   };
 
   const saveKotPrintingEnabled = async (enabled: boolean) => {
+    if (!isAdmin) return;
     await saveKitchenSetting(
       'kotPrintingEnabled',
       enabled,
@@ -3798,6 +3873,7 @@ export default function SettingsPage() {
   };
 
   const saveScheduledOrdersEnabled = async (enabled: boolean) => {
+    if (!isAdmin) return;
     const previous = scheduledOrdersEnabled;
     setScheduledOrdersEnabled(enabled);
     setSavingScheduledOrdersEnabled(true);
@@ -3815,6 +3891,7 @@ export default function SettingsPage() {
   };
 
   const saveRefundManagerEnabled = async (enabled: boolean) => {
+    if (!canManageRefundPolicy) return;
     const previous = refundManagerEnabled;
     markHydrationTouched('refundManagerEnabled');
     setRefundManagerEnabled(enabled);
@@ -3838,6 +3915,7 @@ export default function SettingsPage() {
   const saveRefundManagerWindow = async (
     nextWindow: '30m' | '1h' | '2h' | '4h' | 'same_business_day',
   ) => {
+    if (!canManageRefundPolicy) return;
     const previous = refundManagerWindow;
     markHydrationTouched('refundManagerWindow');
     setRefundManagerWindow(nextWindow);
@@ -3865,6 +3943,7 @@ export default function SettingsPage() {
   };
 
   const saveLoyalty = async (silent = false) => {
+    if (!isAdmin) return;
     setSavingLoyalty(true);
     try {
       const parsedRate = Math.min(100, Math.max(0, parseFloat(globalCashbackPercent) || 0));
@@ -3885,6 +3964,7 @@ export default function SettingsPage() {
   };
 
   const applyGlobalRateToProducts = async () => {
+    if (!canManageCatalog) return;
     setApplyingGlobalRate(true);
     try {
       const res = await api.post('/products/loyalty/apply-global-rate');
@@ -3899,6 +3979,7 @@ export default function SettingsPage() {
   };
 
   const saveDiscount = async (silent = false) => {
+    if (!isAdmin) return;
     setSavingDiscount(true);
     try {
       await api.put('/settings/discount', {
@@ -3921,6 +4002,7 @@ export default function SettingsPage() {
   };
 
   const saveBusinessInfo = async (silent = false) => {
+    if (!isAdmin) return;
     const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || '');
     if (!norm.valid) {
       toast.error(t('invalidPhoneFormat'));
@@ -4056,6 +4138,7 @@ export default function SettingsPage() {
   };
 
   const saveOrderNumbering = async (silent = false) => {
+    if (!isAdmin) return;
     const prefix = orderNumberForm.prefix.trim();
     if (prefix && !/^[A-Za-z0-9]{0,12}$/.test(prefix)) {
       toast.error(t('orderNumberPrefixInvalid'));
@@ -4101,16 +4184,34 @@ export default function SettingsPage() {
     resetPrinting();
     resetBillTemplate();
     resetCloud();
-    await resetBusiness();
+    if (isAdmin) {
+      await resetBusiness();
+    } else {
+      setForm(savedBusiness);
+      setLoyaltyEnabled(savedLoyaltyEnabled);
+      setGlobalCashbackPercent(savedGlobalCashbackPercent);
+      setDiscountMaxPct(savedDiscountMaxPct);
+      setDiscountMaxAmount(savedDiscountMaxAmount);
+      setDiscountMode(savedDiscountMode);
+      setDiscountRequiresApproval(savedDiscountRequiresApproval);
+      setOrderNumberForm(savedOrderNumberForm);
+    }
   };
 
   const saveAllSettings = async () => {
+    if (!isAdmin && !canManagePrinters && !canManageCloud) return;
     if (savingAllSettingsInFlight.current) return;
     savingAllSettingsInFlight.current = true;
     setSavingAllSettings(true);
     try {
+      const tabsToHydrate = [
+        ...(isAdmin ? ['store'] : []),
+        ...(isAdmin || canManagePrinters ? ['receipts-printers'] : []),
+        ...(isAdmin ? ['loyalty', 'discounts'] : []),
+        ...(canManageCloud ? ['mobile-access'] : []),
+      ];
       await Promise.all(
-        ['store', 'receipts-printers', 'loyalty', 'discounts', 'mobile-access'].map((tab) => {
+        tabsToHydrate.map((tab) => {
           const key = `${currentTenant?.id}:${tab}${tab === 'mobile-access' ? ':status' : ''}`;
           if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
           return startSettingsTabLoad(tab, new AbortController(), false);
@@ -4130,19 +4231,23 @@ export default function SettingsPage() {
     if (saveAllHydrationRun === 0 || !savingAllSettingsInFlight.current) return;
     void (async () => {
       try {
-        if (!normalizeOptionalPhone(form.businessPhone, form.countryCode || '').valid) {
+        if (isAdmin && !normalizeOptionalPhone(form.businessPhone, form.countryCode || '').valid) {
           toast.error(t('invalidPhoneFormat'));
           return;
         }
         await Promise.all([
-          saveBusinessInfo(true),
-          saveLoyalty(true),
-          saveDiscount(true),
-          saveCloud(true),
-          saveOrderNumbering(true),
+          isAdmin ? saveBusinessInfo(true) : Promise.resolve(),
+          isAdmin ? saveLoyalty(true) : Promise.resolve(),
+          isAdmin ? saveDiscount(true) : Promise.resolve(),
+          canManageCloud ? saveCloud(true) : Promise.resolve(),
+          isAdmin ? saveOrderNumbering(true) : Promise.resolve(),
         ]);
-        await savePrinting(true);
-        await saveBillTemplate(true);
+        if (canManagePrinters) {
+          await savePrinting(true);
+        }
+        if (isAdmin) {
+          await saveBillTemplate(true);
+        }
         toast.success(t('allSaved'));
       } catch {
         toast.error(t('allSaveFailed'));
@@ -4195,21 +4300,25 @@ export default function SettingsPage() {
     });
   };
 
-  const isDirty =
-    JSON.stringify(form) !== JSON.stringify(savedBusiness) ||
-    JSON.stringify(printingForm) !== JSON.stringify(savedPrinting) ||
-    JSON.stringify(billForm) !== JSON.stringify(savedBillForm) ||
-    loyaltyEnabled !== savedLoyaltyEnabled ||
-    globalCashbackPercent !== savedGlobalCashbackPercent ||
-    discountMaxPct !== savedDiscountMaxPct ||
-    discountMaxAmount !== savedDiscountMaxAmount ||
-    discountMode !== savedDiscountMode ||
-    discountRequiresApproval !== savedDiscountRequiresApproval ||
-    JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings) ||
-    JSON.stringify(orderNumberForm) !== JSON.stringify(savedOrderNumberForm);
+  const adminDirty =
+    isAdmin &&
+    (JSON.stringify(form) !== JSON.stringify(savedBusiness) ||
+      JSON.stringify(billForm) !== JSON.stringify(savedBillForm) ||
+      loyaltyEnabled !== savedLoyaltyEnabled ||
+      globalCashbackPercent !== savedGlobalCashbackPercent ||
+      discountMaxPct !== savedDiscountMaxPct ||
+      discountMaxAmount !== savedDiscountMaxAmount ||
+      discountMode !== savedDiscountMode ||
+      discountRequiresApproval !== savedDiscountRequiresApproval ||
+      JSON.stringify(orderNumberForm) !== JSON.stringify(savedOrderNumberForm));
+  const printingDirty =
+    canManagePrinters && JSON.stringify(printingForm) !== JSON.stringify(savedPrinting);
+  const cloudDirty =
+    canManageCloud && JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings);
+  const hasSaveableDirtyChanges = adminDirty || printingDirty || cloudDirty;
 
   useEffect(() => {
-    if (!isDirty) return;
+    if (!hasSaveableDirtyChanges) return;
 
     // Block browser reload/close
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -4231,6 +4340,7 @@ export default function SettingsPage() {
         e.stopPropagation();
         setShakeSaveBar(true);
         setTimeout(() => setShakeSaveBar(false), 500);
+        toast.error(t('unsavedChanges'), { id: 'unsaved-changes-nav' });
       }
     };
     document.addEventListener('click', handleClick, { capture: true });
@@ -4239,7 +4349,7 @@ export default function SettingsPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('click', handleClick, { capture: true });
     };
-  }, [isDirty]);
+  }, [hasSaveableDirtyChanges, t]);
 
   return (
     <div className="md:h-full md:min-h-0">
@@ -4575,7 +4685,7 @@ export default function SettingsPage() {
         </div>
 
         <div
-          className={`flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12 ${isDirty ? 'pb-32 md:pb-32' : ''}`}
+          className={`flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12 ${hasSaveableDirtyChanges ? 'pb-32 md:pb-32' : ''}`}
         >
           {!isAdmin && (
             <p
@@ -4607,7 +4717,10 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="payments">
-            <PaymentMethodsSettings isAdmin={isAdmin} />
+            <PaymentMethodsSettings
+              isAdmin={isAdmin}
+              canManagePaymentMethods={canManagePaymentMethods}
+            />
           </TabsContent>
 
           {isAdmin && (
@@ -4792,7 +4905,11 @@ export default function SettingsPage() {
 
           {canViewTaxConfiguration && (
             <TabsContent value="tax">
-              <TaxConfigurationPanel isOwner={canManageTaxPacks} />
+              <TaxConfigurationPanel
+                isOwner={canManageTaxPacks}
+                canManageSettings={isAdmin}
+                canManageTaxConfiguration={canManageTaxConfiguration}
+              />
             </TabsContent>
           )}
 
@@ -4815,7 +4932,9 @@ export default function SettingsPage() {
                   <Toggle
                     value={posSettings.showProductImages}
                     label={t('showProductImages')}
+                    disabled={!isAdmin}
                     onChange={(v) => {
+                      if (!isAdmin) return;
                       posSettings.setShowProductImages(v);
                       toast.success(v ? t('productImagesEnabled') : t('productImagesDisabled'), {
                         id: 'pos-local',
@@ -4843,7 +4962,9 @@ export default function SettingsPage() {
                     <Toggle
                       value={posSettings.customerMandatory}
                       label={t('customerMandatory')}
+                      disabled={!isAdmin}
                       onChange={(v) => {
+                        if (!isAdmin) return;
                         posSettings.setCustomerMandatory(v);
                         toast.success(
                           v ? t('customerMandatoryEnabled') : t('customerMandatoryDisabled'),
@@ -4861,7 +4982,9 @@ export default function SettingsPage() {
                     <Toggle
                       value={posSettings.enforcePhoneLength}
                       label={t('enforcePhoneLength')}
+                      disabled={!isAdmin}
                       onChange={(v) => {
+                        if (!isAdmin) return;
                         posSettings.setEnforcePhoneLength(v);
                         toast.success(
                           v ? t('enforcePhoneLengthEnabled') : t('enforcePhoneLengthDisabled'),
@@ -5205,13 +5328,15 @@ export default function SettingsPage() {
                     <ChefHat size={20} className="text-muted-foreground" />
                     <h2 className="font-semibold text-foreground">{t('kitchenStations')}</h2>
                   </div>
-                  <button
-                    onClick={openAddStation}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium"
-                  >
-                    <Plus size={14} />
-                    {t('addStation')}
-                  </button>
+                  {canManageKitchenStations && (
+                    <button
+                      onClick={openAddStation}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium"
+                    >
+                      <Plus size={14} />
+                      {t('addStation')}
+                    </button>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground mb-5">{t('kitchenStationsHint')}</p>
 
@@ -5264,20 +5389,22 @@ export default function SettingsPage() {
                                   : t('stationNoChef')}
                               </p>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                onClick={() => openEditStation(station)}
-                                className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded"
-                              >
-                                {tCommon('edit')}
-                              </button>
-                              <button
-                                onClick={() => deleteStation(station.id)}
-                                className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
+                            {canManageKitchenStations && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => openEditStation(station)}
+                                  className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded"
+                                >
+                                  {tCommon('edit')}
+                                </button>
+                                <button
+                                  onClick={() => deleteStation(station.id)}
+                                  className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -5285,7 +5412,7 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {showStationForm && (
+                {canManageKitchenStations && showStationForm && (
                   <Dialog open={showStationForm} onOpenChange={setShowStationForm}>
                     <DialogContent>
                       <DialogHeader>
@@ -5528,7 +5655,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="counters">
-            <CountersSettingsTab isOwner={isOwner} />
+            <CountersSettingsTab isOwner={canManageCounters} />
           </TabsContent>
 
           <TabsContent value="kds">
@@ -5546,7 +5673,9 @@ export default function SettingsPage() {
                   <Toggle
                     value={kdsEnabledSetting}
                     label={t('kdsEnabledToggle')}
+                    disabled={!isAdmin}
                     onChange={(v) => {
+                      if (!isAdmin) return;
                       void saveKdsEnabled(v);
                     }}
                   />
@@ -5580,7 +5709,9 @@ export default function SettingsPage() {
                   <Toggle
                     value={requireKitchenDeliveredSetting}
                     label={t('requireKitchenDeliveredToggle')}
+                    disabled={!isAdmin}
                     onChange={(value) => {
+                      if (!isAdmin) return;
                       void saveRequireKitchenDelivered(value);
                     }}
                   />
@@ -5788,8 +5919,8 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              <KdsDefaultViewCard />
-              <CustomerDisplayCard />
+              <KdsDefaultViewCard canManage={canManageKdsView} />
+              <CustomerDisplayCard canManage={isAdmin} />
             </SettingsTabShell>
           </TabsContent>
 
@@ -5807,8 +5938,10 @@ export default function SettingsPage() {
                   <Toggle
                     value={serverAppEnabledSetting}
                     label={t('serverApp')}
+                    disabled={!isAdmin || savingServerAppEnabled}
                     onChange={(v) => {
-                      if (!savingServerAppEnabled) saveServerAppEnabled(v);
+                      if (!isAdmin || savingServerAppEnabled) return;
+                      void saveServerAppEnabled(v);
                     }}
                   />
                 </div>
@@ -5838,9 +5971,10 @@ export default function SettingsPage() {
                     <Toggle
                       value={serverAppBillPrintingEnabledSetting}
                       label={t('serverAppBillPrinting')}
+                      disabled={!isAdmin || savingServerAppBillPrintingEnabled}
                       onChange={(v) => {
-                        if (!savingServerAppBillPrintingEnabled)
-                          saveServerAppBillPrintingEnabled(v);
+                        if (!isAdmin || savingServerAppBillPrintingEnabled) return;
+                        void saveServerAppBillPrintingEnabled(v);
                       }}
                     />
                   </div>
@@ -6055,11 +6189,17 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">{t('loyaltyHint')}</p>
                     </div>
                     <button
+                      type="button"
+                      role="switch"
+                      aria-checked={loyaltyEnabled}
+                      aria-label={t('enableLoyalty')}
+                      disabled={!isAdmin}
                       onClick={() => {
+                        if (!isAdmin) return;
                         markHydrationTouched('loyaltyEnabled');
                         setLoyaltyEnabled(!loyaltyEnabled);
                       }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                         loyaltyEnabled ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
                       }`}
                     >
@@ -6087,13 +6227,15 @@ export default function SettingsPage() {
                           min="0"
                           max="100"
                           step="0.1"
+                          disabled={!isAdmin}
                           value={globalCashbackPercent}
                           onChange={(e) => {
+                            if (!isAdmin) return;
                             markHydrationTouched('globalCashbackPercent');
                             setGlobalCashbackPercent(e.target.value);
                           }}
                           placeholder="0"
-                          className="w-20 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-end"
+                          className="w-20 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-end disabled:bg-muted disabled:cursor-not-allowed"
                         />
                         <span className="text-muted-foreground font-medium">%</span>
                       </div>
@@ -6102,7 +6244,7 @@ export default function SettingsPage() {
                   {/* Products upgraded from before the tri-state all sit at 0%
                     ("earns nothing"), so the global rate does nothing for them
                     until the owner explicitly opts them in. */}
-                  {loyaltyEnabled && globalRateCandidates > 0 && (
+                  {canManageCatalog && loyaltyEnabled && globalRateCandidates > 0 && (
                     <div className="pt-4 border-t border-border">
                       <p className="font-medium text-foreground">{t('applyGlobalRateTitle')}</p>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -6111,7 +6253,7 @@ export default function SettingsPage() {
                       <button
                         type="button"
                         onClick={applyGlobalRateToProducts}
-                        disabled={applyingGlobalRate}
+                        disabled={!canManageCatalog || applyingGlobalRate}
                         className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-border hover:bg-muted disabled:opacity-50"
                       >
                         {applyingGlobalRate
@@ -6143,11 +6285,13 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground mb-2">{t('discountModeHint')}</p>
                     <select
                       value={discountMode}
+                      disabled={!isAdmin}
                       onChange={(e) => {
+                        if (!isAdmin) return;
                         markHydrationTouched('discountMode');
                         setDiscountMode(e.target.value);
                       }}
-                      className="w-48 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card"
+                      className="w-48 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card disabled:bg-muted disabled:cursor-not-allowed"
                     >
                       <option value="both">{t('discountBoth')}</option>
                       <option value="percentage">{t('discountPercentageOnly')}</option>
@@ -6167,12 +6311,14 @@ export default function SettingsPage() {
                           type="number"
                           min={1}
                           max={100}
+                          disabled={!isAdmin}
                           value={discountMaxPct}
                           onChange={(e) => {
+                            if (!isAdmin) return;
                             markHydrationTouched('discountMaxPct');
                             setDiscountMaxPct(normalizeDiscountPercentage(e.target.value));
                           }}
-                          className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand"
+                          className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand disabled:bg-muted disabled:cursor-not-allowed"
                         />
                         <span className="text-sm text-muted-foreground">{t('percentMaximum')}</span>
                       </div>
@@ -6190,12 +6336,14 @@ export default function SettingsPage() {
                           type="number"
                           min={0}
                           max={999999}
+                          disabled={!isAdmin}
                           value={discountMaxAmount}
                           onChange={(e) => {
+                            if (!isAdmin) return;
                             markHydrationTouched('discountMaxAmount');
                             setDiscountMaxAmount(normalizeDiscountAmount(e.target.value));
                           }}
-                          className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand"
+                          className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand disabled:bg-muted disabled:cursor-not-allowed"
                         />
                         <span className="text-sm text-muted-foreground">{t('zeroNoLimit')}</span>
                       </div>
@@ -6209,11 +6357,17 @@ export default function SettingsPage() {
                         <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
                       </div>
                       <button
+                        type="button"
+                        role="switch"
+                        aria-checked={discountRequiresApproval}
+                        aria-label={t('requireApproval')}
+                        disabled={!isAdmin}
                         onClick={() => {
+                          if (!isAdmin) return;
                           markHydrationTouched('discountRequiresApproval');
                           setDiscountRequiresApproval(!discountRequiresApproval);
                         }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                           discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
                         }`}
                       >
@@ -6414,15 +6568,18 @@ export default function SettingsPage() {
                     {tAnalytics('settingsLabel')}
                   </legend>
                   {(['full', 'anonymous', 'off'] as const).map((level) => (
-                    <label key={level} className="flex items-start gap-3 cursor-pointer">
+                    <label
+                      key={level}
+                      className={`flex items-start gap-3 ${!isAdmin || savingAnalytics ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                    >
                       <input
                         type="radio"
                         name="product-analytics-level"
                         value={level}
                         checked={analyticsLevel === level}
-                        disabled={savingAnalytics}
+                        disabled={!isAdmin || savingAnalytics}
                         onChange={() => void saveAnalyticsLevel(level)}
-                        className="mt-0.5 border-gray-300 dark:border-border text-brand focus:ring-brand"
+                        className="mt-0.5 border-gray-300 dark:border-border text-brand focus:ring-brand disabled:cursor-not-allowed"
                       />
                       <span className="text-sm text-foreground">
                         {tAnalytics(
@@ -6439,13 +6596,15 @@ export default function SettingsPage() {
                 <p className="text-xs text-muted-foreground">{tAnalytics('settingsHint')}</p>
 
                 <div className="border-t border-border pt-4">
-                  <label className="flex items-center gap-3 cursor-pointer">
+                  <label
+                    className={`flex items-center gap-3 ${!isAdmin || savingDiagnosticsConsent ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                  >
                     <input
                       type="checkbox"
                       checked={diagnosticsConsent}
-                      disabled={savingDiagnosticsConsent}
+                      disabled={!isAdmin || savingDiagnosticsConsent}
                       onChange={(e) => saveDiagnosticsConsent(e.target.checked)}
-                      className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                      className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand disabled:cursor-not-allowed"
                     />
                     <span className="text-sm text-foreground">{t('storeDiagnostics')}</span>
                   </label>
@@ -6575,6 +6734,8 @@ export default function SettingsPage() {
           >
             <PrintersSettingsTab
               isActive={activeTab === 'receipts-printers'}
+              isAdmin={isAdmin}
+              canManagePrinters={canManagePrinters}
               hwPrinters={hwPrinters}
               setHwPrinters={setHwPrinters}
               printingForm={printingForm}
@@ -6589,6 +6750,7 @@ export default function SettingsPage() {
               pulseCustomMethods={pulseCustomMethods}
               markHydrationTouched={markHydrationTouched}
               onPersistPrintMethod={(method) => {
+                if (!canManagePrinters) return;
                 setPrintMethod(method);
                 printingFormRef.current = { ...printingFormRef.current, printMethod: method };
                 setSavedPrinting((prev) => ({ ...prev, printMethod: method }));
@@ -6601,6 +6763,7 @@ export default function SettingsPage() {
           <TabsContent value="data">
             <DatabaseSettingsTab
               isOwner={canManageDatabase}
+              canManageGoogleDrive={canManageGoogleDrive}
               masterPinStatus={masterPinStatus}
               backups={backups}
               backupsLoading={backupsLoading}
@@ -6649,7 +6812,7 @@ export default function SettingsPage() {
           <TabsContent value="whatsapp">
             <SettingsTabShell>
               {!whatsappEnabled ? (
-                <WhatsAppEnableCard />
+                <WhatsAppEnableCard canManage={canManageWhatsapp} />
               ) : (
                 <div
                   data-setting-section="whatsapp-integration"
@@ -6661,9 +6824,11 @@ export default function SettingsPage() {
                       {tWhatsappSettings('enabledHint')}
                     </p>
                   </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
-                  </Button>
+                  {canUseWhatsapp && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
+                    </Button>
+                  )}
                 </div>
               )}
             </SettingsTabShell>
@@ -6703,8 +6868,12 @@ export default function SettingsPage() {
                         </p>
                       </div>
                       <button
-                        onClick={() => setShowInitializeCloudConfirm(true)}
-                        className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:opacity-90"
+                        disabled={!canManageCloud}
+                        onClick={() => {
+                          if (!canManageCloud) return;
+                          setShowInitializeCloudConfirm(true);
+                        }}
+                        className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {t('cloudInitializeButton')}
                       </button>
@@ -6795,8 +6964,8 @@ export default function SettingsPage() {
                           cloudStatus.cloud_registration_status !== 'deleted' && (
                             <button
                               onClick={() => registerCloud('')}
-                              disabled={registeringCloud}
-                              className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
+                              disabled={!canManageCloud || registeringCloud}
+                              className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed font-medium shrink-0"
                             >
                               {registeringCloud ? t('registering') : t('registerWithFloadmin')}
                             </button>
@@ -6809,18 +6978,22 @@ export default function SettingsPage() {
                             {t('cloudManagedAutomatically')}
                           </p>
 
-                          <label className="flex items-start gap-3 cursor-pointer">
+                          <label
+                            className={`flex items-start gap-3 ${canManageCloud ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                          >
                             <input
                               type="checkbox"
+                              disabled={!canManageCloud}
                               checked={cloudSettings.cloud_sync_enabled}
                               onChange={(e) => {
+                                if (!canManageCloud) return;
                                 markHydrationTouched('cloud_sync_enabled');
                                 setCloudSettings({
                                   ...cloudSettings,
                                   cloud_sync_enabled: e.target.checked,
                                 });
                               }}
-                              className="mt-0.5 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                              className="mt-0.5 rounded border-gray-300 dark:border-border text-brand focus:ring-brand disabled:cursor-not-allowed"
                             />
                             <div>
                               <span className="text-sm font-medium text-foreground block">
@@ -7039,18 +7212,22 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label
+                  className={`flex items-center gap-3 ${canManageCloud ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                >
                   <input
                     type="checkbox"
+                    disabled={!canManageCloud}
                     checked={cloudSettings.cloud_orders_enabled}
                     onChange={(e) => {
+                      if (!canManageCloud) return;
                       markHydrationTouched('cloud_orders_enabled');
                       setCloudSettings({
                         ...cloudSettings,
                         cloud_orders_enabled: e.target.checked,
                       });
                     }}
-                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand disabled:cursor-not-allowed"
                   />
                   <span className="text-sm text-foreground">{t('enableOnlineOrderPolling')}</span>
                 </label>
@@ -7353,14 +7530,19 @@ export default function SettingsPage() {
                   updateStatus?.status !== 'linux-managed' && (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={handleCheckUpdates}
+                        type="button"
+                        onClick={() => {
+                          if (!isAdmin) return;
+                          handleCheckUpdates();
+                        }}
                         disabled={
+                          !isAdmin ||
                           updateStatus?.status === 'checking' ||
                           updateStatus?.status === 'available' ||
                           updateStatus?.status === 'downloading' ||
                           updateStatus?.status === 'ready-to-install'
                         }
-                        className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 bg-brand text-white hover:opacity-90"
+                        className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-brand text-white hover:opacity-90"
                       >
                         <RefreshCw
                           size={16}
@@ -7370,9 +7552,14 @@ export default function SettingsPage() {
                       </button>
                       {updateStatus?.status === 'available' && (
                         <button
-                          onClick={() => void handleDownloadUpdate()}
+                          type="button"
+                          disabled={!isAdmin}
+                          onClick={() => {
+                            if (!isAdmin) return;
+                            void handleDownloadUpdate();
+                          }}
                           data-testid="settings-download-update"
-                          className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-brand text-brand hover:bg-brand/10"
+                          className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-brand text-brand hover:bg-brand/10 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {tUpdate('downloadNow')}
                         </button>
@@ -7383,8 +7570,8 @@ export default function SettingsPage() {
 
               {/* #463: beta/pre-release channel opt-in; feature-detects the
               beta-release-channel IPC contract and degrades visibly when absent. */}
-              {isElectron && <AutoUpdateCheckToggle />}
-              {isElectron && <BetaChannelToggle />}
+              {isElectron && <AutoUpdateCheckToggle disabled={!isAdmin} />}
+              {isElectron && <BetaChannelToggle disabled={!isAdmin} />}
             </SettingsTabShell>
           </TabsContent>
         </div>
@@ -7446,7 +7633,7 @@ export default function SettingsPage() {
       />
 
       <HealthCheckDialog
-        open={healthCheckOpen}
+        open={canManageDatabase && healthCheckOpen}
         onOpenChange={setHealthCheckOpen}
         report={healthReport}
         applying={applyingFixes}
@@ -7454,7 +7641,7 @@ export default function SettingsPage() {
       />
 
       <InitializeDatabaseDialog
-        open={initializeDbOpen}
+        open={canManageDatabase && initializeDbOpen}
         onOpenChange={setInitializeDbOpen}
         onConfirm={handleInitializeDatabase}
         onSuccess={() => {
@@ -7467,7 +7654,7 @@ export default function SettingsPage() {
         }}
       />
       <CurrencyResetDialog
-        open={Boolean(currencyResetTarget)}
+        open={isAdmin && canManageDatabase && Boolean(currencyResetTarget)}
         targetCurrency={currencyResetTarget}
         onOpenChange={(open) => {
           if (!open) setCurrencyResetTarget('');
@@ -7477,8 +7664,13 @@ export default function SettingsPage() {
           window.location.replace('/setup');
         }}
       />
-      {isAdmin && isDirty && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in slide-in-from-bottom-5 duration-300">
+      {hasSaveableDirtyChanges && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="settings-unsaved-bar"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in slide-in-from-bottom-5 duration-300"
+        >
           <div
             className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}
           >

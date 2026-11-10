@@ -354,8 +354,19 @@ export function reconcileActiveOrderStatusFromItems(
   orderId: number | string,
   actorUserId: string,
 ): ReconciledOrderStatusResult {
-  const order = db.prepare('SELECT id, type, status FROM orders WHERE id = ?').get(orderId) as
-    | { id: number | string; type: string; status: string }
+  const order = db
+    .prepare(
+      'SELECT id, type, status, cooking_started_at, ready_at, served_at FROM orders WHERE id = ?',
+    )
+    .get(orderId) as
+    | {
+        id: number | string;
+        type: string;
+        status: string;
+        cooking_started_at: string | null;
+        ready_at: string | null;
+        served_at: string | null;
+      }
     | undefined;
   if (!order) {
     return { changed: false, previousStatus: null, status: null };
@@ -368,16 +379,38 @@ export function reconcileActiveOrderStatusFromItems(
       .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
       .all(orderId) as Array<{ status: string | null; quantity: number | null }>;
     const derived: DerivedOrderKdsStatus | null = deriveOrderStatusFromItems(items);
-    if (derived === 'ready') {
-      const nowStr = now();
-      db.prepare(
-        'UPDATE orders SET ready_at = COALESCE(ready_at, ?), updated_at = ? WHERE id = ? AND ready_at IS NULL',
-      ).run(nowStr, nowStr, orderId);
-    } else if (derived === 'served') {
-      const nowStr = now();
-      db.prepare(
-        'UPDATE orders SET served_at = COALESCE(served_at, ?), updated_at = ? WHERE id = ? AND served_at IS NULL',
-      ).run(nowStr, nowStr, orderId);
+    if (derived === null) {
+      return { changed: false, previousStatus: order.status, status: order.status };
+    }
+    const nowStr = now();
+    if (derived === 'served') {
+      if (order.served_at === null) {
+        db.prepare(
+          'UPDATE orders SET served_at = COALESCE(served_at, ?), updated_at = ? WHERE id = ?',
+        ).run(nowStr, nowStr, orderId);
+      }
+    } else if (derived === 'ready') {
+      if (order.ready_at === null || order.served_at !== null) {
+        db.prepare(
+          'UPDATE orders SET ready_at = ?, served_at = NULL, updated_at = ? WHERE id = ?',
+        ).run(nowStr, nowStr, orderId);
+      }
+    } else if (derived === 'preparing') {
+      if (
+        order.cooking_started_at === null ||
+        order.ready_at !== null ||
+        order.served_at !== null
+      ) {
+        db.prepare(
+          'UPDATE orders SET cooking_started_at = COALESCE(cooking_started_at, ?), ready_at = NULL, served_at = NULL, updated_at = ? WHERE id = ?',
+        ).run(nowStr, nowStr, orderId);
+      }
+    } else if (derived === 'pending') {
+      if (order.ready_at !== null || order.served_at !== null) {
+        db.prepare(
+          'UPDATE orders SET ready_at = NULL, served_at = NULL, updated_at = ? WHERE id = ?',
+        ).run(nowStr, orderId);
+      }
     }
     return { changed: false, previousStatus: order.status, status: order.status };
   }

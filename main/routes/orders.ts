@@ -3597,74 +3597,90 @@ router.patch(
           throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
         }
 
-        if (status === 'preparing' || status === 'ready' || status === 'served') {
-          const liveUser = db
-            .prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1')
-            .get(authUser.userId) as { role: string; category_ids: string | null } | undefined;
-          if (!liveUser) {
+        const liveUser = db
+          .prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1')
+          .get(authUser.userId) as { role: string; category_ids: string | null } | undefined;
+        if (!liveUser) {
+          throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+        }
+        const categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager)
+          ? []
+          : expandCategoryIdsWithSubcategories(db, parseCategoryIds(liveUser.category_ids));
+        const stationIds = getUserKdsStationIds(db, authUser.userId);
+        const hasStationAssignments = hasUserKdsStationAssignments(db, authUser.userId);
+        if (!stationIds || hasStationAssignments === null) {
+          throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+        }
+        if (hasStationAssignments && stationIds.length === 0) {
+          throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+        }
+        if (categoryIds.length > 0 || stationIds.length > 0) {
+          const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+          if (!stationScope) {
             throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
           }
-          const categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager)
-            ? []
-            : expandCategoryIdsWithSubcategories(db, parseCategoryIds(liveUser.category_ids));
-          const stationIds = getUserKdsStationIds(db, authUser.userId);
-          const hasStationAssignments = hasUserKdsStationAssignments(db, authUser.userId);
-          if (!stationIds || hasStationAssignments === null) {
+          const orderStationRow = currentOrder.table_id
+            ? (db
+                .prepare('SELECT kitchen_station_id FROM tables WHERE id = ?')
+                .get(currentOrder.table_id) as { kitchen_station_id: string | null } | undefined)
+            : undefined;
+          const orderStationId = orderStationRow?.kitchen_station_id;
+          if (
+            stationIds.length > 0 &&
+            orderStationId &&
+            !stationIds.includes(String(orderStationId))
+          ) {
             throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
           }
-          if (hasStationAssignments && stationIds.length === 0) {
-            throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-          }
-          if (categoryIds.length > 0 || stationIds.length > 0) {
-            const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
-            if (!stationScope) {
-              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-            }
-            const orderStationRow = currentOrder.table_id
-              ? (db
-                  .prepare('SELECT kitchen_station_id FROM tables WHERE id = ?')
-                  .get(currentOrder.table_id) as { kitchen_station_id: string | null } | undefined)
-              : undefined;
-            const orderStationId = orderStationRow?.kitchen_station_id;
+          const activeItemCategories = db
+            .prepare(`
+              SELECT oi.id, p.category_id
+              FROM order_items oi
+              LEFT JOIN products p ON p.id = oi.product_id
+              WHERE oi.order_id = ?
+                AND oi.status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+                AND oi.quantity > 0
+            `)
+            .all(req.params.id) as Array<{ id: number; category_id: string | null }>;
+          if (activeItemCategories.length === 0) {
             if (
-              stationIds.length > 0 &&
-              orderStationId &&
-              !stationIds.includes(String(orderStationId))
-            ) {
-              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-            }
-            const activeItemCategories = db
-              .prepare(`
-                SELECT oi.id, p.category_id
-                FROM order_items oi
-                LEFT JOIN products p ON p.id = oi.product_id
-                WHERE oi.order_id = ?
-                  AND oi.status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded', 'completed')
-                  AND oi.quantity > 0
-              `)
-              .all(req.params.id) as Array<{ id: number; category_id: string | null }>;
-            for (const item of activeItemCategories) {
-              if (
-                categoryIds.length > 0 &&
-                (!item.category_id || !categoryIds.includes(String(item.category_id)))
-              ) {
-                throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-              }
-              if (
-                stationIds.length > 0 &&
+              categoryIds.length > 0 ||
+              (stationIds.length > 0 &&
                 !isKdsStationItemAllowed(
                   stationIds,
                   stationScope.tablelessCategoryIds,
                   orderStationId,
-                  item.category_id,
+                  null,
                   orderStationId
                     ? stationScope.categoryIdsByStation[String(orderStationId)]
                     : undefined,
                   stationScope.hasUnrestrictedStation,
-                )
-              ) {
-                throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-              }
+                ))
+            ) {
+              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+            }
+          }
+          for (const item of activeItemCategories) {
+            if (
+              categoryIds.length > 0 &&
+              (!item.category_id || !categoryIds.includes(String(item.category_id)))
+            ) {
+              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+            }
+            if (
+              stationIds.length > 0 &&
+              !isKdsStationItemAllowed(
+                stationIds,
+                stationScope.tablelessCategoryIds,
+                orderStationId,
+                item.category_id,
+                orderStationId
+                  ? stationScope.categoryIdsByStation[String(orderStationId)]
+                  : undefined,
+                stationScope.hasUnrestrictedStation,
+              )
+            ) {
+              throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
             }
           }
         }

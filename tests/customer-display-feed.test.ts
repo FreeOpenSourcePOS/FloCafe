@@ -1828,6 +1828,16 @@ async function main(): Promise<void> {
     'Bar-only chef gets 403 on PATCH /api/orders/:id/status when order contains Grill item',
   );
 
+  const barChefCancelMixedRes = await request(app)
+    .patch(`/api/orders/${mixedOrderId}/status`)
+    .set(barChef)
+    .send({ status: 'cancelled' });
+  assert.equal(
+    barChefCancelMixedRes.status,
+    403,
+    'Bar-only chef gets 403 when attempting to cancel unpaid pending mixed Bar+Grill order',
+  );
+
   const barChefBarItemRes = await request(app)
     .patch(`/api/order-items/${barItemOnMixedId}/status`)
     .set(barChef)
@@ -1878,6 +1888,92 @@ async function main(): Promise<void> {
     stationChefMixedOrderRes.status,
     403,
     'Station-restricted Bar chef gets 403 on PATCH /api/orders/:id/status when order contains Grill item',
+  );
+
+  const settledMixedOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, subtotal, total, created_at, updated_at)
+         VALUES ('MIXED-SETTLED-1', 'feed-owner', 'takeaway', 'pending', 'released', 0, 0, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+     VALUES (?, 'prod-bar', 'Mojito', 1, 0, 0, 0, 'pending', ?, ?),
+            (?, 'prod-grill', 'Steak', 1, 0, 0, 0, 'pending', ?, ?)`,
+  ).run(settledMixedOrderId, typeStamp, typeStamp, settledMixedOrderId, typeStamp, typeStamp);
+
+  const barChefCompleteMixedRes = await request(app)
+    .patch(`/api/orders/${settledMixedOrderId}/status`)
+    .set(barChef)
+    .send({ status: 'completed' });
+  assert.equal(
+    barChefCompleteMixedRes.status,
+    403,
+    'Bar-only chef gets 403 when attempting to complete settled mixed Bar+Grill order',
+  );
+
+  const stationChefCompleteMixedRes = await request(app)
+    .patch(`/api/orders/${settledMixedOrderId}/status`)
+    .set(stationChef)
+    .send({ status: 'completed' });
+  assert.equal(
+    stationChefCompleteMixedRes.status,
+    403,
+    'Station-restricted Bar chef gets 403 when attempting to complete settled mixed Bar+Grill order',
+  );
+
+  const stationChefCancelMixedRes = await request(app)
+    .patch(`/api/orders/${settledMixedOrderId}/status`)
+    .set(stationChef)
+    .send({ status: 'cancelled' });
+  assert.equal(
+    stationChefCancelMixedRes.status,
+    403,
+    'Station-restricted Bar chef gets 403 when attempting to cancel unpaid pending mixed Bar+Grill order',
+  );
+
+  const grillAfterBlockedBulk = db
+    .prepare(`SELECT status FROM order_items WHERE order_id = ? AND product_id = 'prod-grill'`)
+    .get(settledMixedOrderId) as { status: string };
+  assert.equal(
+    grillAfterBlockedBulk.status,
+    'pending',
+    'Out-of-scope Grill item remains pending after rejected bulk complete/cancel requests',
+  );
+
+  const voidedOutOfScopeOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, subtotal, total, created_at, updated_at)
+         VALUES ('VOIDED-GRILL-1', 'feed-owner', 'takeaway', 'preparing', 'released', 0, 0, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, voided_at, created_at, updated_at)
+     VALUES (?, 'prod-grill', 'Steak', 1, 25, 25, 25, 'voided', ?, ?, ?)`,
+  ).run(voidedOutOfScopeOrderId, typeStamp, typeStamp, typeStamp);
+
+  const barChefVoidedOrderRes = await request(app)
+    .patch(`/api/orders/${voidedOutOfScopeOrderId}/status`)
+    .set(barChef)
+    .send({ status: 'ready' });
+  assert.equal(
+    barChefVoidedOrderRes.status,
+    403,
+    'Category-restricted chef gets 403 on order whose items are all voided',
+  );
+
+  const stationChefVoidedOrderRes = await request(app)
+    .patch(`/api/orders/${voidedOutOfScopeOrderId}/status`)
+    .set(stationChef)
+    .send({ status: 'ready' });
+  assert.equal(
+    stationChefVoidedOrderRes.status,
+    403,
+    'Tableless station-restricted chef without unrestricted station gets 403 on order whose items are all voided',
   );
 
   console.log('customer-display-feed: all assertions passed');

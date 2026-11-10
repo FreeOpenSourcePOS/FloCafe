@@ -4651,6 +4651,12 @@ export function restoreCompatibleBackupForDowngrade(
           `)
           .run(rotatedJwtSecret, credentialTimestamp);
         freshDb
+          .prepare('DELETE FROM settings WHERE key = ?')
+          .run(AUTH_CLOCK_HIGH_WATER_SETTING_KEY);
+        freshDb
+          .prepare('UPDATE users SET tokens_valid_after = ?, updated_at = ?')
+          .run(nextTokensValidAfterTimestamp(), credentialTimestamp);
+        freshDb
           .prepare("DELETE FROM settings WHERE key LIKE 'mobile\\_pairing\\_code%' ESCAPE '\\'")
           .run();
         executeSequenceRepair(freshDb);

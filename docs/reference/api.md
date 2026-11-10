@@ -342,11 +342,13 @@ one. Failures without a registered tuple may retain the `{ error }` response.
 
 `PATCH /:id/status` evaluates order, bill/payment, and kitchen state inside the transaction:
 
-- Transitioning to `preparing`, `ready`, or `served` enforces the caller's
+- Every status transition enforces the caller's
   [KDS category and station scope](#kds-category-and-station-scoping) inside the transaction (`403`
   `Insufficient permissions` when configured station assignments resolve to no active station, when
-  the order's table station is outside `stationIds`, or when any active item on the order is outside
-  the caller's category or station scope).
+  the order's table station is outside `stationIds`, when any non-terminal positive-quantity item on
+  the order is outside the caller's category or station scope, or when the order has no non-terminal
+  positive-quantity items and the caller is category-scoped or not covered by an unrestricted
+  station).
 - Ordinary `completed` transitions require every payable bill for the order to be settled (`paid` with
   zero unpaid balance) and billed totals (accounting for `round_off`) to cover `order.total`. An
   unbilled positive-total order is not considered paid. When
@@ -1229,8 +1231,8 @@ anyone with a non-empty category or station scope, false for an unrestricted `ow
 Unrestricted sessions receive the fuller row.
 
 The same two axes are applied by `GET /api/kds/orders`, `GET /api/kitchen/orders`,
-`PATCH /api/order-items/:id/status`, `PATCH /api/orders/:id/status` (`preparing`, `ready`, and
-`served` transitions), and `PATCH /api/kds/items/:id/status` on `:3001` and `:3002`. See
+`PATCH /api/order-items/:id/status`, `PATCH /api/orders/:id/status`, and
+`PATCH /api/kds/items/:id/status` on `:3001` and `:3002`. See
 [KDS station and category narrowing](../architecture/authentication-and-authorization.md#kds-station-and-category-narrowing)
 for the authorization framing.
 

@@ -425,9 +425,11 @@ reconciliation. When KDS is enabled, upfront-paid orders created within the roll
 `orders.created_at` window that settle to `completed` before kitchen fulfillment finishes remain in
 `GET /api/orders?view=active` and `GET /api/orders?status=active` while positive-quantity live items
 stay in `pending`, `preparing`, or `ready` (non-`completed` active orders are not age-bounded), and
-`reconcileActiveOrderStatusFromItems` stamps `ready_at = COALESCE(ready_at, now)` and
-`served_at = COALESCE(served_at, now)` on `completed` orders as live items reach `ready` and
-`served`. Both `/customer-display` surfaces (`GET /api/orders?board_status=...` and
+`reconcileActiveOrderStatusFromItems` mirrors active-order timestamp transitions on `completed`
+orders without changing `orders.status` (stamping `cooking_started_at = COALESCE(cooking_started_at, now)`
+and clearing `ready_at` and `served_at` on `preparing`, clearing stale `ready_at` and `served_at` on
+`pending`, recording `ready_at` and clearing `served_at` on `ready`, and recording
+`served_at = COALESCE(served_at, now)` on `served`). Both `/customer-display` surfaces (`GET /api/orders?board_status=...` and
 `GET /api/customer-display/feed`) filter by configured `order_types` (`['takeaway']` by default) and
 `statuses` before pagination, projecting an eligible KDS-unfinished `completed` order's effective
 board status (`pending`, `preparing`, or `ready`) from live item statuses via

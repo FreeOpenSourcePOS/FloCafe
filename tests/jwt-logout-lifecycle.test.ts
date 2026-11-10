@@ -60,6 +60,7 @@ const {
   nextTokensValidAfterTimestamp,
   resetAuthClockForTests,
   restoreBackup,
+  restoreCompatibleBackupForDowngrade,
 } = require('../main/db');
 const { databaseRoutes } = require('../main/routes/database');
 const { resetMasterPin } = require('../main/services/master-pin');
@@ -1077,6 +1078,47 @@ async function run() {
           restoredClockMs > 0 &&
           restoredClockMs <= 8_639_999_999_999_000,
         'restoreBackup writes a valid local auth_clock_high_water_ms instead of keeping poisoned backup value',
+      );
+
+      const { path: downgradeBackupPath } = await createBackup();
+      const foreignFutureHighWaterMs = 4_102_444_800_123;
+      const skewedDowngradeBackupDb = new Database(downgradeBackupPath);
+      try {
+        skewedDowngradeBackupDb
+          .prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('auth_clock_high_water_ms', ?, ?)",
+          )
+          .run(String(foreignFutureHighWaterMs), now());
+        skewedDowngradeBackupDb.prepare('UPDATE users SET tokens_valid_after = NULL').run();
+      } finally {
+        skewedDowngradeBackupDb.close();
+      }
+      resetAuthClockForTests();
+      await restoreCompatibleBackupForDowngrade(downgradeBackupPath, {
+        newerDbVersion: getCurrentSchemaVersion() + 1,
+      });
+      initDatabase();
+      const downgradeClockRow = getDatabase()
+        .prepare("SELECT value FROM settings WHERE key = 'auth_clock_high_water_ms'")
+        .get() as { value?: string } | undefined;
+      const downgradeClockMs = Number(downgradeClockRow?.value);
+      assertOrThrow(
+        Number.isSafeInteger(downgradeClockMs) &&
+          downgradeClockMs > 0 &&
+          downgradeClockMs < foreignFutureHighWaterMs,
+        'restoreCompatibleBackupForDowngrade discards foreign future auth_clock_high_water_ms and records local clock',
+      );
+      const unbumpedUsers = getDatabase()
+        .prepare('SELECT COUNT(*) AS cnt FROM users WHERE tokens_valid_after IS NULL')
+        .get() as { cnt: number };
+      assertEqualOrThrow(
+        unbumpedUsers.cnt,
+        0,
+        'restoreCompatibleBackupForDowngrade bumps users.tokens_valid_after for all restored accounts',
+      );
+      assertOrThrow(
+        nextTokenIatSeconds() * 1000 < foreignFutureHighWaterMs,
+        'post-downgrade-restore JWT iat is not pinned to foreign future backup high-water mark',
       );
     } finally {
       mockSafeStorageEnabled = false;

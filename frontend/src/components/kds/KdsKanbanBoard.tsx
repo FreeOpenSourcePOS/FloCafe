@@ -243,7 +243,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
         isDragging ? 'opacity-40' : ''
       } ${busy ? 'pointer-events-none opacity-60' : ''}`}
     >
-      <div className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm`}>
+      <div className={`rounded-xl bg-card shadow-sm ring-1 ring-border/50 border-t-4 ${config.border} p-3 flex flex-col`}>
         <div className="flex justify-between items-center mb-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <Ltr as="span" className="font-bold text-sm shrink-0">
@@ -251,9 +251,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
             </Ltr>
             <Badge
               variant="outline"
-              className={
-                ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-muted text-foreground border-border'
-              }
+              className={`${ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-muted text-foreground'} border-transparent`}
             >
               {ORDER_TYPE_LABEL_KEYS[order.type as OrderType]
                 ? tOrders(ORDER_TYPE_LABEL_KEYS[order.type as OrderType])
@@ -272,12 +270,12 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
         </div>
 
         {order.special_instructions && (
-          <p className="mb-2 px-2 py-1 bg-amber-50 border border-amber-300 text-amber-900 dark:bg-amber-950/80 dark:border-amber-700 dark:text-amber-200 rounded text-sm font-medium break-words">
+          <p className="mb-2.5 px-2.5 py-1.5 border-s-4 border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 rounded-e-md text-sm font-medium break-words">
             📝 {order.special_instructions}
           </p>
         )}
 
-        <div className="space-y-1">
+        <div className="divide-y divide-border/40 -mx-1">
           {items.map((item) => (
             <button
               key={item.id}
@@ -287,22 +285,22 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
                 e.stopPropagation();
                 onItemOpen(item);
               }}
-              className={`w-full text-start rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
+              className="w-full text-start px-2 py-2 first:pt-1.5 last:pb-1 hover:bg-muted/60 active:bg-muted/80 active:scale-[0.99] transition rounded-md"
             >
               <div className="flex items-center gap-2">
                 <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>
                   {item.quantity}×
                 </span>
-                <span className="text-lg text-foreground font-medium flex-1 truncate">
+                <span className="text-lg font-semibold text-foreground flex-1 truncate">
                   {formatItemHeading(item.product_name, item.variant_selection)}
                 </span>
               </div>
               {item.addons && item.addons.length > 0 && (
-                <div className="ms-[26px] flex flex-wrap gap-1 mt-1">
+                <div className="ms-[26px] flex flex-wrap gap-1 mt-1.5">
                   {item.addons.map((addon, i) => (
                     <span
                       key={`${addon.id ?? addon.name}-${i}`}
-                      className="text-xs font-medium bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-950/90 dark:text-blue-200 dark:border-blue-700 px-2 py-0.5 rounded-md"
+                      className="text-xs font-medium bg-blue-100/90 text-blue-900 dark:bg-blue-950/90 dark:text-blue-200 px-2 py-0.5 rounded-md"
                     >
                       + {addon.name}
                       {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
@@ -311,7 +309,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
                 </div>
               )}
               {item.special_instructions && (
-                <p className="ms-[26px] mt-1 px-2 py-0.5 rounded border text-xs font-semibold italic break-words bg-red-50 text-red-800 border-red-300 dark:bg-red-950/90 dark:text-red-200 dark:border-red-700">
+                <p className="ms-[26px] mt-1.5 px-2 py-0.5 border-s-3 border-red-500 bg-red-50 text-red-900 dark:bg-red-950/90 dark:text-red-200 rounded-e text-xs font-semibold italic break-words">
                   {`"${item.special_instructions}"`}
                 </p>
               )}
@@ -336,24 +334,22 @@ function VoidedColumn({
   const count = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   return (
-    <div className="flex-1 min-w-[260px] flex flex-col">
-      <div
-        className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}
-      >
-        <div className={`w-2 h-2 rounded-full ${config.color}`} />
+    <div className="rounded-2xl bg-muted/40 dark:bg-muted/25 flex-1 min-w-[260px] flex flex-col overflow-hidden">
+      <div className={`flex items-center gap-2 px-3.5 py-2.5 ${config.bg}`}>
+        <div className={`w-2.5 h-2.5 rounded-full ${config.color}`} />
         <span className={`text-base font-semibold ${config.text}`}>{t(config.labelKey)}</span>
-        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-card/70 text-foreground font-medium tabular-nums">
+        <span className="ms-auto text-xs px-2 py-0.5 rounded-full bg-card/80 text-foreground font-semibold tabular-nums shadow-2xs">
           {count}
         </span>
       </div>
       <div
-        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-muted/40`}
+        className="flex-1 p-2.5 space-y-2.5 overflow-y-auto"
         style={{ minHeight: '60vh', maxHeight: 'calc(100vh - 220px)' }}
       >
         {groups.map(({ order, items }) => (
           <div
             key={order.id}
-            className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm`}
+            className={`rounded-xl bg-card shadow-sm ring-1 ring-border/50 border-t-4 ${config.border} p-3 flex flex-col`}
           >
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
               <Ltr as="span" className="font-bold text-sm shrink-0">
@@ -363,28 +359,28 @@ function VoidedColumn({
                 <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
               )}
             </div>
-            <div className="space-y-1">
+            <div className="divide-y divide-border/40 -mx-1">
               {items.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => onItemOpen(item, order.order_number)}
-                  className={`w-full text-start rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
+                  className="w-full text-start px-2 py-2 first:pt-1.5 last:pb-1 hover:bg-muted/60 active:bg-muted/80 active:scale-[0.99] transition rounded-md"
                 >
                   <div className="flex items-center gap-2">
                     <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>
                       {item.quantity}×
                     </span>
-                    <span className="text-lg text-slate-700 dark:text-slate-200 line-through font-medium flex-1 truncate">
+                    <span className="text-lg text-slate-700 dark:text-slate-200 line-through font-semibold flex-1 truncate">
                       {formatItemHeading(item.product_name, item.variant_selection)}
                     </span>
                   </div>
                   {item.addons && item.addons.length > 0 && (
-                    <div className="ms-[26px] flex flex-wrap gap-1 mt-1">
+                    <div className="ms-[26px] flex flex-wrap gap-1 mt-1.5">
                       {item.addons.map((addon, i) => (
                         <span
                           key={`${addon.id ?? addon.name}-${i}`}
-                          className="text-xs font-medium bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-950/90 dark:text-blue-200 dark:border-blue-700 px-2 py-0.5 rounded-md"
+                          className="text-xs font-medium bg-blue-100/90 text-blue-900 dark:bg-blue-950/90 dark:text-blue-200 px-2 py-0.5 rounded-md"
                         >
                           + {addon.name}
                           {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
@@ -393,7 +389,7 @@ function VoidedColumn({
                     </div>
                   )}
                   {item.special_instructions && (
-                    <p className="ms-[26px] mt-1 px-2 py-0.5 rounded border text-xs font-semibold italic break-words bg-red-50 text-red-800 border-red-300 dark:bg-red-950/90 dark:text-red-200 dark:border-red-700">
+                    <p className="ms-[26px] mt-1.5 px-2 py-0.5 border-s-3 border-red-500 bg-red-50 text-red-900 dark:bg-red-950/90 dark:text-red-200 rounded-e text-xs font-semibold italic break-words">
                       {`"${item.special_instructions}"`}
                     </p>
                   )}

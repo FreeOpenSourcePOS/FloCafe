@@ -151,9 +151,9 @@ read `false` removes the item-split mode switcher and controls, leaving only the
 calculator when a balance remains.
 
 Both equal-amount sharing and [`SplitCheckModal`](../../frontend/src/components/pos/SplitCheckModal.tsx)
-provide touch-friendly `-` / `+` steppers and quick presets (`2`, `3`, `4`) for all numeric values,
-eliminating manual typing. In table mode, check allocators rebalance quantities across checks or reset
-evenly in a single tap without over-allocating.
+provide `-` / `+` steppers for numeric values. Equal-share payer counts also have quick presets
+(`2`, `3`, `4`). In table mode, check allocators rebalance quantities across checks or reset evenly
+in a single tap without over-allocating.
 
 Eligibility resolves in a fixed order so staff always see the same reason for the same bill:
 billing permissions, an unresolved payment or split in progress, anything other than an untouched

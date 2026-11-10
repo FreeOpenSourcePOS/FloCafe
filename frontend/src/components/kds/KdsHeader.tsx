@@ -74,10 +74,10 @@ export function KdsHeader({
   return (
     <div className="shrink-0 mb-4">
       <div className="flex items-center gap-3 mb-3">
-        <ChefHat size={24} className="text-brand" />
+        <ChefHat size={24} className="text-brand dark:text-indigo-300" />
         <div>
           <h1 className="text-xl font-bold text-foreground">{t('title')}</h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-slate-700 dark:text-slate-300">
             {userName} ({userRole})
           </p>
         </div>
@@ -94,7 +94,7 @@ export function KdsHeader({
           <span
             className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-slate-700 dark:text-slate-300">
             {connected
               ? connectionMode === 'websocket'
                 ? t('connectionLive')
@@ -109,7 +109,7 @@ export function KdsHeader({
               className={`min-w-11 min-h-11 px-2.5 py-1 text-xs font-medium rounded-md transition ${
                 viewMode === 'tabs'
                   ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-foreground'
               }`}
             >
               {t('viewTabs')}
@@ -120,7 +120,7 @@ export function KdsHeader({
               className={`min-w-11 min-h-11 px-2.5 py-1 text-xs font-medium rounded-md transition ${
                 viewMode === 'kanban'
                   ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-foreground'
               }`}
             >
               {t('viewKanban')}
@@ -139,7 +139,7 @@ export function KdsHeader({
                 document.documentElement?.classList?.toggle('dark', nextMode === 'dark');
               }
             }}
-            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground ms-1"
+            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-slate-700 dark:text-slate-300 hover:text-foreground ms-1"
             title={themeLabel}
             aria-label={themeLabel}
           >
@@ -148,7 +148,7 @@ export function KdsHeader({
 
           <button
             onClick={onLogout}
-            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-muted-foreground ms-1"
+            className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-slate-700 dark:text-slate-300 hover:text-foreground ms-1"
             title={tNav('logout')}
           >
             <LogOut size={20} />

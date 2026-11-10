@@ -94,7 +94,7 @@ export default function KdsStandalonePage() {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-background text-foreground">
         <h1 className="text-lg font-semibold">{t('disabledTitle')}</h1>
-        <p className="text-sm text-muted-foreground max-w-sm">{t('disabledHint')}</p>
+        <p className="text-sm text-slate-700 dark:text-slate-300 max-w-sm">{t('disabledHint')}</p>
       </div>
     );
   }

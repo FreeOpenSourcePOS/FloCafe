@@ -60,7 +60,7 @@ export const STATUS_CONFIG = {
   },
   ready: {
     labelKey: 'statusReady',
-    color: 'bg-green-600',
+    color: 'bg-green-700',
     border: 'border-green-300 dark:border-green-700',
     text: 'text-green-800 dark:text-green-200',
     bg: 'bg-green-50 dark:bg-green-950/60',

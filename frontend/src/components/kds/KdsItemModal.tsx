@@ -52,12 +52,12 @@ export function KdsItemModal({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground font-medium mb-1">
+            <p className="text-xs text-slate-700 dark:text-slate-300 font-medium mb-1">
               {t('modalOrderNumber', { orderNumber })}
             </p>
             <h2
               id="kds-item-modal-title"
-              className={`text-2xl font-bold leading-tight ${isVoided ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+              className={`text-2xl font-bold leading-tight ${isVoided ? 'text-slate-700 dark:text-slate-200 line-through' : 'text-foreground'}`}
             >
               {formatItemHeading(item.product_name, item.variant_selection)}
             </h2>
@@ -75,7 +75,7 @@ export function KdsItemModal({
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted/80 hover:text-foreground shrink-0"
+            className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-muted/80 hover:text-foreground shrink-0"
             aria-label={tCommon('close')}
           >
             <X size={18} />
@@ -124,14 +124,17 @@ export function KdsItemModal({
                       isCurrent
                         ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} ring-2 ring-current`
                         : isPast
-                          ? 'bg-muted text-muted-foreground line-through'
-                          : 'bg-muted text-muted-foreground'
+                          ? 'bg-muted text-slate-700 dark:text-slate-300 line-through'
+                          : 'bg-muted text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     {statusLabel(s)}
                   </div>
                   {i < STATUS_ORDER.length - 1 && (
-                    <ChevronRight size={12} className="text-muted-foreground shrink-0 rtl-flip" />
+                    <ChevronRight
+                      size={12}
+                      className="text-slate-700 dark:text-slate-300 shrink-0 rtl-flip"
+                    />
                   )}
                 </div>
               );
@@ -141,7 +144,7 @@ export function KdsItemModal({
 
         <div className="flex flex-col gap-3">
           {isVoided ? (
-            <div className="text-center py-4 text-red-600 dark:text-red-400 text-base font-medium">
+            <div className="text-center py-4 text-red-700 dark:text-red-300 text-base font-medium">
               {t('itemVoidedLocked')}
             </div>
           ) : (
@@ -159,14 +162,14 @@ export function KdsItemModal({
                 <button
                   onClick={() => onUpdateStatus(item.id, prev)}
                   disabled={updating}
-                  className="w-full py-4 rounded-2xl text-muted-foreground text-base font-semibold border-2 border-border bg-muted hover:bg-muted transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full py-4 rounded-2xl text-slate-700 dark:text-slate-200 text-base font-semibold border-2 border-border bg-muted hover:bg-accent transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <ChevronLeft size={18} className="rtl-flip" />
                   {t('backTo', { status: statusLabel(prev) })}
                 </button>
               )}
               {!next && (
-                <div className="text-center py-4 text-muted-foreground text-base font-medium">
+                <div className="text-center py-4 text-slate-700 dark:text-slate-300 text-base font-medium">
                   {t('deliveredDone')}
                 </div>
               )}

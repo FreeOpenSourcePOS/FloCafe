@@ -81,12 +81,20 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
                 isActive
                   ? `${config.bg} ${config.text} ring-2 ring-current`
-                  : `${config.bg} ${config.text} opacity-50 hover:opacity-80`
+                  : 'bg-card text-slate-700 dark:text-slate-200 border border-border hover:bg-accent'
               }`}
             >
               <div className={`w-2 h-2 rounded-full ${config.color}`} />
               {statusLabel(status)}
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-card/60">{count}</span>
+              <span
+                className={`text-xs px-1.5 py-0.5 rounded-full font-medium tabular-nums ${
+                  isActive
+                    ? 'bg-card text-foreground'
+                    : 'bg-muted text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {count}
+              </span>
             </button>
           );
         })}
@@ -119,7 +127,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                     <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
                   )}
                 </div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground font-mono shrink-0">
+                <div className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-300 font-mono shrink-0">
                   <Clock size={12} />
                   <Ltr>
                     <ElapsedTime dateStr={order.created_at} />
@@ -153,13 +161,13 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                           {item.quantity}×
                         </span>
                         <span
-                          className={`text-lg font-semibold flex-1 truncate ${isVoided ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                          className={`text-lg font-semibold flex-1 truncate ${isVoided ? 'text-slate-700 dark:text-slate-200 line-through' : 'text-foreground'}`}
                         >
                           {formatItemHeading(item.product_name, item.variant_selection)}
                         </span>
                         <ChevronRight
                           size={14}
-                          className="text-muted-foreground shrink-0 rtl-flip"
+                          className="text-slate-700 dark:text-slate-300 shrink-0 rtl-flip"
                         />
                       </div>
                       {item.addons && item.addons.length > 0 && (
@@ -189,7 +197,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
         </div>
 
         {filteredOrders.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-16 text-slate-700 dark:text-slate-300">
             <p className="text-lg">
               {t('emptyItems', { status: statusLabel(activeTab).toLowerCase() })}
             </p>

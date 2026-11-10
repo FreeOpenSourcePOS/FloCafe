@@ -263,7 +263,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
               <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
             )}
           </div>
-          <div className="flex items-center gap-1 text-sm text-muted-foreground font-mono shrink-0">
+          <div className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-300 font-mono shrink-0">
             <Clock size={12} />
             <Ltr>
               <ElapsedTime dateStr={order.created_at} />
@@ -353,7 +353,7 @@ function VoidedColumn({
         {groups.map(({ order, items }) => (
           <div
             key={order.id}
-            className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm opacity-80`}
+            className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm`}
           >
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
               <Ltr as="span" className="font-bold text-sm shrink-0">
@@ -375,7 +375,7 @@ function VoidedColumn({
                     <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>
                       {item.quantity}×
                     </span>
-                    <span className="text-lg text-muted-foreground line-through font-medium flex-1 truncate">
+                    <span className="text-lg text-slate-700 dark:text-slate-200 line-through font-medium flex-1 truncate">
                       {formatItemHeading(item.product_name, item.variant_selection)}
                     </span>
                   </div>
@@ -403,7 +403,7 @@ function VoidedColumn({
           </div>
         ))}
         {count === 0 && (
-          <div className="flex flex-col items-center justify-center py-6 text-muted-foreground text-xs">
+          <div className="flex flex-col items-center justify-center py-6 text-slate-700 dark:text-slate-300 text-xs">
             <span>{t('emptyColumn')}</span>
           </div>
         )}

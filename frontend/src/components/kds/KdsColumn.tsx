@@ -43,7 +43,7 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
       >
         {children}
         {count === 0 && (
-          <div className="flex flex-col items-center justify-center py-6 text-muted-foreground text-xs">
+          <div className="flex flex-col items-center justify-center py-6 text-slate-700 dark:text-slate-300 text-xs">
             <span>{t('emptyColumn')}</span>
           </div>
         )}

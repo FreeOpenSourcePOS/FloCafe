@@ -67,6 +67,7 @@ async function runTests() {
     const { KdsKanbanBoard } = require('../frontend/src/components/kds/KdsKanbanBoard');
     const { KdsTabsView } = require('../frontend/src/components/kds/KdsTabsView');
     const { KdsItemModal } = require('../frontend/src/components/kds/KdsItemModal');
+    const { KdsLoginForm } = require('../frontend/src/components/kds/KdsLoginForm');
     const {
       KdsHeader,
       resolveEffectiveKdsDark,
@@ -192,6 +193,17 @@ async function runTests() {
       'KDS Kanban order special instructions include WCAG AA dark mode classes',
     );
 
+    assert.doesNotMatch(
+      kanbanMarkup,
+      /opacity-80/,
+      'KDS Kanban VoidedColumn does not dim voided cards with opacity-80',
+    );
+    assert.match(
+      kanbanMarkup,
+      /text-slate-700 dark:text-slate-200 line-through[\s\S]*?Latte/,
+      'KDS Kanban VoidedColumn renders voided item heading with high-contrast struck-through text',
+    );
+
     const tabsMarkup = ReactDOMServer.renderToStaticMarkup(
       React.createElement(
         IntlProvider,
@@ -202,6 +214,16 @@ async function runTests() {
           orders: sampleOrders,
         }),
       ),
+    );
+    assert.doesNotMatch(
+      tabsMarkup,
+      /opacity-50/,
+      'KDS Tabs view unselected tab buttons do not blend with opacity-50',
+    );
+    assert.match(
+      tabsMarkup,
+      /bg-card text-slate-700 dark:text-slate-200 border border-border hover:bg-accent/,
+      'KDS Tabs view unselected tab buttons use opaque high-contrast classes',
     );
     assert.match(
       tabsMarkup,
@@ -224,7 +246,7 @@ async function runTests() {
         IntlProvider,
         { locale: 'en', messages: enMessages, timeZone: 'UTC' },
         React.createElement(KdsItemModal, {
-          item: sampleOrders[0].items[0],
+          item: { ...sampleOrders[0].items[0], status: 'preparing' },
           orderNumber: 'KDS-1513',
           updating: false,
           onClose: () => {},
@@ -242,6 +264,54 @@ async function runTests() {
       /bg-red-50 dark:bg-red-950\/60 border border-red-200 dark:border-red-800/,
       'KdsItemModal special instructions box includes dark mode classes',
     );
+    assert.match(
+      modalMarkup,
+      /bg-green-700 hover:brightness-90/,
+      'KdsItemModal Mark as Ready action button uses bg-green-700 for WCAG AA white text contrast',
+    );
+    assert.match(
+      modalMarkup,
+      /bg-muted text-slate-700 dark:text-slate-300 line-through/,
+      'KdsItemModal past step pill uses high-contrast slate text on bg-muted',
+    );
+    assert.match(
+      modalMarkup,
+      /text-slate-700 dark:text-slate-200 text-base font-semibold border-2 border-border bg-muted/,
+      'KdsItemModal Back button uses high-contrast slate text on bg-muted',
+    );
+
+    const loginMarkup = ReactDOMServer.renderToStaticMarkup(
+      React.createElement(
+        IntlProvider,
+        { locale: 'en', messages: enMessages, timeZone: 'UTC' },
+        React.createElement(KdsLoginForm, {
+          conn: {
+            loginEmail: '',
+            loginPassword: '',
+            loginError: 'Invalid credentials',
+            loginLoading: false,
+            rememberMe: false,
+            pinUsers: [],
+            setLoginEmail: () => {},
+            setLoginPassword: () => {},
+            setLoginError: () => {},
+            setRememberMe: () => {},
+            handleLogin: async () => {},
+            handlePinLogin: async () => {},
+          },
+        }),
+      ),
+    );
+    assert.match(
+      loginMarkup,
+      /bg-red-50 border border-red-300 text-red-800 dark:bg-red-950\/90 dark:border-red-700 dark:text-red-200/,
+      'KdsLoginForm error alert uses WCAG AA light and dark classes',
+    );
+    assert.match(
+      loginMarkup,
+      /text-xs text-slate-700 dark:text-slate-300 text-center mt-6/,
+      'KdsLoginForm login hint uses WCAG AA slate text classes',
+    );
 
     for (const key of ['dine_in', 'takeaway', 'delivery', 'online']) {
       assert.match(
@@ -250,6 +320,11 @@ async function runTests() {
         `ORDER_TYPE_BADGE_STYLES[${key}] includes WCAG AA dark mode classes`,
       );
     }
+    assert.equal(
+      STATUS_CONFIG.ready.color,
+      'bg-green-700',
+      'STATUS_CONFIG.ready.color uses bg-green-700 for WCAG AA white text contrast',
+    );
     for (const status of ['pending', 'preparing', 'ready', 'served', 'voided'] as const) {
       assert.match(
         STATUS_CONFIG[status].text,
@@ -258,8 +333,8 @@ async function runTests() {
       );
       assert.match(
         STATUS_CONFIG[status].color,
-        /bg-\w+-600/,
-        `STATUS_CONFIG.${status}.color uses 600 shade for WCAG AA white text contrast`,
+        /bg-\w+-(?:600|700)/,
+        `STATUS_CONFIG.${status}.color uses 600/700 shade for WCAG AA white text contrast`,
       );
     }
 

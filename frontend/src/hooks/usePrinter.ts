@@ -846,8 +846,7 @@ export const usePrinterStore = create<PrinterState>()(
             throw new PrintCancelledOnTenantChangeError();
           }
           throwIfTenantChanged();
-          const hydratedLargeOrderNumber =
-            usePosSettingsStore.getState().billShowLargeOrderNumber;
+          const hydratedLargeOrderNumber = usePosSettingsStore.getState().billShowLargeOrderNumber;
 
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);

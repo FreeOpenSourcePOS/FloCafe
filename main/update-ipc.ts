@@ -1,6 +1,6 @@
 import type { BrowserWindow, IpcMain } from 'electron';
 import { isTrustedMainWindowSender } from './ipc';
-import { authorizeRendererPermission, type IpcAuthResult } from './security/ipc-auth';
+import { authorizeRendererPermission } from './security/ipc-auth';
 import {
   initialUpdateState,
   isInstallReady,
@@ -53,7 +53,6 @@ export type DirectUpdateIpcOptions = {
     error: (msg: string, ...args: unknown[]) => void;
   };
   validateSender?: (event: unknown) => boolean;
-  authorizeSettingsManage?: (event: unknown, authToken: unknown) => Promise<IpcAuthResult>;
 };
 
 export type DirectUpdateHandlers = Record<
@@ -94,7 +93,6 @@ export function createDirectUpdateIpcHandlers(
     withDatabaseRequest,
     log,
     validateSender,
-    authorizeSettingsManage,
   } = options;
 
   const isSenderAuthorized = (event: unknown): boolean => {
@@ -104,11 +102,6 @@ export function createDirectUpdateIpcHandlers(
       getMainWindow,
       getServerPort(),
     );
-  };
-
-  const checkSettingsManage = (event: unknown, authToken: unknown): Promise<IpcAuthResult> => {
-    if (authorizeSettingsManage) return authorizeSettingsManage(event, authToken);
-    return authorizeRendererPermission(event, authToken, 'settings.manage');
   };
 
   return {
@@ -140,7 +133,7 @@ export function createDirectUpdateIpcHandlers(
         return { success: false, error: 'enabled must be a boolean' };
       }
       return withDatabaseRequest(async () => {
-        const auth = await checkSettingsManage(event, authToken);
+        const auth = await authorizeRendererPermission(event, authToken, 'settings.manage');
         if (!auth.ok) {
           return { success: false, error: auth.error || 'Insufficient permissions' };
         }
@@ -169,7 +162,7 @@ export function createDirectUpdateIpcHandlers(
       }
       return enqueueBetaChannelTransition(() =>
         withDatabaseRequest(async () => {
-          const auth = await checkSettingsManage(event, authToken);
+          const auth = await authorizeRendererPermission(event, authToken, 'settings.manage');
           if (!auth.ok) {
             return { success: false, error: auth.error || 'Insufficient permissions' };
           }

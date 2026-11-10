@@ -850,7 +850,11 @@ export default function POSPage() {
               capture_point: helpCapturePoint,
               operation_id: failure.correlationId,
               outcome: failure.outcome || 'unknown',
-              ...(failure.displayCode ? { facts: { display_code: failure.displayCode } } : {}),
+              ...(failure.displayCode
+                ? { facts: { display_code: failure.displayCode } }
+                : failure.failureClass
+                  ? { facts: { failure_class: failure.failureClass } }
+                  : {}),
             }
           : undefined;
     const reasonMessages: Record<string, string> = {

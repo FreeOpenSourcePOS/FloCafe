@@ -1497,7 +1497,16 @@ export function classifySqlitePersistenceFailure(error: unknown): PersistenceFai
             ? record.errno
             : null;
       if (rawCode !== null) {
-        return classifyPersistenceCode(rawCode);
+        const classified = classifyPersistenceCode(rawCode);
+        if (
+          classified === 'unknown' &&
+          rawCode.trim().toUpperCase() === 'SQLITE_ERROR' &&
+          typeof record.message === 'string' &&
+          SQLITE_SCHEMA_MESSAGE_RE.test(record.message.slice(0, 512))
+        ) {
+          return 'schema_or_migration';
+        }
+        return classified;
       }
       if (
         firstMessage === null &&

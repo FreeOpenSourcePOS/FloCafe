@@ -785,13 +785,23 @@ function main() {
     ],
     [
       { code: 'SQLITE_ERROR', message: 'no such table: orders_archive' },
+      'schema_or_migration',
+      'SQLITE_ERROR with missing table classifies as schema_or_migration',
+    ],
+    [
+      { code: 'SQLITE_ERROR', message: 'table bills has no column named custom_token' },
+      'schema_or_migration',
+      'SQLITE_ERROR with missing column classifies as schema_or_migration',
+    ],
+    [
+      { code: 'SQLITE_ERROR', message: 'SQL logic error along /Users/pos/flo.db' },
       'unknown',
-      'SQLITE_ERROR classifies strictly from code without inspecting raw message text',
+      'generic SQLITE_ERROR without schema issue classifies as unknown',
     ],
     [
       { code: 'SQLITE_ERROR', message: 'database is locked' },
       'unknown',
-      'SQLITE_ERROR does not inspect raw message text when code exists',
+      'SQLITE_ERROR does not fall through to non-schema message matching',
     ],
     [
       { code: 'SQLITE_AUTH', message: 'database is locked' },
@@ -853,6 +863,28 @@ function main() {
     'unknown',
     'primitive error classifies as unknown',
   );
+  const Database = require('better-sqlite3');
+  const memDb = new Database(':memory:');
+  try {
+    let realSchemaError: unknown = null;
+    try {
+      memDb.prepare('SELECT * FROM missing_schema_table_for_1464').all();
+    } catch (err) {
+      realSchemaError = err;
+    }
+    assertEqualOrThrow(
+      (realSchemaError as { code?: string })?.code,
+      'SQLITE_ERROR',
+      'better-sqlite3 missing table throws SQLITE_ERROR',
+    );
+    assertEqualOrThrow(
+      classifySqlitePersistenceFailure(realSchemaError),
+      'schema_or_migration',
+      'real better-sqlite3 missing-table SQLITE_ERROR classifies as schema_or_migration',
+    );
+  } finally {
+    memDb.close();
+  }
 
   console.log('\n' + '='.repeat(56));
   const results = getResults();

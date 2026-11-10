@@ -233,6 +233,42 @@ async function runTests(): Promise<void> {
     },
   });
 
+  const unknownBackendCorrelationId = '3e7a1b2c-9d8f-4e6a-8b5c-1234567890ab';
+  const unknownBackendHelp = buildPrinterOperationFailureSupportPayload(
+    {
+      response: {
+        status: 502,
+        data: {
+          error: 'Print failed',
+          detail: 'Network error: connect ETIMEDOUT 192.168.1.50:9100',
+          failure_class: 'unknown',
+          connection_type: 'network',
+          code: 'print.receipt.failed',
+          stage: 'dispatch',
+          correlation_id: unknownBackendCorrelationId,
+        },
+      },
+    },
+    {
+      kind: 'receipt',
+      connectionType: 'network',
+      fallbackDetail: 'Receipt printing failed after payment was completed',
+    },
+  );
+  assert.equal(unknownBackendHelp.failure_class, 'unknown');
+  assert.equal(unknownBackendHelp.reasonCode, 'printer.queue_failed');
+  assert.equal(unknownBackendHelp.capture_point, 'fc.backend.printer.receipt.queue');
+  assert.deepEqual(unknownBackendHelp.operation_failure, {
+    capture_point: 'fc.backend.printer.receipt.queue',
+    operation_id: unknownBackendCorrelationId,
+    outcome: 'unknown',
+    facts: {
+      kind: 'receipt',
+      failure_class: 'unknown',
+      connection_type: 'network',
+    },
+  });
+
   const popupFallbackHelp = buildPrinterOperationFailureSupportPayload(
     new Error('Popup window was blocked by browser'),
     {

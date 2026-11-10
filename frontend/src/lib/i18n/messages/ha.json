@@ -1303,7 +1303,18 @@
     "selectCounter": "Zaɓi Kanta",
     "decreaseQuantity": "Rage yawa",
     "increaseQuantity": "Ƙara yawa",
-    "distributeEvenly": "Raba daidai"
+    "distributeEvenly": "Raba daidai",
+    "validationStockGuidanceItem": "Cika kayan \"{item}\" ko sabunta bin diddigin ajiyarsa a Kayayyaki ko Kayan Ajiya kafin sake tura odar.",
+    "validationStockGuidance": "Cika kayan da babu ko sabunta bin diddigin ajiyarsa a Kayayyaki ko Kayan Ajiya kafin sake tura odar.",
+    "validationOpenProducts": "Buɗe Kayayyaki da Ajiya",
+    "validationOpenInventory": "Buɗe Kayan Ajiya da Girke-girke",
+    "validationStockEvidenceHint": "Tuntuɓi tallafi kawai idan adadin kaya har yanzu bai daidaita ba bayan duba Kayayyaki ko Kayan Ajiya (haɗa sunan kaya da adadin da ake tsammani).",
+    "validationShiftRequiredGuidance": "Ana buƙatar buɗaɗɗen shift kafin kammala wannan aikin. Buɗe shift a wannan na'urar sannan a sake gwadawa.",
+    "validationOpenShiftAction": "Buɗe shift",
+    "validationShiftEvidenceHint": "Tuntuɓi tallafi kawai idan an riga an buɗe shift a wannan na'urar kuma wannan kuskuren ya ci gaba.",
+    "validationClosedBooksGuidance": "An rufe ranar kasuwanci ta yau kuma ba za a iya sake buɗe ta ba. Sabbin ododi da hada-hadar tsabar kuɗi za su ci gaba a ranar kasuwanci ta gaba.",
+    "validationClosedBooksEvidenceHint": "Tuntuɓi tallafi kawai idan ranar kasuwanci ta yau ta nuna a rufe a kwanan wata ko yankin lokaci marar daidai.",
+    "validationGenericEvidenceHint": "Tuntuɓi tallafi kawai idan kuna ganin wannan tantancewar ta ƙi amsar ingantacciyar buƙata."
   },
   "printTest": {
     "amt": "Kuɗi",

@@ -1303,7 +1303,18 @@
     "selectCounter": "Sélectionner le comptoir",
     "decreaseQuantity": "Réduire la quantité",
     "increaseQuantity": "Augmenter la quantité",
-    "distributeEvenly": "Répartir équitablement"
+    "distributeEvenly": "Répartir équitablement",
+    "validationStockGuidanceItem": "Réapprovisionnez « {item} » ou mettez à jour son suivi de stock dans Produits ou Stock avant de renvoyer la commande.",
+    "validationStockGuidance": "Réapprovisionnez l'article indisponible ou mettez à jour son suivi de stock dans Produits ou Stock avant de renvoyer la commande.",
+    "validationOpenProducts": "Ouvrir Produits et stock",
+    "validationOpenInventory": "Ouvrir Stock et recettes",
+    "validationStockEvidenceHint": "Contactez l'assistance uniquement si les quantités semblent toujours incorrectes après vérification dans Produits ou Stock (indiquez l'article et le stock attendu).",
+    "validationShiftRequiredGuidance": "Un poste ouvert est requis avant d'effectuer cette action. Ouvrez un poste sur ce terminal, puis réessayez.",
+    "validationOpenShiftAction": "Ouvrir le poste",
+    "validationShiftEvidenceHint": "Contactez l'assistance uniquement si un poste est déjà ouvert sur ce terminal et que cette erreur persiste.",
+    "validationClosedBooksGuidance": "La journée comptable d'aujourd'hui est clôturée et ne peut pas être rouverte. Les nouvelles commandes et opérations espèces reprendront au prochain jour ouvré.",
+    "validationClosedBooksEvidenceHint": "Contactez l'assistance uniquement si la journée d'aujourd'hui apparaît clôturée à une date ou un fuseau horaire erronés.",
+    "validationGenericEvidenceHint": "Contactez l'assistance uniquement si vous pensez que ce contrôle de validation a rejeté une demande valide."
   },
   "printTest": {
     "amt": "Montant",

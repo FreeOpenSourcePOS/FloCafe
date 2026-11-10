@@ -41,6 +41,7 @@ const {
   isSupportErrorContextCurrent,
   readBoundedSupportLogTail,
   resolvePosFailureSupportMetadata,
+  resolvePosValidationAction,
 } = require('../frontend/src/lib/operation-failure');
 
 async function main() {
@@ -813,6 +814,67 @@ async function main() {
       'printer operation_failure preserves allowlisted connection_type',
     );
 
+    const clientFallbackPrintFailure = buildPrinterOperationFailureSupportPayload(
+      new Error('Please allow popups to print'),
+      {
+        kind: 'kot',
+        connectionType: 'unknown',
+        fallbackDetail: 'Kitchen ticket printing failed after the order was created',
+      },
+    );
+    assertEqual(
+      clientFallbackPrintFailure.operation_failure,
+      undefined,
+      'client-side popup fallback omits fabricated backend operation_failure',
+    );
+    assertEqual(
+      clientFallbackPrintFailure.correlation_id,
+      null,
+      'client-side popup fallback omits fabricated backend correlation_id',
+    );
+    const fallbackPrinterTicketId = require('crypto').randomUUID();
+    const fallbackPrinterTicketRes = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        client_ticket_id: fallbackPrinterTicketId,
+        subject: 'FloCafe printer problem',
+        message: clientFallbackPrintFailure.detail,
+        category: 'printer',
+        event_code: clientFallbackPrintFailure.code,
+        correlation_id: require('crypto').randomUUID(),
+        diagnostics: {
+          operation: 'printer.print',
+          stage: clientFallbackPrintFailure.stage,
+          outcome: clientFallbackPrintFailure.outcome,
+          failure_class: clientFallbackPrintFailure.failure_class,
+          connection_type: clientFallbackPrintFailure.connection_type,
+        },
+      },
+    });
+    assertEqual(
+      fallbackPrinterTicketRes.status,
+      202,
+      'client-side printer fallback ticket queues cleanly without operation_failure',
+    );
+    const storedFallbackPrinterPayload = JSON.parse(
+      (
+        db
+          .prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?')
+          .get(fallbackPrinterTicketId) as { payload: string }
+      ).payload,
+    );
+    assertEqual(
+      storedFallbackPrinterPayload.diagnostics.failure_class,
+      'unsupported',
+      'client-side printer fallback ticket preserves failure_class in diagnostics',
+    );
+    assertEqual(
+      storedFallbackPrinterPayload.diagnostics.operation_failure,
+      undefined,
+      'client-side printer fallback ticket stores no synthetic operation_failure',
+    );
+
     console.log(
       '\n11. Expected order rejections use validation presentation and non-bug support metadata (#1466)',
     );
@@ -824,6 +886,7 @@ async function main() {
       code: 'order.stock_insufficient',
       message: 'Insufficient stock for "Double Cheeseburger"',
       detail: 'Insufficient stock for "Double Cheeseburger"',
+      permissions: { canManageCatalog: true, canViewInventory: true },
     });
     assertEqual(stockMetadata.variant, 'validation', 'stock rejection uses validation variant');
     assertEqual(stockMetadata.category, 'general', 'stock rejection uses non-bug category');
@@ -838,9 +901,26 @@ async function main() {
       'stock rejection extracts quoted affected item name',
     );
     assertEqual(
-      stockMetadata.correctiveActionHref,
+      stockMetadata.correctiveAction?.kind === 'link' ? stockMetadata.correctiveAction.href : null,
+      '/products',
+      'stock rejection links to /products when catalog.manage is granted',
+    );
+    const inventoryOnlyAction = resolvePosValidationAction('stock_insufficient', {
+      canManageCatalog: false,
+      canViewInventory: true,
+    });
+    assertEqual(
+      inventoryOnlyAction?.kind === 'link' ? inventoryOnlyAction.href : null,
       '/inventory',
-      'stock rejection links to /inventory',
+      'stock rejection falls back to /inventory when only inventory.view is granted',
+    );
+    assertEqual(
+      resolvePosValidationAction('stock_insufficient', {
+        canManageCatalog: false,
+        canViewInventory: false,
+      }),
+      null,
+      'stock rejection hides navigation link for roles without catalog or inventory access',
     );
 
     const appendStockMetadata = resolvePosFailureSupportMetadata({
@@ -909,8 +989,9 @@ async function main() {
       outcome: 'not_applied',
       reasonCode: 'validation.rejected',
       code: 'validation.rejected',
-      message: 'Books are closed for 2026-11-09. Reopen the business day to add orders.',
-      detail: 'Books are closed for 2026-11-09. Reopen the business day to add orders.',
+      message: 'Books are closed for 2026-11-09.',
+      detail: 'Books are closed for 2026-11-09.',
+      permissions: { canManageCatalog: true, canViewInventory: true, canUseShift: true },
     });
     assertEqual(
       closedBooksMetadata.variant,
@@ -923,9 +1004,41 @@ async function main() {
       'closed-books rejection uses non-bug category',
     );
     assertEqual(
-      closedBooksMetadata.correctiveActionHref,
-      '/dashboard',
-      'closed-books rejection links to /dashboard for day/shift reopening',
+      closedBooksMetadata.rejectionKind,
+      'closed_books',
+      'closed-books rejection resolves as immutable closed_books',
+    );
+    assertEqual(
+      closedBooksMetadata.correctiveAction,
+      null,
+      'closed-books rejection never links to /dashboard or offers reopening',
+    );
+
+    const shiftRequiredMetadata = resolvePosFailureSupportMetadata({
+      operation: 'payment.create',
+      classification: 'expected_rejection',
+      outcome: 'not_applied',
+      reasonCode: 'payment.invalid',
+      displayCode: 'cash_session_required',
+      code: 'payment.invalid',
+      message: 'No open shift: open a shift before taking cash',
+      detail: 'No open shift: open a shift before taking cash',
+      permissions: { canUseShift: true },
+    });
+    assertEqual(
+      shiftRequiredMetadata.rejectionKind,
+      'shift_required',
+      'cash_session_required resolves as shift_required',
+    );
+    assertEqual(
+      shiftRequiredMetadata.correctiveAction?.kind ?? null,
+      'open_shift',
+      'shift_required offers inline open_shift modal action when canUseShift is true',
+    );
+    assertEqual(
+      resolvePosValidationAction('shift_required', { canUseShift: false }),
+      null,
+      'shift_required hides open_shift action when canUseShift is false',
     );
 
     const unexpectedMetadata = resolvePosFailureSupportMetadata({

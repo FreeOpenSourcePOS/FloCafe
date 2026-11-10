@@ -221,6 +221,11 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === 'lucide-react') return new Proxy({}, { get: () => () => null });
   if (reqName === 'use-intl') return { useTranslations: () => (k: string) => k };
   if (reqName === 'next/dynamic') return () => () => null;
+  if (reqName === 'next/link')
+    return {
+      __esModule: true,
+      default: (props: any) => realReact.createElement('a', props, props.children),
+    };
   if (reqName === '@/components/ui/sidebar') return { useSidebar: () => ({ isMobile: false }) };
   if (reqName === '@/components/ui/drawer')
     return { Drawer: () => null, DrawerContent: () => null, DrawerTrigger: () => null };

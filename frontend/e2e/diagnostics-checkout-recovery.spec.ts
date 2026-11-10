@@ -232,9 +232,9 @@ test('a structured stock rejection displays the specific item name to the cashie
       page.getByRole('main').getByText('Insufficient stock for "Double Cheeseburger"'),
     ).toBeVisible();
     await expect(page.getByText('Correct the details, then submit the order again.')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open Inventory & Recipes' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Open Products & Stock' })).toHaveAttribute(
       'href',
-      '/inventory',
+      '/products',
     );
     const attachLogCheckbox = page.locator('#pos-support-attach-log');
     await expect(attachLogCheckbox).toBeChecked();

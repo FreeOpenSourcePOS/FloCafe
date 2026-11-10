@@ -1303,7 +1303,18 @@
     "selectCounter": "Pumili ng Counter",
     "decreaseQuantity": "Bawasan ang dami",
     "increaseQuantity": "Dagdagan ang dami",
-    "distributeEvenly": "Ipamahagi nang pantay"
+    "distributeEvenly": "Ipamahagi nang pantay",
+    "validationStockGuidanceItem": "Lagyan muli ng stock ang \"{item}\" o i-update ang stock tracking nito sa Mga Produkto o Imbentaryo bago isumite muli ang order.",
+    "validationStockGuidance": "Lagyan muli ng stock ang item na walang stock o i-update ang stock tracking nito sa Mga Produkto o Imbentaryo bago isumite muli ang order.",
+    "validationOpenProducts": "Buksan ang Mga Produkto at Stock",
+    "validationOpenInventory": "Buksan ang Imbentaryo at Mga Recipe",
+    "validationStockEvidenceHint": "Makipag-ugnayan lang sa support kung mali pa rin ang bilang ng stock pagkatapos suriin ang Mga Produkto o Imbentaryo (isama ang pangalan ng item at inaasahang bilang).",
+    "validationShiftRequiredGuidance": "Kailangan ng bukas na shift bago tapusin ang aksyong ito. Magbukas ng shift sa terminal na ito at subukan muli.",
+    "validationOpenShiftAction": "Buksan ang shift",
+    "validationShiftEvidenceHint": "Makipag-ugnayan lang sa support kung may bukas nang shift sa terminal na ito at nagpapatuloy pa rin ang error.",
+    "validationClosedBooksGuidance": "Sarado na ang araw ng negosyo ngayon at hindi na maaaring buksan muli. Magpapatuloy ang mga bagong order at galaw ng pera sa susunod na araw ng negosyo.",
+    "validationClosedBooksEvidenceHint": "Makipag-ugnayan lang sa support kung lumalabas na sarado ang araw ng negosyo sa maling petsa o timezone ng tindahan.",
+    "validationGenericEvidenceHint": "Makipag-ugnayan lang sa support kung naniniwala kang tinanggihan ng pagsusuring ito ang isang wastong kahilingan."
   },
   "printTest": {
     "amt": "Halaga",

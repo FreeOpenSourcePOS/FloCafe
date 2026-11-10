@@ -407,29 +407,21 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{
-                success?: boolean;
-                warnings?: PrintWarning[];
-                error?: string;
-                detail?: string;
-                failure_class?: string;
-                connection_type?: string;
-                code?: string;
-                stage?: string;
-                correlation_id?: string;
-              }>('/printers/print-bill', {
-                billId: bill.id,
-                useUnicode: printerUseUnicode,
-                arabicShaping: printerArabicShaping,
-                isReprint,
-              });
-              if (response.data && response.data.success === false) {
-                throw { response: { data: response.data } };
-              }
+              const response = await api.post<{ warnings?: PrintWarning[] }>(
+                '/printers/print-bill',
+                {
+                  billId: bill.id,
+                  useUnicode: printerUseUnicode,
+                  arabicShaping: printerArabicShaping,
+                  isReprint,
+                },
+              );
               if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
               windowTransferred = true;
               return response.data.warnings || [];
             } catch (err: unknown) {
+              if (isPrintCancelledOnTenantChangeError(err)) throw err;
+              throwIfTenantChanged();
               const e = err as {
                 response?: { data?: { error?: string; detail?: string } };
                 message?: string;
@@ -812,27 +804,17 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{
-                success?: boolean;
-                warnings?: PrintWarning[];
-                error?: string;
-                detail?: string;
-                failure_class?: string;
-                connection_type?: string;
-                code?: string;
-                stage?: string;
-                correlation_id?: string;
-              }>('/printers/print-kot', {
-                orderId: order.id,
-                items: opts?.items ?? order.items,
-                stationName: opts?.stationName,
-                useUnicode: printerUseUnicode,
-                arabicShaping: printerArabicShaping,
-              });
+              const response = await api.post<{ warnings?: PrintWarning[] }>(
+                '/printers/print-kot',
+                {
+                  orderId: order.id,
+                  items: opts?.items ?? order.items,
+                  stationName: opts?.stationName,
+                  useUnicode: printerUseUnicode,
+                  arabicShaping: printerArabicShaping,
+                },
+              );
               throwIfTenantChanged();
-              if (response.data && response.data.success === false) {
-                throw { response: { data: response.data } };
-              }
               return response.data.warnings || [];
             } catch (err: unknown) {
               if (isPrintCancelledOnTenantChangeError(err)) throw err;

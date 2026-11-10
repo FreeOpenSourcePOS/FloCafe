@@ -1303,7 +1303,18 @@
     "selectCounter": "Chọn quầy",
     "decreaseQuantity": "Giảm số lượng",
     "increaseQuantity": "Tăng số lượng",
-    "distributeEvenly": "Chia đều"
+    "distributeEvenly": "Chia đều",
+    "validationStockGuidanceItem": "Nhập thêm \"{item}\" hoặc cập nhật theo dõi tồn kho trong Sản phẩm hoặc Kho trước khi gửi lại đơn hàng.",
+    "validationStockGuidance": "Nhập thêm món đang hết hoặc cập nhật theo dõi tồn kho trong Sản phẩm hoặc Kho trước khi gửi lại đơn hàng.",
+    "validationOpenProducts": "Mở Sản phẩm & Tồn kho",
+    "validationOpenInventory": "Mở Kho & Công thức",
+    "validationStockEvidenceHint": "Chỉ liên hệ hỗ trợ nếu số lượng tồn kho vẫn sai sau khi kiểm tra Sản phẩm hoặc Kho (ghi rõ tên món và số lượng dự kiến).",
+    "validationShiftRequiredGuidance": "Cần mở ca trước khi thực hiện thao tác này. Hãy mở ca trên thiết bị này rồi thử lại.",
+    "validationOpenShiftAction": "Mở ca",
+    "validationShiftEvidenceHint": "Chỉ liên hệ hỗ trợ nếu thiết bị này đã mở ca nhưng lỗi vẫn tiếp diễn.",
+    "validationClosedBooksGuidance": "Ngày kinh doanh hôm nay đã chốt và không thể mở lại. Đơn hàng mới và giao dịch tiền mặt sẽ tiếp tục vào ngày kinh doanh tiếp theo.",
+    "validationClosedBooksEvidenceHint": "Chỉ liên hệ hỗ trợ nếu ngày kinh doanh hôm nay hiển thị đã chốt sai ngày hoặc sai múi giờ của cửa hàng.",
+    "validationGenericEvidenceHint": "Chỉ liên hệ hỗ trợ nếu bạn cho rằng bước kiểm tra này đã từ chối một yêu cầu hợp lệ."
   },
   "printTest": {
     "amt": "Số tiền",

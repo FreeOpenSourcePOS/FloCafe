@@ -1303,7 +1303,18 @@
     "selectCounter": "Pilih kasir",
     "decreaseQuantity": "Kurangi jumlah",
     "increaseQuantity": "Tambah jumlah",
-    "distributeEvenly": "Bagi rata"
+    "distributeEvenly": "Bagi rata",
+    "validationStockGuidanceItem": "Isi ulang stok \"{item}\" atau perbarui pelacakan stoknya di Produk atau Persediaan sebelum mengirim ulang pesanan.",
+    "validationStockGuidance": "Isi ulang item yang habis atau perbarui pelacakan stoknya di Produk atau Persediaan sebelum mengirim ulang pesanan.",
+    "validationOpenProducts": "Buka Produk & Stok",
+    "validationOpenInventory": "Buka Persediaan & Resep",
+    "validationStockEvidenceHint": "Hubungi dukungan hanya jika jumlah stok masih tampak salah setelah memeriksa Produk atau Persediaan (sertakan nama item dan perkiraan stok).",
+    "validationShiftRequiredGuidance": "Shift aktif diperlukan sebelum menyelesaikan tindakan ini. Buka shift di terminal ini, lalu coba lagi.",
+    "validationOpenShiftAction": "Buka shift",
+    "validationShiftEvidenceHint": "Hubungi dukungan hanya jika shift sudah dibuka di terminal ini dan kesalahan tetap muncul.",
+    "validationClosedBooksGuidance": "Hari bisnis hari ini sudah ditutup dan tidak dapat dibuka kembali. Pesanan baru dan transaksi tunai dilanjutkan pada hari bisnis berikutnya.",
+    "validationClosedBooksEvidenceHint": "Hubungi dukungan hanya jika hari bisnis hari ini tampak tertutup pada tanggal atau zona waktu toko yang salah.",
+    "validationGenericEvidenceHint": "Hubungi dukungan hanya jika Anda yakin pemeriksaan validasi ini menolak permintaan yang sah."
   },
   "printTest": {
     "amt": "Jml",

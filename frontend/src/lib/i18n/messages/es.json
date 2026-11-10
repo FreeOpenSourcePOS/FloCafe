@@ -1303,7 +1303,18 @@
     "selectCounter": "Seleccionar mostrador",
     "decreaseQuantity": "Reducir cantidad",
     "increaseQuantity": "Aumentar cantidad",
-    "distributeEvenly": "Distribuir equitativamente"
+    "distributeEvenly": "Distribuir equitativamente",
+    "validationStockGuidanceItem": "Reponga \"{item}\" o actualice su control de existencias en Productos o Inventario antes de volver a enviar el pedido.",
+    "validationStockGuidance": "Reponga el artículo no disponible o actualice su control de existencias en Productos o Inventario antes de volver a enviar el pedido.",
+    "validationOpenProducts": "Abrir Productos y existencias",
+    "validationOpenInventory": "Abrir Inventario y recetas",
+    "validationStockEvidenceHint": "Contacte a soporte solo si las cantidades siguen pareciendo incorrectas después de revisar Productos o Inventario (incluya el nombre del artículo y el stock esperado).",
+    "validationShiftRequiredGuidance": "Se requiere un turno abierto antes de completar esta acción. Abra un turno en este terminal e inténtelo de nuevo.",
+    "validationOpenShiftAction": "Abrir turno",
+    "validationShiftEvidenceHint": "Contacte a soporte solo si ya hay un turno abierto en este terminal y el error continúa.",
+    "validationClosedBooksGuidance": "La jornada comercial de hoy está cerrada y no se puede reabrir. Los nuevos pedidos y movimientos de efectivo se reanudan el siguiente día hábil.",
+    "validationClosedBooksEvidenceHint": "Contacte a soporte solo si la jornada comercial de hoy aparece cerrada con una fecha o zona horaria incorrecta.",
+    "validationGenericEvidenceHint": "Contacte a soporte solo si cree que esta validación rechazó una solicitud válida."
   },
   "printTest": {
     "amt": "Total",

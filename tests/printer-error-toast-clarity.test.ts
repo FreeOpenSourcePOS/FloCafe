@@ -233,6 +233,42 @@ async function runTests(): Promise<void> {
     },
   });
 
+  const popupFallbackHelp = buildPrinterOperationFailureSupportPayload(
+    new Error('Popup window was blocked by browser'),
+    {
+      kind: 'receipt',
+      connectionType: 'unknown',
+      fallbackDetail: 'Receipt printing failed after payment was completed',
+    },
+  );
+  assert.equal(popupFallbackHelp.correlation_id, null);
+  assert.equal(popupFallbackHelp.capture_point, null);
+  assert.equal(popupFallbackHelp.operation_failure, undefined);
+  assert.equal(popupFallbackHelp.failure_class, 'unsupported');
+  assert.equal(popupFallbackHelp.connection_type, 'unknown');
+  assert.equal(popupFallbackHelp.detail, 'Popup window was blocked by browser');
+
+  const nonDispatchHttpHelp = buildPrinterOperationFailureSupportPayload(
+    {
+      response: {
+        status: 403,
+        data: {
+          error: 'KOT printing is disabled for this business',
+        },
+      },
+    },
+    {
+      kind: 'kot',
+      connectionType: 'usb',
+      fallbackDetail: 'Kitchen ticket printing failed after the order was created',
+    },
+  );
+  assert.equal(nonDispatchHttpHelp.correlation_id, null);
+  assert.equal(nonDispatchHttpHelp.capture_point, null);
+  assert.equal(nonDispatchHttpHelp.operation_failure, undefined);
+  assert.equal(nonDispatchHttpHelp.connection_type, 'usb');
+  assert.equal(nonDispatchHttpHelp.detail, 'KOT printing is disabled for this business');
+
   // 9. Browser print mode reports connection_type 'unknown' and failure_class 'unsupported' even if WebUSB is connected,
   //    and printKot cancels with PrintCancelledOnTenantChangeError across mid-flight tenant switches.
   const origIsConnected = Object.getOwnPropertyDescriptor(
@@ -292,6 +328,8 @@ async function runTests(): Promise<void> {
     assert(browserBillErr instanceof PrinterOperationError);
     assert.equal(browserBillErr.failure_class, 'unsupported');
     assert.equal(browserBillErr.connection_type, 'unknown');
+    assert.equal(browserBillErr.correlation_id, null);
+    assert.equal(browserBillErr.capture_point, null);
 
     let browserKotErr: unknown = null;
     try {
@@ -322,6 +360,8 @@ async function runTests(): Promise<void> {
     assert(browserKotErr instanceof PrinterOperationError);
     assert.equal(browserKotErr.failure_class, 'unsupported');
     assert.equal(browserKotErr.connection_type, 'unknown');
+    assert.equal(browserKotErr.correlation_id, null);
+    assert.equal(browserKotErr.capture_point, null);
 
     // Mid-flight tenant switch during printKot cancels with PrintCancelledOnTenantChangeError
     let rejectKotPost!: (reason?: unknown) => void;

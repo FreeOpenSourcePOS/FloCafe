@@ -1303,7 +1303,18 @@
     "selectCounter": "Balie selecteren",
     "decreaseQuantity": "Aantal verlagen",
     "increaseQuantity": "Aantal verhogen",
-    "distributeEvenly": "Gelijk verdelen"
+    "distributeEvenly": "Gelijk verdelen",
+    "validationStockGuidanceItem": "Vul \"{item}\" aan of werk de voorraadregistratie bij in Producten of Voorraad voordat u de bestelling opnieuw verzendt.",
+    "validationStockGuidance": "Vul het niet-beschikbare artikel aan of werk de voorraadregistratie bij in Producten of Voorraad voordat u de bestelling opnieuw verzendt.",
+    "validationOpenProducts": "Producten & voorraad openen",
+    "validationOpenInventory": "Voorraad & recepten openen",
+    "validationStockEvidenceHint": "Neem alleen contact op met support als de voorraadaantallen na controle van Producten of Voorraad nog steeds niet kloppen (vermeld artikelnaam en verwachte voorraad).",
+    "validationShiftRequiredGuidance": "Er is een geopende dienst vereist om deze actie te voltooien. Open een dienst op deze terminal en probeer het opnieuw.",
+    "validationOpenShiftAction": "Dienst openen",
+    "validationShiftEvidenceHint": "Neem alleen contact op met support als er al een dienst open is op deze terminal en deze fout blijft optreden.",
+    "validationClosedBooksGuidance": "De werkdag van vandaag is afgesloten en kan niet worden heropend. Nieuwe bestellingen en contante betalingen worden op de volgende werkdag hervat.",
+    "validationClosedBooksEvidenceHint": "Neem alleen contact op met support als de werkdag van vandaag op een verkeerde winkeldatum of tijdzone als gesloten wordt weergegeven.",
+    "validationGenericEvidenceHint": "Neem alleen contact op met support als u denkt dat deze validatiecontrole een geldig verzoek heeft geweigerd."
   },
   "printTest": {
     "amt": "Bedrag",

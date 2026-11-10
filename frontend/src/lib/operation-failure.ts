@@ -7,26 +7,6 @@ export function isOperationReference(value: unknown): value is string {
   return typeof value === 'string' && OPERATION_REFERENCE_V4.test(value);
 }
 
-export function ensureOperationReference(value?: unknown): string {
-  if (isOperationReference(value)) return value;
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    const candidate = globalThis.crypto.randomUUID();
-    if (isOperationReference(candidate)) return candidate;
-  }
-  const bytes = new Uint8Array(16);
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < 16; i += 1) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
 export const SUPPORT_LOG_TAIL_MAX_CHARS = 16 * 1024;
 
 export function boundSupportLogTail(raw: unknown): string | undefined {
@@ -336,7 +316,6 @@ export interface PrinterOperationErrorInit {
   stage?: unknown;
   correlation_id?: unknown;
   outcome?: unknown;
-  capture_point?: string;
   detail?: unknown;
   fallbackDetail?: string;
   status?: number | null;
@@ -346,15 +325,11 @@ export class PrinterOperationError extends Error {
   readonly kind: PrintFailureKind;
   readonly code: string;
   readonly failure_class: PrintFailureClass;
-  readonly failureClass: PrintFailureClass;
   readonly connection_type: PrintConnectionType;
-  readonly connectionType: PrintConnectionType;
   readonly stage: PrintFailureStage;
-  readonly correlation_id: string;
-  readonly correlationId: string;
+  readonly correlation_id: string | null;
   readonly outcome: PrintFailureOutcome;
-  readonly capture_point: string;
-  readonly capturePoint: string;
+  readonly capture_point: string | null;
   readonly detail: string;
   readonly status: number | null;
 
@@ -370,18 +345,23 @@ export class PrinterOperationError extends Error {
       init.failure_class,
     );
     this.failure_class = failureClass;
-    this.failureClass = failureClass;
-    const connectionType = normalizePrinterConnectionType(init.connection_type);
-    this.connection_type = connectionType;
-    this.connectionType = connectionType;
+    this.connection_type = normalizePrinterConnectionType(init.connection_type);
     const stage: PrintFailureStage =
       init.stage === 'prepare' || init.stage === 'dispatch' || init.stage === 'printing'
         ? init.stage
         : 'dispatch';
     this.stage = stage;
-    const correlationId = ensureOperationReference(init.correlation_id);
-    this.correlation_id = correlationId;
-    this.correlationId = correlationId;
+    const expectedCode = init.kind === 'kot' ? 'print.kot.failed' : 'print.receipt.failed';
+    const normalizedCode =
+      typeof init.code === 'string' && init.code.trim().length > 0
+        ? init.code.trim()
+        : expectedCode;
+    this.code = normalizedCode;
+    const hasTrustedBackendCapture =
+      isOperationReference(init.correlation_id) &&
+      (init.stage === 'prepare' || init.stage === 'dispatch') &&
+      normalizedCode === expectedCode;
+    this.correlation_id = hasTrustedBackendCapture ? init.correlation_id : null;
     const outcome: PrintFailureOutcome =
       init.outcome === 'not_applied' || init.outcome === 'partial' || init.outcome === 'unknown'
         ? init.outcome
@@ -390,15 +370,9 @@ export class PrinterOperationError extends Error {
           : 'unknown';
     this.outcome = outcome;
     const pointStage = failureClass === 'timeout' ? 'timeout' : 'queue';
-    const expectedCapturePoint = `fc.backend.printer.${init.kind}.${pointStage}`;
-    this.capture_point = expectedCapturePoint;
-    this.capturePoint = expectedCapturePoint;
-    this.code =
-      typeof init.code === 'string' && init.code.trim().length > 0
-        ? init.code.trim()
-        : init.kind === 'kot'
-          ? 'print.kot.failed'
-          : 'print.receipt.failed';
+    this.capture_point = hasTrustedBackendCapture
+      ? `fc.backend.printer.${init.kind}.${pointStage}`
+      : null;
     this.detail = sanitizedDetail;
     this.status = typeof init.status === 'number' ? init.status : null;
   }
@@ -423,24 +397,12 @@ export function toPrinterOperationError(
         error?: unknown;
         detail?: unknown;
         failure_class?: unknown;
-        failureClass?: unknown;
         connection_type?: unknown;
-        connectionType?: unknown;
         code?: unknown;
         correlation_id?: unknown;
-        correlationId?: unknown;
         stage?: unknown;
       };
     };
-    code?: unknown;
-    failure_class?: unknown;
-    failureClass?: unknown;
-    connection_type?: unknown;
-    connectionType?: unknown;
-    correlation_id?: unknown;
-    correlationId?: unknown;
-    stage?: unknown;
-    detail?: unknown;
     message?: unknown;
   } | null;
 
@@ -448,40 +410,21 @@ export function toPrinterOperationError(
   const rawDetail =
     (typeof responseData?.detail === 'string' && responseData.detail) ||
     (typeof responseData?.error === 'string' && responseData.error) ||
-    (typeof errObj?.detail === 'string' && errObj.detail) ||
     (typeof errObj?.message === 'string' && errObj.message) ||
     '';
-  const rawFailureClass =
-    responseData?.failure_class ??
-    responseData?.failureClass ??
-    errObj?.failure_class ??
-    errObj?.failureClass;
-  const rawConnectionType =
-    responseData?.connection_type ??
-    responseData?.connectionType ??
-    errObj?.connection_type ??
-    errObj?.connectionType ??
-    defaults.connectionType;
-  const rawStage = responseData?.stage ?? errObj?.stage ?? defaults.stage ?? 'dispatch';
-  const rawCode =
-    (typeof responseData?.code === 'string' && responseData.code) ||
-    (typeof errObj?.code === 'string' &&
-    (errObj.code.startsWith('print.') || errObj.code.startsWith('printer.'))
-      ? errObj.code
-      : undefined);
-  const rawCorrelationId =
-    responseData?.correlation_id ??
-    responseData?.correlationId ??
-    errObj?.correlation_id ??
-    errObj?.correlationId;
+  const expectedCode = defaults.kind === 'kot' ? 'print.kot.failed' : 'print.receipt.failed';
+  const hasBackendPrinterCapture =
+    isOperationReference(responseData?.correlation_id) &&
+    (responseData?.stage === 'prepare' || responseData?.stage === 'dispatch') &&
+    responseData?.code === expectedCode;
 
   return new PrinterOperationError({
     kind: defaults.kind,
-    code: rawCode,
-    failure_class: rawFailureClass,
-    connection_type: rawConnectionType,
-    stage: rawStage,
-    correlation_id: rawCorrelationId,
+    code: typeof responseData?.code === 'string' ? responseData.code : undefined,
+    failure_class: responseData?.failure_class,
+    connection_type: responseData?.connection_type ?? defaults.connectionType,
+    stage: responseData?.stage ?? defaults.stage ?? 'dispatch',
+    correlation_id: hasBackendPrinterCapture ? responseData.correlation_id : null,
     detail: rawDetail,
     fallbackDetail: defaults.fallbackDetail,
     status: typeof errObj?.response?.status === 'number' ? errObj.response.status : null,
@@ -515,12 +458,12 @@ export interface PrinterFailureSupportDescriptor {
   connection_type: PrintConnectionType;
   stage: PrintFailureStage;
   outcome: PrintFailureOutcome;
-  correlation_id: string;
-  capture_point: string;
+  correlation_id: string | null;
+  capture_point: string | null;
   detail: string;
   hasSpecificDetail: boolean;
   status: number | null;
-  operation_failure: PrinterSupportOperationFailurePayload;
+  operation_failure?: PrinterSupportOperationFailurePayload;
 }
 
 export function buildPrinterOperationFailureSupportPayload(
@@ -542,6 +485,19 @@ export function buildPrinterOperationFailureSupportPayload(
   const effectiveDetail = hasSpecificDetail ? candidateDetail : options.fallbackDetail;
   const reasonCode =
     printerErr.failure_class === 'timeout' ? 'printer.timeout' : 'printer.queue_failed';
+  const operationFailure =
+    printerErr.capture_point && printerErr.correlation_id
+      ? {
+          capture_point: printerErr.capture_point,
+          operation_id: printerErr.correlation_id,
+          outcome: printerErr.outcome,
+          facts: {
+            kind: options.kind,
+            failure_class: printerErr.failure_class,
+            connection_type: printerErr.connection_type,
+          },
+        }
+      : undefined;
 
   return {
     kind: options.kind,
@@ -556,21 +512,9 @@ export function buildPrinterOperationFailureSupportPayload(
     detail: effectiveDetail,
     hasSpecificDetail,
     status: printerErr.status,
-    operation_failure: {
-      capture_point: printerErr.capture_point,
-      operation_id: printerErr.correlation_id,
-      outcome: printerErr.outcome,
-      facts: {
-        kind: options.kind,
-        failure_class: printerErr.failure_class,
-        connection_type: printerErr.connection_type,
-      },
-    },
+    ...(operationFailure ? { operation_failure: operationFailure } : {}),
   };
 }
-
-export const buildFrontendOperationFailureSupportPayload =
-  buildPrinterOperationFailureSupportPayload;
 
 export function extractQuotedItemName(text: unknown): string | null {
   if (typeof text !== 'string' || !text.trim()) return null;
@@ -602,18 +546,60 @@ export function isClosedBooksRejection(input: {
   message?: string | null;
   detail?: string | null;
 }): boolean {
+  if (input.displayCode === 'day_closed' || input.displayCode === 'day_already_closed') {
+    return true;
+  }
+  const combined = `${input.message || ''} ${input.detail || ''}`;
+  return /books\s+are\s+(?:already\s+)?closed|(?:business\s+|this\s+)?day\s+is\s+(?:already\s+)?closed/i.test(
+    combined,
+  );
+}
+
+export function isShiftRequiredRejection(input: {
+  reasonCode?: string | null;
+  displayCode?: string | null;
+  message?: string | null;
+  detail?: string | null;
+}): boolean {
   if (
-    input.displayCode === 'day_closed' ||
-    input.displayCode === 'day_already_closed' ||
-    input.displayCode === 'session_already_closed' ||
-    input.displayCode === 'cash_session_required'
+    input.displayCode === 'cash_session_required' ||
+    input.displayCode === 'session_already_closed'
   ) {
     return true;
   }
   const combined = `${input.message || ''} ${input.detail || ''}`;
-  return /books\s+are\s+(?:already\s+)?closed|(?:business\s+)?day\s+is\s+(?:already\s+)?closed|shift\s+is\s+(?:already\s+)?closed|no\s+open\s+shift|open\s+a\s+shift\s+before/i.test(
+  return /\bno\s+open\s+(?:shift|cash\s+session)\b|\bopen\s+a\s+shift\s+before\b|\bshift\s+is\s+(?:already\s+)?closed\b/i.test(
     combined,
   );
+}
+
+export type PosValidationRejectionKind =
+  | 'stock_insufficient'
+  | 'shift_required'
+  | 'closed_books'
+  | 'validation';
+
+export type PosCorrectiveAction =
+  | { kind: 'link'; href: '/products' | '/inventory' }
+  | { kind: 'open_shift' };
+
+export function resolvePosValidationAction(
+  rejectionKind: PosValidationRejectionKind | null,
+  permissions: {
+    canManageCatalog?: boolean;
+    canViewInventory?: boolean;
+    canUseShift?: boolean;
+  } = {},
+): PosCorrectiveAction | null {
+  if (rejectionKind === 'stock_insufficient') {
+    if (permissions.canManageCatalog) return { kind: 'link', href: '/products' };
+    if (permissions.canViewInventory) return { kind: 'link', href: '/inventory' };
+    return null;
+  }
+  if (rejectionKind === 'shift_required') {
+    return permissions.canUseShift ? { kind: 'open_shift' } : null;
+  }
+  return null;
 }
 
 export interface PosFailureSupportMetadata {
@@ -621,12 +607,9 @@ export interface PosFailureSupportMetadata {
   variant: 'validation' | 'error';
   category: 'general' | 'printer' | 'bug';
   subject: string;
-  rejectionKind: 'stock_insufficient' | 'closed_books' | 'validation' | null;
+  rejectionKind: PosValidationRejectionKind | null;
   affectedItem: string | null;
-  correctiveGuidance: string | null;
-  correctiveActionHref: '/inventory' | '/dashboard' | null;
-  correctiveActionLabel: string | null;
-  supportEvidenceHint: string | null;
+  correctiveAction: PosCorrectiveAction | null;
 }
 
 export function resolvePosFailureSupportMetadata(input: {
@@ -638,6 +621,11 @@ export function resolvePosFailureSupportMetadata(input: {
   code: string;
   message: string;
   detail: string;
+  permissions?: {
+    canManageCatalog?: boolean;
+    canViewInventory?: boolean;
+    canUseShift?: boolean;
+  };
 }): PosFailureSupportMetadata {
   const isExpectedRejection = input.classification === 'expected_rejection';
   if (!isExpectedRejection) {
@@ -652,10 +640,7 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: isPrinter ? 'FloCafe printer problem' : 'FloCafe order problem',
       rejectionKind: null,
       affectedItem: null,
-      correctiveGuidance: null,
-      correctiveActionHref: null,
-      correctiveActionLabel: null,
-      supportEvidenceHint: null,
+      correctiveAction: null,
     };
   }
 
@@ -677,13 +662,7 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: 'FloCafe inventory or stock validation help',
       rejectionKind: 'stock_insufficient',
       affectedItem,
-      correctiveGuidance: affectedItem
-        ? `Check Inventory or Recipes to restock "${affectedItem}" or adjust its stock tracking before submitting the order again.`
-        : 'Check Inventory or Recipes to restock the affected item or adjust its stock tracking before submitting the order again.',
-      correctiveActionHref: '/inventory',
-      correctiveActionLabel: 'Open Inventory & Recipes',
-      supportEvidenceHint:
-        'Only contact support if stock or recipe quantities still look wrong after checking Inventory (include the item name and expected stock count).',
+      correctiveAction: resolvePosValidationAction('stock_insufficient', input.permissions),
     };
   }
 
@@ -702,12 +681,26 @@ export function resolvePosFailureSupportMetadata(input: {
       subject: 'FloCafe business day or shift validation help',
       rejectionKind: 'closed_books',
       affectedItem: null,
-      correctiveGuidance:
-        "Today's business day or shift is closed. Open Dashboard / Shift settings to open a shift or review day-close status, or wait until the next business day.",
-      correctiveActionHref: '/dashboard',
-      correctiveActionLabel: 'Open Dashboard & Shift Controls',
-      supportEvidenceHint:
-        'Only contact support if the business day or shift appears closed at the wrong store time (include the expected business date and store timezone).',
+      correctiveAction: null,
+    };
+  }
+
+  if (
+    isShiftRequiredRejection({
+      reasonCode,
+      displayCode: input.displayCode,
+      message: input.message,
+      detail: input.detail,
+    })
+  ) {
+    return {
+      isExpectedRejection: true,
+      variant: 'validation',
+      category: 'general',
+      subject: 'FloCafe business day or shift validation help',
+      rejectionKind: 'shift_required',
+      affectedItem: null,
+      correctiveAction: resolvePosValidationAction('shift_required', input.permissions),
     };
   }
 
@@ -725,10 +718,6 @@ export function resolvePosFailureSupportMetadata(input: {
     subject,
     rejectionKind: 'validation',
     affectedItem: null,
-    correctiveGuidance: null,
-    correctiveActionHref: null,
-    correctiveActionLabel: null,
-    supportEvidenceHint:
-      'Only contact support if you believe this validation check rejected a valid request.',
+    correctiveAction: null,
   };
 }

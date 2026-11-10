@@ -43,6 +43,7 @@ import { canPayScheduledOrder, isPayableBill } from '@/lib/order-payment-state';
 import RefundModal from '@/components/orders/RefundModal';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
@@ -107,9 +108,11 @@ import {
 import {
   buildPosSupportTicketRequestBody,
   buildPrinterOperationFailureSupportPayload,
+  isOperationReference,
   isSupportErrorContextCurrent,
   readBoundedSupportLogTail,
   resolvePosFailureSupportMetadata,
+  resolvePosValidationAction,
   type PosFailureSupportMetadata,
   type SupportErrorContextSnapshot,
 } from '@/lib/operation-failure';
@@ -166,8 +169,6 @@ type SupportOperationFailure = {
   };
 };
 
-const OPERATION_REFERENCE_V4 =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STRUCTURED_HELP_CAPTURE_POINTS: Record<string, string> = {
   'order.create:validation:order.quantity_invalid': 'fc.backend.order.create.quantity_validation',
   'order.create:validation:order.stock_insufficient': 'fc.backend.order.create.stock_validation',
@@ -808,10 +809,9 @@ export default function POSPage() {
     extraDiagnostics?: Record<string, unknown>;
     suppressToast?: boolean;
   }) => {
-    const correlationId =
-      entry.correlationId && OPERATION_REFERENCE_V4.test(entry.correlationId)
-        ? entry.correlationId
-        : undefined;
+    const correlationId = isOperationReference(entry.correlationId)
+      ? entry.correlationId
+      : undefined;
     const ticketCorrelationId = correlationId || createOperationReference() || '';
     const clientTicketId = createOperationReference() || '';
     const presentation = resolvePosFailureSupportMetadata({
@@ -827,6 +827,10 @@ export default function POSPage() {
     const subject = entry.subject || presentation.subject;
     const category = entry.category || presentation.category;
     const liveContext = readLiveSupportContext();
+    const matchedOperationFailure =
+      correlationId && entry.operationFailure?.operation_id === correlationId
+        ? entry.operationFailure
+        : undefined;
     supportSubmitTokenRef.current = null;
     setSupportSubmitting(false);
     setSentTicketId(null);
@@ -845,8 +849,7 @@ export default function POSPage() {
       reasonCode: entry.reasonCode || undefined,
       displayCode: entry.displayCode || undefined,
       correlationId,
-      operationFailure:
-        entry.operationFailure?.operation_id === correlationId ? entry.operationFailure : undefined,
+      operationFailure: matchedOperationFailure,
       ticketCorrelationId,
       clientTicketId,
       context: {
@@ -870,9 +873,7 @@ export default function POSPage() {
           http_status: entry.status,
           ...(entry.extraDiagnostics || {}),
         },
-        ...(entry.operationFailure?.operation_id === correlationId
-          ? { operation_failure: entry.operationFailure }
-          : {}),
+        ...(matchedOperationFailure ? { operation_failure: matchedOperationFailure } : {}),
       },
     });
     if (!entry.suppressToast) {
@@ -3937,25 +3938,67 @@ export default function POSPage() {
               </p>
               <p className="mt-1 text-sm text-muted-foreground">{supportError.message}</p>
               <p className="mt-1 text-sm text-muted-foreground">{supportError.nextStep}</p>
-              {supportError.presentation.correctiveGuidance && (
-                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
-                  <p>{supportError.presentation.correctiveGuidance}</p>
-                  {supportError.presentation.correctiveActionHref &&
-                    supportError.presentation.correctiveActionLabel && (
-                      <a
-                        href={supportError.presentation.correctiveActionHref}
-                        className="mt-1 inline-block font-medium text-brand underline"
-                      >
-                        {supportError.presentation.correctiveActionLabel}
-                      </a>
+              {(() => {
+                const rejectionKind = supportError.presentation.rejectionKind;
+                const correctiveGuidance =
+                  rejectionKind === 'stock_insufficient'
+                    ? supportError.presentation.affectedItem
+                      ? t('validationStockGuidanceItem', {
+                          item: supportError.presentation.affectedItem,
+                        })
+                      : t('validationStockGuidance')
+                    : rejectionKind === 'shift_required'
+                      ? t('validationShiftRequiredGuidance')
+                      : rejectionKind === 'closed_books'
+                        ? t('validationClosedBooksGuidance')
+                        : null;
+                const correctiveAction = resolvePosValidationAction(rejectionKind, {
+                  canManageCatalog: tenantCan(currentTenant, 'catalog.manage'),
+                  canViewInventory: tenantCan(currentTenant, 'inventory.view'),
+                  canUseShift,
+                });
+                const evidenceHint =
+                  rejectionKind === 'stock_insufficient'
+                    ? t('validationStockEvidenceHint')
+                    : rejectionKind === 'shift_required'
+                      ? t('validationShiftEvidenceHint')
+                      : rejectionKind === 'closed_books'
+                        ? t('validationClosedBooksEvidenceHint')
+                        : supportError.presentation.isExpectedRejection
+                          ? t('validationGenericEvidenceHint')
+                          : null;
+                return (
+                  <>
+                    {correctiveGuidance && (
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 p-2 text-xs text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                        <p>{correctiveGuidance}</p>
+                        {correctiveAction?.kind === 'link' && (
+                          <Link
+                            href={correctiveAction.href}
+                            className="mt-1 inline-block font-medium text-brand underline"
+                          >
+                            {correctiveAction.href === '/products'
+                              ? t('validationOpenProducts')
+                              : t('validationOpenInventory')}
+                          </Link>
+                        )}
+                        {correctiveAction?.kind === 'open_shift' && (
+                          <button
+                            type="button"
+                            onClick={() => shift.setOpenModalOpen(true)}
+                            className="mt-1 inline-block text-start font-medium text-brand underline"
+                          >
+                            {t('validationOpenShiftAction')}
+                          </button>
+                        )}
+                      </div>
                     )}
-                </div>
-              )}
-              {supportError.presentation.supportEvidenceHint && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {supportError.presentation.supportEvidenceHint}
-                </p>
-              )}
+                    {evidenceHint && (
+                      <p className="mt-1.5 text-xs text-muted-foreground">{evidenceHint}</p>
+                    )}
+                  </>
+                );
+              })()}
               <div className="mt-2.5 flex items-start gap-2">
                 <input
                   id="pos-support-attach-log"

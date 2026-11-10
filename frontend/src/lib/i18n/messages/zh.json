@@ -1303,7 +1303,18 @@
     "selectCounter": "选择柜台",
     "decreaseQuantity": "减少数量",
     "increaseQuantity": "增加数量",
-    "distributeEvenly": "平均分配"
+    "distributeEvenly": "平均分配",
+    "validationStockGuidanceItem": "重新提交订单前，请先前往“商品”或“库存”为“{item}”补货或更新其库存追踪设置。",
+    "validationStockGuidance": "重新提交订单前，请先前往“商品”或“库存”为缺货品项补货或更新其库存追踪设置。",
+    "validationOpenProducts": "打开商品与库存",
+    "validationOpenInventory": "打开库存与配方",
+    "validationStockEvidenceHint": "仅在检查“商品”或“库存”后库存数量仍不正确时联系支持（请附上商品名称和预期库存数）。",
+    "validationShiftRequiredGuidance": "完成此操作前需要先开始班次。请在此终端开始班次后再试一次。",
+    "validationOpenShiftAction": "开始班次",
+    "validationShiftEvidenceHint": "仅在此终端已开始班次但错误仍然出现时联系支持。",
+    "validationClosedBooksGuidance": "今日营业日已关账且无法重新开启。新订单与现金业务将在下一个营业日恢复。",
+    "validationClosedBooksEvidenceHint": "仅在今日营业日因门店日期或时区异常而显示已关账时联系支持。",
+    "validationGenericEvidenceHint": "仅在您认为此校验拒绝了有效请求时联系支持。"
   },
   "printTest": {
     "amt": "金额",

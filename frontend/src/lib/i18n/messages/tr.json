@@ -1303,7 +1303,18 @@
     "selectCounter": "Banko seç",
     "decreaseQuantity": "Miktarı azalt",
     "increaseQuantity": "Miktarı artır",
-    "distributeEvenly": "Eşit dağıt"
+    "distributeEvenly": "Eşit dağıt",
+    "validationStockGuidanceItem": "Siparişi tekrar göndermeden önce Ürünler veya Stok bölümünden \"{item}\" stoğunu yenileyin ya da stok takibini güncelleyin.",
+    "validationStockGuidance": "Siparişi tekrar göndermeden önce Ürünler veya Stok bölümünden tükenen ürünün stoğunu yenileyin ya da stok takibini güncelleyin.",
+    "validationOpenProducts": "Ürünler ve Stoğu Aç",
+    "validationOpenInventory": "Stok ve Reçeteleri Aç",
+    "validationStockEvidenceHint": "Yalnızca Ürünler veya Stok kontrolünden sonra stok miktarları hâlâ hatalı görünüyorsa destekle iletişime geçin (ürün adını ve beklenen stok adedini belirtin).",
+    "validationShiftRequiredGuidance": "Bu işlemi tamamlamak için açık bir vardiya gereklidir. Bu terminalde vardiya açıp tekrar deneyin.",
+    "validationOpenShiftAction": "Vardiya aç",
+    "validationShiftEvidenceHint": "Yalnızca bu terminalde zaten açık bir vardiya varsa ve hata devam ediyorsa destekle iletişime geçin.",
+    "validationClosedBooksGuidance": "Bugünün iş günü kapatılmıştır ve yeniden açılamaz. Yeni siparişler ve nakit işlemleri bir sonraki iş gününde devam eder.",
+    "validationClosedBooksEvidenceHint": "Yalnızca bugünün iş günü yanlış mağaza tarihi veya saat diliminde kapalı görünüyorsa destekle iletişime geçin.",
+    "validationGenericEvidenceHint": "Yalnızca bu doğrulama kontrolünün geçerli bir isteği reddettiğini düşünüyorsanız destekle iletişime geçin."
   },
   "printTest": {
     "amt": "Tutar",

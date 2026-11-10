@@ -1303,7 +1303,18 @@
     "selectCounter": "選擇櫃檯",
     "decreaseQuantity": "減少數量",
     "increaseQuantity": "增加數量",
-    "distributeEvenly": "平均分配"
+    "distributeEvenly": "平均分配",
+    "validationStockGuidanceItem": "重新送出訂單前，請先前往「商品」或「庫存」補貨「{item}」或更新其庫存追蹤設定。",
+    "validationStockGuidance": "重新送出訂單前，請先前往「商品」或「庫存」為缺貨品項補貨或更新其庫存追蹤設定。",
+    "validationOpenProducts": "開啟商品與庫存",
+    "validationOpenInventory": "開啟庫存與配方",
+    "validationStockEvidenceHint": "僅在檢查「商品」或「庫存」後數量仍不正確時才聯繫支援（請附上品項名稱與預期庫存數量）。",
+    "validationShiftRequiredGuidance": "完成此操作前需要先開啟班次。請在此終端機開始班次後再試一次。",
+    "validationOpenShiftAction": "開始班次",
+    "validationShiftEvidenceHint": "僅在此終端機已開啟班次但錯誤持續發生時才聯繫支援。",
+    "validationClosedBooksGuidance": "今日營業日已關帳且無法重新開啟。新訂單與現金作業將於下一個營業日恢復。",
+    "validationClosedBooksEvidenceHint": "僅在今日營業日因門市日期或時區錯誤而顯示為已關帳時才聯繫支援。",
+    "validationGenericEvidenceHint": "僅在您認為此驗證檢查拒絕了有效請求時才聯繫支援。"
   },
   "printTest": {
     "amt": "金額",

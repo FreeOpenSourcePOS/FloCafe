@@ -913,9 +913,9 @@ async function main() {
       canViewInventory: true,
     });
     assertEqual(
-      inventoryOnlyAction?.kind === 'link' ? inventoryOnlyAction.href : null,
-      '/inventory',
-      'stock rejection falls back to /inventory when only inventory.view is granted',
+      inventoryOnlyAction,
+      null,
+      'stock rejection returns null when catalog.manage is not granted even if inventory.view is granted',
     );
     assertEqual(
       resolvePosValidationAction('stock_insufficient', {

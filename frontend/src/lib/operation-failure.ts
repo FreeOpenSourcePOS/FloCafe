@@ -285,7 +285,7 @@ export function classifyPrinterFailureClass(
     if (/driver|filter failed|rendering failed|invalid printer name/i.test(text)) {
       return 'driver_error';
     }
-    if (/access is denied|permission denied|unauthorized|eacces|eprem/i.test(text)) {
+    if (/access is denied|permission denied|unauthorized|eacces|eperm/i.test(text)) {
       return 'permission_denied';
     }
     if (/timed?\s*out|etimedout/i.test(text)) {
@@ -596,7 +596,6 @@ export function resolvePosValidationAction(
 ): PosCorrectiveAction | null {
   if (rejectionKind === 'stock_insufficient') {
     if (permissions.canManageCatalog) return { kind: 'link', href: '/products' };
-    if (permissions.canViewInventory) return { kind: 'link', href: '/inventory' };
     return null;
   }
   if (rejectionKind === 'shift_required') {

@@ -550,7 +550,7 @@ A ticket may carry a `log_tail` string holding the tail of the current session's
 
 - **Cap.** `LOG_TAIL_MAX_BYTES` is 200,000. The tail is cut from the end, keeping the most recent
   bytes, in both the IPC handler and the route. In the POS one-click help flow, the client bounds
-  the attached log tail to 16 KB (`SUPPORT_LOG_TAIL_MAX_CHARS`) when opted in.
+  the attached log tail to 16,384 UTF-16 code units (`SUPPORT_LOG_TAIL_MAX_CHARS`) when opted in.
 - **Window.** `LOG_TAIL_MAX_AGE_MS` is 7 days. The cut is made at the first line whose timestamp
   falls inside the window, not at a byte offset, so a quiet store's log is not cut mid-record. The
   byte cap is the backstop when the windowed content is still large.

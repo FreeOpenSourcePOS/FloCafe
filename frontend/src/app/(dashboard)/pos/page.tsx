@@ -3958,7 +3958,6 @@ export default function POSPage() {
                         : null;
                 const correctiveAction = resolvePosValidationAction(rejectionKind, {
                   canManageCatalog: tenantCan(currentTenant, 'catalog.manage'),
-                  canViewInventory: tenantCan(currentTenant, 'inventory.view'),
                   canUseShift,
                 });
                 const evidenceHint =
@@ -4030,6 +4029,7 @@ export default function POSPage() {
                       subject: supportError.subject,
                       correlation_id: supportError.ticketCorrelationId,
                       client_ticket_id: supportError.clientTicketId,
+                      ...(attachLog ? { log_tail: `[${tSupport('attachLogHint')}]` } : {}),
                     },
                     null,
                     2,

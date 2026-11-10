@@ -280,7 +280,17 @@ function auditDescription(row: AuditRow, t: Translate): string {
   return '';
 }
 
-export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
+export function TaxConfigurationPanel({
+  isOwner,
+  canManageSettings = isOwner,
+  canManageTaxConfiguration = isOwner,
+}: {
+  isOwner: boolean;
+  canManageSettings?: boolean;
+  canManageTaxConfiguration?: boolean;
+}) {
+  const canTurnOff = isOwner && canManageSettings;
+  const canEnableOfficial = isOwner && canManageTaxConfiguration;
   const { formatDateTime } = useFormatDate();
   const t = useTranslations('tax');
   const [packs, setPacks] = useState<PackSummary[]>([]);
@@ -758,7 +768,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }
 
   async function turnTaxesOff() {
-    if (!isOwner) return;
+    if (!canTurnOff) return;
     setSaving(true);
     try {
       await api.put('/settings/taxes_enabled', { value: 'false' });
@@ -773,7 +783,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }
 
   async function enableCountryTaxes() {
-    if (!isOwner || !storeCountry) return;
+    if (!canEnableOfficial || !storeCountry) return;
     setEnablingTaxes(true);
     setCountryPackUnavailable(false);
     try {
@@ -1029,8 +1039,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <div className="mt-3 inline-flex flex-wrap rounded-lg border border-border bg-muted p-1">
           <button
             type="button"
-            disabled={!isOwner || saving}
+            disabled={!canTurnOff || saving}
             onClick={() => {
+              if (!canTurnOff) return;
               setManualBuilderOpen(false);
               if (taxesEnabled) void turnTaxesOff();
             }}
@@ -1040,13 +1051,16 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           </button>
           <button
             type="button"
-            disabled={!isOwner || enablingTaxes || officialPackAvailableResolved === false}
+            disabled={
+              !canEnableOfficial || enablingTaxes || officialPackAvailableResolved === false
+            }
             title={
               officialPackAvailableResolved === false
                 ? t('noOfficialPack', { country: storeCountry })
                 : undefined
             }
             onClick={() => {
+              if (!canEnableOfficial) return;
               setManualBuilderOpen(false);
               if (taxMode !== 'official') void enableCountryTaxes();
             }}
@@ -1057,7 +1071,10 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           <button
             type="button"
             disabled={!isOwner}
-            onClick={() => setManualBuilderOpen(true)}
+            onClick={() => {
+              if (!isOwner) return;
+              setManualBuilderOpen(true);
+            }}
             className={taxModeSegmentClass(activeSegment === 'manual')}
           >
             {t('modeManual')}

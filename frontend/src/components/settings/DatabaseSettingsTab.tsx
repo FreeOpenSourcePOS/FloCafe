@@ -127,6 +127,7 @@ export type PinGate =
 
 export interface DatabaseSettingsTabProps {
   isOwner: boolean;
+  canManageGoogleDrive?: boolean;
   masterPinStatus: MasterPinStatus;
   backups: BackupInfo[];
   backupsLoading: boolean;
@@ -250,6 +251,7 @@ function formatBackupSize(bytes: number): string {
 
 export function DatabaseSettingsTab({
   isOwner,
+  canManageGoogleDrive = isOwner,
   masterPinStatus,
   backups,
   backupsLoading,
@@ -485,7 +487,7 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Google Drive - automated off-device backups */}
-      {isOwner && (
+      {isOwner && canManageGoogleDrive && (
         <div
           data-setting-section="google-drive-backup"
           className="bg-card rounded-2xl border border-border p-6 space-y-6"

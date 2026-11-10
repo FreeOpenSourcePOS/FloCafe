@@ -51,6 +51,7 @@ interface PairingAddresses {
 type NetworkInfoStatus = 'loading' | 'ready' | 'error';
 
 interface PairedDisplaysProps {
+  canManage: boolean;
   networkInfoStatus: NetworkInfoStatus;
   primaryOrigin: string | null;
   otherOrigins: string[];
@@ -113,6 +114,7 @@ function getPairingAddresses(info: PosNetworkInfo): PairingAddresses {
 }
 
 function PairedDisplays({
+  canManage,
   networkInfoStatus,
   primaryOrigin,
   otherOrigins,
@@ -133,6 +135,7 @@ function PairedDisplays({
   const tCommon = useTranslations('common');
 
   useEffect(() => {
+    if (!canManage) return;
     const controller = new AbortController();
     api
       .get('/settings/customer-display/tokens', { signal: controller.signal })
@@ -142,9 +145,10 @@ function PairedDisplays({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, []);
+  }, [canManage]);
 
   function selectPairingAddress(origin: string) {
+    if (!canManage) return;
     onSelectOrigin(origin);
     setPairingLink((current) =>
       current
@@ -157,7 +161,7 @@ function PairedDisplays({
   }
 
   async function pair() {
-    if (!selectedOrigin || networkInfoStatus === 'loading') return;
+    if (!canManage || !selectedOrigin || networkInfoStatus === 'loading') return;
     setBusy(true);
     try {
       const { data } = await api.post('/settings/customer-display/tokens', { label });
@@ -181,6 +185,7 @@ function PairedDisplays({
   }
 
   async function revoke(id: string) {
+    if (!canManage) return;
     try {
       await api.delete(`/settings/customer-display/tokens/${id}`);
       setDisplays((prev) => prev.filter((display) => display.id !== id));
@@ -221,10 +226,14 @@ function PairedDisplays({
             id="customer-display-pair-label"
             type="text"
             maxLength={60}
+            disabled={!canManage || busy}
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => {
+              if (!canManage) return;
+              setLabel(e.target.value);
+            }}
             placeholder={t('pairLabelPlaceholder')}
-            className="w-56 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            className="w-56 rounded-lg border border-border bg-background px-3 py-2 text-sm disabled:bg-muted disabled:cursor-not-allowed"
           />
         </div>
       </div>
@@ -258,8 +267,8 @@ function PairedDisplays({
               name="customer-display-pairing-address"
               checked={selectedOrigin === primaryOrigin}
               onChange={() => selectPairingAddress(primaryOrigin)}
-              disabled={busy}
-              className="mt-1"
+              disabled={!canManage || busy}
+              className="mt-1 disabled:cursor-not-allowed"
             />
             <span className="min-w-0">
               <span className="block font-medium">{t('primaryLanAddress')}</span>
@@ -282,8 +291,8 @@ function PairedDisplays({
                     name="customer-display-pairing-address"
                     checked={selectedOrigin === origin}
                     onChange={() => selectPairingAddress(origin)}
-                    disabled={busy}
-                    className="mt-1"
+                    disabled={!canManage || busy}
+                    className="mt-1 disabled:cursor-not-allowed"
                   />
                   <span dir="ltr" className="break-all font-mono text-xs text-muted-foreground">
                     {origin}
@@ -298,8 +307,8 @@ function PairedDisplays({
                       name="customer-display-pairing-address"
                       checked={selectedOrigin === localPreviewOrigin}
                       onChange={() => selectPairingAddress(localPreviewOrigin)}
-                      disabled={busy}
-                      className="mt-1"
+                      disabled={!canManage || busy}
+                      className="mt-1 disabled:cursor-not-allowed"
                     />
                     <span className="min-w-0">
                       <span className="block font-medium">{t('localPreviewAddress')}</span>
@@ -321,9 +330,13 @@ function PairedDisplays({
         type="button"
         onClick={pair}
         disabled={
-          busy || networkInfoStatus === 'loading' || !selectedOrigin || label.trim().length === 0
+          !canManage ||
+          busy ||
+          networkInfoStatus === 'loading' ||
+          !selectedOrigin ||
+          label.trim().length === 0
         }
-        className="mb-4 px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
+        className="mb-4 px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
       >
         {t('pairCreate')}
       </button>
@@ -364,8 +377,9 @@ function PairedDisplays({
               </div>
               <button
                 type="button"
+                disabled={!canManage}
                 onClick={() => revoke(display.id)}
-                className="inline-flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg text-sm text-destructive hover:bg-muted"
+                className="inline-flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg text-sm text-destructive hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Trash2 size={16} />
                 {t('revoke')}
@@ -378,7 +392,7 @@ function PairedDisplays({
   );
 }
 
-export function CustomerDisplayCard() {
+export function CustomerDisplayCard({ canManage = true }: { canManage?: boolean } = {}) {
   const t = useTranslations('customerDisplay');
   const tCommon = useTranslations('common');
   const [config, setConfig] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
@@ -439,6 +453,7 @@ export function CustomerDisplayCard() {
   }
 
   function toggleStatus(status: CustomerDisplayStatus) {
+    if (!canManage) return;
     setConfig((prev) => {
       const next = prev.statuses.includes(status)
         ? prev.statuses.filter((s) => s !== status)
@@ -452,6 +467,7 @@ export function CustomerDisplayCard() {
   }
 
   function toggleOrderType(orderType: CustomerDisplayOrderType) {
+    if (!canManage) return;
     setConfig((prev) => {
       const next = prev.order_types.includes(orderType)
         ? prev.order_types.filter((t) => t !== orderType)
@@ -467,6 +483,7 @@ export function CustomerDisplayCard() {
   }
 
   async function save() {
+    if (!canManage) return;
     setSaving(true);
     try {
       const { data } = await api.put('/settings/customer-display', config);
@@ -542,9 +559,10 @@ export function CustomerDisplayCard() {
             <label key={status} className="inline-flex items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
+                disabled={!canManage}
                 checked={config.statuses.includes(status)}
                 onChange={() => toggleStatus(status)}
-                className="text-brand"
+                className="text-brand disabled:cursor-not-allowed"
               />
               {t(STATUS_LABEL_KEYS[status])}
             </label>
@@ -562,9 +580,10 @@ export function CustomerDisplayCard() {
             >
               <input
                 type="checkbox"
+                disabled={!canManage}
                 checked={config.order_types.includes(orderType)}
                 onChange={() => toggleOrderType(orderType)}
-                className="text-brand"
+                className="text-brand disabled:cursor-not-allowed"
               />
               {t(ORDER_TYPE_LABEL_KEYS[orderType])}
             </label>
@@ -585,23 +604,29 @@ export function CustomerDisplayCard() {
           min={2}
           max={60}
           step={1}
+          disabled={!canManage}
           value={config.refresh_seconds}
-          onChange={(e) =>
+          onChange={(e) => {
+            if (!canManage) return;
             setConfig((prev) => ({
               ...prev,
               refresh_seconds: Math.min(60, Math.max(2, Math.round(Number(e.target.value)) || 2)),
-            }))
-          }
-          className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            }));
+          }}
+          className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm disabled:bg-muted disabled:cursor-not-allowed"
         />
       </div>
 
       <label className="inline-flex items-center gap-2 text-sm text-foreground">
         <input
           type="checkbox"
+          disabled={!canManage}
           checked={config.show_updated}
-          onChange={(e) => setConfig((prev) => ({ ...prev, show_updated: e.target.checked }))}
-          className="text-brand"
+          onChange={(e) => {
+            if (!canManage) return;
+            setConfig((prev) => ({ ...prev, show_updated: e.target.checked }));
+          }}
+          className="text-brand disabled:cursor-not-allowed"
         />
         {t('showUpdatedLabel')}
       </label>
@@ -610,21 +635,24 @@ export function CustomerDisplayCard() {
         <button
           type="button"
           onClick={save}
-          disabled={!dirty || saving}
-          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
+          disabled={!canManage || !dirty || saving}
+          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
         >
           {saving ? tCommon('saving') : tCommon('save')}
         </button>
       </div>
-      <PairedDisplays
-        networkInfoStatus={networkInfoStatus}
-        primaryOrigin={primaryOrigin}
-        otherOrigins={otherOrigins}
-        localPreviewOrigin={localPreviewOrigin}
-        selectedOrigin={selectedOrigin}
-        onSelectOrigin={setSelectedOrigin}
-        onRetryNetworkInfo={retryNetworkInfo}
-      />
+      {canManage && (
+        <PairedDisplays
+          canManage={canManage}
+          networkInfoStatus={networkInfoStatus}
+          primaryOrigin={primaryOrigin}
+          otherOrigins={otherOrigins}
+          localPreviewOrigin={localPreviewOrigin}
+          selectedOrigin={selectedOrigin}
+          onSelectOrigin={setSelectedOrigin}
+          onRetryNetworkInfo={retryNetworkInfo}
+        />
+      )}
     </div>
   );
 }

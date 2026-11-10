@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMain } from 'electron';
 import { isTrustedMainWindowSender } from './ipc';
+import { authorizeRendererPermission, type IpcAuthResult } from './security/ipc-auth';
 import {
   initialUpdateState,
   isInstallReady,
@@ -52,6 +53,7 @@ export type DirectUpdateIpcOptions = {
     error: (msg: string, ...args: unknown[]) => void;
   };
   validateSender?: (event: unknown) => boolean;
+  authorizeSettingsManage?: (event: unknown, authToken: unknown) => Promise<IpcAuthResult>;
 };
 
 export type DirectUpdateHandlers = Record<
@@ -92,6 +94,7 @@ export function createDirectUpdateIpcHandlers(
     withDatabaseRequest,
     log,
     validateSender,
+    authorizeSettingsManage,
   } = options;
 
   const isSenderAuthorized = (event: unknown): boolean => {
@@ -101,6 +104,11 @@ export function createDirectUpdateIpcHandlers(
       getMainWindow,
       getServerPort(),
     );
+  };
+
+  const checkSettingsManage = (event: unknown, authToken: unknown): Promise<IpcAuthResult> => {
+    if (authorizeSettingsManage) return authorizeSettingsManage(event, authToken);
+    return authorizeRendererPermission(event, authToken, 'settings.manage');
   };
 
   return {
@@ -124,14 +132,18 @@ export function createDirectUpdateIpcHandlers(
       return withDatabaseRequest(() => readAutoUpdateCheckEnabled());
     },
 
-    'updates:set-auto-check': (event: unknown, enabled: unknown) => {
+    'updates:set-auto-check': (event: unknown, enabled: unknown, authToken?: unknown) => {
       if (!isSenderAuthorized(event)) {
         return { success: false, error: 'Unauthorized sender' };
       }
       if (typeof enabled !== 'boolean') {
         return { success: false, error: 'enabled must be a boolean' };
       }
-      return withDatabaseRequest(() => {
+      return withDatabaseRequest(async () => {
+        const auth = await checkSettingsManage(event, authToken);
+        if (!auth.ok) {
+          return { success: false, error: auth.error || 'Insufficient permissions' };
+        }
         try {
           writeAutoUpdateCheckEnabled(enabled);
         } catch (error) {
@@ -148,7 +160,7 @@ export function createDirectUpdateIpcHandlers(
       return withDatabaseRequest(() => readBetaChannelEnabled());
     },
 
-    'updates:set-beta-channel': (event: unknown, enabled: unknown) => {
+    'updates:set-beta-channel': (event: unknown, enabled: unknown, authToken?: unknown) => {
       if (!isSenderAuthorized(event)) {
         return { success: false, error: 'Unauthorized sender' };
       }
@@ -157,6 +169,10 @@ export function createDirectUpdateIpcHandlers(
       }
       return enqueueBetaChannelTransition(() =>
         withDatabaseRequest(async () => {
+          const auth = await checkSettingsManage(event, authToken);
+          if (!auth.ok) {
+            return { success: false, error: auth.error || 'Insufficient permissions' };
+          }
           if (isInstallReady(getStoredUpdateStatus(), getStagedUpdateReady())) {
             return {
               success: false,

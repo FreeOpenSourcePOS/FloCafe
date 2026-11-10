@@ -43,6 +43,7 @@ import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from '
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
 import { isPrinterTextSize } from '../shared/print/text-size';
 import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
+import { authorizeRendererPermission } from './security/ipc-auth';
 import log from 'electron-log/main';
 import { randomUUID } from 'crypto';
 import { cloudSync } from './services/cloud-sync';
@@ -62,9 +63,8 @@ const LOG_TAIL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Matches electron-log's default line prefix, e.g. "[2026-09-13 10:15:30.123] [info] ...".
 const LOG_LINE_TIMESTAMP_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/;
 
-// Settings keys the renderer may write without a permission check.
-// Everything else (currency, country, tax_scheme, business profile, ...) is
-// permission-gated on the HTTP API and must stay there.
+// Settings keys exposed via Electron IPC; writes require `settings.manage`
+// once setup has completed.
 const ALLOWED_IPC_KEYS = new Set(['theme_mode', 'orders_layout']);
 
 const SENSITIVE_SETTING_KEYS = new Set([
@@ -549,9 +549,15 @@ export function registerIpcHandlers(
     });
   });
 
-  handle('set-setting', async (event, key: string, value: string) => {
+  handle('set-setting', async (event, key: string, value: string, authToken?: unknown) => {
     return withDatabaseRequest(async () => {
       try {
+        const auth = await authorizeRendererPermission(event, authToken, 'settings.manage', {
+          allowPreSetup: key === 'theme_mode',
+        });
+        if (!auth.ok) {
+          return { success: false, error: auth.error || 'Insufficient permissions' };
+        }
         if (typeof key !== 'string' || typeof value !== 'string' || value.length > 10_000) {
           return { success: false, error: 'Invalid setting value' };
         }

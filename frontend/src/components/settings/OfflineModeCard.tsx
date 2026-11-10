@@ -35,6 +35,7 @@ export function OfflineModeCard({ canManage }: { canManage: boolean }) {
   }, [load]);
 
   const change = async (next: boolean) => {
+    if (!canManage || busy) return;
     setBusy(true);
     try {
       const res = await api.put('/settings/offline-mode', { offline_mode: next });

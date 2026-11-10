@@ -686,6 +686,7 @@ export function GeneralSettingsTab({
               <Toggle
                 value={orderNumberForm.includeDate}
                 label={t('orderNumberIncludeDate')}
+                disabled={!isAdmin}
                 onChange={
                   isAdmin
                     ? (v) => {
@@ -705,6 +706,7 @@ export function GeneralSettingsTab({
             <Toggle
               value={orderNumberForm.resetDaily}
               label={t('orderNumberResetDaily')}
+              disabled={!isAdmin}
               onChange={
                 isAdmin
                   ? (v) => {
@@ -853,6 +855,7 @@ export function GeneralSettingsTab({
                 <Toggle
                   value={orderNumberForm.invoiceIncludePeriod}
                   label={t('invoiceNumberIncludePeriod')}
+                  disabled={!isAdmin}
                   onChange={
                     isAdmin
                       ? (v) => {
@@ -898,7 +901,9 @@ export function GeneralSettingsTab({
             <p className="text-sm text-muted-foreground mb-1">{t('languages')}</p>
             <select
               value={language}
+              disabled={!isAdmin}
               onChange={(e) => {
+                if (!isAdmin) return;
                 const lang = e.target.value as Language;
                 const prev = usePosSettingsStore.getState().language;
                 const requestId = ++languageRequestId.current;
@@ -913,7 +918,7 @@ export function GeneralSettingsTab({
                   }
                 });
               }}
-              className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+              className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border disabled:bg-muted disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {SELECTABLE_LANGUAGES.map((lang) => (
                 <option key={lang} value={lang}>

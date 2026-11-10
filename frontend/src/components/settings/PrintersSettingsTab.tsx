@@ -141,6 +141,8 @@ const emptyPrinterForm: PrinterForm = {
 
 export interface PrintersSettingsTabProps {
   isActive: boolean;
+  isAdmin?: boolean;
+  canManagePrinters?: boolean;
   hwPrinters: HwPrinter[];
   setHwPrinters: React.Dispatch<React.SetStateAction<HwPrinter[]>>;
   printingForm: PrintingForm;
@@ -163,6 +165,8 @@ export interface PrintersSettingsTabProps {
 
 export function PrintersSettingsTab({
   isActive,
+  isAdmin = true,
+  canManagePrinters = true,
   hwPrinters,
   setHwPrinters,
   printingForm,
@@ -226,32 +230,37 @@ export function PrintersSettingsTab({
     }
   };
 
-  const fetchDetectedPrinters = useCallback(async (signal?: AbortSignal) => {
-    setDetectingPrinters(true);
-    try {
-      const res = await api.get('/printers/detect', signal ? { signal } : undefined);
-      if (!signal?.aborted) {
-        setDetectedPrinters(res.data.printers || []);
-        setDetectionSucceeded(true);
+  const fetchDetectedPrinters = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!canManagePrinters) return;
+      setDetectingPrinters(true);
+      try {
+        const res = await api.get('/printers/detect', signal ? { signal } : undefined);
+        if (!signal?.aborted) {
+          setDetectedPrinters(res.data.printers || []);
+          setDetectionSucceeded(true);
+        }
+      } catch {
+        if (!signal?.aborted) {
+          setDetectedPrinters([]);
+          setDetectionSucceeded(false);
+        }
+      } finally {
+        if (!signal?.aborted) setDetectingPrinters(false);
       }
-    } catch {
-      if (!signal?.aborted) {
-        setDetectedPrinters([]);
-        setDetectionSucceeded(false);
-      }
-    } finally {
-      if (!signal?.aborted) setDetectingPrinters(false);
-    }
-  }, []);
+    },
+    [canManagePrinters],
+  );
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || !canManagePrinters) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => fetchDetectedPrinters(controller.signal));
     return () => controller.abort();
-  }, [fetchDetectedPrinters, isActive]);
+  }, [canManagePrinters, fetchDetectedPrinters, isActive]);
 
   const quickAddDetected = async (p: DetectedPrinter) => {
+    if (!canManagePrinters) return;
     setAddingDetectedName(p.name);
     try {
       const payload: {
@@ -285,6 +294,7 @@ export function PrintersSettingsTab({
   };
 
   const openAddPrinter = () => {
+    if (!canManagePrinters) return;
     setPrinterForm(emptyPrinterForm);
     setPaperWidthTouched(false);
     setEditingPrinterId(null);
@@ -292,6 +302,7 @@ export function PrintersSettingsTab({
   };
 
   const openEditPrinter = (p: HwPrinter) => {
+    if (!canManagePrinters) return;
     setPrinterForm({
       name: p.name,
       connection_type: p.connection_type,
@@ -307,6 +318,7 @@ export function PrintersSettingsTab({
   };
 
   const savePrinterHw = async () => {
+    if (!canManagePrinters) return;
     if (!printerForm.name) {
       toast.error(t('printerNameRequired'));
       return;
@@ -340,6 +352,7 @@ export function PrintersSettingsTab({
   };
 
   const deletePrinterHw = async (id: string) => {
+    if (!canManagePrinters) return;
     if (
       !(await confirm(t('printerDeleteConfirm'), {
         destructive: true,
@@ -358,6 +371,7 @@ export function PrintersSettingsTab({
   };
 
   const setDefaultPrinter = async (id: string) => {
+    if (!canManagePrinters) return;
     try {
       await api.post(`/printers/${id}/set-default`);
       toast.success(t('defaultPrinterSet'));
@@ -369,6 +383,7 @@ export function PrintersSettingsTab({
   };
 
   const testPrinterHw = async (printer: HwPrinter) => {
+    if (!canManagePrinters) return;
     if (printer.connection_type === 'webusb') {
       toast(t('webusbTestHint'));
       return;
@@ -396,7 +411,7 @@ export function PrintersSettingsTab({
               <Printer size={20} className="text-muted-foreground" />
               <h2 className="font-semibold text-foreground">{t('printers')}</h2>
             </div>
-            {!showPrinterForm && (
+            {canManagePrinters && !showPrinterForm && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
@@ -420,7 +435,7 @@ export function PrintersSettingsTab({
           </div>
 
           {/* Detected (OS-installed) printers - one-click add */}
-          {!showPrinterForm && (
+          {canManagePrinters && !showPrinterForm && (
             <div className="mb-5">
               <button
                 type="button"
@@ -530,7 +545,9 @@ export function PrintersSettingsTab({
                           {isDriverOnly ? (
                             <button
                               type="button"
+                              disabled={!canManagePrinters}
                               onClick={async () => {
+                                if (!canManagePrinters) return;
                                 markHydrationTouched('printMethod');
                                 setPrintingForm((prev) => ({
                                   ...prev,
@@ -620,45 +637,47 @@ export function PrintersSettingsTab({
                     {p.profile_name ? ` · ${p.profile_name}` : ''}
                   </p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => testPrinterHw(p)}
-                    disabled={testingPrinterId === p.id}
-                    title={t('testPrint')}
-                    className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40"
-                  >
-                    <TestTube2 size={15} />
-                  </button>
-                  {p.is_default !== 1 && (
+                {canManagePrinters && (
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => setDefaultPrinter(p.id)}
-                      title={t('setAsDefault')}
-                      className="p-2 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-950/40 text-muted-foreground hover:text-yellow-600 dark:hover:text-yellow-400"
+                      onClick={() => testPrinterHw(p)}
+                      disabled={testingPrinterId === p.id}
+                      title={t('testPrint')}
+                      className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40"
                     >
-                      <Star size={15} />
+                      <TestTube2 size={15} />
                     </button>
-                  )}
-                  <button
-                    onClick={() => openEditPrinter(p)}
-                    title={t('edit')}
-                    className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-                  >
-                    <Settings size={15} />
-                  </button>
-                  <button
-                    onClick={() => deletePrinterHw(p.id)}
-                    title={t('delete')}
-                    className="p-2 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
+                    {p.is_default !== 1 && (
+                      <button
+                        onClick={() => setDefaultPrinter(p.id)}
+                        title={t('setAsDefault')}
+                        className="p-2 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-950/40 text-muted-foreground hover:text-yellow-600 dark:hover:text-yellow-400"
+                      >
+                        <Star size={15} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openEditPrinter(p)}
+                      title={t('edit')}
+                      className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+                    >
+                      <Settings size={15} />
+                    </button>
+                    <button
+                      onClick={() => deletePrinterHw(p.id)}
+                      title={t('delete')}
+                      className="p-2 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
           {/* Add / Edit form */}
-          {showPrinterForm && (
+          {canManagePrinters && showPrinterForm && (
             <div className="mt-5 pt-5 border-t border-border">
               <h3 className="font-semibold text-foreground text-sm mb-4">
                 {editingPrinterId ? t('editPrinter') : t('addPrinter')}
@@ -884,7 +903,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerEnabled}
                 label={t('enablePrinter')}
+                disabled={!canManagePrinters}
                 onChange={(v) => {
+                  if (!canManagePrinters) return;
                   markHydrationTouched('printerEnabled');
                   setPrintingForm((p) => ({ ...p, printerEnabled: v }));
                 }}
@@ -902,7 +923,9 @@ export function PrintersSettingsTab({
                 <Toggle
                   value={!!printingForm.cashDrawerPulseEnabled}
                   label={t('sendPulseToCashDrawer')}
+                  disabled={!canManagePrinters}
                   onChange={(v) => {
+                    if (!canManagePrinters) return;
                     markHydrationTouched('cashDrawerPulseEnabled');
                     setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }));
                   }}
@@ -938,8 +961,10 @@ export function PrintersSettingsTab({
                         >
                           <input
                             type="checkbox"
+                            disabled={!canManagePrinters}
                             checked={printingForm.cashDrawerPulseMethods.includes(value)}
                             onChange={(e) => {
+                              if (!canManagePrinters) return;
                               markHydrationTouched('cashDrawerPulseMethods');
                               setPrintingForm((p) => ({
                                 ...p,
@@ -948,7 +973,7 @@ export function PrintersSettingsTab({
                                   : p.cashDrawerPulseMethods.filter((method) => method !== value),
                               }));
                             }}
-                            className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
+                            className="h-4 w-4 rounded border-border text-brand focus:ring-brand disabled:cursor-not-allowed"
                           />
                           {label}
                         </label>
@@ -965,14 +990,16 @@ export function PrintersSettingsTab({
               <p className="font-medium text-foreground mb-2">{t('printMethod')}</p>
               <select
                 value={printingForm.printMethod}
+                disabled={!canManagePrinters}
                 onChange={(e) => {
+                  if (!canManagePrinters) return;
                   markHydrationTouched('printMethod');
                   setPrintingForm((p) => ({
                     ...p,
                     printMethod: e.target.value as 'escpos' | 'browser',
                   }));
                 }}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-muted disabled:cursor-not-allowed"
               >
                 <option value="escpos">{t('printMethodEscpos')}</option>
                 <option value="browser">{t('printMethodBrowser')}</option>
@@ -994,8 +1021,10 @@ export function PrintersSettingsTab({
               <Toggle
                 value={kotPrintingEnabledSetting}
                 label={t('kotPrintingEnabledToggle')}
+                disabled={!isAdmin || savingKotPrintingEnabled}
                 onChange={(v) => {
-                  if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v);
+                  if (!isAdmin || savingKotPrintingEnabled) return;
+                  void saveKotPrintingEnabled(v);
                 }}
               />
             </div>
@@ -1015,11 +1044,11 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
                 label={t('autoPrintKot')}
+                disabled={!canManagePrinters || !kotPrintingEnabledSetting}
                 onChange={(v) => {
-                  if (kotPrintingEnabledSetting) {
-                    markHydrationTouched('autoPrintKot');
-                    setPrintingForm((p) => ({ ...p, autoPrintKot: v }));
-                  }
+                  if (!canManagePrinters || !kotPrintingEnabledSetting) return;
+                  markHydrationTouched('autoPrintKot');
+                  setPrintingForm((p) => ({ ...p, autoPrintKot: v }));
                 }}
               />
             </div>
@@ -1042,7 +1071,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.autoPrintBill}
                 label={t('autoPrintBill')}
+                disabled={!canManagePrinters}
                 onChange={(v) => {
+                  if (!canManagePrinters) return;
                   markHydrationTouched('autoPrintBill');
                   setPrintingForm((p) => ({ ...p, autoPrintBill: v }));
                 }}
@@ -1056,7 +1087,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerUseUnicode}
                 label={t('printerUnicode')}
+                disabled={!canManagePrinters}
                 onChange={(v) => {
+                  if (!canManagePrinters) return;
                   markHydrationTouched('printerUseUnicode');
                   setPrintingForm((p) => ({ ...p, printerUseUnicode: v }));
                 }}
@@ -1070,7 +1103,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerArabicShaping}
                 label={t('printerArabicShaping')}
+                disabled={!canManagePrinters}
                 onChange={(v) => {
+                  if (!canManagePrinters) return;
                   markHydrationTouched('printerArabicShaping');
                   setPrintingForm((p) => ({ ...p, printerArabicShaping: v }));
                 }}
@@ -1084,7 +1119,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerTrimDecimals}
                 label={t('trimDecimals')}
+                disabled={!canManagePrinters}
                 onChange={(v) => {
+                  if (!canManagePrinters) return;
                   markHydrationTouched('printerTrimDecimals');
                   setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }));
                 }}
@@ -1107,11 +1144,13 @@ export function PrintersSettingsTab({
                   <select
                     id="receipt-primary-language"
                     value={printingForm.receiptPrimaryLanguage}
+                    disabled={!canManagePrinters}
                     onChange={(e) => {
+                      if (!canManagePrinters) return;
                       markHydrationTouched('receiptPrimaryLanguage');
                       setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value }));
                     }}
-                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border disabled:bg-muted disabled:cursor-not-allowed"
                   >
                     <option value="inherit">{t('sameAsStore')}</option>
                     {SELECTABLE_LANGUAGES.map((lang) => (
@@ -1131,11 +1170,13 @@ export function PrintersSettingsTab({
                   <select
                     id="receipt-second-language"
                     value={printingForm.receiptSecondLanguage}
+                    disabled={!canManagePrinters}
                     onChange={(e) => {
+                      if (!canManagePrinters) return;
                       markHydrationTouched('receiptSecondLanguage');
                       setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value }));
                     }}
-                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border disabled:bg-muted disabled:cursor-not-allowed"
                   >
                     <option value="none">{t('secondLanguageNone')}</option>
                     {SELECTABLE_LANGUAGES.map((lang) => (
@@ -1155,11 +1196,13 @@ export function PrintersSettingsTab({
                   <select
                     id="kot-language"
                     value={printingForm.kotLanguage}
+                    disabled={!canManagePrinters}
                     onChange={(e) => {
+                      if (!canManagePrinters) return;
                       markHydrationTouched('kotLanguage');
                       setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value }));
                     }}
-                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border disabled:bg-muted disabled:cursor-not-allowed"
                   >
                     <option value="inherit">{t('sameAsStore')}</option>
                     {SELECTABLE_LANGUAGES.map((lang) => (
@@ -1179,11 +1222,13 @@ export function PrintersSettingsTab({
                   <select
                     id="z-report-primary-language"
                     value={printingForm.zReportPrimaryLanguage}
+                    disabled={!canManagePrinters}
                     onChange={(e) => {
+                      if (!canManagePrinters) return;
                       markHydrationTouched('zReportPrimaryLanguage');
                       setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value }));
                     }}
-                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border disabled:bg-muted disabled:cursor-not-allowed"
                   >
                     <option value="inherit">{t('sameAsStore')}</option>
                     {SELECTABLE_LANGUAGES.map((lang) => (
@@ -1203,11 +1248,13 @@ export function PrintersSettingsTab({
                   <select
                     id="z-report-second-language"
                     value={printingForm.zReportSecondLanguage}
+                    disabled={!canManagePrinters}
                     onChange={(e) => {
+                      if (!canManagePrinters) return;
                       markHydrationTouched('zReportSecondLanguage');
                       setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value }));
                     }}
-                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                    className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border disabled:bg-muted disabled:cursor-not-allowed"
                   >
                     <option value="none">{t('secondLanguageNone')}</option>
                     {SELECTABLE_LANGUAGES.map((lang) => (
@@ -1259,7 +1306,9 @@ export function PrintersSettingsTab({
                     <Toggle
                       value={printingForm[item.key]}
                       label={item.label}
+                      disabled={!canManagePrinters}
                       onChange={(value) => {
+                        if (!canManagePrinters) return;
                         markHydrationTouched(item.key);
                         setPrintingForm((previous) => ({ ...previous, [item.key]: value }));
                       }}
@@ -1284,7 +1333,9 @@ export function PrintersSettingsTab({
                     <Toggle
                       value={printingForm.billDeliveryShowCustomerPhoneAlways}
                       label={t('deliveryShowCustomerPhoneAlways')}
+                      disabled={!canManagePrinters}
                       onChange={(value) => {
+                        if (!canManagePrinters) return;
                         markHydrationTouched('billDeliveryShowCustomerPhoneAlways');
                         setPrintingForm((previous) => ({
                           ...previous,
@@ -1305,13 +1356,15 @@ export function PrintersSettingsTab({
                 <textarea
                   id="footer-message"
                   rows={2}
+                  disabled={!isAdmin}
                   placeholder={t('footerMessagePlaceholder')}
                   value={billForm.billFooterMessage}
                   onChange={(e) => {
+                    if (!isAdmin) return;
                     markHydrationTouched('billFooterMessage');
                     setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }));
                   }}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none disabled:bg-muted disabled:cursor-not-allowed"
                 />
                 <p className="text-xs text-muted-foreground mt-1">{t('footerMessageHint')}</p>
               </div>
@@ -1335,7 +1388,9 @@ export function PrintersSettingsTab({
             <Toggle
               value={printingForm.whatsappShareEnabled}
               label={t('enableWhatsappShare')}
+              disabled={!canManagePrinters}
               onChange={(v) => {
+                if (!canManagePrinters) return;
                 markHydrationTouched('whatsappShareEnabled');
                 setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }));
               }}
@@ -1359,7 +1414,10 @@ export function PrintersSettingsTab({
               return (
                 <button
                   key={card.id}
+                  type="button"
+                  disabled={!isAdmin}
                   onClick={() => {
+                    if (!isAdmin) return;
                     markHydrationTouched('billTemplate');
                     markHydrationTouched('billTemplateSource');
                     setBillForm((p) => ({
@@ -1368,7 +1426,7 @@ export function PrintersSettingsTab({
                       billTemplateSource: card.selectionSource,
                     }));
                   }}
-                  className={`text-start rounded-xl border-2 p-4 transition-all ${
+                  className={`text-start rounded-xl border-2 p-4 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                     isSelected
                       ? 'border-brand bg-brand/5'
                       : 'border-border hover:border-gray-300 dark:border-border bg-card'

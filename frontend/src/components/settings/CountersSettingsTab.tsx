@@ -148,6 +148,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
   };
 
   const handleOpenAddModal = () => {
+    if (!isOwner) return;
     setEditingCounter(null);
     setName('');
     setRole('ordering');
@@ -157,6 +158,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
   };
 
   const handleOpenEditModal = (counter: CounterItem) => {
+    if (!isOwner) return;
     setEditingCounter(counter);
     setName(counter.name);
     setRole(counter.role);
@@ -167,6 +169,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
 
   const handleSaveCounter = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOwner) return;
     if (!name.trim()) {
       toast.error(t('counterNameRequired'));
       return;
@@ -201,6 +204,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
   };
 
   const handleDeleteCounter = async (id: string) => {
+    if (!isOwner) return;
     try {
       await api.delete(`/counters/${id}`);
       toast.success(t('counterDeleted'));

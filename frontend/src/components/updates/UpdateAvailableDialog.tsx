@@ -17,9 +17,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
+import { tenantCan } from '@/lib/permissions';
+import { useAuthStore } from '@/store/auth';
 
 export default function UpdateAvailableDialog() {
   const t = useTranslations('update');
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const canManageUpdates = currentTenant ? tenantCan(currentTenant, 'settings.manage') : true;
   const { updateStatus, downloadUpdate } = useUpdateStatus();
   const autoCheck = useAutoUpdateCheck();
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
@@ -39,6 +43,7 @@ export default function UpdateAvailableDialog() {
   };
 
   const handleAutoCheckChange = async (next: boolean) => {
+    if (!canManageUpdates) return;
     if (!(await autoCheck.setEnabled(next))) toast.error(t('autoCheckToggleFailed'));
   };
 
@@ -59,14 +64,20 @@ export default function UpdateAvailableDialog() {
         </DialogHeader>
 
         {autoCheck.supported && (
-          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+          <label
+            className={`flex items-center gap-2 text-sm text-foreground ${
+              !canManageUpdates || autoCheck.busy
+                ? 'cursor-not-allowed opacity-60'
+                : 'cursor-pointer'
+            }`}
+          >
             <input
               type="checkbox"
               checked={autoCheck.enabled}
-              disabled={autoCheck.busy}
+              disabled={!canManageUpdates || autoCheck.busy}
               onChange={(e) => void handleAutoCheckChange(e.target.checked)}
               data-testid="update-auto-check-checkbox"
-              className="h-4 w-4 accent-brand"
+              className="h-4 w-4 accent-brand disabled:cursor-not-allowed"
             />
             {t('autoCheckTitle')}
           </label>

@@ -185,9 +185,10 @@ detached frames, which is how handlers confirm the caller is the live renderer.
 | KDS        | `createKdsWindow`  | `http://<LAN IP>:<kds port>/kds`                       | no      |
 | Server app | served page        | `http://localhost:<server app port>/server-standalone` | no      |
 
-The KDS window deliberately has no preload and learns its palette from a `theme` query parameter
-appended by `appendThemeQueryParam`. It is confined to its own origin: window-open requests are
-denied outright, and navigation away from the KDS origin is prevented.
+The KDS window deliberately has no preload: `appendThemeQueryParam` seeds its first-paint palette
+through a `theme` query parameter, and on mount KDS resolves any local `flo-kds-theme-override` or
+syncs `theme_mode` from `GET /api/kds/info`. It is confined to its own origin: window-open requests
+are denied outright, and navigation away from the KDS origin is prevented.
 
 In the POS window, `target="_blank"` links are opened in a new window only when the URL passes the
 local allowlist check in [`main/security/url-allowlist.ts`](../../main/security/url-allowlist.ts).

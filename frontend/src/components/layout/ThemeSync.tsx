@@ -23,7 +23,7 @@ const cancellableSleep = (ms: number, isCancelled: () => boolean): Promise<void>
     }
   });
 
-/** Renderer theme engine with precedence DB > param > mirror > OS.
+/** Renderer theme engine with precedence DB > server info > param > mirror > OS.
  * Syncs theme state across windows and avoids overwriting user choices. */
 export function ThemeSync() {
   const mode = useThemeMode((s) => s.mode);

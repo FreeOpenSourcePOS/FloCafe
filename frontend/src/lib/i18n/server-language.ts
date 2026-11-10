@@ -137,8 +137,8 @@ export async function fetchServerInfo(
   }
 }
 
-/** Fetches tenant preferred language and theme mode on mount and updates client
- * stores; safe best-effort sync for standalone views. */
+/** Hydrates any local KDS theme override, then fetches tenant preferred language
+ * and theme mode on mount for standalone views. */
 export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
   useEffect(() => {

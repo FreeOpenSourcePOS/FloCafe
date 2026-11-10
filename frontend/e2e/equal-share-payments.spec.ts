@@ -202,8 +202,14 @@ function equalShareToggle(page: Page) {
 }
 
 async function openEqualShare(page: Page): Promise<void> {
-  await equalShareToggle(page).click();
-  await expect(equalShareToggle(page)).toHaveAttribute('aria-expanded', 'true');
+  const toggle = equalShareToggle(page);
+  await toggle.click();
+  const isPressed = await toggle.getAttribute('aria-pressed');
+  if (isPressed !== null) {
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  } else {
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  }
 }
 
 function payerCount(page: Page) {

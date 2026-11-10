@@ -20,7 +20,6 @@
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { getCurrencyUnitAdapter } from '../main/countries';
 
@@ -526,28 +525,6 @@ async function run() {
     // -------------------------------------------------------------------------
     // 3. PaymentModal unified Split card (Equal Share steppers/presets + By Items tab)
     // -------------------------------------------------------------------------
-    const paymentSource = fs.readFileSync(
-      path.join(ROOT, 'frontend/src/components/pos/PaymentModal.tsx'),
-      'utf8',
-    );
-    const unifiedSplitIdx = paymentSource.indexOf('data-testid="unified-split-card"');
-    const handlePayIdx = paymentSource.indexOf('onClick={handlePay}');
-    const splitSectionMatches = paymentSource.match(/data-testid="split-check-section"/g) ?? [];
-    assert.ok(
-      unifiedSplitIdx > 0 && unifiedSplitIdx < handlePayIdx,
-      'unified-split-card is placed in the main right column before the sticky footer',
-    );
-    assert.equal(
-      paymentSource.slice(handlePayIdx - 400).includes('data-testid="split-check-section"'),
-      false,
-      'sticky footer no longer duplicates split-check-section above Pay CTA',
-    );
-    assert.equal(
-      splitSectionMatches.length,
-      2,
-      'split-check-section exists only for error and ready branches inside unified-split-card',
-    );
-
     const paymentBill = {
       id: 99,
       bill_number: 'B-99',
@@ -587,6 +564,12 @@ async function run() {
       findByTestId(pmRender.tree, 'split-mode-items-tab'),
       undefined,
       '2-tab switcher omitted when splitChecksEnabled is false',
+    );
+    const unifiedSplitIdx = pmRender.html.indexOf('data-testid="unified-split-card"');
+    const payCtaIdx = pmRender.html.indexOf('pay $100.00');
+    assert.ok(
+      unifiedSplitIdx > 0 && unifiedSplitIdx < payCtaIdx,
+      'unified-split-card is placed in the main right column before the sticky footer',
     );
 
     const equalHeaderBtn = collectElements(
@@ -694,10 +677,40 @@ async function run() {
     const splitSection = findByTestId(pmRender.tree, 'split-check-section');
     assert(itemsTab && equalTab, '2-tab mode switcher rendered when splitChecksEnabled is true');
     assert(splitSection, 'split-check-section mounted immediately on open without extra clicks');
+
+    const unifiedCard = findByTestId(pmRender.tree, 'unified-split-card');
+    assert(unifiedCard, 'unified-split-card rendered');
+    assert(
+      findByTestId(unifiedCard, 'split-check-section'),
+      'split-check-section is rendered inside unified-split-card',
+    );
+
+    const allSplitSections = collectElements(
+      pmRender.tree,
+      (el) => el.props?.['data-testid'] === 'split-check-section',
+    );
     assert.equal(
-      equalTab.props['aria-expanded'],
+      allSplitSections.length,
+      1,
+      'split-check-section exists only once in rendered tree',
+    );
+
+    const payCtaUnifiedIdx = pmRender.html.indexOf('pay $100.00');
+    assert.equal(
+      pmRender.html.slice(payCtaUnifiedIdx).includes('data-testid="split-check-section"'),
       false,
-      'equal share tab starts aria-expanded=false',
+      'sticky footer does not duplicate split-check-section above Pay CTA',
+    );
+
+    assert.equal(
+      itemsTab.props['aria-pressed'],
+      true,
+      'items tab starts active with aria-pressed=true',
+    );
+    assert.equal(
+      equalTab.props['aria-pressed'],
+      false,
+      'equal share tab starts inactive with aria-pressed=false',
     );
     assert.match(
       ReactDOMServer.renderToStaticMarkup(splitSection),
@@ -709,13 +722,27 @@ async function run() {
     equalTab.props.onClick();
     pmRender = pmUnified.render();
     assert.equal(
-      findByTestId(pmRender.tree, 'split-mode-equal-tab').props['aria-expanded'],
+      findByTestId(pmRender.tree, 'split-mode-equal-tab').props['aria-pressed'],
       true,
-      'clicking Equal Share tab sets aria-expanded=true',
+      'clicking Equal Share tab sets aria-pressed=true',
+    );
+    assert.equal(
+      findByTestId(pmRender.tree, 'split-mode-items-tab').props['aria-pressed'],
+      false,
+      'clicking Equal Share tab sets items tab aria-pressed=false',
     );
     assert(
       findById(pmRender.tree, 'equal-share-payers'),
       'Equal Share stepper controls appear inside unified Split card',
+    );
+
+    // Clicking Equal Share tab again while already active maintains selection
+    findByTestId(pmRender.tree, 'split-mode-equal-tab').props.onClick();
+    pmRender = pmUnified.render();
+    assert.equal(
+      findByTestId(pmRender.tree, 'split-mode-equal-tab').props['aria-pressed'],
+      true,
+      'clicking active Equal Share tab keeps aria-pressed=true',
     );
 
     // Switching back to By Items tab restores split-check-section
@@ -724,6 +751,16 @@ async function run() {
     assert(
       findByTestId(pmRender.tree, 'split-check-section'),
       'clicking Split items tab restores split-check-section',
+    );
+    assert.equal(
+      findByTestId(pmRender.tree, 'split-mode-items-tab').props['aria-pressed'],
+      true,
+      'items tab is restored active with aria-pressed=true',
+    );
+    assert.equal(
+      findByTestId(pmRender.tree, 'split-mode-equal-tab').props['aria-pressed'],
+      false,
+      'equal share tab is restored inactive with aria-pressed=false',
     );
     console.log(
       '  ✓ PaymentModal unified Split card, 2-tab switcher, steppers, and presets verified',

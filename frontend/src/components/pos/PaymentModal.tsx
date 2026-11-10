@@ -1997,10 +1997,10 @@ export default function PaymentModal({
                         </button>
                         <button
                           type="button"
-                          aria-expanded={showEqualShare}
+                          aria-pressed={showEqualShare}
                           data-testid="split-mode-equal-tab"
                           onClick={() => {
-                            setShowEqualShare((open) => !open);
+                            setShowEqualShare(true);
                             setEqualShareNotice(null);
                           }}
                           className={`min-h-9 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${

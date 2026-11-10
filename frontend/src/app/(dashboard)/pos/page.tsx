@@ -3179,7 +3179,12 @@ export default function POSPage() {
       await printKotIfEnabled(order, originContext);
       if (!isSessionCurrent()) return;
 
-      await printBillForTenant(paidBill, isPrepaidCheckout, undefined, originContext);
+      await printBillForTenant(
+        { ...paidBill, order: paidBill.order ?? bill.order ?? order },
+        isPrepaidCheckout,
+        undefined,
+        originContext,
+      );
     } catch (error) {
       if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError && committedOrder) {
@@ -3559,7 +3564,12 @@ export default function POSPage() {
       try {
         const latestBill = await fetchLatestBill(bill.id);
         if (!isSessionCurrent()) return;
-        await printBillForTenant(latestBill, false, undefined, originContext);
+        await printBillForTenant(
+          { ...latestBill, order: latestBill.order ?? bill.order },
+          false,
+          undefined,
+          originContext,
+        );
       } catch {
         if (isSessionCurrent()) {
           toast.error(t('receiptPrintFailed'));

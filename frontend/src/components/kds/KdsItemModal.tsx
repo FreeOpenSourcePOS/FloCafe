@@ -83,15 +83,15 @@ export function KdsItemModal({
         </div>
 
         {item.addons && item.addons.length > 0 && (
-          <div className="bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
-            <p className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-1.5 uppercase tracking-wide">
+          <div className="bg-blue-50 dark:bg-blue-950/60 border-s-4 border-blue-500 rounded-e-xl p-3">
+            <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 mb-1.5 uppercase tracking-wide">
               {t('addonsLabel')}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {item.addons.map((addon, i) => (
                 <span
                   key={`${addon.id ?? addon.name}-${i}`}
-                  className="text-sm bg-card text-blue-800 dark:text-blue-200 px-2.5 py-1 rounded-lg border border-blue-300 dark:border-blue-700 font-medium"
+                  className="text-sm bg-blue-100/90 text-blue-900 dark:bg-blue-900/60 dark:text-blue-200 px-2.5 py-1 rounded-lg font-medium"
                 >
                   + {addon.name}
                   {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
@@ -102,11 +102,11 @@ export function KdsItemModal({
         )}
 
         {item.special_instructions && (
-          <div className="bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 rounded-xl p-3">
-            <p className="text-xs font-semibold text-red-800 dark:text-red-200 mb-1 uppercase tracking-wide">
+          <div className="bg-red-50 dark:bg-red-950/60 border-s-4 border-red-500 rounded-e-xl p-3">
+            <p className="text-xs font-semibold text-red-900 dark:text-red-200 mb-1 uppercase tracking-wide">
               {t('specialInstructionsLabel')}
             </p>
-            <p className="text-sm text-red-800 dark:text-red-200 italic font-medium break-words">
+            <p className="text-sm text-red-900 dark:text-red-200 italic font-medium break-words">
               {item.special_instructions}
             </p>
           </div>
@@ -120,12 +120,12 @@ export function KdsItemModal({
               return (
                 <div key={s} className="flex items-center gap-1.5">
                   <div
-                    className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
                       isCurrent
-                        ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} ring-2 ring-current`
+                        ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} shadow-xs ring-1 ring-border/60 font-semibold`
                         : isPast
-                          ? 'bg-muted text-slate-700 dark:text-slate-300 line-through'
-                          : 'bg-muted text-slate-700 dark:text-slate-300'
+                          ? 'bg-muted text-slate-700 dark:text-slate-300 line-through font-medium'
+                          : 'bg-muted text-slate-700 dark:text-slate-300 font-medium'
                     }`}
                   >
                     {statusLabel(s)}

@@ -179,18 +179,48 @@ async function runTests() {
     );
     assert.match(
       kanbanMarkup,
-      /bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-950\/90 dark:text-blue-200 dark:border-blue-700/,
-      'KDS Kanban add-on badges use WCAG AA light and dark classes',
+      /bg-blue-100\/90 text-blue-900 dark:bg-blue-950\/90 dark:text-blue-200/,
+      'KDS Kanban add-on badges use borderless WCAG AA light and dark classes',
     );
     assert.match(
       kanbanMarkup,
-      /bg-red-50 text-red-800 border-red-300 dark:bg-red-950\/90 dark:text-red-200 dark:border-red-700/,
-      'KDS Kanban item special instructions use high-contrast callout pill classes in light and dark mode',
+      /border-s-3 border-red-500 bg-red-50 text-red-900 dark:bg-red-950\/90 dark:text-red-200/,
+      'KDS Kanban item special instructions use high-contrast callout strip classes in light and dark mode',
     );
     assert.match(
       kanbanMarkup,
-      /bg-amber-50 border border-amber-300 text-amber-900 dark:bg-amber-950\/80 dark:border-amber-700 dark:text-amber-200/,
+      /border-s-4 border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950\/80 dark:text-amber-200/,
       'KDS Kanban order special instructions include WCAG AA dark mode classes',
+    );
+    assert.match(
+      kanbanMarkup,
+      /rounded-2xl bg-muted\/40 dark:bg-muted\/25/,
+      'KDS Kanban columns use borderless tonal surface lanes',
+    );
+    assert.match(
+      kanbanMarkup,
+      /rounded-xl bg-card shadow-sm ring-1 ring-border\/50 border-t-4/,
+      'KDS Kanban order cards use elevated ticket surface with border-t-4 status accent',
+    );
+    assert.match(
+      kanbanMarkup,
+      /divide-y divide-border\/40 -mx-1/,
+      'KDS Kanban order items use hairline dividers instead of nested bordered boxes',
+    );
+    assert.match(
+      kanbanMarkup,
+      /border-transparent dark:border-transparent/,
+      'KDS Kanban order cards use borderless order type badges in light and dark mode',
+    );
+    assert.doesNotMatch(
+      kanbanMarkup,
+      /rounded-xl border-2/,
+      'KDS Kanban order cards do not have 4-sided border-2 outlines',
+    );
+    assert.doesNotMatch(
+      kanbanMarkup,
+      /rounded-t-lg border-2/,
+      'KDS Kanban columns do not have border-2 outlines',
     );
 
     assert.doesNotMatch(
@@ -222,23 +252,53 @@ async function runTests() {
     );
     assert.match(
       tabsMarkup,
-      /bg-card text-slate-700 dark:text-slate-200 border border-border hover:bg-accent/,
-      'KDS Tabs view unselected tab buttons use opaque high-contrast classes',
+      /text-slate-700 dark:text-slate-200 hover:text-foreground hover:bg-card\/60/,
+      'KDS Tabs view unselected tab buttons use clean borderless high-contrast classes',
     );
     assert.match(
       tabsMarkup,
-      /bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-950\/90 dark:text-blue-200 dark:border-blue-700/,
-      'KDS Tabs view add-on badges use WCAG AA light and dark classes',
+      /bg-blue-100\/90 text-blue-900 dark:bg-blue-950\/90 dark:text-blue-200/,
+      'KDS Tabs view add-on badges use borderless WCAG AA light and dark classes',
     );
     assert.match(
       tabsMarkup,
-      /bg-red-50 text-red-800 border-red-300 dark:bg-red-950\/90 dark:text-red-200 dark:border-red-700/,
-      'KDS Tabs view item special instructions use high-contrast callout pill classes in light and dark mode',
+      /border-s-3 border-red-500 bg-red-50 text-red-900 dark:bg-red-950\/90 dark:text-red-200/,
+      'KDS Tabs view item special instructions use high-contrast callout strip classes in light and dark mode',
     );
     assert.match(
       tabsMarkup,
-      /bg-amber-50 border border-amber-300 text-amber-900 dark:bg-amber-950\/80 dark:border-amber-700 dark:text-amber-200/,
+      /border-s-4 border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950\/80 dark:text-amber-200/,
       'KDS Tabs view order special instructions include WCAG AA dark mode classes',
+    );
+    assert.match(
+      tabsMarkup,
+      /bg-muted\/50 p-1 rounded-xl inline-flex flex-wrap items-center/,
+      'KDS Tabs view uses modern segmented tab bar',
+    );
+    assert.match(
+      tabsMarkup,
+      /bg-card shadow-xs ring-1 ring-border\/60/,
+      'KDS Tabs view active tab uses elevated card surface with subtle ring',
+    );
+    assert.match(
+      tabsMarkup,
+      /rounded-xl bg-card shadow-sm ring-1 ring-border\/50 border-t-4/,
+      'KDS Tabs view order cards use elevated ticket surface with border-t-4 status accent',
+    );
+    assert.match(
+      tabsMarkup,
+      /divide-y divide-border\/40 -mx-1/,
+      'KDS Tabs view order items use hairline dividers instead of nested bordered boxes',
+    );
+    assert.match(
+      tabsMarkup,
+      /border-transparent dark:border-transparent/,
+      'KDS Tabs view order cards use borderless order type badges in light and dark mode',
+    );
+    assert.doesNotMatch(
+      tabsMarkup,
+      /rounded-xl border-2/,
+      'KDS Tabs view order cards do not have 4-sided border-2 outlines',
     );
 
     const modalMarkup = ReactDOMServer.renderToStaticMarkup(
@@ -256,13 +316,13 @@ async function runTests() {
     );
     assert.match(
       modalMarkup,
-      /bg-blue-50 dark:bg-blue-950\/60 border border-blue-200 dark:border-blue-800/,
-      'KdsItemModal add-ons box includes dark mode classes',
+      /bg-blue-50 dark:bg-blue-950\/60 border-s-4 border-blue-500/,
+      'KdsItemModal add-ons box includes dark mode classes and clean callout strip',
     );
     assert.match(
       modalMarkup,
-      /bg-red-50 dark:bg-red-950\/60 border border-red-200 dark:border-red-800/,
-      'KdsItemModal special instructions box includes dark mode classes',
+      /bg-red-50 dark:bg-red-950\/60 border-s-4 border-red-500/,
+      'KdsItemModal special instructions box includes dark mode classes and clean callout strip',
     );
     assert.match(
       modalMarkup,

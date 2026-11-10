@@ -22,21 +22,19 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
   });
 
   return (
-    <div className="flex-1 min-w-[260px] flex flex-col">
-      <div
-        className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}
-      >
-        <div className={`w-2 h-2 rounded-full ${config.color}`} />
+    <div className="rounded-2xl bg-muted/40 dark:bg-muted/25 flex-1 min-w-[260px] flex flex-col overflow-hidden">
+      <div className={`flex items-center gap-2 px-3.5 py-2.5 ${config.bg}`}>
+        <div className={`w-2.5 h-2.5 rounded-full ${config.color}`} />
         <span className={`text-base font-semibold ${config.text}`}>{statusLabel}</span>
-        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-card/70 text-foreground font-medium tabular-nums">
+        <span className="ms-auto text-xs px-2 py-0.5 rounded-full bg-card/80 text-foreground font-semibold tabular-nums shadow-2xs">
           {count}
         </span>
       </div>
       <div
         ref={ref}
-        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-muted/40 transition-colors ${
+        className={`flex-1 p-2.5 space-y-2.5 overflow-y-auto transition-colors ${
           isDropTarget
-            ? 'bg-blue-50 ring-2 ring-blue-300 dark:bg-blue-950/40 dark:ring-blue-700 ring-inset'
+            ? 'bg-blue-50/70 ring-2 ring-blue-400 dark:bg-blue-950/40 dark:ring-blue-600 ring-inset'
             : ''
         }`}
         style={{ minHeight: '60vh', maxHeight: 'calc(100vh - 220px)' }}

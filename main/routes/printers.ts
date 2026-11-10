@@ -1225,10 +1225,17 @@ router.post(
       if (result.ok) {
         res.json({ success: true, warnings: result.warnings || [] });
       } else {
+        const connectionType =
+          (printer as any)?.connection_type === 'network' ||
+          (printer as any)?.connection_type === 'usb' ||
+          (printer as any)?.connection_type === 'webusb'
+            ? (printer as any).connection_type
+            : 'unknown';
         res.status(502).json({
           error: result.detail || 'Print failed. Check printer connection and settings.',
           detail: result.detail,
           failure_class: result.failureClass,
+          connection_type: connectionType,
           code: result.code,
           correlation_id: result.correlationId,
           stage: result.stage,
@@ -1399,6 +1406,7 @@ router.post(
       let success = true;
       const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
       let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
+      let failedPrinter: any = printer;
       const kotSourceItems = (Array.isArray(items) ? items : orderItems).filter((item: any) =>
         isKotItemPending(item?.status),
       );
@@ -1435,17 +1443,27 @@ router.post(
           );
           success = success && result.ok;
           warnings.push(...(result.warnings || []));
-          if (!result.ok && !failure) failure = result;
+          if (!result.ok && !failure) {
+            failure = result;
+            failedPrinter = group.printer || printer;
+          }
         }
       }
 
       if (success) {
         res.json({ success: true, warnings });
       } else {
+        const connectionType =
+          failedPrinter?.connection_type === 'network' ||
+          failedPrinter?.connection_type === 'usb' ||
+          failedPrinter?.connection_type === 'webusb'
+            ? failedPrinter.connection_type
+            : 'unknown';
         res.status(502).json({
           error: failure?.detail || 'KOT print failed. Check printer connection.',
           detail: failure?.detail,
           failure_class: failure?.failureClass,
+          connection_type: connectionType,
           code: failure?.code,
           correlation_id: failure?.correlationId,
           stage: failure?.stage,

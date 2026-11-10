@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
+import { isAllowedPrivateIp } from '../middleware/security';
 import { getDatabase, now, withTxn } from '../db';
 import { requirePermission } from '../services/authorization';
 import { randomUUID } from 'crypto';
@@ -20,12 +21,14 @@ const heldOrderReadRateLimit = expressRateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 const heldOrderWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
   limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 
 const TABLE_STATUS_HELD = 'held';

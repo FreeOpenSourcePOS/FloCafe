@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
+import { isAllowedPrivateIp } from '../middleware/security';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   completeSettledReleasedOrderIfServed,
@@ -87,6 +88,7 @@ const kdsViewWriteRateLimit = expressRateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 
 router.put('/view', kdsViewWriteRateLimit, requireKdsEnabled, (req: Request, res: Response) => {

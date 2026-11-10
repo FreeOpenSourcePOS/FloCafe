@@ -549,7 +549,8 @@ merchant gets a distinct answer for "saved, will send later" and "not accepted".
 A ticket may carry a `log_tail` string holding the tail of the current session's log file.
 
 - **Cap.** `LOG_TAIL_MAX_BYTES` is 200,000. The tail is cut from the end, keeping the most recent
-  bytes, in both the IPC handler and the route.
+  bytes, in both the IPC handler and the route. In the POS one-click help flow, the client bounds
+  the attached log tail to 16,384 UTF-16 code units (`SUPPORT_LOG_TAIL_MAX_CHARS`) when opted in.
 - **Window.** `LOG_TAIL_MAX_AGE_MS` is 7 days. The cut is made at the first line whose timestamp
   falls inside the window, not at a byte offset, so a quiet store's log is not cut mid-record. The
   byte cap is the backstop when the windowed content is still large.
@@ -587,6 +588,14 @@ tuple contains the server-owned reason, operation, stage, classification, outcom
 and validated facts; callers cannot supply or override those fields. Invalid or unregistered
 context is rejected without queuing a ticket. `client_ticket_id` remains the independent replay key,
 so retrying the same ticket does not replace its original correlation or operation context.
+
+For hardware printer dispatch failures, `operation_failure` captures
+(`fc.backend.printer.{receipt,kot}.{queue,timeout}`) carry validated `kind`, `connection_type`, and
+`failure_class` facts only when returned with a trusted backend correlation ID and approved capture
+stage. Client-side printer errors without backend dispatch failure context omit `operation_failure`
+while preserving sanitized diagnostics in the ticket body. Expected validation rejections (such as
+insufficient stock, closed cash days, or required cash sessions) surface actionable guidance in the
+POS and are classified as operational guidance rather than defects.
 
 Tickets without `operation_failure` retain the existing manual-help contract. The optional
 structured context does not add raw automatic logs or change the permission required to submit a

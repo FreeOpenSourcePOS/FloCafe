@@ -2,6 +2,7 @@
 
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
+import { isAllowedPrivateIp } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
 import {
   MerchantTemplateError,
@@ -24,6 +25,7 @@ const merchantTemplateWriteRateLimit = expressRateLimit({
   limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 
 function actorId(req: Request): string | null {
@@ -70,95 +72,149 @@ router.get('/', requirePermission('print-templates.view'), (_req: Request, res: 
   }
 });
 
-router.post('/', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const row = createMerchantPrintTemplate({
-      name: req.body?.name,
-      payload: req.body?.payload,
-      origin: req.body?.origin,
-      derivedFrom: req.body?.derivedFrom,
-    }, actorId(req));
-    res.status(201).json({ template: shape(row) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.post(
+  '/',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const row = createMerchantPrintTemplate(
+        {
+          name: req.body?.name,
+          payload: req.body?.payload,
+          origin: req.body?.origin,
+          derivedFrom: req.body?.derivedFrom,
+        },
+        actorId(req),
+      );
+      res.status(201).json({ template: shape(row) });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
-router.put('/:id', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const row = updateMerchantPrintTemplate(String(req.params.id), {
-      name: req.body?.name,
-      payload: req.body?.payload,
-    }, actorId(req));
-    res.json({ template: shape(row) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.put(
+  '/:id',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const row = updateMerchantPrintTemplate(
+        String(req.params.id),
+        {
+          name: req.body?.name,
+          payload: req.body?.payload,
+        },
+        actorId(req),
+      );
+      res.json({ template: shape(row) });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
-router.post('/:id/activate', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const row = activateMerchantPrintTemplate(String(req.params.id), actorId(req));
-    res.json({ template: shape(row) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.post(
+  '/:id/activate',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const row = activateMerchantPrintTemplate(String(req.params.id), actorId(req));
+      res.json({ template: shape(row) });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
-router.post('/:id/archive', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const row = archiveMerchantPrintTemplate(String(req.params.id), actorId(req));
-    res.json({ template: shape(row) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.post(
+  '/:id/archive',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const row = archiveMerchantPrintTemplate(String(req.params.id), actorId(req));
+      res.json({ template: shape(row) });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
-router.post('/:id/rollback', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const row = rollbackMerchantPrintTemplate(String(req.params.id), actorId(req));
-    res.json({ template: shape(row) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.post(
+  '/:id/rollback',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const row = rollbackMerchantPrintTemplate(String(req.params.id), actorId(req));
+      res.json({ template: shape(row) });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
-router.get('/:id/payload', requirePermission('print-templates.view'), (req: Request, res: Response) => {
-  try {
-    const row = loadMerchantPrintTemplateRow(String(req.params.id));
-    if (!row) return res.status(404).json({ error: 'Template not found' });
-    res.json({ id: row.id, schemaVersion: row.schema_version, checksum: row.checksum, payload: JSON.parse(row.payload_json) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.get(
+  '/:id/payload',
+  requirePermission('print-templates.view'),
+  (req: Request, res: Response) => {
+    try {
+      const row = loadMerchantPrintTemplateRow(String(req.params.id));
+      if (!row) return res.status(404).json({ error: 'Template not found' });
+      res.json({
+        id: row.id,
+        schemaVersion: row.schema_version,
+        checksum: row.checksum,
+        payload: JSON.parse(row.payload_json),
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 // --- Offline transfer (#448) ----------------------------------------------
 
 /** Download the portable transfer envelope for one template (owner only). */
-router.get('/:id/export', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const file = exportMerchantPrintTemplateFile(String(req.params.id));
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
-    res.send(file.json);
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.get(
+  '/:id/export',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const file = exportMerchantPrintTemplateFile(String(req.params.id));
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+      res.send(file.json);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 /** Import a validated template transfer file as a new draft. */
-router.post('/import', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
-  try {
-    const row = importMerchantPrintTemplateFile({
-      file: req.body?.file,
-      name: req.body?.name,
-      fileName: req.body?.fileName,
-    }, actorId(req));
-    res.status(201).json({ template: shape(row) });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+router.post(
+  '/import',
+  merchantTemplateWriteRateLimit,
+  requirePermission('print-templates.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const row = importMerchantPrintTemplateFile(
+        {
+          file: req.body?.file,
+          name: req.body?.name,
+          fileName: req.body?.fileName,
+        },
+        actorId(req),
+      );
+      res.status(201).json({ template: shape(row) });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+);
 
 export const printTemplateRoutes = router;

@@ -1303,7 +1303,18 @@
     "selectCounter": "Seleziona postazione",
     "decreaseQuantity": "Diminuisci quantità",
     "increaseQuantity": "Aumenta quantità",
-    "distributeEvenly": "Distribuisci equamente"
+    "distributeEvenly": "Distribuisci equamente",
+    "validationStockGuidanceItem": "Rifornisci \"{item}\" o aggiorna il tracciamento scorte in Prodotti o Scorte prima di inviare nuovamente l'ordine.",
+    "validationStockGuidance": "Rifornisci l'articolo non disponibile o aggiorna il tracciamento scorte in Prodotti o Scorte prima di inviare nuovamente l'ordine.",
+    "validationOpenProducts": "Apri Prodotti e scorte",
+    "validationOpenInventory": "Apri Scorte e ricette",
+    "validationStockEvidenceHint": "Contatta il supporto solo se le quantità risultano ancora errate dopo aver controllato Prodotti o Scorte (indica il nome dell'articolo e la quantità attesa).",
+    "validationShiftRequiredGuidance": "È necessario un turno aperto prima di completare questa operazione. Apri un turno su questo terminale e riprova.",
+    "validationOpenShiftAction": "Apri turno",
+    "validationShiftEvidenceHint": "Contatta il supporto solo se un turno è già aperto su questo terminale e l'errore persiste.",
+    "validationClosedBooksGuidance": "La giornata lavorativa di oggi è chiusa e non può essere riaperta. I nuovi ordini e i movimenti di cassa riprenderanno il prossimo giorno lavorativo.",
+    "validationClosedBooksEvidenceHint": "Contatta il supporto solo se la giornata lavorativa di oggi risulta chiusa con data o fuso orario del punto vendita errati.",
+    "validationGenericEvidenceHint": "Contatta il supporto solo se ritieni che questo controllo di convalida abbia rifiutato una richiesta valida."
   },
   "printTest": {
     "amt": "Importo",

@@ -1303,7 +1303,18 @@
     "selectCounter": "اختيار المحطة",
     "decreaseQuantity": "تقليل الكمية",
     "increaseQuantity": "زيادة الكمية",
-    "distributeEvenly": "توزيع بالتساوي"
+    "distributeEvenly": "توزيع بالتساوي",
+    "validationStockGuidanceItem": "أعد تخزين \"{item}\" أو حدّث تتبع المخزون في المنتجات أو المخزون قبل إرسال الطلب مرة أخرى.",
+    "validationStockGuidance": "أعد تخزين الصنف غير المتوفر أو حدّث تتبع المخزون في المنتجات أو المخزون قبل إرسال الطلب مرة أخرى.",
+    "validationOpenProducts": "فتح المنتجات والمخزون",
+    "validationOpenInventory": "فتح المخزون والوصفات",
+    "validationStockEvidenceHint": "لا تتواصل مع الدعم إلا إذا ظلت كميات المخزون غير صحيحة بعد مراجعة المنتجات أو المخزون (اذكر اسم الصنف والكمية المتوقعة).",
+    "validationShiftRequiredGuidance": "يلزم وجود وردية مفتوحة قبل إكمال هذا الإجراء. افتح وردية على هذا الجهاز ثم حاول مرة أخرى.",
+    "validationOpenShiftAction": "فتح وردية",
+    "validationShiftEvidenceHint": "لا تتواصل مع الدعم إلا إذا كانت الوردية مفتوحة بالفعل على هذا الجهاز واستمر هذا الخطأ.",
+    "validationClosedBooksGuidance": "تم إغلاق يوم العمل الحالي ولا يمكن إعادة فتحه. تُستأنف الطلبات الجديدة وحركة النقد في يوم العمل التالي.",
+    "validationClosedBooksEvidenceHint": "لا تتواصل مع الدعم إلا إذا ظهر يوم العمل الحالي مغلقًا في تاريخ أو منطقة زمنية خاطئة للمتجر.",
+    "validationGenericEvidenceHint": "لا تتواصل مع الدعم إلا إذا كنت تعتقد أن فحص التحقق هذا رفض طلبًا صالحًا."
   },
   "printTest": {
     "amt": "المبلغ",

@@ -1303,7 +1303,18 @@
     "selectCounter": "Select Counter",
     "decreaseQuantity": "Decrease quantity",
     "increaseQuantity": "Increase quantity",
-    "distributeEvenly": "Distribute evenly"
+    "distributeEvenly": "Distribute evenly",
+    "validationStockGuidanceItem": "Restock \"{item}\" or update its stock tracking in Products before submitting the order again.",
+    "validationStockGuidance": "Restock the unavailable item or update its stock tracking in Products before submitting the order again.",
+    "validationOpenProducts": "Open Products & Stock",
+    "validationOpenInventory": "Open Inventory & Recipes",
+    "validationStockEvidenceHint": "Only contact support if stock quantities still look wrong after checking Products (include the item name and expected stock count).",
+    "validationShiftRequiredGuidance": "An open shift is required before completing this action. Open a shift on this terminal, then try again.",
+    "validationOpenShiftAction": "Open Shift",
+    "validationShiftEvidenceHint": "Only contact support if a shift is already open on this terminal and this error continues.",
+    "validationClosedBooksGuidance": "Today's business day is closed and cannot be reopened. New orders and cash activity resume on the next business day.",
+    "validationClosedBooksEvidenceHint": "Only contact support if today's business day appears closed at the wrong store date or timezone.",
+    "validationGenericEvidenceHint": "Only contact support if you believe this validation check rejected a valid request."
   },
   "printTest": {
     "amt": "Amt",

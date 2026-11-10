@@ -1827,10 +1827,11 @@ export async function printPaymentTicketDetailed(
 function reportPrintFailure(
   kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket',
   result: PrintResult,
+  printerOverride?: { connection_type?: string } | null,
 ): void {
   let connectionType = 'unknown';
   try {
-    const configured = getPrinterConfig()?.connection_type;
+    const configured = printerOverride?.connection_type ?? getPrinterConfig()?.connection_type;
     if (configured === 'network' || configured === 'usb' || configured === 'webusb')
       connectionType = configured;
   } catch {
@@ -1910,7 +1911,7 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
-    if (!result.ok) reportPrintFailure('kot', result);
+    if (!result.ok) reportPrintFailure('kot', result, args[4]);
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -1923,7 +1924,7 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
       failureClass: classifyPrintFailure(detail),
       platformErrorCode: extractPlatformErrorCode(detail),
     };
-    reportPrintFailure('kot', result);
+    reportPrintFailure('kot', result, args[4]);
     return result;
   }
 }

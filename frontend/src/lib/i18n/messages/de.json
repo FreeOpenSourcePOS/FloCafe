@@ -1303,7 +1303,18 @@
     "selectCounter": "Theke auswählen",
     "decreaseQuantity": "Menge verringern",
     "increaseQuantity": "Menge erhöhen",
-    "distributeEvenly": "Gleichmäßig verteilen"
+    "distributeEvenly": "Gleichmäßig verteilen",
+    "validationStockGuidanceItem": "Füllen Sie „{item}“ wieder auf oder passen Sie die Bestandsverfolgung unter Produkte oder Bestand an, bevor Sie die Bestellung erneut absenden.",
+    "validationStockGuidance": "Füllen Sie den nicht verfügbaren Artikel wieder auf oder passen Sie die Bestandsverfolgung unter Produkte oder Bestand an, bevor Sie die Bestellung erneut absenden.",
+    "validationOpenProducts": "Produkte & Bestand öffnen",
+    "validationOpenInventory": "Bestand & Rezepte öffnen",
+    "validationStockEvidenceHint": "Kontaktieren Sie den Support nur, wenn die Bestandsmengen nach Prüfung von Produkte oder Bestand weiterhin falsch erscheinen (Artikelname und erwarteten Bestand angeben).",
+    "validationShiftRequiredGuidance": "Für diese Aktion ist eine offene Schicht erforderlich. Öffnen Sie an diesem Terminal eine Schicht und versuchen Sie es erneut.",
+    "validationOpenShiftAction": "Schicht öffnen",
+    "validationShiftEvidenceHint": "Kontaktieren Sie den Support nur, wenn an diesem Terminal bereits eine Schicht geöffnet ist und dieser Fehler weiterhin auftritt.",
+    "validationClosedBooksGuidance": "Der heutige Geschäftstag ist abgeschlossen und kann nicht wieder geöffnet werden. Neue Bestellungen und Bargeldbewegungen sind am nächsten Geschäftstag wieder möglich.",
+    "validationClosedBooksEvidenceHint": "Kontaktieren Sie den Support nur, wenn der heutige Geschäftstag zum falschen Geschäftsdatum oder in der falschen Zeitzone als geschlossen angezeigt wird.",
+    "validationGenericEvidenceHint": "Kontaktieren Sie den Support nur, wenn diese Prüfung Ihrer Ansicht nach eine gültige Anfrage abgelehnt hat."
   },
   "printTest": {
     "amt": "Betrag",

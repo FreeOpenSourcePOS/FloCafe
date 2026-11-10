@@ -1303,7 +1303,18 @@
     "selectCounter": "カウンターを選択",
     "decreaseQuantity": "数量を減らす",
     "increaseQuantity": "数量を増やす",
-    "distributeEvenly": "均等に割り振る"
+    "distributeEvenly": "均等に割り振る",
+    "validationStockGuidanceItem": "注文を再送信する前に、「商品」または「在庫」で「{item}」を補充するか在庫管理設定を更新してください。",
+    "validationStockGuidance": "注文を再送信する前に、「商品」または「在庫」で在庫切れの商品を補充するか在庫管理設定を更新してください。",
+    "validationOpenProducts": "商品と在庫を開く",
+    "validationOpenInventory": "在庫とレシピを開く",
+    "validationStockEvidenceHint": "「商品」または「在庫」を確認しても在庫数が正しくない場合のみサポートへご連絡ください（商品名と想定在庫数を記載してください）。",
+    "validationShiftRequiredGuidance": "この操作を行うには開始済みのシフトが必要です。この端末でシフトを開始してからもう一度お試しください。",
+    "validationOpenShiftAction": "シフトを開始",
+    "validationShiftEvidenceHint": "この端末でシフトがすでに開始されているのにエラーが続く場合のみサポートへご連絡ください。",
+    "validationClosedBooksGuidance": "本日の営業日は締め処理済みのため再開できません。新規注文および現金取引は翌営業日に再開されます。",
+    "validationClosedBooksEvidenceHint": "店舗の日付またはタイムゾーンが誤っていて本日の営業日が締められている場合のみサポートへご連絡ください。",
+    "validationGenericEvidenceHint": "この入力確認によって正しい操作が拒否されたと思われる場合のみサポートへご連絡ください。"
   },
   "printTest": {
     "amt": "金額",

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
+import { isAllowedPrivateIp } from '../middleware/security';
 import { getDatabase, now, generateShortId } from '../db';
 import { requirePermission } from '../services/authorization';
 import { cloudSync } from '../services/cloud-sync';
@@ -18,6 +19,7 @@ const categoryWriteRateLimit = expressRateLimit({
       : 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 
 export const ACTIVE_CATEGORIES_CTE_CLAUSES = `category_ancestors(start_id, current_id, parent_id, is_active, path) AS (

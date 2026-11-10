@@ -1303,7 +1303,18 @@
     "selectCounter": "Selecionar balcão",
     "decreaseQuantity": "Diminuir quantidade",
     "increaseQuantity": "Aumentar quantidade",
-    "distributeEvenly": "Distribuir igualmente"
+    "distributeEvenly": "Distribuir igualmente",
+    "validationStockGuidanceItem": "Reponha \"{item}\" ou atualize o controle de estoque em Produtos ou Estoque antes de enviar o pedido novamente.",
+    "validationStockGuidance": "Reponha o item indisponível ou atualize o controle de estoque em Produtos ou Estoque antes de enviar o pedido novamente.",
+    "validationOpenProducts": "Abrir Produtos e estoque",
+    "validationOpenInventory": "Abrir Estoque e fichas técnicas",
+    "validationStockEvidenceHint": "Entre em contato com o suporte apenas se as quantidades continuarem incorretas após verificar Produtos ou Estoque (informe o item e o estoque esperado).",
+    "validationShiftRequiredGuidance": "É necessário um turno aberto antes de concluir esta ação. Abra um turno neste terminal e tente novamente.",
+    "validationOpenShiftAction": "Abrir turno",
+    "validationShiftEvidenceHint": "Entre em contato com o suporte apenas se já houver um turno aberto neste terminal e o erro persistir.",
+    "validationClosedBooksGuidance": "O dia comercial de hoje está fechado e não pode ser reaberto. Novos pedidos e movimentações em dinheiro retornam no próximo dia comercial.",
+    "validationClosedBooksEvidenceHint": "Entre em contato com o suporte apenas se o dia comercial de hoje parecer fechado na data ou fuso horário incorretos da loja.",
+    "validationGenericEvidenceHint": "Entre em contato com o suporte apenas se acreditar que esta validação recusou uma solicitação válida."
   },
   "printTest": {
     "amt": "Total",

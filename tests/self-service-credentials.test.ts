@@ -42,6 +42,7 @@ const {
 const {
   authRoutes,
   getJWTSecret,
+  signFreshSessionToken,
   resetCredentialChangeRateLimitsForTests,
 } = require('../main/routes/auth');
 const { staffRoutes } = require('../main/routes/staff');
@@ -919,6 +920,98 @@ async function run() {
     mgrBUserDenied.status,
     403,
     'Manager Beta without override receives 403 on cashier PIN reset',
+  );
+
+  console.log('\n6. Token rotation expiration preservation and concurrency checks');
+  // 6a: Test signFreshSessionToken preserving 10-day vs 24-hour expiration
+  const testUser = { id: 'test-user', email: 'test@flo.local', role: 'server' };
+  const standardTokenPayload = {
+    userId: testUser.id,
+    email: testUser.email,
+    role: testUser.role,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 86400,
+  };
+  const standardRotated = signFreshSessionToken(testUser, standardTokenPayload);
+  const standardDecoded = jwt.verify(standardRotated, getJWTSecret()) as any;
+  assertOrThrow(
+    standardDecoded.exp - standardDecoded.iat <= 86400,
+    'Rotated standard token has 24h expiration',
+  );
+
+  const rememberedTokenPayload = {
+    userId: testUser.id,
+    email: testUser.email,
+    role: testUser.role,
+    remember: true,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 10 * 86400,
+  };
+  const rememberedRotated = signFreshSessionToken(testUser, rememberedTokenPayload);
+  const rememberedDecoded = jwt.verify(rememberedRotated, getJWTSecret()) as any;
+  assertOrThrow(
+    rememberedDecoded.exp - rememberedDecoded.iat >= 10 * 86400 - 10,
+    'Rotated token with remember: true preserves 10-day expiration',
+  );
+
+  // Decoded token from KDS or Server App without explicit remember property but with 10-day exp
+  const kdsOrServerLongLivedPayload = {
+    userId: testUser.id,
+    email: testUser.email,
+    role: testUser.role,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 10 * 86400,
+  };
+  const kdsRotated = signFreshSessionToken(testUser, kdsOrServerLongLivedPayload);
+  const kdsDecoded = jwt.verify(kdsRotated, getJWTSecret()) as any;
+  assertOrThrow(
+    kdsDecoded.exp - kdsDecoded.iat >= 10 * 86400 - 10,
+    'Rotated KDS/Server App 10-day token without explicit remember flag preserves 10-day expiration',
+  );
+
+  // 6b: Concurrency check: in-flight password / PIN change fails if staff reset modified credentials
+  clearLoginRateLimits();
+  clearRevokedTokens();
+  // Login as self-cashier with current credentials
+  const concurrentCashierToken = await loginFor(
+    'self-cashier@flo.local',
+    'MgrGranted-self-cashier-1!',
+  );
+  assertOrThrow(Boolean(concurrentCashierToken), 'Self-cashier logs in for concurrency test');
+
+  // Admin resets self-cashier password concurrently
+  const adminResetRes = await request(app)
+    .put('/api/staff/self-cashier')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({ password: 'AdminReset123!' });
+  assertEqualOrThrow(adminResetRes.status, 200, 'Owner resets self-cashier password');
+
+  // Attempt self-service password change using the pre-reset session token
+  const stalePasswordChangeRes = await request(app)
+    .post('/api/auth/password/change')
+    .set('Authorization', `Bearer ${concurrentCashierToken}`)
+    .send({
+      current_password: 'MgrGranted-self-cashier-1!',
+      password: 'ShouldFail123!',
+    });
+  assertEqualOrThrow(
+    stalePasswordChangeRes.status,
+    401,
+    'In-flight password change with stale token rejected with 401',
+  );
+
+  // Attempt self-service PIN change using the pre-reset session token
+  const stalePinChangeRes = await request(app)
+    .post('/api/auth/pin/change')
+    .set('Authorization', `Bearer ${concurrentCashierToken}`)
+    .send({
+      current_password: 'AdminReset123!',
+      pin: '9876',
+    });
+  assertEqualOrThrow(
+    stalePinChangeRes.status,
+    401,
+    'In-flight PIN change with stale token rejected with 401',
   );
 
   console.log('\n✅ All Self-Service Password & PIN + staff.credentials.reset tests passed!');

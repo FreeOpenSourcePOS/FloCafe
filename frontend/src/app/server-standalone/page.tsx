@@ -1999,6 +1999,7 @@ export default function ServerStandalonePage() {
             pinChange: '/api/auth/pin/change',
           }}
           initialHasPin={user.has_pin}
+          userId={user.id}
           onSessionUpdated={({ token: freshToken, hasPin }) => {
             localStorage.setItem(TOKEN_KEY, freshToken);
             setUser((prev) =>

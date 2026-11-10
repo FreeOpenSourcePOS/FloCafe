@@ -324,14 +324,16 @@ export function startServerApp(): Promise<void> {
 
         resetSuccessfulLogin(ip);
 
+        const remember = !!remember_me;
         const token = jwt.sign(
           {
             userId: user.id,
             email: user.email,
             role: user.role,
+            remember,
             jti: randomUUID(),
             iat: nextTokenIatSeconds(),
-            exp: Math.floor(Date.now() / 1000) + (remember_me ? 10 * 24 * 60 * 60 : 86400),
+            exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
           },
           getJWTSecret(),
         );
@@ -580,6 +582,7 @@ export function startServerApp(): Promise<void> {
               userId: user.id,
               email: user.email,
               role: user.role,
+              remember,
               jti: randomUUID(),
               iat: nextTokenIatSeconds(),
               exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),

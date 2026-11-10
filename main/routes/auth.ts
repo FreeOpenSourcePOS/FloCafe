@@ -84,13 +84,20 @@ export function signFreshSessionToken(
   user: { id: string; email: string; role: string },
   decoded: Record<string, unknown> = {},
 ): string {
-  const remember = Boolean(decoded.remember);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const iatSeconds = typeof decoded.iat === 'number' ? decoded.iat : nowSeconds;
+  const expSeconds = typeof decoded.exp === 'number' ? decoded.exp : 0;
+  const isLongLived =
+    Boolean(decoded.remember) ||
+    expSeconds - iatSeconds > JWT_EXPIRES_IN_SECONDS + 60 ||
+    expSeconds - nowSeconds > JWT_EXPIRES_IN_SECONDS + 60;
+  const remember = isLongLived;
   const payload: Record<string, unknown> = {
     userId: user.id,
     email: user.email,
     role: user.role,
     ...(decoded.tenantId !== undefined ? { tenantId: decoded.tenantId } : {}),
-    ...(decoded.remember !== undefined ? { remember } : {}),
+    ...(decoded.remember !== undefined || isLongLived ? { remember } : {}),
     ...(decoded.scope !== undefined ? { scope: decoded.scope } : {}),
     ...(decoded.aud !== undefined ? { aud: decoded.aud } : {}),
     jti: randomUUID(),
@@ -900,10 +907,35 @@ export async function handlePasswordChange(req: Request, res: Response): Promise
     const hashedPassword = await bcrypt.hash(password, 10);
     const changedAt = now();
     const tokensValidAfter = nextTokensValidAfterTimestamp();
-    db.prepare(
-      'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?',
-    ).run(hashedPassword, tokensValidAfter, changedAt, decoded.userId);
-    invalidateUserAuthCache(decoded.userId);
+    const updateResult = db
+      .prepare(
+        'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND password = ?',
+      )
+      .run(
+        hashedPassword,
+        tokensValidAfter,
+        changedAt,
+        user.id,
+        user.tokens_valid_after ?? null,
+        user.password,
+      );
+
+    if (updateResult.changes === 0) {
+      const latestUser = db
+        .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+        .get(user.id) as { is_active: number; tokens_valid_after: string | null } | undefined;
+      if (
+        !latestUser ||
+        latestUser.is_active !== 1 ||
+        isTokenStale(decoded.iat, latestUser.tokens_valid_after)
+      ) {
+        res.status(401).json({ error: 'Invalid token' });
+        return;
+      }
+      res.status(409).json({ error: 'Credentials were modified concurrently' });
+      return;
+    }
+    invalidateUserAuthCache(user.id);
 
     const freshToken = signFreshSessionToken(user, decoded);
     res.json({ message: 'Password changed successfully', token: freshToken });
@@ -1041,9 +1073,32 @@ export async function handlePinChange(req: Request, res: Response): Promise<void
         const hashedPin = await bcrypt.hash(rawPin, 10);
         const changedAt = now();
         const tokensValidAfter = nextTokensValidAfterTimestamp();
-        db.prepare(
-          'UPDATE users SET pin_hash = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?',
-        ).run(hashedPin, tokensValidAfter, changedAt, user.id);
+        const updateResult = db
+          .prepare(
+            'UPDATE users SET pin_hash = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND pin_hash IS ?',
+          )
+          .run(
+            hashedPin,
+            tokensValidAfter,
+            changedAt,
+            user.id,
+            user.tokens_valid_after ?? null,
+            user.pin_hash ?? null,
+          );
+
+        if (updateResult.changes === 0) {
+          const latestUser = db
+            .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+            .get(user.id) as { is_active: number; tokens_valid_after: string | null } | undefined;
+          if (
+            !latestUser ||
+            latestUser.is_active !== 1 ||
+            isTokenStale(decoded.iat, latestUser.tokens_valid_after)
+          ) {
+            return { status: 401, body: { error: 'Invalid token' } };
+          }
+          return { status: 409, body: { error: 'Credentials were modified concurrently' } };
+        }
         invalidateUserAuthCache(user.id);
 
         const freshToken = signFreshSessionToken(user, decoded);

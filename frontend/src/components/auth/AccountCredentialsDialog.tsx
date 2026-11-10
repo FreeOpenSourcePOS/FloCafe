@@ -33,6 +33,7 @@ export interface AccountCredentialsDialogProps {
   apiClient?: AxiosInstance;
   endpoints?: AccountCredentialsEndpoints;
   initialHasPin?: boolean;
+  userId?: string | number;
   onSessionUpdated?: (payload: { token: string; hasPin?: boolean }) => void;
 }
 
@@ -44,6 +45,7 @@ export function AccountCredentialsDialog({
   apiClient,
   endpoints,
   initialHasPin,
+  userId,
   onSessionUpdated,
 }: AccountCredentialsDialogProps) {
   const tAuth = useTranslations('auth');
@@ -151,12 +153,64 @@ export function AccountCredentialsDialog({
     return tCommon('somethingWrong');
   };
 
-  const applySessionUpdate = (token: unknown, nextHasPin?: boolean) => {
+  const captureSubmissionSession = () => {
+    const currentStore = useAuthStore.getState();
+    const resolvedUserId =
+      userId !== undefined
+        ? String(userId)
+        : currentStore.user?.id !== undefined
+          ? String(currentStore.user.id)
+          : undefined;
+    return {
+      userId: resolvedUserId,
+      storeUserId: currentStore.user?.id !== undefined ? String(currentStore.user.id) : undefined,
+      storeToken: currentStore.token,
+    };
+  };
+
+  const isSessionValid = (submittingSession: {
+    userId?: string;
+    storeUserId?: string;
+    storeToken?: string | null;
+  }) => {
+    if (!open) return false;
+    if (onSessionUpdated) {
+      if (
+        submittingSession.userId !== undefined &&
+        userId !== undefined &&
+        String(userId) !== submittingSession.userId
+      ) {
+        return false;
+      }
+      return true;
+    }
+    const currentStore = useAuthStore.getState();
+    if (!currentStore.token || !currentStore.user) {
+      return false;
+    }
+    if (
+      submittingSession.storeUserId !== undefined &&
+      String(currentStore.user.id) !== submittingSession.storeUserId
+    ) {
+      return false;
+    }
+    if (submittingSession.storeToken && currentStore.token !== submittingSession.storeToken) {
+      return false;
+    }
+    return true;
+  };
+
+  const applySessionUpdate = (token: unknown, submittingUserId?: string, nextHasPin?: boolean) => {
     if (typeof token !== 'string' || !token) return;
     const authState = useAuthStore.getState();
     const userUpdates = nextHasPin !== undefined ? { has_pin: nextHasPin } : undefined;
     if (onSessionUpdated) {
-      if (authState.token) {
+      if (
+        authState.token &&
+        submittingUserId !== undefined &&
+        authState.user?.id !== undefined &&
+        String(authState.user.id) === submittingUserId
+      ) {
         authState.replaceSessionToken(token, userUpdates);
       }
       onSessionUpdated({ token, hasPin: nextHasPin });
@@ -177,16 +231,23 @@ export function AccountCredentialsDialog({
       return;
     }
 
+    const submittingSession = captureSubmissionSession();
     setPasswordSubmitting(true);
     try {
       const { data } = await client.post(passwordChangePath, {
         current_password: currentPassword,
         password: newPassword,
       });
-      applySessionUpdate(data?.token);
+      if (!isSessionValid(submittingSession)) {
+        return;
+      }
+      applySessionUpdate(data?.token, submittingSession.userId);
       toast.success(tAuth('passwordChangedSuccess'));
       handleDialogOpenChange(false);
     } catch (error) {
+      if (!isSessionValid(submittingSession)) {
+        return;
+      }
       setPasswordError(formatCredentialError(error));
     } finally {
       setPasswordSubmitting(false);
@@ -205,17 +266,24 @@ export function AccountCredentialsDialog({
       return;
     }
 
+    const submittingSession = captureSubmissionSession();
     setPinSubmitting(true);
     try {
       const payload = hasPin
         ? { current_pin: currentPin, pin: newPin }
         : { current_password: pinCurrentPassword, pin: newPin };
       const { data } = await client.post(pinChangePath, payload);
+      if (!isSessionValid(submittingSession)) {
+        return;
+      }
       setFetchedHasPin(true);
-      applySessionUpdate(data?.token, true);
+      applySessionUpdate(data?.token, submittingSession.userId, true);
       toast.success(tAuth('pinChangedSuccess'));
       handleDialogOpenChange(false);
     } catch (error) {
+      if (!isSessionValid(submittingSession)) {
+        return;
+      }
       setPinError(formatCredentialError(error));
     } finally {
       setPinSubmitting(false);

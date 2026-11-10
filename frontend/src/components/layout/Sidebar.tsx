@@ -410,6 +410,7 @@ export default function AppSidebar() {
         open={credentialsOpen}
         onOpenChange={setCredentialsOpen}
         initialHasPin={user?.has_pin}
+        userId={user?.id}
       />
     </Sidebar>
   );

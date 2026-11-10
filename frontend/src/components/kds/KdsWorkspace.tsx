@@ -57,6 +57,7 @@ export function KdsWorkspace({
           apiClient={conn.api}
           endpoints={conn.credentialEndpoints}
           initialHasPin={conn.user?.has_pin}
+          userId={conn.user?.id}
           onSessionUpdated={({ token, hasPin }) => conn.replaceSessionToken?.(token, hasPin)}
         />
       )}

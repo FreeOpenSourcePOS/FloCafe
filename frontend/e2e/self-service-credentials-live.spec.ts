@@ -47,6 +47,70 @@ async function loginViaUi(page: Page, email: string, password: string, baseUrl =
 
 test.describe
   .serial('Self-Service Password & PIN Change + Staff Credential Reset Live Scenarios', () => {
+  const createdStaffIds: string[] = [];
+
+  test.afterAll(async ({ request }) => {
+    for (const staffId of createdStaffIds) {
+      try {
+        await request.put(`${E2E_BASE_URL}/api/staff/${staffId}`, {
+          headers: ownerHeaders(),
+          data: { pin: null },
+        });
+        await request.post(`${E2E_BASE_URL}/api/staff/${staffId}/deactivate`, {
+          headers: ownerHeaders(),
+        });
+      } catch {}
+    }
+
+    try {
+      const listRes = await request.get(`${E2E_BASE_URL}/api/staff`, { headers: ownerHeaders() });
+      if (listRes.ok()) {
+        const { staff = [] } = await listRes.json();
+        for (const member of staff) {
+          if (
+            member.email &&
+            (member.email.includes('-live-') ||
+              member.email.includes('locked-staff-') ||
+              member.email.includes('chef-kds-') ||
+              member.email.includes('waiter-sa-') ||
+              member.email.includes('forgotten-staff-') ||
+              member.email.includes('op-staff-'))
+          ) {
+            try {
+              await request.put(`${E2E_BASE_URL}/api/staff/${member.id}`, {
+                headers: ownerHeaders(),
+                data: { pin: null },
+              });
+              await request.post(`${E2E_BASE_URL}/api/staff/${member.id}/deactivate`, {
+                headers: ownerHeaders(),
+              });
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+
+    try {
+      const getRoles = await request.get(`${E2E_BASE_URL}/api/authorization/roles`, {
+        headers: ownerHeaders(),
+      });
+      const rolesData = await getRoles.json();
+      const mgrRevision = rolesData.roles?.find(
+        (r: { role: string; revision?: string }) => r.role === 'manager',
+      )?.revision;
+
+      if (mgrRevision) {
+        await request.put(`${E2E_BASE_URL}/api/authorization/roles/manager`, {
+          headers: ownerHeaders(),
+          data: {
+            revision: mgrRevision,
+            overrides: [],
+          },
+        });
+      }
+    } catch {}
+  });
+
   test('Scenario 1: Self-service password change with current password across roles preserves active session', async ({
     page,
     request,
@@ -66,6 +130,7 @@ test.describe
       },
     });
     expect(createRes.status()).toBe(201);
+    createdStaffIds.push((await createRes.json()).staff.id);
 
     // 2. Sign in as cashier through the UI
     await loginViaUi(page, cashierEmail, initialPassword);
@@ -142,6 +207,7 @@ test.describe
     });
     expect(createRes.status()).toBe(201);
     const createdUser = (await createRes.json()).staff;
+    createdStaffIds.push(createdUser.id);
 
     // 2. Sign in through UI
     await loginViaUi(page, waiterEmail, waiterPassword);
@@ -232,6 +298,7 @@ test.describe
       },
     });
     expect(createRes.status()).toBe(201);
+    createdStaffIds.push((await createRes.json()).staff.id);
 
     // 2. Sign in as the user
     await loginViaUi(page, attackerEmail, attackerPassword);
@@ -324,6 +391,7 @@ test.describe
       data: { name: 'KDS Chef', email: chefEmail, password: chefPassword, role: 'chef' },
     });
     expect(createChef.status()).toBe(201);
+    createdStaffIds.push((await createChef.json()).staff.id);
 
     const waiterEmail = `waiter-sa-${Date.now()}@flo.local`;
     const waiterPassword = 'WaiterPassword123!';
@@ -337,6 +405,7 @@ test.describe
       },
     });
     expect(createWaiter.status()).toBe(201);
+    createdStaffIds.push((await createWaiter.json()).staff.id);
 
     // 2. Drive Standalone KDS (:3102)
     await page.goto(`${E2E_KDS_BASE_URL}/kds-standalone`);
@@ -413,6 +482,7 @@ test.describe
     const storedToken = await page.evaluate(() => localStorage.getItem('flocafe:server-app-token'));
     expect(storedToken).toBeTruthy();
     expect(storedToken).not.toBe(saToken);
+    await page.evaluate(() => localStorage.clear());
   });
 
   test('Scenario 5: Owner administrator resets forgotten password and PIN for any role without current credentials', async ({
@@ -432,6 +502,7 @@ test.describe
       },
     });
     expect(createRes.status()).toBe(201);
+    createdStaffIds.push((await createRes.json()).staff.id);
     const targetStaff = (await createRes.json()).staff;
 
     // 2. Owner logs in and goes to /staff
@@ -507,6 +578,7 @@ test.describe
       },
     });
     expect(createRes.status()).toBe(201);
+    createdStaffIds.push((await createRes.json()).staff.id);
     const opStaff = (await createRes.json()).staff;
 
     // 2. Manager logs in and navigates to /staff

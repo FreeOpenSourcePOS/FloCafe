@@ -173,12 +173,14 @@ test.describe('Server App tableside ordering', () => {
 
       const header = page.locator('header');
       const refreshButton = header.getByRole('button', { name: 'Refresh' });
+      const credentialsButton = page.getByTestId('server-app-change-credentials-button');
       const logoutButton = header.getByRole('button', { name: 'Logout' });
       await expect(refreshButton).toBeVisible();
+      await expect(credentialsButton).toBeVisible();
       await expect(logoutButton).toBeVisible();
-      await expect(header.getByRole('button')).toHaveCount(2);
+      await expect(header.getByRole('button')).toHaveCount(3);
 
-      for (const button of [refreshButton, logoutButton]) {
+      for (const button of [refreshButton, credentialsButton, logoutButton]) {
         const box = await button.boundingBox();
         expect(box).not.toBeNull();
         expect(box!.width).toBeGreaterThanOrEqual(44);
@@ -822,14 +824,18 @@ test('Server App locks locally on configured inactivity even if logout fails', a
     return route.fulfill({ status: 503, json: { error: 'offline' } });
   });
   const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+  const autoLockSettingLoaded = page.waitForResponse(
+    (res) => res.url().includes('/api/settings/auto_lock_minutes'),
+  );
   await openServerApp(page, serverToken);
+  await autoLockSettingLoaded;
   await expect(page.getByTestId('pos-product-grid')).toBeVisible();
   await page.clock.fastForward('00:59');
   await page.keyboard.press('Shift');
   await page.clock.fastForward('00:59');
   await expect(page.getByTestId('pos-product-grid')).toBeVisible();
   await page.clock.fastForward('00:02');
-  await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();
   expect(await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY)).toBeNull();
   await expect.poll(() => logoutAttempts).toBe(1);
 });

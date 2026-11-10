@@ -543,8 +543,33 @@ async function removeSyntheticMenu(api: APIRequestContext, menu: SyntheticMenu):
 }
 
 async function loginAsManager(page: Page): Promise<void> {
+  const pinUsersFetched = page
+    .waitForResponse((res) => res.url().includes('/api/auth/pin-users'), { timeout: 5000 })
+    .catch(() => null);
   await page.goto(`${BASE}/auth/login`);
+  await pinUsersFetched;
+  const passwordTab = page.getByTestId('signin-mode-password');
+  if (await passwordTab.isVisible()) {
+    await passwordTab.click();
+  }
   await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#password').fill(E2E_PASSWORD);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/(pos|orders)/, { timeout: 20000 });
+  await setLanguage(page, 'en');
+}
+
+async function loginAsOwner(page: Page): Promise<void> {
+  const pinUsersFetched = page
+    .waitForResponse((res) => res.url().includes('/api/auth/pin-users'), { timeout: 5000 })
+    .catch(() => null);
+  await page.goto(`${BASE}/auth/login`);
+  await pinUsersFetched;
+  const passwordTab = page.getByTestId('signin-mode-password');
+  if (await passwordTab.isVisible()) {
+    await passwordTab.click();
+  }
+  await page.locator('#email').fill('owner@flo.local');
   await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(/\/(pos|orders)/, { timeout: 20000 });
@@ -3522,7 +3547,7 @@ test('staff modals close on Escape, ignore non-Escape keys, restore trigger focu
     ).__getActiveKeydownListenerCount = () => activeKeydownListeners.size;
   });
 
-  await loginAsManager(page);
+  await loginAsOwner(page);
   await page.goto(`${BASE}/staff`);
 
   const getListenerCount = () =>

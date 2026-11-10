@@ -458,8 +458,8 @@ export default function StaffPage() {
                     />
                     <button
                       type="button"
-                      aria-label={tAuth('togglePasswordVisibility')}
-                      title={tAuth('togglePasswordVisibility')}
+                      aria-label="Toggle password visibility"
+                      title="Toggle password visibility"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
@@ -556,8 +556,8 @@ export default function StaffPage() {
                     />
                     <button
                       type="button"
-                      aria-label={tAuth('togglePinVisibility')}
-                      title={tAuth('togglePinVisibility')}
+                      aria-label="Toggle PIN visibility"
+                      title="Toggle PIN visibility"
                       onClick={() => setShowPin(!showPin)}
                       className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
@@ -662,8 +662,8 @@ export default function StaffPage() {
                 />
                 <button
                   type="button"
-                  aria-label={tAuth('togglePinVisibility')}
-                  title={tAuth('togglePinVisibility')}
+                  aria-label="Toggle PIN visibility"
+                  title="Toggle PIN visibility"
                   onClick={() => setShowResetPinValue(!showResetPinValue)}
                   className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >

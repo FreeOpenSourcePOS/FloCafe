@@ -6,6 +6,7 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  has_pin?: boolean;
   phone: string | null;
   country_code: string;
   is_active: boolean;

@@ -90,7 +90,27 @@
     "yourName": "আপনার নাম",
     "quickSwitchTitle": "দ্রুত ইউজার পরিবর্তন",
     "quickSwitchSubtitle": "পিন দিয়ে সাইন ইন করতে আপনার প্রোফাইল বেছে নিন",
-    "enterPinFor": "{name}-এর পিন লিখুন"
+    "enterPinFor": "{name}-এর পিন লিখুন",
+    "changePasswordAndPin": "পাসওয়ার্ড ও পিন পরিবর্তন করুন",
+    "accountCredentialsSubtitle": "আপনার নিজের পাসওয়ার্ড বা দ্রুত সাইন-ইন পিন আপডেট করুন।",
+    "changePasswordTab": "পাসওয়ার্ড পরিবর্তন",
+    "changePinTab": "পিন পরিবর্তন",
+    "currentPasswordLabel": "বর্তমান পাসওয়ার্ড",
+    "currentPasswordPlaceholder": "আপনার বর্তমান পাসওয়ার্ড লিখুন",
+    "currentPinLabel": "বর্তমান পিন",
+    "currentPinPlaceholder": "বর্তমান পিন লিখুন",
+    "newPinLabel": "নতুন পিন (৪-৬ সংখ্যা)",
+    "confirmNewPinLabel": "নতুন পিন নিশ্চিত করুন",
+    "pinRequirementsHint": "পিন অবশ্যই ৪ থেকে ৬ সংখ্যার হতে হবে।",
+    "pinMismatch": "পিন দুটি মিলছে না",
+    "firstTimePinNotice": "আপনার অ্যাকাউন্টে এখনও কোনো পিন সেট করা হয়নি। পিন সেট করতে আপনার বর্তমান পাসওয়ার্ড লিখুন।",
+    "updatePasswordButton": "পাসওয়ার্ড আপডেট করুন",
+    "passwordChangedSuccess": "পাসওয়ার্ড সফলভাবে আপডেট হয়েছে",
+    "updatePinButton": "পিন আপডেট করুন",
+    "setPinButton": "পিন সেট করুন",
+    "pinChangedSuccess": "পিন সফলভাবে আপডেট হয়েছে",
+    "togglePasswordVisibility": "পাসওয়ার্ড দেখান বা লুকান",
+    "togglePinVisibility": "পিন দেখান বা লুকান"
   },
   "backup": {
     "creating": "ব্যাকআপ তৈরি করা হচ্ছে...",
@@ -2841,7 +2861,14 @@
     "roleServer": "সার্ভার",
     "title": "স্টাফ",
     "updateButton": "আপডেট",
-    "updatedToast": "স্টাফ আপডেট করা হয়েছে"
+    "updatedToast": "স্টাফ আপডেট করা হয়েছে",
+    "resetPinButton": "পিন রিসেট",
+    "resetPinTitle": "পিন রিসেট করুন",
+    "resetPinBody": "বর্তমান পিন ছাড়াই {name}-এর জন্য নতুন ৪-৬ সংখ্যার পিন সেট করুন।",
+    "resetPinToast": "পিন সফলভাবে রিসেট হয়েছে",
+    "clearPinButton": "পিন মুছে ফেলুন",
+    "pinClearedToast": "পিন সফলভাবে মুছে ফেলা হয়েছে",
+    "failedToResetPin": "পিন রিসেট করতে ব্যর্থ হয়েছে"
   },
   "permissionMatrix": {
     "title": "ভূমিকা অনুমতি",
@@ -2942,7 +2969,8 @@
       "support": "সহায়তার সাথে যোগাযোগ করুন এবং ডায়াগনস্টিক দেখুন",
       "inventoryManage": "সরবরাহ এবং রেসিপি পরিচালনা করুন",
       "orderItemPriceOverride": "অর্ডার আইটেমের দাম পরিবর্তন করুন",
-      "offlineMode": "অফলাইন মোড চালু বা বন্ধ করুন"
+      "offlineMode": "অফলাইন মোড চালু বা বন্ধ করুন",
+      "staffCredentialsReset": "বর্তমান তথ্য ছাড়াই কর্মীদের পাসওয়ার্ড ও পিন রিসেট করুন"
     },
     "editorSubtitle": "ভূমিকার ডিফল্ট সেটিংস কনফিগার করুন বা একজন স্টাফের জন্য ব্যতিক্রম তৈরি করুন। পরিবর্তনগুলো তার পরবর্তী কাজে প্রযোজ্য হবে।",
     "roleDefaultsTab": "ভূমিকার ডিফল্ট",

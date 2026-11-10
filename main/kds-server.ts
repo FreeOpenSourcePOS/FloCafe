@@ -42,7 +42,13 @@ import { setKdsPort } from './server-state';
 import { reconcileActiveOrderStatusFromItems } from './services/orders';
 import { cloudSync } from './services/cloud-sync';
 import { getJWTSecret } from './security/jwt-secret';
-import { normalizeEmail, parseCategoryIds } from './routes/auth';
+import { asyncHandler } from './middleware/async-handler';
+import {
+  handlePasswordChange,
+  handlePinChange,
+  normalizeEmail,
+  parseCategoryIds,
+} from './routes/auth';
 import {
   rateLimit,
   authRateLimit,
@@ -358,6 +364,7 @@ export function startKdsServer(): Promise<void> {
             name: user.name,
             email: user.email,
             role: user.role,
+            has_pin: Boolean(user.pin_hash),
             category_ids: categoryIdsForRole(user.role, user.category_ids),
             station_ids: stationIds,
             station_assignments_configured: stationAssignmentsConfigured,
@@ -637,6 +644,7 @@ export function startKdsServer(): Promise<void> {
               userId: user.id,
               email: user.email,
               role: user.role,
+              remember,
               jti: randomUUID(),
               iat: nextTokenIatSeconds(),
               exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
@@ -651,6 +659,7 @@ export function startKdsServer(): Promise<void> {
               name: user.name,
               email: user.email,
               role: user.role,
+              has_pin: Boolean(user.pin_hash),
               category_ids: categoryIdsForRole(user.role, user.category_ids),
               station_ids: stationIds,
               station_assignments_configured: stationAssignmentsConfigured,
@@ -686,14 +695,18 @@ export function startKdsServer(): Promise<void> {
         const authedUser = (req as any).user as KdsRequestUser;
         const db = getDatabase();
         const row = db
-          .prepare('SELECT id, name, email, role FROM users WHERE id = ?')
+          .prepare('SELECT id, name, email, role, pin_hash FROM users WHERE id = ?')
           .get(authedUser.userId) as any;
         if (!row) {
           return res.status(404).json({ error: 'User not found' });
         }
         res.json({
           user: {
-            ...row,
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            role: row.role,
+            has_pin: Boolean(row.pin_hash),
             permission_ids: [...(resolveEffectivePermissions(row.id)?.permissionIds ?? [])],
             authorization_revision: effectivePermissionRevision(row.id),
           },
@@ -702,6 +715,32 @@ export function startKdsServer(): Promise<void> {
         res.status(500).json({ error: 'Internal server error' });
       }
     });
+
+    app.post(
+      '/api/auth/password/change',
+      authRateLimit(),
+      requireAuth,
+      (req: Request, res: Response, next: NextFunction) => {
+        if (!isKdsEnabled()) {
+          return res.status(403).json({ error: 'KDS is disabled for this business' });
+        }
+        next();
+      },
+      asyncHandler(handlePasswordChange),
+    );
+
+    app.post(
+      '/api/auth/pin/change',
+      authRateLimit(),
+      requireAuth,
+      (req: Request, res: Response, next: NextFunction) => {
+        if (!isKdsEnabled()) {
+          return res.status(403).json({ error: 'KDS is disabled for this business' });
+        }
+        next();
+      },
+      asyncHandler(handlePinChange),
+    );
 
     // Get orders for KDS (pending, preparing, ready)
     app.get('/api/kds/orders', requireAuth, (req: Request, res: Response) => {

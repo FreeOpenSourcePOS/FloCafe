@@ -90,7 +90,27 @@
     "yourName": "Your Name",
     "quickSwitchTitle": "Quick Switch",
     "quickSwitchSubtitle": "Select your profile to sign in with your PIN",
-    "enterPinFor": "Enter PIN for {name}"
+    "enterPinFor": "Enter PIN for {name}",
+    "changePasswordAndPin": "Change Password & PIN",
+    "accountCredentialsSubtitle": "Update your own password or quick sign-in PIN.",
+    "changePasswordTab": "Change Password",
+    "changePinTab": "Change PIN",
+    "currentPasswordLabel": "Current Password",
+    "currentPasswordPlaceholder": "Enter your current password",
+    "currentPinLabel": "Current PIN",
+    "currentPinPlaceholder": "Enter current PIN",
+    "newPinLabel": "New PIN (4-6 digits)",
+    "confirmNewPinLabel": "Confirm New PIN",
+    "pinRequirementsHint": "PIN must be 4 to 6 numeric digits.",
+    "pinMismatch": "PINs do not match",
+    "firstTimePinNotice": "No PIN is set on your account yet. Enter your current password to set a PIN.",
+    "updatePasswordButton": "Update Password",
+    "passwordChangedSuccess": "Password updated successfully",
+    "updatePinButton": "Update PIN",
+    "setPinButton": "Set PIN",
+    "pinChangedSuccess": "PIN updated successfully",
+    "togglePasswordVisibility": "Toggle password visibility",
+    "togglePinVisibility": "Toggle PIN visibility"
   },
   "backup": {
     "creating": "Creating backup...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Server",
     "title": "Staff",
     "updateButton": "Update",
-    "updatedToast": "Staff updated"
+    "updatedToast": "Staff updated",
+    "resetPinButton": "Reset PIN",
+    "resetPinTitle": "Reset PIN",
+    "resetPinBody": "Set a new 4-6 digit PIN for {name} without entering their current PIN.",
+    "resetPinToast": "PIN reset successfully",
+    "clearPinButton": "Clear PIN",
+    "pinClearedToast": "PIN cleared successfully",
+    "failedToResetPin": "Failed to reset PIN"
   },
   "permissionMatrix": {
     "title": "Role permissions",
@@ -2942,7 +2969,8 @@
       "support": "Contact support and view diagnostics",
       "inventoryManage": "Manage supplies and recipes",
       "orderItemPriceOverride": "Override order item prices",
-      "offlineMode": "Turn Offline mode on or off"
+      "offlineMode": "Turn Offline mode on or off",
+      "staffCredentialsReset": "Reset staff passwords and PINs without their current credentials"
     },
     "editorSubtitle": "Configure role defaults or make an exception for one staff member. Changes apply to their next action.",
     "roleDefaultsTab": "Role defaults",

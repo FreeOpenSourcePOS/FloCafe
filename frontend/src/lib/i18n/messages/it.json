@@ -90,7 +90,27 @@
     "yourName": "Il tuo nome",
     "quickSwitchTitle": "Cambio utente rapido",
     "quickSwitchSubtitle": "Seleziona il tuo profilo per accedere con il PIN",
-    "enterPinFor": "Inserisci il PIN per {name}"
+    "enterPinFor": "Inserisci il PIN per {name}",
+    "changePasswordAndPin": "Cambia password e PIN",
+    "accountCredentialsSubtitle": "Aggiorna la tua password o il tuo PIN di accesso rapido.",
+    "changePasswordTab": "Cambia password",
+    "changePinTab": "Cambia PIN",
+    "currentPasswordLabel": "Password attuale",
+    "currentPasswordPlaceholder": "Inserisci la password attuale",
+    "currentPinLabel": "PIN attuale",
+    "currentPinPlaceholder": "Inserisci il PIN attuale",
+    "newPinLabel": "Nuovo PIN (4-6 cifre)",
+    "confirmNewPinLabel": "Conferma nuovo PIN",
+    "pinRequirementsHint": "Il PIN deve contenere da 4 a 6 cifre numeriche.",
+    "pinMismatch": "I PIN non corrispondono",
+    "firstTimePinNotice": "Nessun PIN impostato sul tuo account. Inserisci la password attuale per impostare un PIN.",
+    "updatePasswordButton": "Aggiorna password",
+    "passwordChangedSuccess": "Password aggiornata correttamente",
+    "updatePinButton": "Aggiorna PIN",
+    "setPinButton": "Imposta PIN",
+    "pinChangedSuccess": "PIN aggiornato correttamente",
+    "togglePasswordVisibility": "Mostra o nascondi password",
+    "togglePinVisibility": "Mostra o nascondi PIN"
   },
   "backup": {
     "creating": "Creazione del backup in corso...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Cameriere",
     "title": "Personale",
     "updateButton": "Aggiorna",
-    "updatedToast": "Personale aggiornato"
+    "updatedToast": "Personale aggiornato",
+    "resetPinButton": "Reimposta PIN",
+    "resetPinTitle": "Reimposta PIN",
+    "resetPinBody": "Imposta un nuovo PIN di 4-6 cifre per {name} senza inserire il PIN attuale.",
+    "resetPinToast": "PIN reimpostato correttamente",
+    "clearPinButton": "Cancella PIN",
+    "pinClearedToast": "PIN cancellato correttamente",
+    "failedToResetPin": "Impossibile reimpostare il PIN"
   },
   "permissionMatrix": {
     "title": "Permessi ruolo",
@@ -2942,7 +2969,8 @@
       "serverApp": "Usa l'Server App indipendente",
       "support": "Contatta l'assistenza e visualizza le diagnostiche",
       "orderItemPriceOverride": "Modificare i prezzi degli articoli dell’ordine",
-      "offlineMode": "Attiva o disattiva la modalità offline"
+      "offlineMode": "Attiva o disattiva la modalità offline",
+      "staffCredentialsReset": "Reimposta password e PIN del personale senza le credenziali attuali"
     },
     "editorSubtitle": "Configura le impostazioni predefinite del ruolo o crea un'eccezione per un membro dello staff. Le modifiche si applicano alla prossima azione.",
     "roleDefaultsTab": "Impostazioni ruolo",

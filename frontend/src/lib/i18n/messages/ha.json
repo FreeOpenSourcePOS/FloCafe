@@ -90,7 +90,27 @@
     "yourName": "Sunanka",
     "quickSwitchTitle": "Sauya Mai Aiki da Sauri",
     "quickSwitchSubtitle": "Zaɓi bayanan ka don shiga da PIN ɗinka",
-    "enterPinFor": "Shigar da PIN na {name}"
+    "enterPinFor": "Shigar da PIN na {name}",
+    "changePasswordAndPin": "Sauya Kalmar Sirri da PIN",
+    "accountCredentialsSubtitle": "Sabunta kalmar sirrinka ko lambar PIN ta shiga da sauri.",
+    "changePasswordTab": "Sauya Kalmar Sirri",
+    "changePinTab": "Sauya PIN",
+    "currentPasswordLabel": "Kalmar Sirri ta Yanzu",
+    "currentPasswordPlaceholder": "Shigar da kalmar sirrinka ta yanzu",
+    "currentPinLabel": "PIN na Yanzu",
+    "currentPinPlaceholder": "Shigar da PIN na yanzu",
+    "newPinLabel": "Sabon PIN (lambobi 4-6)",
+    "confirmNewPinLabel": "Tabbatar da Sabon PIN",
+    "pinRequirementsHint": "PIN dole ya kasance lambobi 4 zuwa 6.",
+    "pinMismatch": "Lambobin PIN ba su dace ba",
+    "firstTimePinNotice": "Ba a saita PIN a asusunka ba tukuna. Shigar da kalmar sirrinka ta yanzu don saita PIN.",
+    "updatePasswordButton": "Sabunta Kalmar Sirri",
+    "passwordChangedSuccess": "An sabunta kalmar sirri cikin nasara",
+    "updatePinButton": "Sabunta PIN",
+    "setPinButton": "Saita PIN",
+    "pinChangedSuccess": "An sabunta PIN cikin nasara",
+    "togglePasswordVisibility": "Nuna ko boye kalmar sirri",
+    "togglePinVisibility": "Nuna ko boye PIN"
   },
   "backup": {
     "creating": "Ana ƙirƙirar ajiyar bayanai...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Mai hidima",
     "title": "Ma'aikata",
     "updateButton": "Sabunta",
-    "updatedToast": "An sabunta ma'aikaci"
+    "updatedToast": "An sabunta ma'aikaci",
+    "resetPinButton": "Sake Saita PIN",
+    "resetPinTitle": "Sake Saita PIN",
+    "resetPinBody": "Saita sabon PIN mai lambobi 4-6 ga {name} ba tare da shigar da PIN na yanzu ba.",
+    "resetPinToast": "An sake saita PIN cikin nasara",
+    "clearPinButton": "Share PIN",
+    "pinClearedToast": "An share PIN cikin nasara",
+    "failedToResetPin": "An kasa sake saita PIN"
   },
   "permissionMatrix": {
     "title": "Izinin matsayi",
@@ -2942,7 +2969,8 @@
       "support": "Tuntuɓi tallafi kuma duba binciken matsala",
       "inventoryManage": "Sarrafa kayan aiki da girke-girke",
       "orderItemPriceOverride": "Sauya farashin kayan oda",
-      "offlineMode": "Kunna ko kashe Yanayin ba a kan layi ba"
+      "offlineMode": "Kunna ko kashe Yanayin ba a kan layi ba",
+      "staffCredentialsReset": "Sake saita kalmomin sirri da PIN na ma’aikata ba tare da bayanan su na yanzu ba"
     },
     "editorSubtitle": "Saita izinin asali na matsayi ko yi keɓancewa ga ma'aikaci ɗaya. Sauye-sauye suna aiki a matakinsu na gaba.",
     "roleDefaultsTab": "Asalin matsayi",

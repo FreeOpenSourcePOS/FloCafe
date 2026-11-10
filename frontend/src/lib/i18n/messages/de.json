@@ -90,7 +90,27 @@
     "yourName": "Ihr Name",
     "quickSwitchTitle": "Schneller Benutzerwechsel",
     "quickSwitchSubtitle": "Profil auswählen, um sich per PIN anzumelden",
-    "enterPinFor": "PIN für {name} eingeben"
+    "enterPinFor": "PIN für {name} eingeben",
+    "changePasswordAndPin": "Passwort & PIN ändern",
+    "accountCredentialsSubtitle": "Eigenes Passwort oder Schnell-Anmelde-PIN aktualisieren.",
+    "changePasswordTab": "Passwort ändern",
+    "changePinTab": "PIN ändern",
+    "currentPasswordLabel": "Aktuelles Passwort",
+    "currentPasswordPlaceholder": "Aktuelles Passwort eingeben",
+    "currentPinLabel": "Aktuelle PIN",
+    "currentPinPlaceholder": "Aktuelle PIN eingeben",
+    "newPinLabel": "Neue PIN (4-6 Ziffern)",
+    "confirmNewPinLabel": "Neue PIN bestätigen",
+    "pinRequirementsHint": "Die PIN muss aus 4 bis 6 Ziffern bestehen.",
+    "pinMismatch": "Die PINs stimmen nicht überein",
+    "firstTimePinNotice": "Für Ihr Konto ist noch keine PIN festgelegt. Geben Sie Ihr aktuelles Passwort ein, um eine PIN festzulegen.",
+    "updatePasswordButton": "Passwort aktualisieren",
+    "passwordChangedSuccess": "Passwort erfolgreich aktualisiert",
+    "updatePinButton": "PIN aktualisieren",
+    "setPinButton": "PIN festlegen",
+    "pinChangedSuccess": "PIN erfolgreich aktualisiert",
+    "togglePasswordVisibility": "Passwortsichtbarkeit umschalten",
+    "togglePinVisibility": "PIN-Sichtbarkeit umschalten"
   },
   "backup": {
     "creating": "Sicherung wird erstellt…",
@@ -2841,7 +2861,14 @@
     "roleServer": "Bedienung",
     "title": "Mitarbeiter",
     "updateButton": "Aktualisieren",
-    "updatedToast": "Personal aktualisiert"
+    "updatedToast": "Personal aktualisiert",
+    "resetPinButton": "PIN zurücksetzen",
+    "resetPinTitle": "PIN zurücksetzen",
+    "resetPinBody": "Neue 4-6-stellige PIN für {name} ohne Eingabe der aktuellen PIN festlegen.",
+    "resetPinToast": "PIN erfolgreich zurückgesetzt",
+    "clearPinButton": "PIN löschen",
+    "pinClearedToast": "PIN erfolgreich gelöscht",
+    "failedToResetPin": "PIN konnte nicht zurückgesetzt werden"
   },
   "permissionMatrix": {
     "title": "Berechtigungsmatrix",
@@ -2942,7 +2969,8 @@
       "support": "Support kontaktieren und Diagnosedaten einsehen",
       "inventoryManage": "Vorräte und Rezepte verwalten",
       "orderItemPriceOverride": "Preise von Bestellartikeln ändern",
-      "offlineMode": "Offline-Modus ein- oder ausschalten"
+      "offlineMode": "Offline-Modus ein- oder ausschalten",
+      "staffCredentialsReset": "Passwörter und PINs von Mitarbeitenden ohne aktuelle Zugangsdaten zurücksetzen"
     },
     "editorSubtitle": "Konfigurieren Sie Rollenvorgaben oder legen Sie eine Ausnahme für ein Teammitglied fest. Änderungen gelten ab der nächsten Aktion.",
     "roleDefaultsTab": "Rollenvorgaben",

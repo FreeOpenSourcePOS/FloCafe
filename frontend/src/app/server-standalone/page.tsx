@@ -41,6 +41,7 @@ import AddonModal from '@/components/pos/AddonModal';
 import ProductGrid from '@/components/pos/ProductGrid';
 import type { PosCategorySort, PosItemSort } from '@/lib/pos-sort';
 import MoveTableModal from '@/components/tables/MoveTableModal';
+import { AccountCredentialsDialog } from '@/components/auth/AccountCredentialsDialog';
 import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 import { tenantCan } from '@/lib/permissions';
 import type {
@@ -54,7 +55,14 @@ import type {
 } from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
-type User = { id: string; name: string; email: string; role: string; permission_ids?: string[] };
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  has_pin?: boolean;
+  permission_ids?: string[];
+};
 type PinUser = { id: string; name: string; role: string };
 type Table = {
   id: string;
@@ -227,6 +235,7 @@ export default function ServerStandalonePage() {
   const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [moveTableModalOpen, setMoveTableModalOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -304,6 +313,7 @@ export default function ServerStandalonePage() {
         prev.role === nextUser.role &&
         prev.name === nextUser.name &&
         prev.email === nextUser.email &&
+        prev.has_pin === nextUser.has_pin &&
         (prev.permission_ids || []).join(',') === (nextUser.permission_ids || []).join(',')
       ) {
         return prev;
@@ -1775,6 +1785,17 @@ export default function ServerStandalonePage() {
             <RefreshCw size={17} />
           </button>
           <button
+            type="button"
+            data-testid="server-app-change-credentials-button"
+            disabled={sending}
+            onClick={() => setCredentialsOpen(true)}
+            aria-label={tAuth('changePasswordAndPin')}
+            title={tAuth('changePasswordAndPin')}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground disabled:opacity-50"
+          >
+            <KeyRound size={17} />
+          </button>
+          <button
             onClick={logout}
             aria-label={tNav('logout')}
             className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground"
@@ -1964,6 +1985,26 @@ export default function ServerStandalonePage() {
               selectTable(targetTableId);
             }
             await loadAll().catch(() => {});
+          }}
+        />
+      )}
+      {api && (
+        <AccountCredentialsDialog
+          open={credentialsOpen}
+          onOpenChange={setCredentialsOpen}
+          apiClient={api}
+          endpoints={{
+            me: '/api/auth/me',
+            passwordChange: '/api/auth/password/change',
+            pinChange: '/api/auth/pin/change',
+          }}
+          initialHasPin={user.has_pin}
+          userId={user.id}
+          onSessionUpdated={({ token: freshToken, hasPin }) => {
+            localStorage.setItem(TOKEN_KEY, freshToken);
+            setUser((prev) =>
+              prev ? { ...prev, ...(hasPin !== undefined ? { has_pin: hasPin } : {}) } : prev,
+            );
           }}
         />
       )}

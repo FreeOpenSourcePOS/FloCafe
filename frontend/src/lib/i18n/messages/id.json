@@ -90,7 +90,27 @@
     "yourName": "Nama Anda",
     "quickSwitchTitle": "Ganti Pengguna Cepat",
     "quickSwitchSubtitle": "Pilih profil Anda untuk masuk dengan PIN",
-    "enterPinFor": "Masukkan PIN untuk {name}"
+    "enterPinFor": "Masukkan PIN untuk {name}",
+    "changePasswordAndPin": "Ubah Kata Sandi & PIN",
+    "accountCredentialsSubtitle": "Perbarui kata sandi atau PIN masuk cepat milik Anda.",
+    "changePasswordTab": "Ubah Kata Sandi",
+    "changePinTab": "Ubah PIN",
+    "currentPasswordLabel": "Kata Sandi Saat Ini",
+    "currentPasswordPlaceholder": "Masukkan kata sandi saat ini",
+    "currentPinLabel": "PIN Saat Ini",
+    "currentPinPlaceholder": "Masukkan PIN saat ini",
+    "newPinLabel": "PIN Baru (4-6 digit)",
+    "confirmNewPinLabel": "Konfirmasi PIN Baru",
+    "pinRequirementsHint": "PIN harus terdiri dari 4 hingga 6 digit angka.",
+    "pinMismatch": "PIN tidak cocok",
+    "firstTimePinNotice": "Belum ada PIN pada akun Anda. Masukkan kata sandi saat ini untuk mengatur PIN.",
+    "updatePasswordButton": "Perbarui Kata Sandi",
+    "passwordChangedSuccess": "Kata sandi berhasil diperbarui",
+    "updatePinButton": "Perbarui PIN",
+    "setPinButton": "Atur PIN",
+    "pinChangedSuccess": "PIN berhasil diperbarui",
+    "togglePasswordVisibility": "Tampilkan atau sembunyikan kata sandi",
+    "togglePinVisibility": "Tampilkan atau sembunyikan PIN"
   },
   "backup": {
     "creating": "Membuat cadangan...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Pelayan",
     "title": "Staf",
     "updateButton": "Perbarui",
-    "updatedToast": "Staf diperbarui"
+    "updatedToast": "Staf diperbarui",
+    "resetPinButton": "Atur Ulang PIN",
+    "resetPinTitle": "Atur Ulang PIN",
+    "resetPinBody": "Atur PIN 4-6 digit baru untuk {name} tanpa memasukkan PIN saat ini.",
+    "resetPinToast": "PIN berhasil diatur ulang",
+    "clearPinButton": "Hapus PIN",
+    "pinClearedToast": "PIN berhasil dihapus",
+    "failedToResetPin": "Gagal mengatur ulang PIN"
   },
   "permissionMatrix": {
     "title": "Izin peran",
@@ -2942,7 +2969,8 @@
       "serverApp": "Menggunakan Aplikasi Server mandiri",
       "support": "Menghubungi dukungan dan melihat diagnostik",
       "orderItemPriceOverride": "Mengubah harga item pesanan",
-      "offlineMode": "Aktifkan atau nonaktifkan mode offline"
+      "offlineMode": "Aktifkan atau nonaktifkan mode offline",
+      "staffCredentialsReset": "Atur ulang kata sandi dan PIN staf tanpa kredensial saat ini"
     },
     "editorSubtitle": "Konfigurasikan default peran atau buat pengecualian untuk satu staf. Perubahan berlaku pada tindakan berikutnya.",
     "roleDefaultsTab": "Default peran",

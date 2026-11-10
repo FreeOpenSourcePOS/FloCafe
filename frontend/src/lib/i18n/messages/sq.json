@@ -90,7 +90,27 @@
     "yourName": "Emri juaj",
     "quickSwitchTitle": "Ndërrim i shpejtë",
     "quickSwitchSubtitle": "Zgjidh profilin tënd për të hyrë me PIN",
-    "enterPinFor": "Fut PIN-in për {name}"
+    "enterPinFor": "Fut PIN-in për {name}",
+    "changePasswordAndPin": "Ndrysho fjalëkalimin dhe PIN-in",
+    "accountCredentialsSubtitle": "Përditësoni fjalëkalimin tuaj ose PIN-in e hyrjes së shpejtë.",
+    "changePasswordTab": "Ndrysho fjalëkalimin",
+    "changePinTab": "Ndrysho PIN-in",
+    "currentPasswordLabel": "Fjalëkalimi aktual",
+    "currentPasswordPlaceholder": "Shkruani fjalëkalimin tuaj aktual",
+    "currentPinLabel": "PIN-i aktual",
+    "currentPinPlaceholder": "Shkruani PIN-in aktual",
+    "newPinLabel": "PIN i ri (4-6 shifra)",
+    "confirmNewPinLabel": "Konfirmo PIN-in e ri",
+    "pinRequirementsHint": "PIN-i duhet të ketë nga 4 deri në 6 shifra numerike.",
+    "pinMismatch": "PIN-et nuk përputhen",
+    "firstTimePinNotice": "Ende nuk është vendosur asnjë PIN në llogarinë tuaj. Shkruani fjalëkalimin aktual për të vendosur një PIN.",
+    "updatePasswordButton": "Përditëso fjalëkalimin",
+    "passwordChangedSuccess": "Fjalëkalimi u përditësua me sukses",
+    "updatePinButton": "Përditëso PIN-in",
+    "setPinButton": "Vendos PIN-in",
+    "pinChangedSuccess": "PIN-i u përditësua me sukses",
+    "togglePasswordVisibility": "Shfaq ose fshih fjalëkalimin",
+    "togglePinVisibility": "Shfaq ose fshih PIN-in"
   },
   "backup": {
     "creating": "Po krijohet kopje rezerve...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Shërbyes",
     "title": "Stafi",
     "updateButton": "Përditëso",
-    "updatedToast": "Stafi i përditësuar"
+    "updatedToast": "Stafi i përditësuar",
+    "resetPinButton": "Rivendos PIN-in",
+    "resetPinTitle": "Rivendos PIN-in",
+    "resetPinBody": "Vendosni një PIN të ri me 4-6 shifra për {name} pa dhënë PIN-in aktual.",
+    "resetPinToast": "PIN-i u rivendos me sukses",
+    "clearPinButton": "Fshi PIN-in",
+    "pinClearedToast": "PIN-i u fshi me sukses",
+    "failedToResetPin": "Rivendosja e PIN-it dështoi"
   },
   "permissionMatrix": {
     "title": "Lejet e roleve",
@@ -2942,7 +2969,8 @@
       "support": "Kontaktoni me mbështetjen dhe shikoni diagnostikimin",
       "inventoryManage": "Menaxhoni furnizimet dhe recetat",
       "orderItemPriceOverride": "Ndrysho çmimet e artikujve të porosisë",
-      "offlineMode": "Ndez ose fik modalitetin pa internet"
+      "offlineMode": "Ndez ose fik modalitetin pa internet",
+      "staffCredentialsReset": "Rivendosni fjalëkalimet dhe PIN-et e stafit pa kredencialet aktuale"
     },
     "editorSubtitle": "Konfiguroni vlerat e parazgjedhura të rolit ose bëni një përjashtim për një staf. Ndryshimet zbatohen në veprimin e tij të ardhshëm.",
     "roleDefaultsTab": "Vlerat e parazgjedhura të rolit",

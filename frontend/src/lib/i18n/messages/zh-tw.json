@@ -90,7 +90,27 @@
     "yourName": "您的姓名",
     "quickSwitchTitle": "快速切換使用者",
     "quickSwitchSubtitle": "選擇您的個人檔案以使用 PIN 登入",
-    "enterPinFor": "輸入 {name} 的 PIN"
+    "enterPinFor": "輸入 {name} 的 PIN",
+    "changePasswordAndPin": "變更密碼與 PIN",
+    "accountCredentialsSubtitle": "更新您自己的密碼或快速登入 PIN。",
+    "changePasswordTab": "變更密碼",
+    "changePinTab": "變更 PIN",
+    "currentPasswordLabel": "目前密碼",
+    "currentPasswordPlaceholder": "請輸入目前密碼",
+    "currentPinLabel": "目前 PIN",
+    "currentPinPlaceholder": "請輸入目前 PIN",
+    "newPinLabel": "新 PIN（4-6 位數字）",
+    "confirmNewPinLabel": "確認新 PIN",
+    "pinRequirementsHint": "PIN 必須為 4 到 6 位數字。",
+    "pinMismatch": "兩次輸入的 PIN 不一致",
+    "firstTimePinNotice": "您的帳戶尚未設定 PIN。請輸入目前密碼以設定 PIN。",
+    "updatePasswordButton": "更新密碼",
+    "passwordChangedSuccess": "密碼已成功更新",
+    "updatePinButton": "更新 PIN",
+    "setPinButton": "設定 PIN",
+    "pinChangedSuccess": "PIN 已成功更新",
+    "togglePasswordVisibility": "切換密碼顯示狀態",
+    "togglePinVisibility": "切換 PIN 顯示狀態"
   },
   "backup": {
     "creating": "正在建立備份…",
@@ -2841,7 +2861,14 @@
     "roleServer": "服務員",
     "title": "員工",
     "updateButton": "更新",
-    "updatedToast": "員工已更新"
+    "updatedToast": "員工已更新",
+    "resetPinButton": "重設 PIN",
+    "resetPinTitle": "重設 PIN",
+    "resetPinBody": "無需輸入目前 PIN，為 {name} 設定新的 4-6 位數字 PIN。",
+    "resetPinToast": "PIN 重設成功",
+    "clearPinButton": "清除 PIN",
+    "pinClearedToast": "PIN 已清除",
+    "failedToResetPin": "重設 PIN 失敗"
   },
   "permissionMatrix": {
     "title": "角色權限",
@@ -2942,7 +2969,8 @@
       "serverApp": "使用獨立服務員應用程式",
       "support": "聯絡支援並檢視診斷",
       "orderItemPriceOverride": "修改訂單商品價格",
-      "offlineMode": "開啟或關閉離線模式"
+      "offlineMode": "開啟或關閉離線模式",
+      "staffCredentialsReset": "無需目前憑證即可重設員工密碼與 PIN"
     },
     "editorSubtitle": "設定角色預設值，或為單一位員工建立例外。變更會從他的下一個操作開始生效。",
     "roleDefaultsTab": "角色預設值",

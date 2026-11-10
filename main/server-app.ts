@@ -25,6 +25,8 @@ import {
   verifyPinAsync,
 } from './db';
 import { getJWTSecret } from './security/jwt-secret';
+import { asyncHandler } from './middleware/async-handler';
+import { handlePasswordChange, handlePinChange } from './routes/auth';
 import {
   authRateLimit,
   loginAuthRateLimit,
@@ -322,14 +324,16 @@ export function startServerApp(): Promise<void> {
 
         resetSuccessfulLogin(ip);
 
+        const remember = !!remember_me;
         const token = jwt.sign(
           {
             userId: user.id,
             email: user.email,
             role: user.role,
+            remember,
             jti: randomUUID(),
             iat: nextTokenIatSeconds(),
-            exp: Math.floor(Date.now() / 1000) + (remember_me ? 10 * 24 * 60 * 60 : 86400),
+            exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
           },
           getJWTSecret(),
         );
@@ -341,6 +345,7 @@ export function startServerApp(): Promise<void> {
             name: user.name,
             email: user.email,
             role: user.role,
+            has_pin: Boolean(user.pin_hash),
             permission_ids: [...(resolveEffectivePermissions(user.id)?.permissionIds ?? [])],
             authorization_revision: effectivePermissionRevision(user.id),
           },
@@ -577,6 +582,7 @@ export function startServerApp(): Promise<void> {
               userId: user.id,
               email: user.email,
               role: user.role,
+              remember,
               jti: randomUUID(),
               iat: nextTokenIatSeconds(),
               exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
@@ -591,6 +597,7 @@ export function startServerApp(): Promise<void> {
               name: user.name,
               email: user.email,
               role: user.role,
+              has_pin: Boolean(user.pin_hash),
               permission_ids: [...(resolveEffectivePermissions(user.id)?.permissionIds ?? [])],
               authorization_revision: effectivePermissionRevision(user.id),
             },
@@ -609,17 +616,37 @@ export function startServerApp(): Promise<void> {
       (req: Request, res: Response) => {
         const user = (req as any).user as ServerAppUser;
         const row = getDatabase()
-          .prepare('SELECT id, name, email, role FROM users WHERE id = ? AND is_active = 1')
+          .prepare(
+            'SELECT id, name, email, role, pin_hash FROM users WHERE id = ? AND is_active = 1',
+          )
           .get(user.userId) as any;
         if (!row) return res.status(401).json({ error: 'Invalid token' });
         res.json({
           user: {
-            ...row,
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            role: row.role,
+            has_pin: Boolean(row.pin_hash),
             permission_ids: [...(resolveEffectivePermissions(row.id)?.permissionIds ?? [])],
             authorization_revision: effectivePermissionRevision(row.id),
           },
         });
       },
+    );
+
+    app.post(
+      '/api/auth/password/change',
+      authRateLimit(),
+      requireServerAppAuth,
+      asyncHandler(handlePasswordChange),
+    );
+
+    app.post(
+      '/api/auth/pin/change',
+      authRateLimit(),
+      requireServerAppAuth,
+      asyncHandler(handlePinChange),
     );
 
     app.post(

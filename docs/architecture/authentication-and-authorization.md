@@ -83,13 +83,15 @@ That module owns the only copy of the cache;
 `clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
 secret must go through it or pre-rotation tokens would keep validating.
 
-**Issuance.** `jwt.sign` runs across all nine token-issuance paths (`POST /api/auth/login`,
-`POST /api/auth/pin-login`, `POST /api/auth/tenants/select`, `POST /api/auth/refresh`, and
-`POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login` and `POST /api/auth/pin-login`
-on `:3002` KDS and `:3003` Server App) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
+**Issuance.** `jwt.sign` runs across all login, refresh, setup, and self-service credential-change paths (`POST /api/auth/login`,
+`POST /api/auth/pin-login`, `POST /api/auth/tenants/select`, `POST /api/auth/refresh`,
+`POST /api/auth/password/change`, `POST /api/auth/pin/change`, and
+`POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login`, `POST /api/auth/pin-login`,
+`POST /api/auth/password/change`, and `POST /api/auth/pin/change`
+on `:3002` KDS and `:3003` Server App, and `PUT /api/staff/:id` when an administrator updates their own credentials) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
 `iat` claim, while `exp` is computed explicitly from wall-clock `Date.now()`
 (`Math.floor(Date.now() / 1000) + ttlSeconds`) so clock corrections do not extend session lifetime. A
-token without the remember option expires in 24 hours of wall-clock time; with it, in 10 days.
+token without the remember option expires in 24 hours of wall-clock time; with it, in 10 days. Self-service password and PIN changes advance `tokens_valid_after` first and then mint a fresh replacement token preserving the caller's session claims, keeping the caller's current session authenticated while invalidating every token issued before the change.
 
 **Verification.** `requireAuth` in
 [`main/server.ts`](../../main/server.ts) guards paths under `/api`. It passes through `/api/health`,
@@ -205,14 +207,14 @@ drift apart without any test failing. Treat them as a set. Note also that `:3002
 
 All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` Server App) share an install-wide login attempt rate limiter exported from [`main/middleware/security.ts`](../../main/middleware/security.ts):
 
-1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password changes) use independent rate-limiter instances.
+1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password and PIN changes) use independent rate-limiter instances.
 2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which lowers case, strips `::ffff:` IPv4-mapped IPv6 prefixes, and canonicalizes IPv6 loopback `::1` and `0:0:0:0:0:0:0:1` to `127.0.0.1` so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
 3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
 4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
 ### PIN quick user switch and terminal lock
 
-Any staff role (`owner`, `manager`, `cashier`, `server`, `chef`) may configure a 4-6 digit PIN
+Any active user in any staff role (`owner`, `manager`, `cashier`, `server`, `chef`) may set or change their own 4-6 digit PIN via `POST /api/auth/pin/change` (verifying `current_pin` when a PIN is already set, or `current_password` when setting a PIN for the first time), and owners (or managers granted `staff.credentials.reset` for operational staff) may set, reset, or clear a 4-6 digit PIN
 (`users.pin_hash`) in Staff management. That PIN serves as the user's sign-in PIN on shared
 terminals, while approval authority stays restricted to active `owner` and `manager` accounts:
 
@@ -267,7 +269,7 @@ A password must be at least 4 characters long. There are no uppercase, lowercase
 requirements. The rule lives only in
 [`shared/password-policy.ts`](../../shared/password-policy.ts); the backend (`validatePassword`
 re-exported from `main/middleware/security.ts`) and every frontend form that sets a password
-(first-run setup, staff create and edit, staff password reset, recovery) import it, and the
+(first-run setup, self-service password change, staff create and edit, staff password reset, recovery) import it, and the
 `password-policy` test fails if a source file re-implements a password rule. Every route that
 writes a password enforces it: setup, staff create and update, password change, and both recovery
 paths. The 4-digit Master PIN and 4-6 digit staff PINs are separate secrets with their own rules.

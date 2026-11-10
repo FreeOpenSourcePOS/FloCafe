@@ -90,7 +90,27 @@
     "yourName": "तुमचे नाव",
     "quickSwitchTitle": "झटपट वापरकर्ता बदला",
     "quickSwitchSubtitle": "तुमच्या पिनने साइन इन करण्यासाठी तुमची प्रोफाइल निवडा",
-    "enterPinFor": "{name} साठी पिन प्रविष्ट करा"
+    "enterPinFor": "{name} साठी पिन प्रविष्ट करा",
+    "changePasswordAndPin": "पासवर्ड आणि पिन बदला",
+    "accountCredentialsSubtitle": "तुमचा स्वतःचा पासवर्ड किंवा जलद साइन-इन पिन अपडेट करा.",
+    "changePasswordTab": "पासवर्ड बदला",
+    "changePinTab": "पिन बदला",
+    "currentPasswordLabel": "सध्याचा पासवर्ड",
+    "currentPasswordPlaceholder": "तुमचा सध्याचा पासवर्ड प्रविष्ट करा",
+    "currentPinLabel": "सध्याचा पिन",
+    "currentPinPlaceholder": "सध्याचा पिन प्रविष्ट करा",
+    "newPinLabel": "नवीन पिन (4-6 अंक)",
+    "confirmNewPinLabel": "नवीन पिनची पुष्टी करा",
+    "pinRequirementsHint": "पिन 4 ते 6 अंकांचा असावा.",
+    "pinMismatch": "पिन जुळत नाहीत",
+    "firstTimePinNotice": "तुमच्या खात्यासाठी अद्याप पिन सेट केलेला नाही. पिन सेट करण्यासाठी तुमचा सध्याचा पासवर्ड प्रविष्ट करा.",
+    "updatePasswordButton": "पासवर्ड अपडेट करा",
+    "passwordChangedSuccess": "पासवर्ड यशस्वीरित्या अपडेट केला",
+    "updatePinButton": "पिन अपडेट करा",
+    "setPinButton": "पिन सेट करा",
+    "pinChangedSuccess": "पिन यशस्वीरित्या अपडेट केला",
+    "togglePasswordVisibility": "पासवर्ड दृश्यमानता बदला",
+    "togglePinVisibility": "पिन दृश्यमानता बदला"
   },
   "backup": {
     "creating": "बॅकअप तयार करत आहे...",
@@ -2841,7 +2861,14 @@
     "roleServer": "वेटर (Server)",
     "title": "कर्मचारी",
     "updateButton": "अपडेट करा",
-    "updatedToast": "कर्मचारी अपडेट केला"
+    "updatedToast": "कर्मचारी अपडेट केला",
+    "resetPinButton": "पिन रीसेट करा",
+    "resetPinTitle": "पिन रीसेट करा",
+    "resetPinBody": "सध्याचा पिन न टाकता {name} साठी नवीन 4-6 अंकी पिन सेट करा.",
+    "resetPinToast": "पिन यशस्वीरित्या रीसेट केला",
+    "clearPinButton": "पिन काढा",
+    "pinClearedToast": "पिन यशस्वीरित्या काढला",
+    "failedToResetPin": "पिन रीसेट करण्यात अयशस्वी"
   },
   "permissionMatrix": {
     "title": "भूमिका परवानग्या",
@@ -2942,7 +2969,8 @@
       "support": "सपोर्टशी संपर्क साधा आणि डायग्नोस्टिक्स पहा",
       "inventoryManage": "साहित्य आणि रेसिपी व्यवस्थापित करा",
       "orderItemPriceOverride": "ऑर्डर आयटमच्या किमती ओव्हरराइड करा",
-      "offlineMode": "ऑफलाइन मोड चालू किंवा बंद करा"
+      "offlineMode": "ऑफलाइन मोड चालू किंवा बंद करा",
+      "staffCredentialsReset": "सध्याच्या क्रेडेंशियलशिवाय कर्मचाऱ्यांचे पासवर्ड आणि पिन रीसेट करा"
     },
     "editorSubtitle": "भूमिका डीफॉल्ट कॉन्फिगर करा किंवा एका कर्मचाऱ्यासाठी अपवाद करा. बदल त्यांच्या पुढील कृतीवर लागू होतील.",
     "roleDefaultsTab": "भूमिका डीफॉल्ट",

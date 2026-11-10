@@ -90,7 +90,27 @@
     "yourName": "Jeneng Panjenengan",
     "quickSwitchTitle": "Ganti Panganggo Cepet",
     "quickSwitchSubtitle": "Pilih profil Panjenengan kanggo mlebu kanthi PIN",
-    "enterPinFor": "Lebokake PIN kanggo {name}"
+    "enterPinFor": "Lebokake PIN kanggo {name}",
+    "changePasswordAndPin": "Ganti tembung sandi lan PIN",
+    "accountCredentialsSubtitle": "Anyari tembung sandi utawa kode PIN mlebu cepet sampeyan dhewe.",
+    "changePasswordTab": "Ganti tembung sandi",
+    "changePinTab": "Ganti kode PIN",
+    "currentPasswordLabel": "Tembung sandi saiki",
+    "currentPasswordPlaceholder": "Lebokake tembung sandi saiki",
+    "currentPinLabel": "Kode PIN saiki",
+    "currentPinPlaceholder": "Lebokake kode PIN saiki",
+    "newPinLabel": "PIN anyar (4-6 angka)",
+    "confirmNewPinLabel": "Konfirmasi PIN anyar",
+    "pinRequirementsHint": "Kode PIN kudu 4 nganti 6 angka.",
+    "pinMismatch": "Kode PIN ora cocog",
+    "firstTimePinNotice": "Durung ana PIN ing akun sampeyan. Lebokake tembung sandi saiki kanggo nyetel PIN.",
+    "updatePasswordButton": "Anyari tembung sandi",
+    "passwordChangedSuccess": "Tembung sandi kasil dianyari",
+    "updatePinButton": "Anyari kode PIN",
+    "setPinButton": "Setel kode PIN",
+    "pinChangedSuccess": "Kode PIN kasil dianyari",
+    "togglePasswordVisibility": "Tuduhake utawa dhelikake tembung sandi",
+    "togglePinVisibility": "Tuduhake utawa dhelikake kode PIN"
   },
   "backup": {
     "creating": "Nggawe cadhangan...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Pramusaji",
     "title": "Staf",
     "updateButton": "Anyari",
-    "updatedToast": "Staf dianyari"
+    "updatedToast": "Staf dianyari",
+    "resetPinButton": "atur maneh PIN",
+    "resetPinTitle": "atur maneh kode PIN",
+    "resetPinBody": "Setel kode PIN 4-6 angka anyar kanggo {name} tanpa nglebokake PIN saiki.",
+    "resetPinToast": "Kode PIN kasil diatur maneh",
+    "clearPinButton": "Busak kode PIN",
+    "pinClearedToast": "Kode PIN kasil dibusak",
+    "failedToResetPin": "Gagal ngatur maneh kode PIN"
   },
   "permissionMatrix": {
     "title": "Idin peran",
@@ -2942,7 +2969,8 @@
       "support": "Nghubungi pitulungan lan ndeleng diagnostik",
       "inventoryManage": "Atur pasokan",
       "orderItemPriceOverride": "Ngowahi rega item pesenan",
-      "offlineMode": "Uripake utawa pateni mode offline"
+      "offlineMode": "Uripake utawa pateni mode offline",
+      "staffCredentialsReset": "Ngatur maneh tembung sandi lan kode PIN karyawan tanpa kredensial saiki"
     },
     "editorSubtitle": "Konfigurasi default peran utawa gawe pambebasan kanggo siji staf. Owah-owahan lumaku ing tumindak sabanjure.",
     "roleDefaultsTab": "Default peran",

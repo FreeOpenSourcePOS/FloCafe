@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { AccountCredentialsDialog } from '@/components/auth/AccountCredentialsDialog';
 import { KdsHeader } from '@/components/kds/KdsHeader';
 import { KdsKanbanBoard } from '@/components/kds/KdsKanbanBoard';
 import { KdsTabsView } from '@/components/kds/KdsTabsView';
@@ -14,6 +16,7 @@ export function KdsWorkspace({
   serverDefault: 'tabs' | 'kanban' | null;
 }) {
   const { viewMode, setViewMode } = useKdsView(serverDefault);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const handleChangeView = (nextView: 'tabs' | 'kanban') => {
     setViewMode(nextView);
     conn.persistViewMode?.(nextView);
@@ -28,6 +31,7 @@ export function KdsWorkspace({
         connectionMode={conn.connectionMode}
         viewMode={viewMode}
         onChangeView={handleChangeView}
+        onOpenCredentials={() => setCredentialsOpen(true)}
         onLogout={conn.handleLogout}
       />
       <div className="flex-1 min-h-0 flex flex-col">
@@ -46,6 +50,17 @@ export function KdsWorkspace({
         )}
       </div>
       {conn.ConfirmDialog}
+      {conn.api && (
+        <AccountCredentialsDialog
+          open={credentialsOpen}
+          onOpenChange={setCredentialsOpen}
+          apiClient={conn.api}
+          endpoints={conn.credentialEndpoints}
+          initialHasPin={conn.user?.has_pin}
+          userId={conn.user?.id}
+          onSessionUpdated={({ token, hasPin }) => conn.replaceSessionToken?.(token, hasPin)}
+        />
+      )}
     </div>
   );
 }

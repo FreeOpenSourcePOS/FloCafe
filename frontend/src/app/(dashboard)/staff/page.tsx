@@ -5,7 +5,7 @@ import axios from 'axios';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { Plus, X, Edit, RotateCcw, Eye, EyeOff, KeyRound } from 'lucide-react';
 import type { Staff } from '@/lib/types';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
@@ -46,10 +46,11 @@ export default function StaffPage() {
   const tCommon = useTranslations('common');
   const tAuth = useTranslations('auth');
   const tSetup = useTranslations('setup');
-  const { currentTenant } = useAuthStore();
+  const { currentTenant, replaceSessionToken } = useAuthStore();
   const canManagePermissions = tenantCan(currentTenant, 'authorization.manage');
   const canManageStaff = tenantCan(currentTenant, 'staff.operational.manage');
   const canManagePrivilegedStaff = tenantCan(currentTenant, 'staff.privileged.manage');
+  const canResetCredentials = tenantCan(currentTenant, 'staff.credentials.reset');
   const [staff, setStaff] = useState<Staff[]>([]);
   const [kitchenStations, setKitchenStations] = useState<{ id: string; name: string }[]>([]);
   const [kdsEnabled, setKdsEnabled] = useState(true);
@@ -58,6 +59,8 @@ export default function StaffPage() {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [showResetPw, setShowResetPw] = useState(false);
   const [resetPwStaff, setResetPwStaff] = useState<Staff | null>(null);
+  const [showResetPin, setShowResetPin] = useState(false);
+  const [resetPinStaff, setResetPinStaff] = useState<Staff | null>(null);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -69,14 +72,19 @@ export default function StaffPage() {
   });
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [newResetPin, setNewResetPin] = useState('');
+  const [confirmNewResetPin, setConfirmNewResetPin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetPinValue, setShowResetPinValue] = useState(false);
   const addTriggerRef = useRef<HTMLButtonElement | null>(null);
   const editTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const resetPwTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const resetPinTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const formTriggerRef = useRef<HTMLElement | null>(null);
   const resetPwTriggerRef = useRef<HTMLElement | null>(null);
+  const resetPinTriggerRef = useRef<HTMLElement | null>(null);
 
   const fetchStaff = async () => {
     try {
@@ -149,25 +157,41 @@ export default function StaffPage() {
     setShowResetPw(true);
   };
 
+  const openResetPin = (s: Staff, e?: React.MouseEvent<HTMLButtonElement>) => {
+    resetPinTriggerRef.current = e?.currentTarget ?? resetPinTriggerRefs.current[s.id] ?? null;
+    setResetPinStaff(s);
+    setNewResetPin('');
+    setConfirmNewResetPin('');
+    setShowResetPinValue(false);
+    setShowResetPin(true);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.password && form.password !== form.confirmPassword) {
+    const allowCredentialsInForm = !editingStaff || canResetCredentials;
+    if (allowCredentialsInForm && form.password && form.password !== form.confirmPassword) {
       toast.error(tSetup('passwordsMismatch'));
       return;
     }
-    if (form.password && !validatePassword(form.password)) {
+    if (allowCredentialsInForm && form.password && !validatePassword(form.password)) {
       toast.error(tSetup('errorPasswordRequirementsNotMet'));
       return;
     }
     try {
       if (editingStaff) {
-        await api.put(`/staff/${editingStaff.id}`, {
+        const { data } = await api.put(`/staff/${editingStaff.id}`, {
           name: form.name,
           email: form.email,
           role: form.role,
-          ...(form.password ? { password: form.password } : {}),
-          ...(form.pin ? { pin: form.pin } : {}),
+          ...(canResetCredentials && form.password ? { password: form.password } : {}),
+          ...(canResetCredentials && form.pin ? { pin: form.pin } : {}),
         });
+        if (typeof data?.token === 'string' && data.token) {
+          replaceSessionToken?.(
+            data.token,
+            canResetCredentials && form.pin ? { has_pin: true } : undefined,
+          );
+        }
         toast.success(t('updatedToast'));
       } else {
         await api.post('/staff', {
@@ -198,11 +222,52 @@ export default function StaffPage() {
       return;
     }
     try {
-      await api.put(`/staff/${resetPwStaff.id}`, { password: newPassword });
+      const { data } = await api.put(`/staff/${resetPwStaff.id}`, { password: newPassword });
+      if (typeof data?.token === 'string' && data.token) {
+        replaceSessionToken?.(data.token);
+      }
       toast.success(t('resetPasswordToast'));
       closeResetPassword();
     } catch (error: unknown) {
       toast.error(extractErrorMessage(error, t('failedToReset')));
+    }
+  };
+
+  const handleResetPin = async () => {
+    if (!resetPinStaff || !newResetPin) return;
+    if (!/^\d{4,6}$/.test(newResetPin)) {
+      toast.error(tAuth('pinRequirementsHint'));
+      return;
+    }
+    if (newResetPin !== confirmNewResetPin) {
+      toast.error(tAuth('pinMismatch'));
+      return;
+    }
+    try {
+      const { data } = await api.put(`/staff/${resetPinStaff.id}`, { pin: newResetPin });
+      if (typeof data?.token === 'string' && data.token) {
+        replaceSessionToken?.(data.token, { has_pin: true });
+      }
+      toast.success(t('resetPinToast'));
+      closeResetPin();
+      fetchStaff();
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, t('failedToResetPin')));
+    }
+  };
+
+  const handleClearPin = async () => {
+    if (!resetPinStaff) return;
+    try {
+      const { data } = await api.put(`/staff/${resetPinStaff.id}`, { pin: null });
+      if (typeof data?.token === 'string' && data.token) {
+        replaceSessionToken?.(data.token, { has_pin: false });
+      }
+      toast.success(t('pinClearedToast'));
+      closeResetPin();
+      fetchStaff();
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, t('failedToResetPin')));
     }
   };
 
@@ -219,16 +284,23 @@ export default function StaffPage() {
     resetPwTriggerRef.current?.focus();
   };
 
+  const closeResetPin = () => {
+    setShowResetPin(false);
+    setShowResetPinValue(false);
+    resetPinTriggerRef.current?.focus();
+  };
+
   useEffect(() => {
-    if (!showForm && !showResetPw) return;
+    if (!showForm && !showResetPw && !showResetPin) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (showForm) closeForm();
       if (showResetPw) closeResetPassword();
+      if (showResetPin) closeResetPin();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showForm, showResetPw]);
+  }, [showForm, showResetPw, showResetPin]);
 
   const toggleActive = async (s: Staff) => {
     try {
@@ -286,16 +358,30 @@ export default function StaffPage() {
                   >
                     <Edit size={14} className="me-1" /> {tCommon('edit')}
                   </Button>
-                  <Button
-                    ref={(el) => {
-                      resetPwTriggerRefs.current[s.id] = el;
-                    }}
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => openResetPw(s, e)}
-                  >
-                    <RotateCcw size={14} className="me-1" /> {t('resetPwButton')}
-                  </Button>
+                  {canResetCredentials && (
+                    <Button
+                      ref={(el) => {
+                        resetPwTriggerRefs.current[s.id] = el;
+                      }}
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => openResetPw(s, e)}
+                    >
+                      <RotateCcw size={14} className="me-1" /> {t('resetPwButton')}
+                    </Button>
+                  )}
+                  {canResetCredentials && (
+                    <Button
+                      ref={(el) => {
+                        resetPinTriggerRefs.current[s.id] = el;
+                      }}
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => openResetPin(s, e)}
+                    >
+                      <KeyRound size={14} className="me-1" /> {t('resetPinButton')}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -356,35 +442,41 @@ export default function StaffPage() {
                 dir="ltr"
                 required
               />
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={
-                    editingStaff ? t('newPasswordPlaceholder') : t('passwordPlaceholder')
-                  }
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  required={!editingStaff}
-                />
-                <button
-                  type="button"
-                  aria-label="Toggle password visibility"
-                  title="Toggle password visibility"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder={tAuth('confirmPassword')}
-                value={form.confirmPassword}
-                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                required={!editingStaff || Boolean(form.password)}
-              />
+              {(!editingStaff || canResetCredentials) && (
+                <>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder={
+                        editingStaff ? t('newPasswordPlaceholder') : t('passwordPlaceholder')
+                      }
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      dir="ltr"
+                      required={!editingStaff}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Toggle password visibility"
+                      title="Toggle password visibility"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder={tAuth('confirmPassword')}
+                    value={form.confirmPassword}
+                    onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    dir="ltr"
+                    required={!editingStaff || Boolean(form.password)}
+                  />
+                </>
+              )}
               <select
                 value={form.role}
                 onChange={(e) => {
@@ -446,32 +538,35 @@ export default function StaffPage() {
                   </p>
                 </div>
               )}
-              <div>
-                <div className="relative">
-                  <input
-                    type={showPin ? 'text' : 'password'}
-                    placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
-                    value={form.pin}
-                    onChange={(e) =>
-                      setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })
-                    }
-                    className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                    maxLength={6}
-                    pattern="[0-9]*"
-                    inputMode="numeric"
-                  />
-                  <button
-                    type="button"
-                    aria-label="Toggle PIN visibility"
-                    title="Toggle PIN visibility"
-                    onClick={() => setShowPin(!showPin)}
-                    className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+              {(!editingStaff || canResetCredentials) && (
+                <div>
+                  <div className="relative">
+                    <input
+                      type={showPin ? 'text' : 'password'}
+                      placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
+                      value={form.pin}
+                      onChange={(e) =>
+                        setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })
+                      }
+                      className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      maxLength={6}
+                      pattern="[0-9]*"
+                      inputMode="numeric"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Toggle PIN visibility"
+                      title="Toggle PIN visibility"
+                      onClick={() => setShowPin(!showPin)}
+                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{t('pinHint')}</p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{t('pinHint')}</p>
-              </div>
+              )}
               <Button type="submit" className="w-full">
                 {editingStaff ? t('updateButton') : t('addButton')}
               </Button>
@@ -528,6 +623,78 @@ export default function StaffPage() {
               <Button onClick={handleResetPassword} className="w-full">
                 {t('resetPasswordTitle')}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResetPin && resetPinStaff && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-pin-modal-title"
+            className="bg-card rounded-2xl p-6 w-full max-w-sm"
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 id="reset-pin-modal-title" className="text-lg font-bold">
+                {t('resetPinTitle')}
+              </h2>
+              <button type="button" onClick={closeResetPin} aria-label={tCommon('close')}>
+                <X size={20} className="text-gray-400" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              {t('resetPinBody', { name: resetPinStaff.name })}
+            </p>
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type={showResetPinValue ? 'text' : 'password'}
+                  placeholder={t('pinPlaceholderAdd')}
+                  value={newResetPin}
+                  onChange={(e) => setNewResetPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand font-mono tracking-widest"
+                  maxLength={6}
+                  pattern="[0-9]*"
+                  inputMode="numeric"
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  aria-label="Toggle PIN visibility"
+                  title="Toggle PIN visibility"
+                  onClick={() => setShowResetPinValue(!showResetPinValue)}
+                  className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showResetPinValue ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <input
+                type={showResetPinValue ? 'text' : 'password'}
+                placeholder={tAuth('confirmNewPinLabel')}
+                value={confirmNewResetPin}
+                onChange={(e) =>
+                  setConfirmNewResetPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand font-mono tracking-widest"
+                maxLength={6}
+                pattern="[0-9]*"
+                inputMode="numeric"
+                dir="ltr"
+              />
+              <Button
+                onClick={handleResetPin}
+                disabled={newResetPin.length < 4 || confirmNewResetPin.length < 4}
+                className="w-full"
+              >
+                {t('resetPinTitle')}
+              </Button>
+              {Boolean(resetPinStaff.has_pin) && (
+                <Button variant="outline" onClick={handleClearPin} className="w-full">
+                  {t('clearPinButton')}
+                </Button>
+              )}
             </div>
           </div>
         </div>

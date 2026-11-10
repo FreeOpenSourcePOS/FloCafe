@@ -90,7 +90,27 @@
     "yourName": "आपका नाम",
     "quickSwitchTitle": "त्वरित उपयोगकर्ता बदलें",
     "quickSwitchSubtitle": "अपने पिन से साइन इन करने के लिए प्रोफ़ाइल चुनें",
-    "enterPinFor": "{name} के लिए पिन दर्ज करें"
+    "enterPinFor": "{name} के लिए पिन दर्ज करें",
+    "changePasswordAndPin": "पासवर्ड और पिन बदलें",
+    "accountCredentialsSubtitle": "अपना पासवर्ड या त्वरित साइन-इन पिन अपडेट करें।",
+    "changePasswordTab": "पासवर्ड बदलें",
+    "changePinTab": "पिन बदलें",
+    "currentPasswordLabel": "वर्तमान पासवर्ड",
+    "currentPasswordPlaceholder": "अपना वर्तमान पासवर्ड दर्ज करें",
+    "currentPinLabel": "वर्तमान पिन",
+    "currentPinPlaceholder": "वर्तमान पिन दर्ज करें",
+    "newPinLabel": "नया पिन (4-6 अंक)",
+    "confirmNewPinLabel": "नए पिन की पुष्टि करें",
+    "pinRequirementsHint": "पिन 4 से 6 संख्यात्मक अंकों का होना चाहिए।",
+    "pinMismatch": "पिन मेल नहीं खाते",
+    "firstTimePinNotice": "आपके खाते पर अभी कोई पिन सेट नहीं है। पिन सेट करने के लिए अपना वर्तमान पासवर्ड दर्ज करें।",
+    "updatePasswordButton": "पासवर्ड अपडेट करें",
+    "passwordChangedSuccess": "पासवर्ड सफलतापूर्वक अपडेट हो गया",
+    "updatePinButton": "पिन अपडेट करें",
+    "setPinButton": "पिन सेट करें",
+    "pinChangedSuccess": "पिन सफलतापूर्वक अपडेट हो गया",
+    "togglePasswordVisibility": "पासवर्ड दृश्यता बदलें",
+    "togglePinVisibility": "पिन दृश्यता बदलें"
   },
   "backup": {
     "creating": "बैकअप बनाया जा रहा है...",
@@ -2841,7 +2861,14 @@
     "roleServer": "सर्वर",
     "title": "स्टाफ",
     "updateButton": "अद्यतन करें",
-    "updatedToast": "स्टाफ अपडेट किया गया"
+    "updatedToast": "स्टाफ अपडेट किया गया",
+    "resetPinButton": "पिन रीसेट करें",
+    "resetPinTitle": "पिन रीसेट करें",
+    "resetPinBody": "वर्तमान पिन दर्ज किए बिना {name} के लिए नया 4-6 अंकों का पिन सेट करें।",
+    "resetPinToast": "पिन सफलतापूर्वक रीसेट हो गया",
+    "clearPinButton": "पिन हटाएं",
+    "pinClearedToast": "पिन सफलतापूर्वक हटा दिया गया",
+    "failedToResetPin": "पिन रीसेट करने में विफल"
   },
   "permissionMatrix": {
     "title": "भूमिका अनुमतियाँ",
@@ -2942,7 +2969,8 @@
       "support": "समर्थन से संपर्क करें और निदान देखें",
       "inventoryManage": "आपूर्ति और व्यंजनों का प्रबंधन करें",
       "orderItemPriceOverride": "ऑर्डर आइटम की कीमत बदलें",
-      "offlineMode": "ऑफ़लाइन मोड चालू या बंद करें"
+      "offlineMode": "ऑफ़लाइन मोड चालू या बंद करें",
+      "staffCredentialsReset": "वर्तमान क्रेडेंशियल के बिना स्टाफ पासवर्ड और पिन रीसेट करें"
     },
     "editorSubtitle": "भूमिका की डिफ़ॉल्ट सेटिंग्स कॉन्फ़िगर करें या एक कर्मचारी के लिए अपवाद बनाएँ। बदलाव उनके अगले कार्य पर लागू होंगे।",
     "roleDefaultsTab": "भूमिका डिफ़ॉल्ट",

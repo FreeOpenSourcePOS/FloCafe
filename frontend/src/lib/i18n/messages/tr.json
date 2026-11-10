@@ -90,7 +90,27 @@
     "yourName": "Adınız",
     "quickSwitchTitle": "Hızlı Kullanıcı Değiştir",
     "quickSwitchSubtitle": "PIN ile giriş yapmak için profilinizi seçin",
-    "enterPinFor": "{name} için PIN girin"
+    "enterPinFor": "{name} için PIN girin",
+    "changePasswordAndPin": "Şifre ve PIN Değiştir",
+    "accountCredentialsSubtitle": "Kendi şifrenizi veya hızlı giriş PIN kodunuzu güncelleyin.",
+    "changePasswordTab": "Şifre Değiştir",
+    "changePinTab": "PIN Değiştir",
+    "currentPasswordLabel": "Mevcut Şifre",
+    "currentPasswordPlaceholder": "Mevcut şifrenizi girin",
+    "currentPinLabel": "Mevcut PIN",
+    "currentPinPlaceholder": "Mevcut PIN kodunu girin",
+    "newPinLabel": "Yeni PIN (4-6 rakam)",
+    "confirmNewPinLabel": "Yeni PIN Onayla",
+    "pinRequirementsHint": "PIN 4 ile 6 rakam arasında olmalıdır.",
+    "pinMismatch": "PIN kodları eşleşmiyor",
+    "firstTimePinNotice": "Hesabınızda henüz PIN ayarlanmamış. PIN belirlemek için mevcut şifrenizi girin.",
+    "updatePasswordButton": "Şifreyi Güncelle",
+    "passwordChangedSuccess": "Şifre başarıyla güncellendi",
+    "updatePinButton": "PIN Güncelle",
+    "setPinButton": "PIN Belirle",
+    "pinChangedSuccess": "PIN başarıyla güncellendi",
+    "togglePasswordVisibility": "Şifre görünürlüğünü değiştir",
+    "togglePinVisibility": "PIN görünürlüğünü değiştir"
   },
   "backup": {
     "creating": "Yedekleme oluşturuluyor...",
@@ -2841,7 +2861,14 @@
     "roleServer": "Garson",
     "title": "Personel Yönetimi",
     "updateButton": "Güncelle",
-    "updatedToast": "Personel güncellendi"
+    "updatedToast": "Personel güncellendi",
+    "resetPinButton": "PIN Sıfırla",
+    "resetPinTitle": "PIN Sıfırla",
+    "resetPinBody": "{name} için mevcut PIN girmeden yeni bir 4-6 haneli PIN belirleyin.",
+    "resetPinToast": "PIN başarıyla sıfırlandı",
+    "clearPinButton": "PIN Kaldır",
+    "pinClearedToast": "PIN başarıyla kaldırıldı",
+    "failedToResetPin": "PIN sıfırlanamadı"
   },
   "permissionMatrix": {
     "title": "Yetki ve İzin Matrisi",
@@ -2942,7 +2969,8 @@
       "support": "Destek ekibiyle iletişime geçme ve sistem tanılamayı görme",
       "inventoryManage": "Sarf malzemelerini ve tarifleri yönetme",
       "orderItemPriceOverride": "Sipariş ürün fiyatlarını değiştir",
-      "offlineMode": "Çevrimdışı modu aç veya kapat"
+      "offlineMode": "Çevrimdışı modu aç veya kapat",
+      "staffCredentialsReset": "Personel şifrelerini ve PIN kodlarını mevcut bilgileri olmadan sıfırlama"
     },
     "editorSubtitle": "Rol varsayılanlarını yapılandırın veya tek bir personel için istisna oluşturun. Değişiklikler bir sonraki işlemlerinde geçerli olur.",
     "roleDefaultsTab": "Rol varsayılanları",

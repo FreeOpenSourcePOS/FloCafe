@@ -90,7 +90,27 @@
     "yourName": "نام شما",
     "quickSwitchTitle": "تغییر سریع کاربر",
     "quickSwitchSubtitle": "برای ورود با پین، نمایه خود را انتخاب کنید",
-    "enterPinFor": "پین {name} را وارد کنید"
+    "enterPinFor": "پین {name} را وارد کنید",
+    "changePasswordAndPin": "تغییر گذرواژه و پین",
+    "accountCredentialsSubtitle": "گذرواژه یا پین ورود سریع حساب خود را به‌روزرسانی کنید.",
+    "changePasswordTab": "تغییر گذرواژه",
+    "changePinTab": "تغییر پین",
+    "currentPasswordLabel": "گذرواژه فعلی",
+    "currentPasswordPlaceholder": "گذرواژه فعلی خود را وارد کنید",
+    "currentPinLabel": "پین فعلی",
+    "currentPinPlaceholder": "پین فعلی را وارد کنید",
+    "newPinLabel": "پین جدید (۴ تا ۶ رقم)",
+    "confirmNewPinLabel": "تأیید پین جدید",
+    "pinRequirementsHint": "پین باید بین ۴ تا ۶ رقم عددی باشد.",
+    "pinMismatch": "پین‌ها مطابقت ندارند",
+    "firstTimePinNotice": "هنوز پینی برای حساب شما تنظیم نشده است. برای تنظیم پین، گذرواژه فعلی خود را وارد کنید.",
+    "updatePasswordButton": "به‌روزرسانی گذرواژه",
+    "passwordChangedSuccess": "گذرواژه با موفقیت به‌روزرسانی شد",
+    "updatePinButton": "به‌روزرسانی پین",
+    "setPinButton": "تنظیم پین",
+    "pinChangedSuccess": "پین با موفقیت به‌روزرسانی شد",
+    "togglePasswordVisibility": "نمایش یا پنهان‌کردن گذرواژه",
+    "togglePinVisibility": "نمایش یا پنهان‌کردن پین"
   },
   "backup": {
     "creating": "در حال ساخت پشتیبان",
@@ -2841,7 +2861,14 @@
     "roleServer": "پیش‌خدمت",
     "title": "کارمند",
     "updateButton": "به‌روزرسانی",
-    "updatedToast": "کارمند به‌روزرسانی شد"
+    "updatedToast": "کارمند به‌روزرسانی شد",
+    "resetPinButton": "بازنشانی پین",
+    "resetPinTitle": "بازنشانی پین",
+    "resetPinBody": "یک پین ۴ تا ۶ رقمی جدید برای {name} بدون وارد کردن پین فعلی تنظیم کنید.",
+    "resetPinToast": "پین با موفقیت بازنشانی شد",
+    "clearPinButton": "پاک‌کردن پین",
+    "pinClearedToast": "پین با موفقیت پاک شد",
+    "failedToResetPin": "بازنشانی پین ناموفق بود"
   },
   "permissionMatrix": {
     "title": "دسترسی‌های نقش‌ها",
@@ -2942,7 +2969,8 @@
       "support": "تماس با پشتیبانی و مشاهده عیب‌یابی",
       "inventoryManage": "مدیریت مواد اولیه و دستورها",
       "orderItemPriceOverride": "تغییر قیمت آیتم‌های سفارش",
-      "offlineMode": "روشن یا خاموش کردن حالت آفلاین"
+      "offlineMode": "روشن یا خاموش کردن حالت آفلاین",
+      "staffCredentialsReset": "بازنشانی گذرواژه و پین کارکنان بدون نیاز به اطلاعات فعلی آن‌ها"
     },
     "editorSubtitle": "پیش‌فرض‌های نقش را پیکربندی کنید یا برای یک کارمند استثنا ایجاد کنید. تغییرات در اقدام بعدی او اعمال می‌شود.",
     "roleDefaultsTab": "پیش‌فرض‌های نقش",

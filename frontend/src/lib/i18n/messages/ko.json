@@ -90,7 +90,27 @@
     "yourName": "이름",
     "quickSwitchTitle": "빠른 사용자 전환",
     "quickSwitchSubtitle": "프로필을 선택하여 PIN으로 로그인하세요",
-    "enterPinFor": "{name}의 PIN 입력"
+    "enterPinFor": "{name}의 PIN 입력",
+    "changePasswordAndPin": "비밀번호 및 PIN 변경",
+    "accountCredentialsSubtitle": "본인의 비밀번호 또는 빠른 로그인 PIN을 변경합니다.",
+    "changePasswordTab": "비밀번호 변경",
+    "changePinTab": "PIN 변경",
+    "currentPasswordLabel": "현재 비밀번호",
+    "currentPasswordPlaceholder": "현재 비밀번호를 입력하세요",
+    "currentPinLabel": "현재 PIN",
+    "currentPinPlaceholder": "현재 PIN을 입력하세요",
+    "newPinLabel": "새 PIN (4-6자리 숫자)",
+    "confirmNewPinLabel": "새 PIN 확인",
+    "pinRequirementsHint": "PIN은 4자리에서 6자리 숫자여야 합니다.",
+    "pinMismatch": "PIN이 일치하지 않습니다",
+    "firstTimePinNotice": "계정에 아직 PIN이 설정되어 있지 않습니다. PIN을 설정하려면 현재 비밀번호를 입력하세요.",
+    "updatePasswordButton": "비밀번호 변경",
+    "passwordChangedSuccess": "비밀번호가 변경되었습니다",
+    "updatePinButton": "PIN 변경",
+    "setPinButton": "PIN 설정",
+    "pinChangedSuccess": "PIN이 변경되었습니다",
+    "togglePasswordVisibility": "비밀번호 표시 전환",
+    "togglePinVisibility": "PIN 표시 전환"
   },
   "backup": {
     "creating": "백업 생성 중...",
@@ -2841,7 +2861,14 @@
     "roleServer": "웨이터",
     "title": "직원",
     "updateButton": "업데이트",
-    "updatedToast": "직원 정보가 업데이트되었습니다"
+    "updatedToast": "직원 정보가 업데이트되었습니다",
+    "resetPinButton": "PIN 재설정",
+    "resetPinTitle": "PIN 재설정",
+    "resetPinBody": "현재 PIN 입력 없이 {name}의 새 4-6자리 PIN을 설정합니다.",
+    "resetPinToast": "PIN이 재설정되었습니다",
+    "clearPinButton": "PIN 삭제",
+    "pinClearedToast": "PIN이 삭제되었습니다",
+    "failedToResetPin": "PIN 재설정에 실패했습니다"
   },
   "permissionMatrix": {
     "title": "역할 권한",
@@ -2942,7 +2969,8 @@
       "serverApp": "독립형 서버 앱(Server App) 사용",
       "support": "지원팀 문의 및 진단 정보 보기",
       "orderItemPriceOverride": "주문 품목 가격 변경",
-      "offlineMode": "오프라인 모드 켜기 또는 끄기"
+      "offlineMode": "오프라인 모드 켜기 또는 끄기",
+      "staffCredentialsReset": "현재 자격 증명 없이 직원 비밀번호 및 PIN 재설정"
     },
     "editorSubtitle": "역할 기본값을 구성하거나 특정 직원에 대한 예외를 만드세요. 변경 사항은 다음 작업부터 적용됩니다.",
     "roleDefaultsTab": "역할 기본값",

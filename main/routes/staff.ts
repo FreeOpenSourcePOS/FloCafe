@@ -13,7 +13,7 @@ import {
 import { cloudSync } from '../services/cloud-sync';
 import { syncPostHogIdentity } from '../services/posthog';
 import { serializeOperationFailure } from '../lib/operation-failure';
-import { isValidEmail } from './auth';
+import { isValidEmail, signFreshSessionToken } from './auth';
 import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
@@ -422,6 +422,16 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
         .json({ error: 'This account cannot modify privileged staff accounts' });
     }
 
+    const resettingCredentials =
+      (password !== undefined && password !== null && password !== '') || pin !== undefined;
+    if (resettingCredentials && !hasPermission(requesterId, 'staff.credentials.reset')) {
+      return res.status(403).json({
+        error: 'Insufficient permissions',
+        code: 'permission_denied',
+        permission: 'staff.credentials.reset',
+      });
+    }
+
     if (role !== undefined) {
       if (!VALID_ROLES.includes(role)) {
         captureStaffValidation('fc.backend.staff.update.validation', 'role_invalid');
@@ -567,9 +577,14 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
 
     const updated = db
       .prepare(`SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`)
-      .get(req.params.id);
+      .get(req.params.id) as any;
 
-    res.json({ staff: updated });
+    const freshSelfToken =
+      credentialsChanged && updated && String(requesterId) === String(req.params.id)
+        ? signFreshSessionToken(updated, ((req as any).user as Record<string, unknown>) || {})
+        : undefined;
+
+    res.json({ staff: updated, ...(freshSelfToken ? { token: freshSelfToken } : {}) });
   } catch (error: any) {
     res.locals.postHogError = error;
     if (error instanceof AdministrationUnreachableError) {

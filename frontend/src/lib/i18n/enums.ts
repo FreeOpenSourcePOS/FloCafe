@@ -133,6 +133,7 @@ export const PERMISSION_LABEL_KEYS = {
 
   'staff.view': 'staffViewManage',
   'staff.operational.manage': 'operationalStaff',
+  'staff.credentials.reset': 'staffCredentialsReset',
   'staff.privileged.manage': 'staffOwnerManager',
 
   'authorization.manage': 'authorizationManage',

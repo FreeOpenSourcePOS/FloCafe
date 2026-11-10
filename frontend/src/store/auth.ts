@@ -49,6 +49,7 @@ interface AuthState {
   loadFromStorage: () => Promise<void>;
   refreshAuthContext: () => Promise<void>;
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
+  replaceSessionToken: (token: string, userUpdates?: Partial<User>) => void;
 }
 
 /** Thrown when browser local storage is unavailable to persist session tokens. */
@@ -222,6 +223,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.setItem('tenant', JSON.stringify(updated));
       return { currentTenant: updated };
     });
+  },
+
+  replaceSessionToken: (token, userUpdates) => {
+    if (!token) return;
+    try {
+      localStorage.setItem('token', token);
+    } catch {
+      // Ignore storage failures in non-browser contexts.
+    }
+    set((state) => ({
+      token,
+      user: state.user && userUpdates ? { ...state.user, ...userUpdates } : state.user,
+    }));
   },
 
   refreshAuthContext: async () => {

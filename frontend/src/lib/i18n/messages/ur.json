@@ -90,7 +90,27 @@
     "yourName": "آپ کا نام",
     "quickSwitchTitle": "فوری صارف تبدیلی",
     "quickSwitchSubtitle": "اپنے PIN سے سائن ان کرنے کے لیے پروفائل منتخب کریں",
-    "enterPinFor": "{name} کا PIN درج کریں"
+    "enterPinFor": "{name} کا PIN درج کریں",
+    "changePasswordAndPin": "پاس ورڈ اور پن تبدیل کریں",
+    "accountCredentialsSubtitle": "اپنا پاس ورڈ یا فوری سائن ان پن اپ ڈیٹ کریں۔",
+    "changePasswordTab": "پاس ورڈ تبدیل کریں",
+    "changePinTab": "پن تبدیل کریں",
+    "currentPasswordLabel": "موجودہ پاس ورڈ",
+    "currentPasswordPlaceholder": "اپنا موجودہ پاس ورڈ درج کریں",
+    "currentPinLabel": "موجودہ پن",
+    "currentPinPlaceholder": "موجودہ پن درج کریں",
+    "newPinLabel": "نیا پن (4-6 ہندسے)",
+    "confirmNewPinLabel": "نئے پن کی تصدیق کریں",
+    "pinRequirementsHint": "پن 4 سے 6 عددی ہندسوں پر مشتمل ہونا چاہیے۔",
+    "pinMismatch": "پن آپس میں میل نہیں کھاتے",
+    "firstTimePinNotice": "آپ کے اکاؤنٹ پر ابھی کوئی پن مقرر نہیں ہے۔ پن مقرر کرنے کے لیے اپنا موجودہ پاس ورڈ درج کریں۔",
+    "updatePasswordButton": "پاس ورڈ اپ ڈیٹ کریں",
+    "passwordChangedSuccess": "پاس ورڈ کامیابی سے اپ ڈیٹ ہو گیا",
+    "updatePinButton": "پن اپ ڈیٹ کریں",
+    "setPinButton": "پن مقرر کریں",
+    "pinChangedSuccess": "پن کامیابی سے اپ ڈیٹ ہو گیا",
+    "togglePasswordVisibility": "پاس ورڈ دکھائیں یا چھپائیں",
+    "togglePinVisibility": "پن دکھائیں یا چھپائیں"
   },
   "backup": {
     "creating": "بیک اپ بن رہا ہے...",
@@ -2841,7 +2861,14 @@
     "roleServer": "ویٹر",
     "title": "ملازمین",
     "updateButton": "اپ ڈیٹ",
-    "updatedToast": "ملازم اپ ڈیٹ ہو گیا"
+    "updatedToast": "ملازم اپ ڈیٹ ہو گیا",
+    "resetPinButton": "پن ری سیٹ کریں",
+    "resetPinTitle": "پن ری سیٹ کریں",
+    "resetPinBody": "موجودہ پن درج کیے بغیر {name} کے لیے نیا 4-6 ہندسوں کا پن مقرر کریں۔",
+    "resetPinToast": "پن کامیابی سے ری سیٹ ہو گیا",
+    "clearPinButton": "پن ہٹائیں",
+    "pinClearedToast": "پن کامیابی سے ہٹا دیا گیا",
+    "failedToResetPin": "پن ری سیٹ کرنے میں ناکامی"
   },
   "permissionMatrix": {
     "title": "کردار کی اجازتیں",
@@ -2942,7 +2969,8 @@
       "support": "معاونت سے رابطہ کریں اور تشخیصی معلومات دیکھیں",
       "inventoryManage": "سامان اور ترکیبات منظم کریں",
       "orderItemPriceOverride": "آرڈر آئٹم کی قیمتیں تبدیل کریں",
-      "offlineMode": "آف لائن موڈ آن یا آف کریں"
+      "offlineMode": "آف لائن موڈ آن یا آف کریں",
+      "staffCredentialsReset": "عملے کے موجودہ اسناد کے بغیر ان کے پاس ورڈ اور پن ری سیٹ کریں"
     },
     "editorSubtitle": "کردار کی طے شدہ ترتیبات ترتیب دیں یا ایک ملازم کے لیے استثنیٰ کریں۔ تبدیلیاں اس کے اگلے عمل پر لاگو ہوں گی۔",
     "roleDefaultsTab": "کردار کی طے شدہ ترتیبات",

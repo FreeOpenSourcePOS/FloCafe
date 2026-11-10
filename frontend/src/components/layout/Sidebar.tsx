@@ -24,6 +24,7 @@ import {
   Boxes,
   Receipt,
   Lock,
+  KeyRound,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -35,6 +36,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { useThemeModeToggle } from '@/hooks/useThemeModeToggle';
 import type { PermissionId } from '@shared/permissions';
 import { tenantCan } from '@/lib/permissions';
+import { AccountCredentialsDialog } from '@/components/auth/AccountCredentialsDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -157,10 +159,12 @@ export default function AppSidebar() {
     usePosSettingsStore();
   const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
+  const tAuth = useTranslations('auth');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
   const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const closeMobile = () => {
     if (isMobile) setOpenMobile(false);
   };
@@ -358,6 +362,19 @@ export default function AppSidebar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  data-testid="sidebar-change-credentials-button"
+                  onClick={() => {
+                    closeMobile();
+                    window.setTimeout(() => {
+                      setCredentialsOpen(true);
+                    }, 0);
+                  }}
+                  className="cursor-pointer flex items-center gap-2"
+                >
+                  <KeyRound className="size-4 shrink-0" />
+                  <span>{tAuth('changePasswordAndPin')}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   data-testid="sidebar-lock-button"
                   onClick={() => {
                     closeMobile();
@@ -389,6 +406,12 @@ export default function AppSidebar() {
       </SidebarFooter>
       <SidebarRail />
       {ConfirmDialog}
+      <AccountCredentialsDialog
+        open={credentialsOpen}
+        onOpenChange={setCredentialsOpen}
+        initialHasPin={user?.has_pin}
+        userId={user?.id}
+      />
     </Sidebar>
   );
 }

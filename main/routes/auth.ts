@@ -80,6 +80,33 @@ function tokenExpSeconds(remember = false): number {
   return Math.floor(Date.now() / 1000) + expiresInSecondsFor(remember);
 }
 
+export function signFreshSessionToken(
+  user: { id: string; email: string; role: string },
+  decoded: Record<string, unknown> = {},
+): string {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const iatSeconds = typeof decoded.iat === 'number' ? decoded.iat : nowSeconds;
+  const expSeconds = typeof decoded.exp === 'number' ? decoded.exp : 0;
+  const isLongLived =
+    Boolean(decoded.remember) ||
+    expSeconds - iatSeconds > JWT_EXPIRES_IN_SECONDS + 60 ||
+    expSeconds - nowSeconds > JWT_EXPIRES_IN_SECONDS + 60;
+  const remember = isLongLived;
+  const payload: Record<string, unknown> = {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    ...(decoded.tenantId !== undefined ? { tenantId: decoded.tenantId } : {}),
+    ...(decoded.remember !== undefined || isLongLived ? { remember } : {}),
+    ...(decoded.scope !== undefined ? { scope: decoded.scope } : {}),
+    ...(decoded.aud !== undefined ? { aud: decoded.aud } : {}),
+    jti: randomUUID(),
+    iat: nextTokenIatSeconds(),
+    exp: tokenExpSeconds(remember),
+  };
+  return jwt.sign(payload, getJWTSecret());
+}
+
 const INITIAL_ADMIN_ROLE = 'owner';
 const VALID_BUSINESS_TYPES = new Set(['restaurant']);
 const VALID_SETUP_PROFILES = new Set(['empty', 'express', 'demo']);
@@ -224,30 +251,77 @@ const passwordChangeAttempts = new Map<string, { count: number; lockedUntil: num
 const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
 const PASSWORD_CHANGE_LOCKOUT_MINUTES = 5;
 
-function checkPasswordChangeRateLimit(userId: string): { allowed: boolean; waitMinutes?: number } {
+const pinChangeAttempts = new Map<string, { count: number; lockedUntil: number }>();
+const PIN_CHANGE_MAX_ATTEMPTS = 5;
+const PIN_CHANGE_LOCKOUT_MINUTES = 5;
+
+function checkUserAttemptRateLimit(
+  attemptsMap: Map<string, { count: number; lockedUntil: number }>,
+  userId: string,
+): { allowed: boolean; waitMinutes?: number } {
   const nowMs = Date.now();
-  const record = passwordChangeAttempts.get(userId);
+  const record = attemptsMap.get(userId);
   if (record?.lockedUntil && record.lockedUntil > nowMs) {
     return { allowed: false, waitMinutes: Math.ceil((record.lockedUntil - nowMs) / 60000) };
   }
   if (record?.lockedUntil && record.lockedUntil <= nowMs) {
-    passwordChangeAttempts.delete(userId);
+    attemptsMap.delete(userId);
   }
   return { allowed: true };
 }
 
-function incrementFailedPasswordChange(userId: string): number {
-  const record = passwordChangeAttempts.get(userId) || { count: 0, lockedUntil: 0 };
+function incrementUserAttemptFailure(
+  attemptsMap: Map<string, { count: number; lockedUntil: number }>,
+  userId: string,
+  maxAttempts: number,
+  lockoutMinutes: number,
+): number {
+  const record = attemptsMap.get(userId) || { count: 0, lockedUntil: 0 };
   record.count += 1;
-  if (record.count >= PASSWORD_CHANGE_MAX_ATTEMPTS) {
-    record.lockedUntil = Date.now() + PASSWORD_CHANGE_LOCKOUT_MINUTES * 60000;
+  if (record.count >= maxAttempts) {
+    record.lockedUntil = Date.now() + lockoutMinutes * 60000;
   }
-  passwordChangeAttempts.set(userId, record);
-  return Math.max(0, PASSWORD_CHANGE_MAX_ATTEMPTS - record.count);
+  attemptsMap.set(userId, record);
+  return Math.max(0, maxAttempts - record.count);
+}
+
+function checkPasswordChangeRateLimit(userId: string): { allowed: boolean; waitMinutes?: number } {
+  return checkUserAttemptRateLimit(passwordChangeAttempts, userId);
+}
+
+function incrementFailedPasswordChange(userId: string): number {
+  return incrementUserAttemptFailure(
+    passwordChangeAttempts,
+    userId,
+    PASSWORD_CHANGE_MAX_ATTEMPTS,
+    PASSWORD_CHANGE_LOCKOUT_MINUTES,
+  );
 }
 
 function resetPasswordChangeRateLimit(userId: string): void {
   passwordChangeAttempts.delete(userId);
+}
+
+function checkPinChangeRateLimit(userId: string): { allowed: boolean; waitMinutes?: number } {
+  return checkUserAttemptRateLimit(pinChangeAttempts, userId);
+}
+
+function incrementFailedPinChange(userId: string): number {
+  return incrementUserAttemptFailure(
+    pinChangeAttempts,
+    userId,
+    PIN_CHANGE_MAX_ATTEMPTS,
+    PIN_CHANGE_LOCKOUT_MINUTES,
+  );
+}
+
+function resetPinChangeRateLimit(userId: string): void {
+  pinChangeAttempts.delete(userId);
+}
+
+export function resetCredentialChangeRateLimitsForTests(): void {
+  passwordChangeAttempts.clear();
+  pinChangeAttempts.clear();
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -322,6 +396,7 @@ router.post(
           name: user.name,
           email: user.email,
           role: user.role,
+          has_pin: Boolean(user.pin_hash),
           category_ids: parseCategoryIds(user.category_ids),
         },
         // Single tenant — frontend auto-selects when tenants.length === 1
@@ -579,6 +654,7 @@ router.post(
           name: user.name,
           email: user.email,
           role: user.role,
+          has_pin: Boolean(user.pin_hash),
           category_ids: parseCategoryIds(user.category_ids),
         },
         tenant,
@@ -733,7 +809,7 @@ router.get('/me', (req: Request, res: Response) => {
     const db = getDatabase();
     const user = db
       .prepare(
-        'SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?',
+        'SELECT id, name, email, role, pin_hash, is_active, tokens_valid_after FROM users WHERE id = ?',
       )
       .get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -744,7 +820,13 @@ router.get('/me', (req: Request, res: Response) => {
     const tenant = buildLocalTenant(db, user.id, user.role);
 
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        has_pin: Boolean(user.pin_hash),
+      },
       tenants: [tenant],
     });
   } catch {
@@ -754,71 +836,292 @@ router.get('/me', (req: Request, res: Response) => {
 
 // ── POST /api/auth/password/change ────────────────────────────────────────────
 
-router.post('/password/change', authRateLimit(), (req: Request, res: Response) => {
+export async function handlePasswordChange(req: Request, res: Response): Promise<void> {
   try {
     const { current_password, password } = req.body || {};
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
+      res.status(401).json({ error: 'No token provided' });
+      return;
     }
 
     const token = authHeader.split(' ')[1];
     if (isTokenRevoked(token)) {
-      return res.status(401).json({ error: 'Invalid token' });
+      res.status(401).json({ error: 'Invalid token' });
+      return;
     }
-    const decoded = jwt.verify(token, getJWTSecret()) as any;
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, getJWTSecret());
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
 
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
     if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
-      return res.status(401).json({ error: 'Invalid token' });
+      res.status(401).json({ error: 'Invalid token' });
+      return;
     }
 
     const passwordChangeRateLimit = checkPasswordChangeRateLimit(user.id);
     if (!passwordChangeRateLimit.allowed) {
-      return res.status(429).json({
+      res.status(429).json({
         error: `Too many password change attempts. Try again in ${passwordChangeRateLimit.waitMinutes} minutes.`,
       });
+      return;
     }
 
     if (typeof current_password !== 'string' || !current_password) {
-      return res.status(400).json({ error: 'Current password is required' });
+      res.status(400).json({ error: 'Current password is required' });
+      return;
     }
     if (typeof password !== 'string' || !password) {
-      return res.status(400).json({ error: 'Password is required' });
+      res.status(400).json({ error: 'Password is required' });
+      return;
     }
-    if (!bcrypt.compareSync(current_password, user.password)) {
+    const passwordMatches = await bcrypt.compare(current_password, user.password);
+    if (!passwordMatches) {
       const attemptsRemaining = incrementFailedPasswordChange(user.id);
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Current password is incorrect',
         attempts_remaining: attemptsRemaining,
         lockout_minutes: attemptsRemaining === 0 ? PASSWORD_CHANGE_LOCKOUT_MINUTES : undefined,
       });
+      return;
     }
     resetPasswordChangeRateLimit(user.id);
     if (!validatePassword(password)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: PASSWORD_POLICY_MESSAGE,
       });
+      return;
     }
 
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
     const changedAt = now();
     const tokensValidAfter = nextTokensValidAfterTimestamp();
-    db.prepare(
-      'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?',
-    ).run(hashedPassword, tokensValidAfter, changedAt, decoded.userId);
-    invalidateUserAuthCache(decoded.userId);
+    const updateResult = db
+      .prepare(
+        'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND password = ?',
+      )
+      .run(
+        hashedPassword,
+        tokensValidAfter,
+        changedAt,
+        user.id,
+        user.tokens_valid_after ?? null,
+        user.password,
+      );
 
-    res.json({ message: 'Password changed successfully' });
+    if (updateResult.changes === 0) {
+      const latestUser = db
+        .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+        .get(user.id) as { is_active: number; tokens_valid_after: string | null } | undefined;
+      if (
+        !latestUser ||
+        latestUser.is_active !== 1 ||
+        isTokenStale(decoded.iat, latestUser.tokens_valid_after)
+      ) {
+        res.status(401).json({ error: 'Invalid token' });
+        return;
+      }
+      res.status(409).json({ error: 'Credentials were modified concurrently' });
+      return;
+    }
+    invalidateUserAuthCache(user.id);
+
+    const freshToken = signFreshSessionToken(user, decoded);
+    res.json({ message: 'Password changed successfully', token: freshToken });
   } catch (error: any) {
     res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+router.post('/password/change', authRateLimit(), asyncHandler(handlePasswordChange));
+
+// ── POST /api/auth/pin/change ─────────────────────────────────────────────────
+
+export async function handlePinChange(req: Request, res: Response): Promise<void> {
+  try {
+    const { current_pin, current_password, pin } = req.body || {};
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'No token provided' });
+      return;
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (isTokenRevoked(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, getJWTSecret());
+    } catch {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+
+    const db = getDatabase();
+    const initialUser = db
+      .prepare('SELECT id, is_active, tokens_valid_after FROM users WHERE id = ?')
+      .get(decoded.userId) as any;
+    if (!initialUser) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    if (initialUser.is_active !== 1 || isTokenStale(decoded.iat, initialUser.tokens_valid_after)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+
+    type PinChangeOutcome = { status: number; body: Record<string, unknown> };
+    const outcome = await withPinVerificationLock<PinChangeOutcome>(
+      `pin-change:${initialUser.id}`,
+      async () => {
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(initialUser.id) as any;
+        if (!user) {
+          return { status: 404, body: { error: 'User not found' } };
+        }
+        if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
+          return { status: 401, body: { error: 'Invalid token' } };
+        }
+
+        const pinChangeRateLimit = checkPinChangeRateLimit(user.id);
+        if (!pinChangeRateLimit.allowed) {
+          return {
+            status: 429,
+            body: {
+              error: `Too many PIN change attempts. Try again in ${pinChangeRateLimit.waitMinutes} minutes.`,
+            },
+          };
+        }
+
+        const rawPin = typeof pin === 'string' || typeof pin === 'number' ? String(pin) : '';
+        if (user.pin_hash) {
+          if (typeof current_pin !== 'string' || !current_pin) {
+            return { status: 400, body: { error: 'Current PIN is required' } };
+          }
+          if (!rawPin) {
+            return { status: 400, body: { error: 'PIN is required' } };
+          }
+          let pinMatches = false;
+          if (current_pin.length <= 64) {
+            try {
+              pinMatches = await verifyPinAsync(user.pin_hash, current_pin);
+            } catch {
+              pinMatches = false;
+            }
+          }
+          if (!pinMatches) {
+            const attemptsRemaining = incrementFailedPinChange(user.id);
+            return {
+              status: 400,
+              body: {
+                error: 'Current PIN is incorrect',
+                attempts_remaining: attemptsRemaining,
+                lockout_minutes: attemptsRemaining === 0 ? PIN_CHANGE_LOCKOUT_MINUTES : undefined,
+              },
+            };
+          }
+        } else {
+          if (typeof current_password !== 'string' || !current_password) {
+            return { status: 400, body: { error: 'Current password is required to set a PIN' } };
+          }
+          if (!rawPin) {
+            return { status: 400, body: { error: 'PIN is required' } };
+          }
+          let passwordMatches = false;
+          try {
+            passwordMatches = await bcrypt.compare(current_password, user.password);
+          } catch {
+            passwordMatches = false;
+          }
+          if (!passwordMatches) {
+            const attemptsRemaining = incrementFailedPinChange(user.id);
+            return {
+              status: 400,
+              body: {
+                error: 'Current password is incorrect',
+                attempts_remaining: attemptsRemaining,
+                lockout_minutes: attemptsRemaining === 0 ? PIN_CHANGE_LOCKOUT_MINUTES : undefined,
+              },
+            };
+          }
+        }
+
+        resetPinChangeRateLimit(user.id);
+
+        if (!/^\d{4,6}$/.test(rawPin)) {
+          return {
+            status: 400,
+            body: { error: 'PIN must be between 4 and 6 numeric digits' },
+          };
+        }
+
+        const hashedPin = await bcrypt.hash(rawPin, 10);
+        const changedAt = now();
+        const tokensValidAfter = nextTokensValidAfterTimestamp();
+        const updateResult = db
+          .prepare(
+            'UPDATE users SET pin_hash = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND pin_hash IS ?',
+          )
+          .run(
+            hashedPin,
+            tokensValidAfter,
+            changedAt,
+            user.id,
+            user.tokens_valid_after ?? null,
+            user.pin_hash ?? null,
+          );
+
+        if (updateResult.changes === 0) {
+          const latestUser = db
+            .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+            .get(user.id) as { is_active: number; tokens_valid_after: string | null } | undefined;
+          if (
+            !latestUser ||
+            latestUser.is_active !== 1 ||
+            isTokenStale(decoded.iat, latestUser.tokens_valid_after)
+          ) {
+            return { status: 401, body: { error: 'Invalid token' } };
+          }
+          return { status: 409, body: { error: 'Credentials were modified concurrently' } };
+        }
+        invalidateUserAuthCache(user.id);
+
+        const freshToken = signFreshSessionToken(user, decoded);
+        return {
+          status: 200,
+          body: {
+            message: 'PIN changed successfully',
+            has_pin: true,
+            token: freshToken,
+          },
+        };
+      },
+    );
+
+    res.status(outcome.status).json(outcome.body);
+  } catch (error: any) {
+    res.locals.postHogError = error;
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+router.post('/pin/change', authRateLimit(), asyncHandler(handlePinChange));
 
 /** Writes the recovered password and audit trail; shared by Master PIN and cloud email recovery. */
 function applyOwnerRecovery(
@@ -1434,7 +1737,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       access_token: token,
       token_type: 'bearer',
       expires_in: JWT_EXPIRES_IN_SECONDS,
-      user: { id: userId, name: displayName, email, role: INITIAL_ADMIN_ROLE },
+      user: { id: userId, name: displayName, email, role: INITIAL_ADMIN_ROLE, has_pin: true },
       tenant,
       tenants: [tenant],
     });

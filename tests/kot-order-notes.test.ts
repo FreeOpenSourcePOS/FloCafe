@@ -544,11 +544,11 @@ async function runAsyncTests() {
     { ...baseOrder, order_number: 'ORD-0042', items } as any,
     { ...opts, showLargeOrderNumber: false },
   );
-  const kotRawOn = Buffer.from(kotBytesOn).toString('latin1');
-  const kotRawOff = Buffer.from(kotBytesOff).toString('latin1');
   assert.ok(
-    kotRawOn.includes('\x1d!\x11#ORD-0042') || escPosToText(kotBytesOn).includes('#ORD-0042\n'),
-    'buildKotBytes emits double-size #ORD-0042 banner when showLargeOrderNumber is true',
+    escPosToText(kotBytesOn)
+      .split(/\r?\n/)
+      .some((line) => line.trim() === '#ORD-0042'),
+    'buildKotBytes emits standalone #ORD-0042 banner when showLargeOrderNumber is true',
   );
   assert.equal(
     escPosToText(kotBytesOff)

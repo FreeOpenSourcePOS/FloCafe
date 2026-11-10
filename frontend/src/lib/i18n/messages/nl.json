@@ -90,7 +90,27 @@
     "yourName": "Uw naam",
     "quickSwitchTitle": "Snel wisselen",
     "quickSwitchSubtitle": "Kies uw profiel om met uw pincode aan te melden",
-    "enterPinFor": "Voer pincode in voor {name}"
+    "enterPinFor": "Voer pincode in voor {name}",
+    "changePasswordAndPin": "Wachtwoord en pincode wijzigen",
+    "accountCredentialsSubtitle": "Werk uw eigen wachtwoord of pincode voor snel aanmelden bij.",
+    "changePasswordTab": "Wachtwoord wijzigen",
+    "changePinTab": "Pincode wijzigen",
+    "currentPasswordLabel": "Huidig wachtwoord",
+    "currentPasswordPlaceholder": "Voer uw huidige wachtwoord in",
+    "currentPinLabel": "Huidige pincode",
+    "currentPinPlaceholder": "Voer huidige pincode in",
+    "newPinLabel": "Nieuwe pincode (4-6 cijfers)",
+    "confirmNewPinLabel": "Nieuwe pincode bevestigen",
+    "pinRequirementsHint": "De pincode moet uit 4 tot 6 cijfers bestaan.",
+    "pinMismatch": "Pincodes komen niet overeen",
+    "firstTimePinNotice": "Er is nog geen pincode ingesteld voor uw account. Voer uw huidige wachtwoord in om een pincode in te stellen.",
+    "updatePasswordButton": "Wachtwoord bijwerken",
+    "passwordChangedSuccess": "Wachtwoord succesvol bijgewerkt",
+    "updatePinButton": "Pincode bijwerken",
+    "setPinButton": "Pincode instellen",
+    "pinChangedSuccess": "Pincode succesvol bijgewerkt",
+    "togglePasswordVisibility": "Wachtwoord tonen of verbergen",
+    "togglePinVisibility": "Pincode tonen of verbergen"
   },
   "backup": {
     "creating": "Back-up maken...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Server",
     "title": "Personeel",
     "updateButton": "Bijwerken",
-    "updatedToast": "Personeel bijgewerkt"
+    "updatedToast": "Personeel bijgewerkt",
+    "resetPinButton": "Pincode resetten",
+    "resetPinTitle": "Pincode opnieuw instellen",
+    "resetPinBody": "Stel een nieuwe pincode van 4-6 cijfers in voor {name} zonder de huidige pincode in te voeren.",
+    "resetPinToast": "Pincode succesvol opnieuw ingesteld",
+    "clearPinButton": "Pincode wissen",
+    "pinClearedToast": "Pincode succesvol gewist",
+    "failedToResetPin": "Pincode opnieuw instellen mislukt"
   },
   "permissionMatrix": {
     "title": "Rolmachtigingen",
@@ -2939,7 +2966,8 @@
       "support": "Neem contact op met ondersteuning en bekijk de diagnostiek",
       "inventoryManage": "Voorraadartikelen en recepten beheren",
       "orderItemPriceOverride": "Prijzen van bestelde artikelen aanpassen",
-      "offlineMode": "Offlinemodus aan- of uitzetten"
+      "offlineMode": "Offlinemodus aan- of uitzetten",
+      "staffCredentialsReset": "Wachtwoorden en pincodes van medewerkers resetten zonder huidige inloggegevens"
     },
     "editorSubtitle": "Standaardinstellingen per rol configureren of een uitzondering maken voor één medewerker. Wijzigingen gelden vanaf diens volgende actie.",
     "roleDefaultsTab": "Rolstandaarden",

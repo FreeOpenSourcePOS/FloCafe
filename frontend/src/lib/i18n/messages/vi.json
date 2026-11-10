@@ -90,7 +90,27 @@
     "yourName": "Tên của bạn",
     "quickSwitchTitle": "Chuyển nhanh người dùng",
     "quickSwitchSubtitle": "Chọn hồ sơ của bạn để đăng nhập bằng mã PIN",
-    "enterPinFor": "Nhập mã PIN cho {name}"
+    "enterPinFor": "Nhập mã PIN cho {name}",
+    "changePasswordAndPin": "Đổi mật khẩu và mã PIN",
+    "accountCredentialsSubtitle": "Cập nhật mật khẩu hoặc mã PIN đăng nhập nhanh của riêng bạn.",
+    "changePasswordTab": "Đổi mật khẩu",
+    "changePinTab": "Đổi mã PIN",
+    "currentPasswordLabel": "Mật khẩu hiện tại",
+    "currentPasswordPlaceholder": "Nhập mật khẩu hiện tại của bạn",
+    "currentPinLabel": "Mã PIN hiện tại",
+    "currentPinPlaceholder": "Nhập mã PIN hiện tại",
+    "newPinLabel": "Mã PIN mới (4-6 chữ số)",
+    "confirmNewPinLabel": "Xác nhận mã PIN mới",
+    "pinRequirementsHint": "Mã PIN phải gồm từ 4 đến 6 chữ số.",
+    "pinMismatch": "Mã PIN không khớp",
+    "firstTimePinNotice": "Tài khoản của bạn chưa đặt mã PIN. Hãy nhập mật khẩu hiện tại để thiết lập mã PIN.",
+    "updatePasswordButton": "Cập nhật mật khẩu",
+    "passwordChangedSuccess": "Đã cập nhật mật khẩu thành công",
+    "updatePinButton": "Cập nhật mã PIN",
+    "setPinButton": "Thiết lập mã PIN",
+    "pinChangedSuccess": "Đã cập nhật mã PIN thành công",
+    "togglePasswordVisibility": "Hiện hoặc ẩn mật khẩu",
+    "togglePinVisibility": "Hiện hoặc ẩn mã PIN"
   },
   "backup": {
     "creating": "Đang tạo bản sao lưu...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Nhân viên phục vụ",
     "title": "Nhân viên",
     "updateButton": "Cập nhật",
-    "updatedToast": "Đã cập nhật nhân viên"
+    "updatedToast": "Đã cập nhật nhân viên",
+    "resetPinButton": "Đặt lại PIN",
+    "resetPinTitle": "Đặt lại mã PIN",
+    "resetPinBody": "Đặt mã PIN 4-6 chữ số mới cho {name} mà không cần nhập mã PIN hiện tại.",
+    "resetPinToast": "Đã đặt lại mã PIN thành công",
+    "clearPinButton": "Xóa mã PIN",
+    "pinClearedToast": "Đã xóa mã PIN thành công",
+    "failedToResetPin": "Không thể đặt lại mã PIN"
   },
   "permissionMatrix": {
     "title": "Quyền theo vai trò",
@@ -2939,7 +2966,8 @@
       "support": "Liên hệ hỗ trợ và xem chẩn đoán",
       "inventoryManage": "Quản lý vật tư và công thức",
       "orderItemPriceOverride": "Đổi giá món trong đơn hàng",
-      "offlineMode": "Bật hoặc tắt chế độ ngoại tuyến"
+      "offlineMode": "Bật hoặc tắt chế độ ngoại tuyến",
+      "staffCredentialsReset": "Đặt lại mật khẩu và mã PIN của nhân viên mà không cần thông tin xác thực hiện tại"
     },
     "editorSubtitle": "Cấu hình mặc định theo vai trò hoặc tạo ngoại lệ cho một nhân viên. Thay đổi sẽ áp dụng từ hành động tiếp theo của họ.",
     "roleDefaultsTab": "Mặc định vai trò",

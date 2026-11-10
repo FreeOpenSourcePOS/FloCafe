@@ -90,7 +90,27 @@
     "yourName": "तपाईंको नाम",
     "quickSwitchTitle": "छिटो प्रयोगकर्ता परिवर्तन",
     "quickSwitchSubtitle": "पिनमार्फत साइन इन गर्न आफ्नो प्रोफाइल छान्नुहोस्",
-    "enterPinFor": "{name} को पिन राख्नुहोस्"
+    "enterPinFor": "{name} को पिन राख्नुहोस्",
+    "changePasswordAndPin": "पासवर्ड र पिन परिवर्तन गर्नुहोस्",
+    "accountCredentialsSubtitle": "आफ्नो पासवर्ड वा द्रुत साइन-इन पिन अद्यावधिक गर्नुहोस्।",
+    "changePasswordTab": "पासवर्ड परिवर्तन",
+    "changePinTab": "पिन परिवर्तन",
+    "currentPasswordLabel": "हालको पासवर्ड",
+    "currentPasswordPlaceholder": "आफ्नो हालको पासवर्ड प्रविष्ट गर्नुहोस्",
+    "currentPinLabel": "हालको पिन",
+    "currentPinPlaceholder": "हालको पिन प्रविष्ट गर्नुहोस्",
+    "newPinLabel": "नयाँ पिन (४-६ अंक)",
+    "confirmNewPinLabel": "नयाँ पिन पुष्टि गर्नुहोस्",
+    "pinRequirementsHint": "पिन ४ देखि ६ संख्यात्मक अंकको हुनुपर्छ।",
+    "pinMismatch": "पिनहरू मेल खाँदैनन्",
+    "firstTimePinNotice": "तपाईंको खातामा अझै पिन सेट गरिएको छैन। पिन सेट गर्न आफ्नो हालको पासवर्ड प्रविष्ट गर्नुहोस्।",
+    "updatePasswordButton": "पासवर्ड अद्यावधिक गर्नुहोस्",
+    "passwordChangedSuccess": "पासवर्ड सफलतापूर्वक अद्यावधिक गरियो",
+    "updatePinButton": "पिन अद्यावधिक गर्नुहोस्",
+    "setPinButton": "पिन सेट गर्नुहोस्",
+    "pinChangedSuccess": "पिन सफलतापूर्वक अद्यावधिक गरियो",
+    "togglePasswordVisibility": "पासवर्ड देखाउनुहोस् वा लुकाउनुहोस्",
+    "togglePinVisibility": "पिन देखाउनुहोस् वा लुकाउनुहोस्"
   },
   "backup": {
     "creating": "ब्याकअप सिर्जना गर्दै...",
@@ -2838,7 +2858,14 @@
     "roleServer": "सर्भर",
     "title": "कर्मचारी",
     "updateButton": "अपडेट गर्नुहोस्",
-    "updatedToast": "कर्मचारी अपडेट गरियो"
+    "updatedToast": "कर्मचारी अपडेट गरियो",
+    "resetPinButton": "पिन रिसेट गर्नुहोस्",
+    "resetPinTitle": "पिन रिसेट गर्नुहोस्",
+    "resetPinBody": "हालको पिन प्रविष्ट नगरी {name} को लागि नयाँ ४-६ अंकको पिन सेट गर्नुहोस्।",
+    "resetPinToast": "पिन सफलतापूर्वक रिसेट गरियो",
+    "clearPinButton": "पिन हटाउनुहोस्",
+    "pinClearedToast": "पिन सफलतापूर्वक हटाइयो",
+    "failedToResetPin": "पिन रिसेट गर्न असफल भयो"
   },
   "permissionMatrix": {
     "title": "भूमिका अनुमतिहरू",
@@ -2939,7 +2966,8 @@
       "support": "सहायतालाई सम्पर्क गर्नुहोस् र निदान हेर्नुहोस्",
       "inventoryManage": "आपूर्ति र व्यञ्जनहरू प्रबन्ध गर्नुहोस्",
       "orderItemPriceOverride": "अर्डर वस्तुको मूल्य परिवर्तन गर्नुहोस्",
-      "offlineMode": "अफलाइन मोड खोल्नुहोस् वा बन्द गर्नुहोस्"
+      "offlineMode": "अफलाइन मोड खोल्नुहोस् वा बन्द गर्नुहोस्",
+      "staffCredentialsReset": "हालको प्रमाणपत्र बिना कर्मचारीको पासवर्ड र पिन रिसेट गर्नुहोस्"
     },
     "editorSubtitle": "भूमिकाका पूर्वनिर्धारित सेटिङ कन्फिगर गर्नुहोस् वा एक कर्मचारीका लागि अपवाद बनाउनुहोस्। परिवर्तनहरू उनको अर्को कार्यमा लागू हुनेछन्।",
     "roleDefaultsTab": "भूमिका पूर्वनिर्धारित",

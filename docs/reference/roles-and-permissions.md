@@ -119,6 +119,7 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Reports      | View sales and operations reports                          |   ✓   |    ✓    |    —    |   —    |  —   |
 | Reports      | View financial figures (revenue, refunds, payment mix)     |   ✓   |    —    |    —    |   —    |  —   |
 | Staff        | View and manage staff accounts                             |   ✓   |    ✓    |    —    |   —    |  —   |
+| Staff        | Reset staff passwords and PINs without their current credentials |   ✓   |    —    |    —    |   —    |  —   |
 | Staff        | Manage owner and manager accounts and roles                |   ✓   |    —    |    —    |   —    |  —   |
 | Staff        | Manage cashier, server, and chef accounts                  |   ✓   |    ✓    |    —    |   —    |  —   |
 | Staff        | Manage role and user permissions                           |   ✓   |    —    |    —    |   —    |  —   |
@@ -222,15 +223,15 @@ HTTP.
 `server`, `manager`, and `owner`. When the feature is disabled its routes return 404 rather than
 403, so the surface is not discoverable. It is separate from the dashboard navigation.
 
-**Staff management.** Managers can manage operational staff by default (`staff.operational.manage`),
+**Staff management.** Managers can create and edit operational staff details by default (`staff.operational.manage`),
 but cannot modify or deactivate owner or manager accounts: that needs the protected
-`staff.privileged.manage`, which only an owner holds. Only an owner can change the role on an
+`staff.privileged.manage`, which only an owner holds. Resetting an existing staff member's password or PIN without their current credential (`PUT /api/staff/:id` with a non-empty `password` or defined `pin`) additionally requires `staff.credentials.reset`, which ships to `owner` by default and can be granted to managers for operational staff targets (`cashier`, `server`, `chef`). Only an owner can change the role on an
 existing account. Demoting or deactivating an account is refused when no other active account
 would still hold all four of `authorization.manage`, `staff.privileged.manage`,
 `staff.operational.manage`, and `settings.manage`, so the last administrator is protected even
 while other active owners remain who have been denied one of those capabilities.
 
-**Staff PINs and Staff Approval PINs.** Any staff role can configure a 4-6 digit sign-in PIN in
+**Staff PINs and Staff Approval PINs.** Every active user regardless of role (`owner`, `manager`, `cashier`, `server`, `chef`) can change their own password (`POST /api/auth/password/change`) and set or change their own 4-6 digit sign-in PIN (`POST /api/auth/pin/change`, verifying `current_pin` when a PIN is already set or `current_password` on first-time setup). Owners (and managers granted `staff.credentials.reset` for operational staff) can also set, reset, or clear a 4-6 digit PIN in
 Staff management for quick user switching on shared terminals, while only active `owner` and
 `manager` PINs qualify as a Staff Approval PIN. See
 [PIN quick user switch and terminal lock](../architecture/authentication-and-authorization.md#pin-quick-user-switch-and-terminal-lock).

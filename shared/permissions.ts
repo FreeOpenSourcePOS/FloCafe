@@ -440,6 +440,13 @@ export const PERMISSION_DEFINITIONS = [
     risk: 'sensitive',
   },
   {
+    id: 'staff.credentials.reset',
+    area: 'staff',
+    defaultRoles: OWNER,
+    configurable: true,
+    risk: 'sensitive',
+  },
+  {
     id: 'staff.privileged.manage',
     area: 'staff',
     defaultRoles: OWNER,

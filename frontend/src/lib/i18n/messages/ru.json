@@ -90,7 +90,27 @@
     "yourName": "Ваше имя",
     "quickSwitchTitle": "Быстрая смена пользователя",
     "quickSwitchSubtitle": "Выберите профиль для входа по ПИН-коду",
-    "enterPinFor": "Введите ПИН-код для {name}"
+    "enterPinFor": "Введите ПИН-код для {name}",
+    "changePasswordAndPin": "Изменить пароль и PIN-код",
+    "accountCredentialsSubtitle": "Обновите собственный пароль или PIN-код быстрого входа.",
+    "changePasswordTab": "Изменить пароль",
+    "changePinTab": "Изменить PIN-код",
+    "currentPasswordLabel": "Текущий пароль",
+    "currentPasswordPlaceholder": "Введите текущий пароль",
+    "currentPinLabel": "Текущий PIN-код",
+    "currentPinPlaceholder": "Введите текущий PIN-код",
+    "newPinLabel": "Новый PIN-код (4-6 цифр)",
+    "confirmNewPinLabel": "Подтвердите новый PIN-код",
+    "pinRequirementsHint": "PIN-код должен состоять из 4-6 цифр.",
+    "pinMismatch": "PIN-коды не совпадают",
+    "firstTimePinNotice": "Для вашей учетной записи еще не задан PIN-код. Введите текущий пароль, чтобы установить PIN-код.",
+    "updatePasswordButton": "Обновить пароль",
+    "passwordChangedSuccess": "Пароль успешно обновлен",
+    "updatePinButton": "Обновить PIN-код",
+    "setPinButton": "Установить PIN-код",
+    "pinChangedSuccess": "PIN-код успешно обновлен",
+    "togglePasswordVisibility": "Показать или скрыть пароль",
+    "togglePinVisibility": "Показать или скрыть PIN-код"
   },
   "backup": {
     "creating": "Создание резервной копии...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Официант",
     "title": "Персонал",
     "updateButton": "Обновить",
-    "updatedToast": "Сотрудник обновлён"
+    "updatedToast": "Сотрудник обновлён",
+    "resetPinButton": "Сбросить PIN-код",
+    "resetPinTitle": "Сбросить PIN-код",
+    "resetPinBody": "Установите новый PIN-код из 4-6 цифр для {name} без ввода текущего PIN-кода.",
+    "resetPinToast": "PIN-код успешно сброшен",
+    "clearPinButton": "Удалить PIN-код",
+    "pinClearedToast": "PIN-код успешно удален",
+    "failedToResetPin": "Не удалось сбросить PIN-код"
   },
   "permissionMatrix": {
     "title": "Разрешения ролей",
@@ -2939,7 +2966,8 @@
       "support": "Обратитесь в службу поддержки и просмотрите диагностику",
       "inventoryManage": "Управление расходными материалами и рецептами",
       "orderItemPriceOverride": "Изменение цен позиций заказа",
-      "offlineMode": "Включать или выключать автономный режим"
+      "offlineMode": "Включать или выключать автономный режим",
+      "staffCredentialsReset": "Сброс паролей и PIN-кодов сотрудников без ввода текущих учетных данных"
     },
     "editorSubtitle": "Настройте значения по умолчанию для роли или сделайте исключение для одного сотрудника. Изменения применяются к его следующему действию.",
     "roleDefaultsTab": "Значения роли по умолчанию",

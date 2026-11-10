@@ -90,7 +90,27 @@
     "yourName": "氏名",
     "quickSwitchTitle": "クイック切り替え",
     "quickSwitchSubtitle": "プロフィールを選択してPINでサインイン",
-    "enterPinFor": "{name} のPINを入力"
+    "enterPinFor": "{name} のPINを入力",
+    "changePasswordAndPin": "パスワードとPINの変更",
+    "accountCredentialsSubtitle": "ご自身のパスワードまたはクイックサインインPINを更新します。",
+    "changePasswordTab": "パスワード変更",
+    "changePinTab": "PIN変更",
+    "currentPasswordLabel": "現在のパスワード",
+    "currentPasswordPlaceholder": "現在のパスワードを入力",
+    "currentPinLabel": "現在のPIN",
+    "currentPinPlaceholder": "現在のPINを入力",
+    "newPinLabel": "新しいPIN（4-6桁）",
+    "confirmNewPinLabel": "新しいPINの確認",
+    "pinRequirementsHint": "PINは4桁から6桁の数字で入力してください。",
+    "pinMismatch": "PINが一致しません",
+    "firstTimePinNotice": "アカウントにはまだPINが設定されていません。PINを設定するには現在のパスワードを入力してください。",
+    "updatePasswordButton": "パスワードを更新",
+    "passwordChangedSuccess": "パスワードを更新しました",
+    "updatePinButton": "PINを更新",
+    "setPinButton": "PINを設定",
+    "pinChangedSuccess": "PINを更新しました",
+    "togglePasswordVisibility": "パスワードの表示を切り替え",
+    "togglePinVisibility": "PINの表示を切り替え"
   },
   "backup": {
     "creating": "バックアップを作成中…",
@@ -2838,7 +2858,14 @@
     "roleServer": "サーバー担当",
     "title": "スタッフ",
     "updateButton": "更新",
-    "updatedToast": "スタッフを更新しました"
+    "updatedToast": "スタッフを更新しました",
+    "resetPinButton": "PINをリセット",
+    "resetPinTitle": "PINをリセット",
+    "resetPinBody": "現在のPINを入力せずに {name} の新しい4-6桁のPINを設定します。",
+    "resetPinToast": "PINをリセットしました",
+    "clearPinButton": "PINを消去",
+    "pinClearedToast": "PINを消去しました",
+    "failedToResetPin": "PINのリセットに失敗しました"
   },
   "permissionMatrix": {
     "title": "ロール権限",
@@ -2939,7 +2966,8 @@
       "serverApp": "スタンドアロンのサーバーアプリを使用",
       "support": "サポートに連絡し診断情報を表示",
       "orderItemPriceOverride": "注文商品の価格を変更",
-      "offlineMode": "オフラインモードの切り替え"
+      "offlineMode": "オフラインモードの切り替え",
+      "staffCredentialsReset": "現在の認証情報なしでスタッフのパスワードとPINをリセット"
     },
     "editorSubtitle": "役割の既定値を設定するか、特定のスタッフの例外を作成します。変更は次の操作から適用されます。",
     "roleDefaultsTab": "役割の既定値",

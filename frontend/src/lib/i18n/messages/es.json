@@ -90,7 +90,27 @@
     "yourName": "Tu nombre",
     "quickSwitchTitle": "Cambio rápido",
     "quickSwitchSubtitle": "Selecciona tu perfil para iniciar sesión con tu PIN",
-    "enterPinFor": "Introduce el PIN de {name}"
+    "enterPinFor": "Introduce el PIN de {name}",
+    "changePasswordAndPin": "Cambiar contraseña y PIN",
+    "accountCredentialsSubtitle": "Actualiza tu propia contraseña o tu PIN de inicio rápido.",
+    "changePasswordTab": "Cambiar contraseña",
+    "changePinTab": "Cambiar PIN",
+    "currentPasswordLabel": "Contraseña actual",
+    "currentPasswordPlaceholder": "Ingresa tu contraseña actual",
+    "currentPinLabel": "PIN actual",
+    "currentPinPlaceholder": "Ingresa tu PIN actual",
+    "newPinLabel": "Nuevo PIN (4-6 dígitos)",
+    "confirmNewPinLabel": "Confirmar nuevo PIN",
+    "pinRequirementsHint": "El PIN debe tener entre 4 y 6 dígitos numéricos.",
+    "pinMismatch": "Los PIN no coinciden",
+    "firstTimePinNotice": "Aún no tienes un PIN configurado. Ingresa tu contraseña actual para establecer un PIN.",
+    "updatePasswordButton": "Actualizar contraseña",
+    "passwordChangedSuccess": "Contraseña actualizada correctamente",
+    "updatePinButton": "Actualizar PIN",
+    "setPinButton": "Establecer PIN",
+    "pinChangedSuccess": "PIN actualizado correctamente",
+    "togglePasswordVisibility": "Mostrar u ocultar contraseña",
+    "togglePinVisibility": "Mostrar u ocultar PIN"
   },
   "backup": {
     "creating": "Creando respaldo...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Servidor",
     "title": "Personal",
     "updateButton": "Actualizar",
-    "updatedToast": "Personal actualizado"
+    "updatedToast": "Personal actualizado",
+    "resetPinButton": "Restablecer PIN",
+    "resetPinTitle": "Restablecer PIN",
+    "resetPinBody": "Establece un nuevo PIN de 4 a 6 dígitos para {name} sin ingresar su PIN actual.",
+    "resetPinToast": "PIN restablecido correctamente",
+    "clearPinButton": "Borrar PIN",
+    "pinClearedToast": "PIN borrado correctamente",
+    "failedToResetPin": "No se pudo restablecer el PIN"
   },
   "permissionMatrix": {
     "title": "Permisos por rol",
@@ -2939,7 +2966,8 @@
       "support": "Contactar con soporte y ver diagnósticos",
       "inventoryManage": "Gestionar insumos y recetas",
       "orderItemPriceOverride": "Cambiar precios de artículos del pedido",
-      "offlineMode": "Activar o desactivar el modo sin conexión"
+      "offlineMode": "Activar o desactivar el modo sin conexión",
+      "staffCredentialsReset": "Restablecer contraseñas y PIN del personal sin sus credenciales actuales"
     },
     "editorSubtitle": "Configura los valores predeterminados de los roles o crea una excepción para un miembro del personal. Los cambios se aplican en su próxima acción.",
     "roleDefaultsTab": "Valores del rol",

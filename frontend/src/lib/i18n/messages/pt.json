@@ -90,7 +90,27 @@
     "yourName": "Seu Nome",
     "quickSwitchTitle": "Troca rápida",
     "quickSwitchSubtitle": "Selecione seu perfil para entrar com seu PIN",
-    "enterPinFor": "Insira o PIN de {name}"
+    "enterPinFor": "Insira o PIN de {name}",
+    "changePasswordAndPin": "Alterar senha e PIN",
+    "accountCredentialsSubtitle": "Atualize sua própria senha ou seu PIN de acesso rápido.",
+    "changePasswordTab": "Alterar senha",
+    "changePinTab": "Alterar PIN",
+    "currentPasswordLabel": "Senha atual",
+    "currentPasswordPlaceholder": "Digite sua senha atual",
+    "currentPinLabel": "PIN atual",
+    "currentPinPlaceholder": "Digite o PIN atual",
+    "newPinLabel": "Novo PIN (4-6 dígitos)",
+    "confirmNewPinLabel": "Confirmar novo PIN",
+    "pinRequirementsHint": "O PIN deve ter de 4 a 6 dígitos numéricos.",
+    "pinMismatch": "Os PINs não coincidem",
+    "firstTimePinNotice": "Nenhum PIN está definido na sua conta ainda. Digite sua senha atual para definir um PIN.",
+    "updatePasswordButton": "Atualizar senha",
+    "passwordChangedSuccess": "Senha atualizada com sucesso",
+    "updatePinButton": "Atualizar PIN",
+    "setPinButton": "Definir PIN",
+    "pinChangedSuccess": "PIN atualizado com sucesso",
+    "togglePasswordVisibility": "Mostrar ou ocultar senha",
+    "togglePinVisibility": "Mostrar ou ocultar PIN"
   },
   "backup": {
     "creating": "Criando backup...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Servidor",
     "title": "Equipe",
     "updateButton": "Atualizar",
-    "updatedToast": "Funcionário atualizado"
+    "updatedToast": "Funcionário atualizado",
+    "resetPinButton": "Redefinir PIN",
+    "resetPinTitle": "Redefinir PIN",
+    "resetPinBody": "Defina um novo PIN de 4 a 6 dígitos para {name} sem informar o PIN atual.",
+    "resetPinToast": "PIN redefinido com sucesso",
+    "clearPinButton": "Limpar PIN",
+    "pinClearedToast": "PIN removido com sucesso",
+    "failedToResetPin": "Falha ao redefinir o PIN"
   },
   "permissionMatrix": {
     "title": "Permissões por função",
@@ -2939,7 +2966,8 @@
       "support": "Contatar o suporte e ver diagnósticos",
       "inventoryManage": "Gerenciar insumos e receitas",
       "orderItemPriceOverride": "Alterar preços dos itens do pedido",
-      "offlineMode": "Ativar ou desativar o modo offline"
+      "offlineMode": "Ativar ou desativar o modo offline",
+      "staffCredentialsReset": "Redefinir senhas e PINs da equipe sem as credenciais atuais"
     },
     "editorSubtitle": "Configure os padrões da função ou crie uma exceção para um funcionário. As alterações se aplicam na próxima ação dele.",
     "roleDefaultsTab": "Padrões da função",

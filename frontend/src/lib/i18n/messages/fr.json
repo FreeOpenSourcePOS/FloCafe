@@ -90,7 +90,27 @@
     "yourName": "Votre nom",
     "quickSwitchTitle": "Changement rapide",
     "quickSwitchSubtitle": "Sélectionnez votre profil pour vous connecter avec votre code PIN",
-    "enterPinFor": "Saisissez le code PIN de {name}"
+    "enterPinFor": "Saisissez le code PIN de {name}",
+    "changePasswordAndPin": "Modifier le mot de passe et le code PIN",
+    "accountCredentialsSubtitle": "Mettez à jour votre propre mot de passe ou votre code PIN de connexion rapide.",
+    "changePasswordTab": "Modifier le mot de passe",
+    "changePinTab": "Modifier le code PIN",
+    "currentPasswordLabel": "Mot de passe actuel",
+    "currentPasswordPlaceholder": "Saisissez votre mot de passe actuel",
+    "currentPinLabel": "Code PIN actuel",
+    "currentPinPlaceholder": "Saisissez le code PIN actuel",
+    "newPinLabel": "Nouveau code PIN (4-6 chiffres)",
+    "confirmNewPinLabel": "Confirmer le nouveau code PIN",
+    "pinRequirementsHint": "Le code PIN doit comporter de 4 à 6 chiffres.",
+    "pinMismatch": "Les codes PIN ne correspondent pas",
+    "firstTimePinNotice": "Aucun code PIN n’est encore défini sur votre compte. Saisissez votre mot de passe actuel pour définir un code PIN.",
+    "updatePasswordButton": "Mettre à jour le mot de passe",
+    "passwordChangedSuccess": "Mot de passe mis à jour avec succès",
+    "updatePinButton": "Mettre à jour le code PIN",
+    "setPinButton": "Définir le code PIN",
+    "pinChangedSuccess": "Code PIN mis à jour avec succès",
+    "togglePasswordVisibility": "Afficher ou masquer le mot de passe",
+    "togglePinVisibility": "Afficher ou masquer le code PIN"
   },
   "backup": {
     "creating": "Création de la sauvegarde...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Personnel de service",
     "title": "Personnel",
     "updateButton": "Mettre à jour",
-    "updatedToast": "Employé mis à jour"
+    "updatedToast": "Employé mis à jour",
+    "resetPinButton": "Réinitialiser le PIN",
+    "resetPinTitle": "Réinitialiser le code PIN",
+    "resetPinBody": "Définissez un nouveau code PIN à 4-6 chiffres pour {name} sans saisir son code PIN actuel.",
+    "resetPinToast": "Code PIN réinitialisé avec succès",
+    "clearPinButton": "Effacer le code PIN",
+    "pinClearedToast": "Code PIN effacé avec succès",
+    "failedToResetPin": "Impossible de réinitialiser le code PIN"
   },
   "permissionMatrix": {
     "title": "Autorisations des rôles",
@@ -2939,7 +2966,8 @@
       "support": "Contacter l’assistance et afficher les diagnostics",
       "inventoryManage": "Gérer les approvisionnements et les recettes",
       "orderItemPriceOverride": "Modifier les prix des articles de commande",
-      "offlineMode": "Activer ou désactiver le mode hors ligne"
+      "offlineMode": "Activer ou désactiver le mode hors ligne",
+      "staffCredentialsReset": "Réinitialiser les mots de passe et codes PIN du personnel sans leurs identifiants actuels"
     },
     "editorSubtitle": "Configurez les permissions par défaut d'un rôle ou créez une exception pour un membre du personnel. Les modifications s'appliquent à sa prochaine action.",
     "roleDefaultsTab": "Permissions du rôle",

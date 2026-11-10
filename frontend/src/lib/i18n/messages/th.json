@@ -90,7 +90,27 @@
     "yourName": "ชื่อของคุณ",
     "quickSwitchTitle": "สลับผู้ใช้ด่วน",
     "quickSwitchSubtitle": "เลือกโปรไฟล์ของคุณเพื่อเข้าสู่ระบบด้วย PIN",
-    "enterPinFor": "ใส่ PIN สำหรับ {name}"
+    "enterPinFor": "ใส่ PIN สำหรับ {name}",
+    "changePasswordAndPin": "เปลี่ยนรหัสผ่านและ PIN",
+    "accountCredentialsSubtitle": "อัปเดตรหัสผ่านหรือ PIN เข้าสู่ระบบด่วนของคุณเอง",
+    "changePasswordTab": "เปลี่ยนรหัสผ่าน",
+    "changePinTab": "เปลี่ยน PIN",
+    "currentPasswordLabel": "รหัสผ่านปัจจุบัน",
+    "currentPasswordPlaceholder": "กรอกรหัสผ่านปัจจุบันของคุณ",
+    "currentPinLabel": "PIN ปัจจุบัน",
+    "currentPinPlaceholder": "กรอก PIN ปัจจุบัน",
+    "newPinLabel": "PIN ใหม่ (4-6 หลัก)",
+    "confirmNewPinLabel": "ยืนยัน PIN ใหม่",
+    "pinRequirementsHint": "PIN ต้องเป็นตัวเลข 4 ถึง 6 หลัก",
+    "pinMismatch": "PIN ไม่ตรงกัน",
+    "firstTimePinNotice": "ยังไม่ได้ตั้งค่า PIN ในบัญชีของคุณ กรอกรหัสผ่านปัจจุบันเพื่อตั้งค่า PIN",
+    "updatePasswordButton": "อัปเดตรหัสผ่าน",
+    "passwordChangedSuccess": "อัปเดตรหัสผ่านเรียบร้อยแล้ว",
+    "updatePinButton": "อัปเดต PIN",
+    "setPinButton": "ตั้งค่า PIN",
+    "pinChangedSuccess": "อัปเดต PIN เรียบร้อยแล้ว",
+    "togglePasswordVisibility": "สลับการแสดงรหัสผ่าน",
+    "togglePinVisibility": "สลับการแสดง PIN"
   },
   "backup": {
     "creating": "กำลังสร้างข้อมูลสำรอง...",
@@ -2838,7 +2858,14 @@
     "roleServer": "พนักงานเสิร์ฟ",
     "title": "พนักงาน",
     "updateButton": "อัปเดต",
-    "updatedToast": "อัปเดตพนักงานแล้ว"
+    "updatedToast": "อัปเดตพนักงานแล้ว",
+    "resetPinButton": "รีเซ็ต PIN",
+    "resetPinTitle": "ตั้ง PIN ใหม่",
+    "resetPinBody": "ตั้งค่า PIN ใหม่ 4-6 หลักสำหรับ {name} โดยไม่ต้องกรอก PIN ปัจจุบัน",
+    "resetPinToast": "ตั้ง PIN ใหม่เรียบร้อยแล้ว",
+    "clearPinButton": "ล้าง PIN",
+    "pinClearedToast": "ล้าง PIN เรียบร้อยแล้ว",
+    "failedToResetPin": "ไม่สามารถตั้ง PIN ใหม่ได้"
   },
   "permissionMatrix": {
     "title": "สิทธิ์ตามบทบาท",
@@ -2939,7 +2966,8 @@
       "support": "ติดต่อฝ่ายช่วยเหลือและดูข้อมูลวินิจฉัย",
       "inventoryManage": "จัดการวัสดุและสูตรส่วนผสม",
       "orderItemPriceOverride": "เปลี่ยนราคาสินค้าในออเดอร์",
-      "offlineMode": "เปิดหรือปิดโหมดออฟไลน์"
+      "offlineMode": "เปิดหรือปิดโหมดออฟไลน์",
+      "staffCredentialsReset": "รีเซ็ตรหัสผ่านและ PIN ของพนักงานโดยไม่ต้องใช้ข้อมูลรับรองปัจจุบัน"
     },
     "editorSubtitle": "กำหนดค่าเริ่มต้นของบทบาท หรือสร้างข้อยกเว้นสำหรับพนักงานหนึ่งคน การเปลี่ยนแปลงจะมีผลกับการกระทำครั้งถัดไปของเขา",
     "roleDefaultsTab": "ค่าเริ่มต้นตามบทบาท",

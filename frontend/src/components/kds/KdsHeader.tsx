@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
-import { ChefHat, LogOut, Moon, Sun, Wifi, WifiOff } from 'lucide-react';
+import { ChefHat, KeyRound, LogOut, Moon, Sun, Wifi, WifiOff } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { ConnectionMode } from '@/hooks/useKdsConnection';
 import type { KdsViewMode } from '@/hooks/useKdsView';
@@ -46,6 +46,7 @@ export interface KdsHeaderProps {
   connectionMode: ConnectionMode;
   viewMode: KdsViewMode;
   onChangeView: (mode: KdsViewMode) => void;
+  onOpenCredentials?: () => void;
   onLogout: () => void;
 }
 
@@ -56,9 +57,11 @@ export function KdsHeader({
   connectionMode,
   viewMode,
   onChangeView,
+  onOpenCredentials,
   onLogout,
 }: KdsHeaderProps) {
   const t = useTranslations('kds');
+  const tAuth = useTranslations('auth');
   const tNav = useTranslations('nav');
   const tSettings = useTranslations('settings');
   const mode = useThemeMode((s) => s.mode);
@@ -126,6 +129,19 @@ export function KdsHeader({
               {t('viewKanban')}
             </button>
           </div>
+
+          {onOpenCredentials && (
+            <button
+              type="button"
+              data-testid="kds-change-credentials-button"
+              onClick={onOpenCredentials}
+              className="min-w-11 min-h-11 p-2 hover:bg-muted rounded-lg text-slate-700 dark:text-slate-300 hover:text-foreground ms-1"
+              title={tAuth('changePasswordAndPin')}
+              aria-label={tAuth('changePasswordAndPin')}
+            >
+              <KeyRound size={20} />
+            </button>
+          )}
 
           <button
             type="button"

@@ -90,7 +90,27 @@
     "yourName": "మీ పేరు",
     "quickSwitchTitle": "త్వరిత మార్పు",
     "quickSwitchSubtitle": "మీ పిన్తో సైన్ ఇన్ చేయడానికి మీ ప్రొఫైల్ ఎంచుకోండి",
-    "enterPinFor": "{name} కోసం పిన్ నమోదు చేయండి"
+    "enterPinFor": "{name} కోసం పిన్ నమోదు చేయండి",
+    "changePasswordAndPin": "పాస్వర్డ్ మరియు పిన్ మార్చండి",
+    "accountCredentialsSubtitle": "మీ స్వంత పాస్వర్డ్ లేదా త్వరిత సైన్-ఇన్ పిన్ అప్డేట్ చేయండి.",
+    "changePasswordTab": "పాస్వర్డ్ మార్చండి",
+    "changePinTab": "పిన్ మార్చండి",
+    "currentPasswordLabel": "ప్రస్తుత పాస్వర్డ్",
+    "currentPasswordPlaceholder": "మీ ప్రస్తుత పాస్వర్డ్ నమోదు చేయండి",
+    "currentPinLabel": "ప్రస్తుత పిన్",
+    "currentPinPlaceholder": "ప్రస్తుత పిన్ నమోదు చేయండి",
+    "newPinLabel": "కొత్త పిన్ (4-6 అంకెలు)",
+    "confirmNewPinLabel": "కొత్త పిన్ నిర్ధారించండి",
+    "pinRequirementsHint": "పిన్ తప్పనిసరిగా 4 నుండి 6 అంకెలు ఉండాలి.",
+    "pinMismatch": "పిన్లు సరిపోలడం లేదు",
+    "firstTimePinNotice": "మీ ఖాతాకు ఇంకా పిన్ సెట్ చేయబడలేదు. పిన్ సెట్ చేయడానికి మీ ప్రస్తుత పాస్వర్డ్ నమోదు చేయండి.",
+    "updatePasswordButton": "పాస్వర్డ్ అప్డేట్ చేయండి",
+    "passwordChangedSuccess": "పాస్వర్డ్ విజయవంతంగా అప్డేట్ చేయబడింది",
+    "updatePinButton": "పిన్ అప్డేట్ చేయండి",
+    "setPinButton": "పిన్ సెట్ చేయండి",
+    "pinChangedSuccess": "పిన్ విజయవంతంగా అప్డేట్ చేయబడింది",
+    "togglePasswordVisibility": "పాస్వర్డ్ కనిపించేలా మార్చండి",
+    "togglePinVisibility": "పిన్ కనిపించేలా మార్చండి"
   },
   "backup": {
     "creating": "బ్యాకప్ సృష్టిస్తోంది...",
@@ -2838,7 +2858,14 @@
     "roleServer": "సర్వర్",
     "title": "సిబ్బంది",
     "updateButton": "అప్డేట్",
-    "updatedToast": "సిబ్బంది అప్డేట్ చేయబడ్డారు"
+    "updatedToast": "సిబ్బంది అప్డేట్ చేయబడ్డారు",
+    "resetPinButton": "పిన్ రీసెట్",
+    "resetPinTitle": "పిన్ రీసెట్ చేయి",
+    "resetPinBody": "ప్రస్తుత పిన్ నమోదు చేయకుండా {name} కోసం కొత్త 4-6 అంకెల పిన్ సెట్ చేయండి.",
+    "resetPinToast": "పిన్ విజయవంతంగా రీసెట్ చేయబడింది",
+    "clearPinButton": "పిన్ తొలగించు",
+    "pinClearedToast": "పిన్ విజయవంతంగా తొలగించబడింది",
+    "failedToResetPin": "పిన్ రీసెట్ చేయడం విఫలమైంది"
   },
   "permissionMatrix": {
     "title": "పాత్ర అనుమతులు",
@@ -2939,7 +2966,8 @@
       "support": "సపోర్ట్ను సంప్రదించడం మరియు డయాగ్నస్టిక్స్ చూడటం",
       "inventoryManage": "సరఫరాలు మరియు రెసిపీలను నిర్వహించడం",
       "orderItemPriceOverride": "ఆర్డర్ ఐటెమ్ ధరలను మార్చడం",
-      "offlineMode": "ఆఫ్లైన్ మోడ్ ఆన్ లేదా ఆఫ్ చేయడం"
+      "offlineMode": "ఆఫ్లైన్ మోడ్ ఆన్ లేదా ఆఫ్ చేయడం",
+      "staffCredentialsReset": "ప్రస్తుత వివరాలు లేకుండా సిబ్బంది పాస్వర్డ్లు మరియు పిన్లను రీసెట్ చేయడం"
     },
     "editorSubtitle": "పాత్ర డిఫాల్ట్లను కాన్ఫిగర్ చేయండి లేదా ఒక సిబ్బంది సభ్యుని కోసం మినహాయింపు ఇవ్వండి. మార్పులు వారి తదుపరి చర్యకు వర్తిస్తాయి.",
     "roleDefaultsTab": "పాత్ర డిఫాల్ట్లు",

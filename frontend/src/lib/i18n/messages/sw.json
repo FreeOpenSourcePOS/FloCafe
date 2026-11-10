@@ -90,7 +90,27 @@
     "yourName": "Jina Lako",
     "quickSwitchTitle": "Badilisha Haraka",
     "quickSwitchSubtitle": "Chagua wasifu wako ili kuingia kwa PIN yako",
-    "enterPinFor": "Weka PIN ya {name}"
+    "enterPinFor": "Weka PIN ya {name}",
+    "changePasswordAndPin": "Badilisha Nenosiri na PIN",
+    "accountCredentialsSubtitle": "Sasisha nenosiri lako au PIN yako ya kuingia haraka.",
+    "changePasswordTab": "Badilisha Nenosiri",
+    "changePinTab": "Badilisha PIN",
+    "currentPasswordLabel": "Nenosiri la Sasa",
+    "currentPasswordPlaceholder": "Weka nenosiri lako la sasa",
+    "currentPinLabel": "PIN ya Sasa",
+    "currentPinPlaceholder": "Weka PIN ya sasa",
+    "newPinLabel": "PIN Mpya (tarakimu 4-6)",
+    "confirmNewPinLabel": "Thibitisha PIN Mpya",
+    "pinRequirementsHint": "PIN lazima iwe na tarakimu 4 hadi 6 za nambari.",
+    "pinMismatch": "PIN hazilingani",
+    "firstTimePinNotice": "Hakuna PIN iliyowekwa kwenye akaunti yako bado. Weka nenosiri lako la sasa ili kuweka PIN.",
+    "updatePasswordButton": "Sasisha Nenosiri",
+    "passwordChangedSuccess": "Nenosiri limesasishwa kikamilifu",
+    "updatePinButton": "Sasisha PIN",
+    "setPinButton": "Weka PIN",
+    "pinChangedSuccess": "PIN imesasishwa kikamilifu",
+    "togglePasswordVisibility": "Onyesha au ficha nenosiri",
+    "togglePinVisibility": "Onyesha au ficha PIN"
   },
   "backup": {
     "creating": "Inaunda nakala rudufu...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Mhudumu",
     "title": "Wafanyakazi",
     "updateButton": "Sasisha",
-    "updatedToast": "Mfanyakazi amesasishwa"
+    "updatedToast": "Mfanyakazi amesasishwa",
+    "resetPinButton": "Weka Upya PIN",
+    "resetPinTitle": "Weka Upya PIN",
+    "resetPinBody": "Weka PIN mpya ya tarakimu 4-6 kwa {name} bila kuweka PIN yake ya sasa.",
+    "resetPinToast": "PIN imewekwa upya kikamilifu",
+    "clearPinButton": "Futa PIN",
+    "pinClearedToast": "PIN imefutwa kikamilifu",
+    "failedToResetPin": "Imeshindwa kuweka upya PIN"
   },
   "permissionMatrix": {
     "title": "Ruhusa za majukumu",
@@ -2939,7 +2966,8 @@
       "support": "Wasiliana na usaidizi na utazame uchunguzi",
       "inventoryManage": "Simamia malighafi na mapishi",
       "orderItemPriceOverride": "Badilisha bei za bidhaa za oda",
-      "offlineMode": "Washa au uzime Hali ya nje ya mtandao"
+      "offlineMode": "Washa au uzime Hali ya nje ya mtandao",
+      "staffCredentialsReset": "Weka upya manenosiri na PIN za wafanyakazi bila vitambulisho vyao vya sasa"
     },
     "editorSubtitle": "Sanidi chaguomsingi za majukumu au weka ubaguzi kwa mfanyakazi mmoja. Mabadiliko yanatumika kwa hatua yake inayofuata.",
     "roleDefaultsTab": "Chaguomsingi za jukumu",

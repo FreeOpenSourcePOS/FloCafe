@@ -355,6 +355,17 @@ async function run() {
       return el;
     };
 
+    let mockStaffTenant = {
+      id: 1,
+      role: 'owner',
+      permission_ids: [
+        'authorization.manage',
+        'staff.operational.manage',
+        'staff.privileged.manage',
+        'staff.credentials.reset',
+      ],
+    };
+
     Module._load = function (request: string, parent: unknown, isMain: boolean) {
       if (request === 'react') return reactHooks;
       if (request === 'react/jsx-runtime') {
@@ -374,6 +385,7 @@ async function run() {
           RotateCcw: IconStub,
           Eye: IconStub,
           EyeOff: IconStub,
+          KeyRound: IconStub,
         };
       }
       if (request === '@/components/ui/button') return { Button: ButtonStub };
@@ -386,15 +398,7 @@ async function run() {
       if (request === '@/store/auth') {
         return {
           useAuthStore: () => ({
-            currentTenant: {
-              id: 1,
-              role: 'owner',
-              permission_ids: [
-                'authorization.manage',
-                'staff.operational.manage',
-                'staff.privileged.manage',
-              ],
-            },
+            currentTenant: mockStaffTenant,
           }),
         };
       }
@@ -550,6 +554,58 @@ async function run() {
       0,
       'window keydown listener is cleaned up after Reset Password',
     );
+
+    const resetPinButton = findButtonByLabel(tree, 'staff.resetPinButton');
+    assert.ok(resetPinButton, 'Reset PIN button renders when staff.credentials.reset is granted');
+    focusedElement = null;
+    resetPinButton.props.onClick({ currentTarget: resetPinButton });
+
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'Reset PIN dialog opens when Reset PIN is clicked');
+    assert.equal(keydownListeners.size, 1, 'exactly one keydown listener is active in Reset PIN');
+
+    dispatchKeydown('Escape');
+    tree = renderStaffPage();
+    assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Reset PIN dialog');
+    assert.equal(focusedElement, resetPinButton, 'closing Reset PIN restores focus to Reset PIN');
+    assert.equal(keydownListeners.size, 0, 'window keydown listener is cleaned up after Reset PIN');
+
+    // Manager without staff.credentials.reset can edit operational staff details,
+    // without seeing Reset Password, Reset PIN, or Edit Staff credential override fields.
+    mockStaffTenant = {
+      id: 1,
+      role: 'manager',
+      permission_ids: ['staff.operational.manage'],
+    };
+    tree = renderStaffPage();
+    assert.equal(
+      findButtonByLabel(tree, 'staff.resetPwButton'),
+      undefined,
+      'Reset Password button is hidden without staff.credentials.reset',
+    );
+    assert.equal(
+      findButtonByLabel(tree, 'staff.resetPinButton'),
+      undefined,
+      'Reset PIN button is hidden without staff.credentials.reset',
+    );
+    const managerEditBtn = findButtonByLabel(tree, 'common.edit');
+    assert.ok(managerEditBtn, 'Manager with staff.operational.manage still sees Edit button');
+    managerEditBtn.props.onClick({ currentTarget: managerEditBtn });
+    tree = renderStaffPage();
+    const managerEditDialog = findDialog(tree);
+    assert.ok(managerEditDialog, 'Manager can open Edit Staff dialog');
+    const passwordInputsInManagerEdit = collectElements(
+      managerEditDialog,
+      (el) => el.type === 'input' && el.props?.type === 'password',
+    );
+    assert.equal(
+      passwordInputsInManagerEdit.length,
+      0,
+      'Edit Staff dialog hides password and PIN override inputs without staff.credentials.reset',
+    );
+    dispatchKeydown('Escape');
+    tree = renderStaffPage();
+    assert.equal(findDialog(tree), undefined, 'pressing Escape closes Manager Edit Staff dialog');
 
     for (const slot of effectSlots) {
       if (slot && typeof slot.cleanup === 'function') slot.cleanup();

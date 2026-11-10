@@ -153,6 +153,7 @@ export interface KdsUser {
   name: string;
   role: string;
   token: string;
+  has_pin?: boolean;
 }
 
 export interface KdsPinUser {
@@ -216,6 +217,13 @@ export interface UseKdsConnectionResult {
     opts?: { silent?: boolean; expectedStatus?: KitchenStatus },
   ) => Promise<boolean>;
   persistViewMode?: (view: 'tabs' | 'kanban') => void;
+  api?: AxiosInstance;
+  credentialEndpoints?: {
+    me: string;
+    passwordChange: string;
+    pinChange: string;
+  };
+  replaceSessionToken?: (token: string, hasPin?: boolean) => void;
   ConfirmDialog: ReactNode;
 }
 
@@ -257,6 +265,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     (loginPath.startsWith('/api/') ? '/api/auth/pin-login' : '/auth/pin-login');
   const mePath = endpoints?.me ?? ME_ENDPOINT;
   const logoutPath = endpoints?.logout ?? '/auth/logout';
+  const passwordChangePath = loginPath.startsWith('/api/')
+    ? '/api/auth/password/change'
+    : '/auth/password/change';
+  const pinChangePath = loginPath.startsWith('/api/') ? '/api/auth/pin/change' : '/auth/pin/change';
   const ordersPath = endpoints?.orders ?? ORDERS_ENDPOINT;
   const itemStatusPath = endpoints?.itemStatus ?? ITEM_STATUS_ENDPOINT;
   const viewPath = endpoints?.view ?? VIEW_ENDPOINT;
@@ -729,6 +741,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           name: data.user.name,
           role: data.user.role,
           token,
+          has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
         };
 
         setUser(loggedInUser);
@@ -778,6 +791,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           name: data.user.name,
           role: data.user.role,
           token,
+          has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
         };
 
         setUser(loggedInUser);
@@ -854,6 +868,31 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [api, enabled, viewPath],
   );
 
+  const replaceSessionToken = useCallback((nextToken: string, hasPin?: boolean) => {
+    if (!nextToken) return;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('token', nextToken);
+    }
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    sessionGenerationRef.current += 1;
+    const activeWs = wsRef.current;
+    wsRef.current = null;
+    if (activeWs) activeWs.close();
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            token: nextToken,
+            ...(hasPin !== undefined ? { has_pin: hasPin } : {}),
+          }
+        : prev,
+    );
+    tryWebSocketRef.current(nextToken);
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!enabled) {
@@ -879,6 +918,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           name: data.user.name,
           role: data.user.role,
           token: savedToken,
+          has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
         });
         tryWebSocket(savedToken);
       })
@@ -979,6 +1019,13 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     handleLogout,
     updateItemStatus,
     persistViewMode,
+    api,
+    credentialEndpoints: {
+      me: mePath,
+      passwordChange: passwordChangePath,
+      pinChange: pinChangePath,
+    },
+    replaceSessionToken,
     ConfirmDialog,
   };
 }

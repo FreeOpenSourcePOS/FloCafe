@@ -435,16 +435,32 @@ async function run() {
   const cashierId = createCashierRes.body.staff.id as string;
   assertEqualOrThrow(createCashierRes.body.staff.has_pin, 1, 'Created cashier has_pin is 1');
 
-  // Update cashier PIN to 5555 and back to 2468 via PUT /api/staff/:id
-  const updateCashierPinRes = await request(app)
+  // Manager without staff.credentials.reset cannot overwrite an existing staff member's PIN,
+  // while Owner (who holds staff.credentials.reset by default) can update and restore it.
+  const deniedManagerPinRes = await request(app)
     .put(`/api/staff/${cashierId}`)
     .set(managerAuth)
     .send({ pin: '5555' });
-  assertEqualOrThrow(updateCashierPinRes.status, 200, 'Manager can update cashier PIN');
+  assertEqualOrThrow(
+    deniedManagerPinRes.status,
+    403,
+    'Manager without staff.credentials.reset cannot overwrite existing cashier PIN',
+  );
+  assertEqualOrThrow(
+    deniedManagerPinRes.body.permission,
+    'staff.credentials.reset',
+    'Denied manager PIN reset reports staff.credentials.reset',
+  );
+
+  const updateCashierPinRes = await request(app)
+    .put(`/api/staff/${cashierId}`)
+    .set(ownerAuth)
+    .send({ pin: '5555' });
+  assertEqualOrThrow(updateCashierPinRes.status, 200, 'Owner can update cashier PIN');
 
   const restoreSharedPinRes = await request(app)
     .put(`/api/staff/${cashierId}`)
-    .set(managerAuth)
+    .set(ownerAuth)
     .send({ pin: '2468' });
   assertEqualOrThrow(restoreSharedPinRes.status, 200, 'Cashier can share PIN 2468 with owner');
 
@@ -774,7 +790,11 @@ async function run() {
   );
 
   // Set a distinct PIN on cashier (7777) so fallback PIN scanning cannot match owner-1 (2468)
-  await request(app).put(`/api/staff/${cashierId}`).set(managerAuth).send({ pin: '7777' });
+  const setCashierPinRes = await request(app)
+    .put(`/api/staff/${cashierId}`)
+    .set(ownerAuth)
+    .send({ pin: '7777' });
+  assertEqualOrThrow(setCashierPinRes.status, 200, 'Owner sets distinct PIN 7777 on cashier');
 
   // Even when a store grants cashier route permissions for discounts, item cancel, and refunds,
   // cashier PINs must STILL be rejected on every PIN approval check (only owner/manager PINs approve).

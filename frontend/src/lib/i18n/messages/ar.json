@@ -90,7 +90,27 @@
     "yourName": "اسمك",
     "quickSwitchTitle": "تبديل سريع للمستخدم",
     "quickSwitchSubtitle": "اختر ملفك الشخصي لتسجيل الدخول برمز PIN",
-    "enterPinFor": "أدخل رمز PIN لـ {name}"
+    "enterPinFor": "أدخل رمز PIN لـ {name}",
+    "changePasswordAndPin": "تغيير كلمة المرور ورمز PIN",
+    "accountCredentialsSubtitle": "حدّث كلمة المرور الخاصة بك أو رمز PIN للدخول السريع.",
+    "changePasswordTab": "تغيير كلمة المرور",
+    "changePinTab": "تغيير رمز PIN",
+    "currentPasswordLabel": "كلمة المرور الحالية",
+    "currentPasswordPlaceholder": "أدخل كلمة المرور الحالية",
+    "currentPinLabel": "رمز PIN الحالي",
+    "currentPinPlaceholder": "أدخل رمز PIN الحالي",
+    "newPinLabel": "رمز PIN الجديد (4-6 أرقام)",
+    "confirmNewPinLabel": "تأكيد رمز PIN الجديد",
+    "pinRequirementsHint": "يجب أن يتكون رمز PIN من 4 إلى 6 أرقام.",
+    "pinMismatch": "رمزا PIN غير متطابقين",
+    "firstTimePinNotice": "لم يتم تعيين رمز PIN لحسابك بعد. أدخل كلمة المرور الحالية لتعيين رمز PIN.",
+    "updatePasswordButton": "تحديث كلمة المرور",
+    "passwordChangedSuccess": "تم تحديث كلمة المرور بنجاح",
+    "updatePinButton": "تحديث رمز PIN",
+    "setPinButton": "تعيين رمز PIN",
+    "pinChangedSuccess": "تم تحديث رمز PIN بنجاح",
+    "togglePasswordVisibility": "إظهار أو إخفاء كلمة المرور",
+    "togglePinVisibility": "إظهار أو إخفاء رمز PIN"
   },
   "backup": {
     "creating": "جاري إنشاء نسخة احتياطية...",
@@ -2838,7 +2858,14 @@
     "roleServer": "الخادم",
     "title": "الموظفون",
     "updateButton": "تحديث",
-    "updatedToast": "تم تحديث قائمة الموظفين"
+    "updatedToast": "تم تحديث قائمة الموظفين",
+    "resetPinButton": "إعادة تعيين PIN",
+    "resetPinTitle": "إعادة تعيين رمز PIN",
+    "resetPinBody": "عيّن رمز PIN جديدًا مكونًا من 4-6 أرقام لـ {name} دون إدخال رمز PIN الحالي.",
+    "resetPinToast": "تمت إعادة تعيين رمز PIN بنجاح",
+    "clearPinButton": "مسح رمز PIN",
+    "pinClearedToast": "تم مسح رمز PIN بنجاح",
+    "failedToResetPin": "فشلت إعادة تعيين رمز PIN"
   },
   "permissionMatrix": {
     "title": "أذونات الأدوار",
@@ -2939,7 +2966,8 @@
       "support": "الاتصال بدعم العملاء والاطلاع على التشخيصات",
       "inventoryManage": "إدارة المواد والوصفات",
       "orderItemPriceOverride": "تغيير أسعار أصناف الطلب",
-      "offlineMode": "تشغيل وضع عدم الاتصال أو إيقافه"
+      "offlineMode": "تشغيل وضع عدم الاتصال أو إيقافه",
+      "staffCredentialsReset": "إعادة تعيين كلمات مرور الموظفين ورموز PIN دون بياناتهم الحالية"
     },
     "editorSubtitle": "قم بتكوين إعدادات الأدوار الافتراضية أو أنشئ استثناءً لموظف واحد. يتم تطبيق التغييرات على إجراءاته التالية.",
     "roleDefaultsTab": "إعدادات الدور",

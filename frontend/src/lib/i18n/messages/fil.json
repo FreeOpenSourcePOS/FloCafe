@@ -90,7 +90,27 @@
     "yourName": "Ang Iyong Pangalan",
     "quickSwitchTitle": "Mabilisang Paglipat",
     "quickSwitchSubtitle": "Piliin ang iyong profile para mag-sign in gamit ang PIN",
-    "enterPinFor": "Ilagay ang PIN para kay {name}"
+    "enterPinFor": "Ilagay ang PIN para kay {name}",
+    "changePasswordAndPin": "Palitan ang Password at PIN",
+    "accountCredentialsSubtitle": "I-update ang sarili mong password o mabilisang sign-in PIN.",
+    "changePasswordTab": "Palitan ang Password",
+    "changePinTab": "Palitan ang PIN",
+    "currentPasswordLabel": "Kasalukuyang Password",
+    "currentPasswordPlaceholder": "Ilagay ang kasalukuyang password mo",
+    "currentPinLabel": "Kasalukuyang PIN",
+    "currentPinPlaceholder": "Ilagay ang kasalukuyang PIN",
+    "newPinLabel": "Bagong PIN (4-6 na numero)",
+    "confirmNewPinLabel": "Kumpirmahin ang Bagong PIN",
+    "pinRequirementsHint": "Dapat 4 hanggang 6 na numero ang PIN.",
+    "pinMismatch": "Hindi magkatugma ang mga PIN",
+    "firstTimePinNotice": "Wala pang PIN sa iyong account. Ilagay ang kasalukuyan mong password upang magtakda ng PIN.",
+    "updatePasswordButton": "I-update ang Password",
+    "passwordChangedSuccess": "Matagumpay na na-update ang password",
+    "updatePinButton": "I-update ang PIN",
+    "setPinButton": "Magtakda ng PIN",
+    "pinChangedSuccess": "Matagumpay na na-update ang PIN",
+    "togglePasswordVisibility": "Ipakita o itago ang password",
+    "togglePinVisibility": "Ipakita o itago ang PIN"
   },
   "backup": {
     "creating": "Gumagawa ng backup...",
@@ -2838,7 +2858,14 @@
     "roleServer": "Server",
     "title": "Pamamahala ng Staff",
     "updateButton": "I-update",
-    "updatedToast": "Na-update ang staff"
+    "updatedToast": "Na-update ang staff",
+    "resetPinButton": "I-reset ang PIN",
+    "resetPinTitle": "I-reset ang PIN",
+    "resetPinBody": "Magtakda ng bagong 4-6 na numerong PIN para kay {name} nang hindi inilalagay ang kasalukuyang PIN.",
+    "resetPinToast": "Matagumpay na na-reset ang PIN",
+    "clearPinButton": "Burahin ang PIN",
+    "pinClearedToast": "Matagumpay na nabura ang PIN",
+    "failedToResetPin": "Nabigong i-reset ang PIN"
   },
   "permissionMatrix": {
     "title": "Matrix ng Pahintulot",
@@ -2939,7 +2966,8 @@
       "support": "Makipag-ugnayan sa suporta at tingnan ang diagnostics",
       "inventoryManage": "Pamahalaan ang mga supply at recipe",
       "orderItemPriceOverride": "Baguhin ang presyo ng mga item sa order",
-      "offlineMode": "I-on o i-off ang Offline mode"
+      "offlineMode": "I-on o i-off ang Offline mode",
+      "staffCredentialsReset": "I-reset ang mga password at PIN ng staff nang walang kasalukuyang kredensyal"
     },
     "editorSubtitle": "I-configure ang mga default ng tungkulin o gumawa ng eksepsiyon para sa isang miyembro ng staff. Magkakabisa ang mga pagbabago sa susunod nilang aksyon.",
     "roleDefaultsTab": "Mga default ng tungkulin",

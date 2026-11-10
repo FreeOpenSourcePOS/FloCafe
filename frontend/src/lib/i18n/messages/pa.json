@@ -90,7 +90,27 @@
     "yourName": "ਤੁਹਾਡਾ ਨਾਮ",
     "quickSwitchTitle": "ਤੁਰੰਤ ਸਵਿੱਚ",
     "quickSwitchSubtitle": "ਆਪਣੇ ਪਿੰਨ ਨਾਲ ਸਾਈਨ ਇਨ ਕਰਨ ਲਈ ਆਪਣੀ ਪ੍ਰੋਫਾਈਲ ਚੁਣੋ",
-    "enterPinFor": "{name} ਲਈ ਪਿੰਨ ਦਰਜ ਕਰੋ"
+    "enterPinFor": "{name} ਲਈ ਪਿੰਨ ਦਰਜ ਕਰੋ",
+    "changePasswordAndPin": "ਪਾਸਵਰਡ ਅਤੇ ਪਿੰਨ ਬਦਲੋ",
+    "accountCredentialsSubtitle": "ਆਪਣਾ ਪਾਸਵਰਡ ਜਾਂ ਤੇਜ਼ ਸਾਈਨ-ਇਨ ਪਿੰਨ ਅੱਪਡੇਟ ਕਰੋ।",
+    "changePasswordTab": "ਪਾਸਵਰਡ ਬਦਲੋ",
+    "changePinTab": "ਪਿੰਨ ਬਦਲੋ",
+    "currentPasswordLabel": "ਮੌਜੂਦਾ ਪਾਸਵਰਡ",
+    "currentPasswordPlaceholder": "ਆਪਣਾ ਮੌਜੂਦਾ ਪਾਸਵਰਡ ਦਾਖਲ ਕਰੋ",
+    "currentPinLabel": "ਮੌਜੂਦਾ ਪਿੰਨ",
+    "currentPinPlaceholder": "ਮੌਜੂਦਾ ਪਿੰਨ ਦਾਖਲ ਕਰੋ",
+    "newPinLabel": "ਨਵਾਂ ਪਿੰਨ (4-6 ਅੰਕ)",
+    "confirmNewPinLabel": "ਨਵੇਂ ਪਿੰਨ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ",
+    "pinRequirementsHint": "ਪਿੰਨ 4 ਤੋਂ 6 ਅੰਕਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ।",
+    "pinMismatch": "ਪਿੰਨ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ",
+    "firstTimePinNotice": "ਤੁਹਾਡੇ ਖਾਤੇ ਵਿੱਚ ਅਜੇ ਕੋਈ ਪਿੰਨ ਸੈੱਟ ਨਹੀਂ ਹੈ। ਪਿੰਨ ਸੈੱਟ ਕਰਨ ਲਈ ਆਪਣਾ ਮੌਜੂਦਾ ਪਾਸਵਰਡ ਦਾਖਲ ਕਰੋ।",
+    "updatePasswordButton": "ਪਾਸਵਰਡ ਅੱਪਡੇਟ ਕਰੋ",
+    "passwordChangedSuccess": "ਪਾਸਵਰਡ ਸਫਲਤਾਪੂਰਵਕ ਅੱਪਡੇਟ ਹੋ ਗਿਆ",
+    "updatePinButton": "ਪਿੰਨ ਅੱਪਡੇਟ ਕਰੋ",
+    "setPinButton": "ਪਿੰਨ ਸੈੱਟ ਕਰੋ",
+    "pinChangedSuccess": "ਪਿੰਨ ਸਫਲਤਾਪੂਰਵਕ ਅੱਪਡੇਟ ਹੋ ਗਿਆ",
+    "togglePasswordVisibility": "ਪਾਸਵਰਡ ਦਿਖਾਓ ਜਾਂ ਲੁਕਾਓ",
+    "togglePinVisibility": "ਪਿੰਨ ਦਿਖਾਓ ਜਾਂ ਲੁਕਾਓ"
   },
   "backup": {
     "creating": "ਬੈਕਅੱਪ ਬਣਾਇਆ ਜਾ ਰਿਹਾ ਹੈ...",
@@ -2838,7 +2858,14 @@
     "roleServer": "ਸਰਵਰ",
     "title": "ਸਟਾਫ",
     "updateButton": "ਅੱਪਡੇਟ ਕਰੋ",
-    "updatedToast": "ਸਟਾਫ ਅੱਪਡੇਟ ਹੋ ਗਿਆ"
+    "updatedToast": "ਸਟਾਫ ਅੱਪਡੇਟ ਹੋ ਗਿਆ",
+    "resetPinButton": "ਪਿੰਨ ਰੀਸੈੱਟ ਕਰੋ",
+    "resetPinTitle": "ਪਿੰਨ ਰੀਸੈੱਟ ਕਰੋ",
+    "resetPinBody": "ਮੌਜੂਦਾ ਪਿੰਨ ਦਾਖਲ ਕੀਤੇ ਬਿਨਾਂ {name} ਲਈ ਨਵਾਂ 4-6 ਅੰਕਾਂ ਦਾ ਪਿੰਨ ਸੈੱਟ ਕਰੋ।",
+    "resetPinToast": "ਪਿੰਨ ਸਫਲਤਾਪੂਰਵਕ ਰੀਸੈੱਟ ਹੋ ਗਿਆ",
+    "clearPinButton": "ਪਿੰਨ ਹਟਾਓ",
+    "pinClearedToast": "ਪਿੰਨ ਸਫਲਤਾਪੂਰਵਕ ਹਟਾਇਆ ਗਿਆ",
+    "failedToResetPin": "ਪਿੰਨ ਰੀਸੈੱਟ ਕਰਨ ਵਿੱਚ ਅਸਫਲ"
   },
   "permissionMatrix": {
     "title": "ਭੂਮਿਕਾ ਇਜਾਜ਼ਤਾਂ",
@@ -2939,7 +2966,8 @@
       "support": "ਸਹਾਇਤਾ ਨਾਲ ਸੰਪਰਕ ਕਰੋ ਅਤੇ ਡਾਇਗਨੌਸਟਿਕਸ ਦੇਖੋ",
       "inventoryManage": "ਸਪਲਾਈ ਅਤੇ ਰੈਸਿਪੀਆਂ ਪ੍ਰਬੰਧਿਤ ਕਰੋ",
       "orderItemPriceOverride": "ਆਰਡਰ ਆਈਟਮ ਦੀਆਂ ਕੀਮਤਾਂ ਬਦਲੋ",
-      "offlineMode": "ਆਫਲਾਈਨ ਮੋਡ ਚਾਲੂ ਜਾਂ ਬੰਦ ਕਰੋ"
+      "offlineMode": "ਆਫਲਾਈਨ ਮੋਡ ਚਾਲੂ ਜਾਂ ਬੰਦ ਕਰੋ",
+      "staffCredentialsReset": "ਮੌਜੂਦਾ ਜਾਣਕਾਰੀ ਤੋਂ ਬਿਨਾਂ ਸਟਾਫ ਦੇ ਪਾਸਵਰਡ ਅਤੇ ਪਿੰਨ ਰੀਸੈੱਟ ਕਰੋ"
     },
     "editorSubtitle": "ਭੂਮਿਕਾ ਦੀਆਂ ਡਿਫੌਲਟ ਸੈਟਿੰਗਾਂ ਕੌਂਫਿਗਰ ਕਰੋ ਜਾਂ ਕਿਸੇ ਇੱਕ ਸਟਾਫ ਮੈਂਬਰ ਲਈ ਛੋਟ ਬਣਾਓ। ਬਦਲਾਅ ਉਹਨਾਂ ਦੀ ਅਗਲੀ ਕਾਰਵਾਈ ਉੱਤੇ ਲਾਗੂ ਹੁੰਦੇ ਹਨ।",
     "roleDefaultsTab": "ਭੂਮਿਕਾ ਡਿਫੌਲਟ",

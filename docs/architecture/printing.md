@@ -58,8 +58,8 @@ vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax
 `totals`, `payments`, and `message`.
 
 `KotDocument` v1 is the same shape for a kitchen ticket, with a reduced block vocabulary:
-`kot-header` (carrying station and order metadata, plus an optional order-level notes banner) and
-`kot-items`.
+`kot-header` (carrying station and order metadata, an optional large bold order number callout banner,
+plus an optional order-level notes banner) and `kot-items`.
 
 `DeliverySlipDocument` v1 is a courier handout: `delivery-slip-header`,
 `delivery-slip-contact`, optional `delivery-slip-notes` and
@@ -197,6 +197,19 @@ variant for the paper width and emit it with `GS v 0` via `{RAW_BYTES:...}`, whi
 text rasterizer skips so non-Latin headers never overwrite the logo bitmap. Profiles with
 `raster.enabled: false` (such as `escpos-impact-76`) omit `{RAW_BYTES:...}` logo bitmaps. Kitchen
 tickets do not use the bill logo setting.
+
+### Order number banners
+
+The business setting `bill_show_large_order_number` controls whether customer receipts and kitchen
+tickets print a prominent, bold order number banner. On customer receipts (classic, compact,
+merchant, browser HTML, and WebUSB/tax-bill paths), the banner renders centered, double-height, bold
+`ORDER #<number>` below the invoice header, while preserving the underlying order number in
+`DocumentMetaBlock.orderNumber` when `invoiceNumber` is an invoice sequence. On kitchen tickets
+(`document-kot`, `kot-encoder`, and `kot-web-print`), it renders centered, double-height, bold
+`#<number>` in the header block. When the formatted banner text exceeds the printable width of
+narrow or enlarged paper profiles (such as 16-column extra-large KOT), the line layout wraps without
+dropping sequence digits. Signed compliance pack receipts (`pluginReceiptLines`) intentionally omit
+the callout banner.
 
 ## Transports
 

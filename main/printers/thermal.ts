@@ -4925,6 +4925,10 @@ export function escPosToText(data: Buffer | Uint8Array): string {
       }
       continue;
     }
+    if (byte === 0x1d && bytes[i + 1] === 0x21) {
+      i += 3;
+      continue;
+    }
     if (byte === 0x1d && bytes[i + 1] === 0x56) {
       flushLine();
       const mode = bytes[i + 2];

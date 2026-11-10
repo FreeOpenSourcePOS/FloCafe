@@ -592,9 +592,7 @@ async function runAsyncTests() {
   const kotExtraLargeDocText = escPosToText(kotExtraLargeDoc.data);
   assert.ok(
     kotExtraLargeDocText.includes('#ORD-20261109-00') &&
-      kotExtraLargeDocText
-        .split(/\r?\n/)
-        .some((line: string) => line.trim() === '12'),
+      kotExtraLargeDocText.split(/\r?\n/).some((line: string) => line.trim() === '12'),
     'renderKotViaDocument wraps overlong #ORD-20261109-0012 on 16-col extra_large KOT without dropping sequence digits',
   );
   assert.equal(
@@ -621,9 +619,7 @@ async function runAsyncTests() {
   const kotExtraLargeEncoderText = escPosToText(kotExtraLargeBytes);
   assert.ok(
     kotExtraLargeEncoderText.includes('#ORD-20261109-00') &&
-      kotExtraLargeEncoderText
-        .split(/\r?\n/)
-        .some((line: string) => line.trim() === '12'),
+      kotExtraLargeEncoderText.split(/\r?\n/).some((line: string) => line.trim() === '12'),
     'buildKotBytes wraps overlong #ORD-20261109-0012 on 58mm extra_large KOT without dropping sequence digits',
   );
   assert.equal(

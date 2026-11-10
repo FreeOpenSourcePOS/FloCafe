@@ -253,7 +253,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
             </Ltr>
             <Badge
               variant="outline"
-              className={`${ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-muted text-foreground'} border-transparent`}
+              className={`${ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-muted text-foreground'} border-transparent dark:border-transparent`}
             >
               {ORDER_TYPE_LABEL_KEYS[order.type as OrderType]
                 ? tOrders(ORDER_TYPE_LABEL_KEYS[order.type as OrderType])

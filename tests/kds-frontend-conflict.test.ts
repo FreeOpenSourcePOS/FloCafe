@@ -207,6 +207,11 @@ async function runTests() {
       /divide-y divide-border\/40 -mx-1/,
       'KDS Kanban order items use hairline dividers instead of nested bordered boxes',
     );
+    assert.match(
+      kanbanMarkup,
+      /border-transparent dark:border-transparent/,
+      'KDS Kanban order cards use borderless order type badges in light and dark mode',
+    );
     assert.doesNotMatch(
       kanbanMarkup,
       /rounded-xl border-2/,
@@ -284,6 +289,11 @@ async function runTests() {
       tabsMarkup,
       /divide-y divide-border\/40 -mx-1/,
       'KDS Tabs view order items use hairline dividers instead of nested bordered boxes',
+    );
+    assert.match(
+      tabsMarkup,
+      /border-transparent dark:border-transparent/,
+      'KDS Tabs view order cards use borderless order type badges in light and dark mode',
     );
     assert.doesNotMatch(
       tabsMarkup,

@@ -245,6 +245,10 @@ export function startKdsServer(): Promise<void> {
             language: s.language || null,
             country: s.country || null,
             kds_default_view: s.kds_default_view === 'tabs' ? 'tabs' : 'kanban',
+            theme_mode:
+              s.theme_mode === 'light' || s.theme_mode === 'dark' || s.theme_mode === 'system'
+                ? s.theme_mode
+                : null,
           });
         } catch (error: any) {
           console.error('[API] Internal error:', error);

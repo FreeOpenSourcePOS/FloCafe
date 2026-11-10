@@ -134,13 +134,17 @@ async function run(): Promise<void> {
     return /\bArrow(Left|Right)\b/.test(src);
   });
   for (const file of arrowFiles) {
-    const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');
-    lines.forEach((line, i) => {
-      // Only flag JSX usage (`<Arrow…`), not the lucide import statement.
-      if (/<Arrow(Left|Right)\b/.test(line) && !line.includes('rtl-flip')) {
-        assert(false, `${file}:${i + 1} uses a directional arrow without rtl-flip: ${line.trim()}`);
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    // Match the full JSX opening tag (`<Arrow…`) across line wraps, not imports.
+    for (const match of src.matchAll(/<Arrow(Left|Right)\b(?:[^>"'<]|"[^"]*"|'[^']*')*>/g)) {
+      if (!match[0].includes('rtl-flip')) {
+        const line = src.slice(0, match.index ?? 0).split('\n').length;
+        assert(
+          false,
+          `${file}:${line} uses a directional arrow without rtl-flip: ${match[0].trim()}`,
+        );
       }
-    });
+    }
   }
   console.log(`  ✓ directional arrows carry rtl-flip (${arrowFiles.length} file(s) with arrows)`);
 

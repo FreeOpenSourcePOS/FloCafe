@@ -764,6 +764,225 @@ async function main() {
       'the unavailable-order reason is recorded locally',
     );
 
+    const secretPersistenceLeak =
+      "SQLITE_CONSTRAINT_TRIGGER: INSERT INTO orders (notes) VALUES ('SecretVal99') failed on table secret_table_name at /Users/pos/private/flo.db";
+    db.prepare(
+      `CREATE TRIGGER diagnostics_force_order_create_persistence_failure BEFORE INSERT ON order_items
+       BEGIN SELECT RAISE(ABORT, '${secretPersistenceLeak.replace(/'/g, "''")}'); END`,
+    ).run();
+    const orderPersistenceOpId = crypto.randomUUID();
+    const beforeOrderPersistenceDiag = countLocalDiagnostics(db);
+    let orderPersistenceResponse: any;
+    try {
+      orderPersistenceResponse = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { ...owner.authHeader, 'x-operation-id': orderPersistenceOpId },
+        body: {
+          table_id: 'diag-table-1',
+          type: 'dine_in',
+          items: [{ product_id: 'p2', quantity: 1 }],
+        },
+      });
+    } finally {
+      db.prepare('DROP TRIGGER IF EXISTS diagnostics_force_order_create_persistence_failure').run();
+    }
+    assertEqual(
+      orderPersistenceResponse.status,
+      500,
+      'order create persistence failure returns HTTP 500',
+    );
+    assertEqual(
+      orderPersistenceResponse.data.error,
+      'Internal server error',
+      'order create persistence failure keeps the public error message generic',
+    );
+    assertEqual(
+      orderPersistenceResponse.data.reason_code,
+      'persistence.failed',
+      'order create persistence failure emits persistence.failed',
+    );
+    assertEqual(
+      orderPersistenceResponse.data.operation,
+      'order.create',
+      'order create persistence failure names order.create',
+    );
+    assertEqual(
+      orderPersistenceResponse.data.stage,
+      'persistence',
+      'order create persistence failure names persistence stage',
+    );
+    assertEqual(
+      orderPersistenceResponse.data.outcome,
+      'not_applied',
+      'order create persistence failure reports not_applied',
+    );
+    assertEqual(
+      orderPersistenceResponse.data.facts?.failure_class,
+      'constraint',
+      'order create persistence failure includes facts.failure_class',
+    );
+    const serializedOrderPersistenceResp = JSON.stringify(orderPersistenceResponse.data);
+    for (const forbidden of [
+      'SecretVal99',
+      'secret_table_name',
+      '/Users/pos/private/flo.db',
+      'INSERT INTO',
+    ]) {
+      assert(
+        !serializedOrderPersistenceResp.includes(forbidden),
+        `order create HTTP response never leaks ${forbidden}`,
+      );
+    }
+    assert(
+      await settle(() => countLocalDiagnostics(db) > beforeOrderPersistenceDiag),
+      'order create persistence failure is recorded in local_diagnostics',
+    );
+    const orderPersistenceDiag = latestLocalDiagnostic(db, 'persistence.failed');
+    assertEqual(
+      orderPersistenceDiag?.metadata?.capture_point,
+      'fc.backend.order.create.persistence',
+      'order create persistence diagnostic records capture_point',
+    );
+    assertEqual(
+      orderPersistenceDiag?.metadata?.failure_class,
+      'constraint',
+      'order create persistence diagnostic records failure_class fact',
+    );
+    const trustedOrderPersistence = classifyOrderRequestFailure(
+      {
+        response: {
+          status: orderPersistenceResponse.status,
+          data: orderPersistenceResponse.data,
+        },
+      },
+      { operation: 'order.create', correlationId: orderPersistenceOpId },
+    );
+    assertEqual(
+      trustedOrderPersistence.trusted,
+      true,
+      'cashier classifier trusts order.create persistence.failed with failure_class',
+    );
+    assertEqual(
+      trustedOrderPersistence.failureClass,
+      'constraint',
+      'cashier classifier extracts order.create failureClass',
+    );
+
+    const billGenOrderId = db
+      .prepare(
+        `INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+         VALUES ('DIAG-BILL-GEN-FAIL', 'takeaway', 'pending', 10, 10, ?, ?)`,
+      )
+      .run(now(), now()).lastInsertRowid;
+    db.prepare(
+      `CREATE TRIGGER diagnostics_force_bill_generate_persistence_failure BEFORE INSERT ON bills
+       BEGIN SELECT RAISE(ABORT, '${secretPersistenceLeak.replace(/'/g, "''")}'); END`,
+    ).run();
+    const billPersistenceOpId = crypto.randomUUID();
+    const beforeBillPersistenceDiag = countLocalDiagnostics(db);
+    let billPersistenceResponse: any;
+    try {
+      billPersistenceResponse = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        headers: { ...owner.authHeader, 'x-operation-id': billPersistenceOpId },
+        body: { order_id: billGenOrderId },
+      });
+    } finally {
+      db.prepare(
+        'DROP TRIGGER IF EXISTS diagnostics_force_bill_generate_persistence_failure',
+      ).run();
+    }
+    assertEqual(
+      billPersistenceResponse.status,
+      500,
+      'bill generate persistence failure returns HTTP 500',
+    );
+    assertEqual(
+      billPersistenceResponse.data.error,
+      'Internal server error',
+      'bill generate persistence failure keeps the public error message generic',
+    );
+    assertEqual(
+      billPersistenceResponse.data.reason_code,
+      'persistence.failed',
+      'bill generate persistence failure emits persistence.failed',
+    );
+    assertEqual(
+      billPersistenceResponse.data.operation,
+      'bill.generate',
+      'bill generate persistence failure names bill.generate',
+    );
+    assertEqual(
+      billPersistenceResponse.data.stage,
+      'persistence',
+      'bill generate persistence failure names persistence stage',
+    );
+    assertEqual(
+      billPersistenceResponse.data.facts?.failure_class,
+      'constraint',
+      'bill generate persistence failure includes facts.failure_class',
+    );
+    const serializedBillPersistenceResp = JSON.stringify(billPersistenceResponse.data);
+    for (const forbidden of [
+      'SecretVal99',
+      'secret_table_name',
+      '/Users/pos/private/flo.db',
+      'INSERT INTO',
+    ]) {
+      assert(
+        !serializedBillPersistenceResp.includes(forbidden),
+        `bill generate HTTP response never leaks ${forbidden}`,
+      );
+    }
+    assert(
+      await settle(() => countLocalDiagnostics(db) > beforeBillPersistenceDiag),
+      'bill generate persistence failure is recorded in local_diagnostics',
+    );
+    const billPersistenceDiag = latestLocalDiagnostic(db, 'persistence.failed');
+    assertEqual(
+      billPersistenceDiag?.metadata?.capture_point,
+      'fc.backend.bill.generate.failure',
+      'bill generate persistence diagnostic records capture_point',
+    );
+    assertEqual(
+      billPersistenceDiag?.metadata?.failure_class,
+      'constraint',
+      'bill generate persistence diagnostic records failure_class fact',
+    );
+    const allLocalDiagnosticsRaw = JSON.stringify(
+      db.prepare('SELECT * FROM local_diagnostics').all(),
+    );
+    for (const forbidden of [
+      'SecretVal99',
+      'secret_table_name',
+      '/Users/pos/private/flo.db',
+      'INSERT INTO',
+    ]) {
+      assert(
+        !allLocalDiagnosticsRaw.includes(forbidden),
+        `local_diagnostics never stores raw SQLite leak ${forbidden}`,
+      );
+    }
+    const trustedBillPersistence = classifyOrderRequestFailure(
+      {
+        response: {
+          status: billPersistenceResponse.status,
+          data: billPersistenceResponse.data,
+        },
+      },
+      { operation: 'bill.generate', correlationId: billPersistenceOpId },
+    );
+    assertEqual(
+      trustedBillPersistence.trusted,
+      true,
+      'cashier classifier trusts bill.generate persistence.failed with failure_class',
+    );
+    assertEqual(
+      trustedBillPersistence.failureClass,
+      'constraint',
+      'cashier classifier extracts bill.generate failureClass',
+    );
+
     console.log('\n4a. Bill charge changes report distinct validation and persisted outcomes');
     setSetting(
       'custom_charges',

@@ -29,6 +29,8 @@ const {
   classClauseSummary,
 } = require('../main/lib/diagnostic-signature');
 const {
+  PERSISTENCE_FAILURE_CLASSES,
+  classifySqlitePersistenceFailure,
   serializeOperationFailure,
   isOperationReference,
 } = require('../main/lib/operation-failure');
@@ -669,6 +671,220 @@ function main() {
     null,
     'a printer capture without its required kind is rejected',
   );
+
+  for (const capturePoint of [
+    'fc.backend.order.create.persistence',
+    'fc.backend.bill.generate.failure',
+  ]) {
+    for (const failureClass of PERSISTENCE_FAILURE_CLASSES) {
+      const persistenceFailure = serializeOperationFailure({
+        capture_point: capturePoint,
+        outcome: 'not_applied',
+        correlation_id: correlationId,
+        facts: { failure_class: failureClass },
+      });
+      assertEqualOrThrow(
+        persistenceFailure?.facts.failure_class,
+        failureClass,
+        `${capturePoint} accepts allowlisted failure_class ${failureClass}`,
+      );
+    }
+    assertEqualOrThrow(
+      serializeOperationFailure({
+        capture_point: capturePoint,
+        outcome: 'not_applied',
+        facts: { failure_class: 'SQLITE_CONSTRAINT: orders.order_number' },
+      }),
+      null,
+      `${capturePoint} rejects raw error text in failure_class`,
+    );
+    assertEqualOrThrow(
+      serializeOperationFailure({
+        capture_point: capturePoint,
+        outcome: 'not_applied',
+        facts: { failure_class: 'constraint', sql: 'INSERT INTO orders VALUES (1)' },
+      }),
+      null,
+      `${capturePoint} rejects unapproved extra facts`,
+    );
+  }
+
+  console.log('\n16. SQLite persistence failure classifier maps codes and bounded patterns safely');
+  const codeCases: Array<[Record<string, unknown>, string, string]> = [
+    [
+      { code: 'SQLITE_BUSY', message: 'no such table: secret_orders' },
+      'busy_or_locked',
+      'SQLITE_BUSY classifies from code without inspecting misleading message',
+    ],
+    [
+      { code: 'SQLITE_BUSY_SNAPSHOT', message: 'UNIQUE constraint failed: orders.id' },
+      'busy_or_locked',
+      'SQLITE_BUSY_SNAPSHOT classifies as busy_or_locked',
+    ],
+    [
+      { code: 'SQLITE_LOCKED', message: 'disk I/O error' },
+      'busy_or_locked',
+      'SQLITE_LOCKED classifies as busy_or_locked',
+    ],
+    [
+      { code: 'SQLITE_LOCKED_SHAREDCACHE' },
+      'busy_or_locked',
+      'SQLITE_LOCKED_SHAREDCACHE classifies as busy_or_locked',
+    ],
+    [
+      { code: 'SQLITE_CONSTRAINT_UNIQUE', message: 'database is locked' },
+      'constraint',
+      'SQLITE_CONSTRAINT_UNIQUE classifies from code without inspecting message',
+    ],
+    [
+      { code: 'SQLITE_CONSTRAINT_FOREIGNKEY' },
+      'constraint',
+      'SQLITE_CONSTRAINT_FOREIGNKEY classifies as constraint',
+    ],
+    [
+      { code: 'SQLITE_READONLY', message: 'no such column: secret' },
+      'read_only',
+      'SQLITE_READONLY classifies from code',
+    ],
+    [
+      { code: 'SQLITE_READONLY_DBMOVED' },
+      'read_only',
+      'SQLITE_READONLY_DBMOVED classifies as read_only',
+    ],
+    [
+      { code: 'EACCES', message: 'EACCES: permission denied, open /Users/pos/flo.db' },
+      'read_only',
+      'EACCES classifies as read_only',
+    ],
+    [{ code: 'EPERM' }, 'read_only', 'EPERM classifies as read_only'],
+    [{ code: 'EROFS' }, 'read_only', 'EROFS classifies as read_only'],
+    [
+      { code: 'SQLITE_FULL', message: 'UNIQUE constraint failed' },
+      'disk_full',
+      'SQLITE_FULL classifies from code',
+    ],
+    [{ code: 'ENOSPC' }, 'disk_full', 'ENOSPC classifies as disk_full'],
+    [
+      { code: 'SQLITE_IOERR_SHORT_READ', message: 'database is locked' },
+      'io_error',
+      'SQLITE_IOERR_SHORT_READ classifies from code',
+    ],
+    [{ code: 'SQLITE_CORRUPT_VTAB' }, 'io_error', 'SQLITE_CORRUPT_VTAB classifies as io_error'],
+    [{ code: 'SQLITE_CANTOPEN' }, 'io_error', 'SQLITE_CANTOPEN classifies as io_error'],
+    [{ code: 'SQLITE_NOTADB' }, 'io_error', 'SQLITE_NOTADB classifies as io_error'],
+    [{ code: 'EIO' }, 'io_error', 'EIO classifies as io_error'],
+    [
+      { code: 'SQLITE_SCHEMA', message: 'database schema has changed' },
+      'schema_or_migration',
+      'SQLITE_SCHEMA classifies as schema_or_migration from code',
+    ],
+    [
+      { code: 'SQLITE_MISMATCH' },
+      'schema_or_migration',
+      'SQLITE_MISMATCH classifies as schema_or_migration',
+    ],
+    [
+      { code: 'SQLITE_ERROR', message: 'no such table: orders_archive' },
+      'schema_or_migration',
+      'SQLITE_ERROR with missing table classifies as schema_or_migration',
+    ],
+    [
+      { code: 'SQLITE_ERROR', message: 'table bills has no column named custom_token' },
+      'schema_or_migration',
+      'SQLITE_ERROR with missing column classifies as schema_or_migration',
+    ],
+    [
+      { code: 'SQLITE_ERROR', message: 'SQL logic error along /Users/pos/flo.db' },
+      'unknown',
+      'generic SQLITE_ERROR without schema issue classifies as unknown',
+    ],
+    [
+      { code: 'SQLITE_ERROR', message: 'database is locked' },
+      'unknown',
+      'SQLITE_ERROR does not fall through to non-schema message matching',
+    ],
+    [
+      { code: 'SQLITE_AUTH', message: 'database is locked' },
+      'unknown',
+      'unrecognized SQLITE code classifies as unknown without inspecting message',
+    ],
+    [
+      { cause: { code: 'SQLITE_FULL' }, message: 'wrapper error' },
+      'disk_full',
+      'nested cause code is classified',
+    ],
+    [
+      { message: 'no such column: bills.secret_column' },
+      'schema_or_migration',
+      'codeless missing column classifies as schema_or_migration',
+    ],
+    [
+      { message: 'database is locked' },
+      'busy_or_locked',
+      'codeless locked error classifies as busy_or_locked',
+    ],
+    [
+      { message: 'UNIQUE constraint failed: orders.idempotency_key' },
+      'constraint',
+      'codeless constraint error classifies as constraint',
+    ],
+    [
+      { message: 'attempt to write a readonly database' },
+      'read_only',
+      'codeless readonly error classifies as read_only',
+    ],
+    [
+      { message: 'database or disk is full' },
+      'disk_full',
+      'codeless disk full error classifies as disk_full',
+    ],
+    [{ message: 'disk I/O error' }, 'io_error', 'codeless disk I/O error classifies as io_error'],
+    [
+      { message: `Unexpected failure for ${CUSTOMER_NAME} at ${FILE_PATH}` },
+      'unknown',
+      'unknown error classifies as unknown without leaking message',
+    ],
+  ];
+  for (const [errInput, expectedClass, label] of codeCases) {
+    const actualClass = classifySqlitePersistenceFailure(errInput);
+    assertEqualOrThrow(actualClass, expectedClass, label);
+    assertOrThrow(
+      PERSISTENCE_FAILURE_CLASSES.includes(actualClass),
+      `${label} returns an allowlisted literal`,
+    );
+  }
+  assertEqualOrThrow(
+    classifySqlitePersistenceFailure(null),
+    'unknown',
+    'null error classifies as unknown',
+  );
+  assertEqualOrThrow(
+    classifySqlitePersistenceFailure('raw string'),
+    'unknown',
+    'primitive error classifies as unknown',
+  );
+  const Database = require('better-sqlite3');
+  const memDb = new Database(':memory:');
+  try {
+    let realSchemaError: unknown = null;
+    try {
+      memDb.prepare('SELECT * FROM missing_schema_table_for_1464').all();
+    } catch (err) {
+      realSchemaError = err;
+    }
+    assertEqualOrThrow(
+      (realSchemaError as { code?: string })?.code,
+      'SQLITE_ERROR',
+      'better-sqlite3 missing table throws SQLITE_ERROR',
+    );
+    assertEqualOrThrow(
+      classifySqlitePersistenceFailure(realSchemaError),
+      'schema_or_migration',
+      'real better-sqlite3 missing-table SQLITE_ERROR classifies as schema_or_migration',
+    );
+  } finally {
+    memDb.close();
+  }
 
   console.log('\n' + '='.repeat(56));
   const results = getResults();

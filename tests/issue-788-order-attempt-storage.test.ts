@@ -477,6 +477,59 @@ function main() {
     'unknown',
     'unregistered response facts make the result untrusted',
   );
+  for (const operation of ['order.create', 'bill.generate'] as const) {
+    const trustedPersistence = classifyOrderRequestFailure(
+      {
+        response: {
+          status: 500,
+          data: {
+            error: 'Internal server error',
+            reason_code: 'persistence.failed',
+            operation,
+            stage: 'persistence',
+            outcome: 'not_applied',
+            classification: 'unexpected_failure',
+            correlation_id: operationReference,
+            facts: { failure_class: 'busy_or_locked' },
+          },
+        },
+      },
+      { operation, correlationId: operationReference },
+    );
+    assert.equal(
+      trustedPersistence.trusted,
+      true,
+      `${operation} trusts allowlisted persistence failure_class`,
+    );
+    assert.equal(
+      trustedPersistence.failureClass,
+      'busy_or_locked',
+      `${operation} exposes allowlisted persistence failureClass`,
+    );
+    const untrustedPersistence = classifyOrderRequestFailure(
+      {
+        response: {
+          status: 500,
+          data: {
+            error: 'Internal server error',
+            reason_code: 'persistence.failed',
+            operation,
+            stage: 'persistence',
+            outcome: 'not_applied',
+            classification: 'unexpected_failure',
+            correlation_id: operationReference,
+            facts: { failure_class: 'SQLITE_CONSTRAINT: secret' },
+          },
+        },
+      },
+      { operation, correlationId: operationReference },
+    );
+    assert.equal(
+      untrustedPersistence.trusted,
+      false,
+      `${operation} rejects unallowlisted persistence failure_class`,
+    );
+  }
   const legacyResponse = classifyOrderFailureWithMissingReference();
   assert.equal(
     legacyResponse.outcome,

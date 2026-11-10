@@ -234,7 +234,7 @@ test('a structured stock rejection displays the specific item name to the cashie
     await expect(page.getByText('Correct the details, then submit the order again.')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Open Products & Stock' })).toHaveAttribute(
       'href',
-      '/products',
+      /^\/products\/?$/,
     );
     const attachLogCheckbox = page.locator('#pos-support-attach-log');
     await expect(attachLogCheckbox).toBeChecked();

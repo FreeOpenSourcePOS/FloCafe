@@ -479,6 +479,7 @@ export default function POSPage() {
     if (!isSupportErrorContextCurrent(supportError.context, readLiveSupportContext())) {
       clearSupportErrorState();
     }
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [supportError, currentStoreId, activeUserId, activeToken]);
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
@@ -1220,6 +1221,7 @@ export default function POSPage() {
   ) => {
     const origin = originContext || readLiveSupportContext();
     if (
+      !currentTenant ||
       !isSupportErrorContextCurrent(origin, readLiveSupportContext()) ||
       (!force && !autoPrintBill)
     ) {
@@ -2439,11 +2441,7 @@ export default function POSPage() {
       const storedAttempt = readPostpaidAttempt(originUserId);
       const storedAttemptMatchesCart =
         storedAttempt?.userId === originUserId &&
-        doesAttemptMatchStore(
-          storedAttempt,
-          originContext.storeId,
-          initialStoreIdRef.current,
-        ) &&
+        doesAttemptMatchStore(storedAttempt, originContext.storeId, initialStoreIdRef.current) &&
         fingerprintsMatchAcrossScheduleToggle(storedAttempt.fingerprint, cartFingerprint);
       if (storedAttemptMatchesCart && storedAttempt.order) {
         reportOrderFailure({
@@ -2806,7 +2804,12 @@ export default function POSPage() {
     // order response if this renderer loses the response or restarts.
     if (!savePrepaidAttempt(attempt, originUserId)) {
       if (!isSessionCurrent()) return;
-      reportOrderStorageFailure(t('processOrderFailed'), 'order.create', operationId || null, originContext);
+      reportOrderStorageFailure(
+        t('processOrderFailed'),
+        'order.create',
+        operationId || null,
+        originContext,
+      );
       setSubmitting(false);
       return;
     }

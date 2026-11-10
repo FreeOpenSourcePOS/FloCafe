@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Imeshindikana kusasisha njia ya malipo",
     "releaseScheduled": "Imepangwa",
     "releaseBlocked": "Utumaji umezuiwa",
-    "markReady": "Weka tayari",
-    "pickedUp": "Imechukuliwa",
-    "markedReady": "Oda imewekwa alama kuwa tayari",
-    "markedPickedUp": "Oda imewekwa alama kuwa imechukuliwa",
-    "updateStatusFailed": "Imeshindwa kusasisha hali ya oda",
     "refundOwnerOnlyNotice": "Uidhinishaji wa kurejesha pesa kwa meneja umezimwa — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu.",
     "refundOutsideWindowNotice": "Oda hii iko nje ya muda wa uidhinishaji wa meneja — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu."
   },

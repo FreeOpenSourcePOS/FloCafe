@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "ادائیگی کا طریقہ اپ ڈیٹ نہیں ہو سکا",
     "releaseScheduled": "شیڈول شدہ",
     "releaseBlocked": "اجرا مسدود",
-    "markReady": "تیار نشان زد کریں",
-    "pickedUp": "وصول کر لیا گیا",
-    "markedReady": "آرڈر کو تیار نشان زد کر دیا گیا",
-    "markedPickedUp": "آرڈر کو وصول شدہ نشان زد کر دیا گیا",
-    "updateStatusFailed": "آرڈر کی حالت اپ ڈیٹ نہیں ہو سکی",
     "refundOwnerOnlyNotice": "مینیجر کی جانب سے رقم واپسی کی منظوری غیر فعال ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔",
     "refundOutsideWindowNotice": "یہ آرڈر مینیجر کی منظوری کے وقت سے باہر ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔"
   },

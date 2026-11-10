@@ -15,22 +15,15 @@ suffix and no fractional seconds.
 That form is **not** what `new Date(string)` expects. In V8, a space-delimited timestamp parses as
 machine-local time, so a naive parse shifts every reading by the developer's own UTC offset.
 
-`parseDbTimestamp` in the backend handles both stored forms:
-
-```ts
-export function parseDbTimestamp(ts: string | null | undefined): Date {
-  if (!ts) return new Date(NaN);
-  // Space form: append a Z so V8 parses it as UTC instead of machine-local.
-  return /^\d{4}-\d{2}-\d{2} /.test(ts) ? new Date(`${ts.replace(' ', 'T')}Z`) : new Date(ts);
-}
-```
-
-It returns an invalid `Date` for a missing value rather than the epoch, so a missing timestamp
+`parseDbTimestamp` in [`main/db.ts`](../../main/db.ts) handles both stored forms: it converts
+space-delimited UTC strings (`YYYY-MM-DD ...` and extended `+YYYYYY-MM-DD ...` years) to ISO
+`T...Z` form so V8 parses them as UTC rather than machine-local time, passes ISO strings through,
+and returns an invalid `Date` for a missing value rather than the epoch, so a missing timestamp
 fails a comparison instead of silently reading as 1970.
 
-The frontend has an identical helper in
-[`frontend/src/lib/utils.ts`](../../frontend/src/lib/utils.ts). Use one or the other; never call
-`new Date()` on a value that came out of the database.
+The frontend has the matching `parseDbTimestamp` helper in
+[`frontend/src/lib/utils.ts`](../../frontend/src/lib/utils.ts) for standard `YYYY-MM-DD` and ISO
+timestamps. Use one or the other; never call `new Date()` on a value that came out of the database.
 
 ## Day boundaries
 

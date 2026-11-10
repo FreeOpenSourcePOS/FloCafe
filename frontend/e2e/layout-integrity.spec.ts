@@ -1229,6 +1229,10 @@ test.describe('management lists keep their controls visible while records scroll
     const region = page.getByTestId('products-list-scroll');
     await expect(region, 'the product list region renders').toBeVisible();
     await expect(
+      region.locator('tbody tr').first(),
+      'the product list rows are loaded',
+    ).toBeVisible();
+    await expect(
       page.getByText(`${SYNTHETIC_PRODUCT_PREFIX} 024`, { exact: true }),
       'the seeded product catalog is loaded',
     ).toBeVisible();
@@ -1406,6 +1410,10 @@ test.describe('management lists keep their controls visible while records scroll
       await page.getByRole('tab', { name: entry.tab }).click();
       const region = page.getByTestId(entry.region);
       await expect(region, `${entry.tab}: the list region renders`).toBeVisible();
+      await expect(
+        region.locator('tbody tr').first(),
+        `${entry.tab}: the list rows are loaded`,
+      ).toBeVisible();
       const title = page.getByRole('heading', { name: 'Products', level: 1 });
       const tabs = page.getByRole('tablist');
       const action = page.getByRole('button', { name: entry.action });
@@ -1535,6 +1543,10 @@ test.describe('management lists keep their controls visible while records scroll
       await page.getByRole('tab', { name: entry.tab }).click();
       const region = page.getByTestId(entry.region);
       await expect(region, `${entry.tab}: the list region renders`).toBeVisible();
+      await expect(
+        region.locator('tbody tr').first(),
+        `${entry.tab}: the list rows are loaded`,
+      ).toBeVisible();
 
       const title = page.getByRole('heading', { name: 'Inventory', level: 1 });
       const tabs = page.getByRole('tablist');
@@ -1639,6 +1651,14 @@ test.describe('management lists keep their controls visible while records scroll
 
     const region = page.getByTestId('inventory-supplies-scroll');
     await expect(region).toBeVisible();
+    await expect(
+      region.locator('tbody tr').first(),
+      'the supply list rows are loaded',
+    ).toBeVisible();
+    await expect(
+      page.getByText(`${SYNTHETIC_SUPPLY_PREFIX} 24`, { exact: true }),
+      'the seeded supply directory is loaded',
+    ).toBeVisible();
     const scrolled = await scrollToEnd(region);
     expect(scrolled.scrollTop, 'the supply list region owns the scroll').toBeGreaterThan(0);
 
@@ -1681,6 +1701,10 @@ test.describe('management lists keep their controls visible while records scroll
 
     const region = page.getByTestId('customers-list-scroll');
     await expect(region, 'the customer list region renders').toBeVisible();
+    await expect(
+      region.locator('tbody tr').first(),
+      'the customer list rows are loaded',
+    ).toBeVisible();
     await expect(
       page.getByText(`${SYNTHETIC_CUSTOMER_PREFIX} 030`, { exact: true }),
       'the seeded customer directory is loaded',

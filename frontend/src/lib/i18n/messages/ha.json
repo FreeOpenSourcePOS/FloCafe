@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Ba a iya sabunta hanyar biyan kuɗi ba",
     "releaseScheduled": "An tsara lokaci",
     "releaseBlocked": "An dakatar da turawa",
-    "markReady": "Alama a shirye",
-    "pickedUp": "An karɓa",
-    "markedReady": "An yi wa oda alama a shirye",
-    "markedPickedUp": "An yi wa oda alama an karɓa",
-    "updateStatusFailed": "An kasa sabunta matsayin oda",
     "refundOwnerOnlyNotice": "An kashe amincewar mayar da kuɗi na manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi.",
     "refundOutsideWindowNotice": "Wannan odar ta wuce lokacin amincewar manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi."
   },

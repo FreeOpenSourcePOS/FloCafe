@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Could not update payment method",
     "releaseScheduled": "Scheduled",
     "releaseBlocked": "Release blocked",
-    "markReady": "Mark Ready",
-    "pickedUp": "Picked Up",
-    "markedReady": "Order marked ready",
-    "markedPickedUp": "Order marked picked up",
-    "updateStatusFailed": "Failed to update order status",
     "refundOwnerOnlyNotice": "Manager refund approvals are disabled — an owner PIN is required to approve this refund.",
     "refundOutsideWindowNotice": "This order is outside the manager approval window — an owner PIN is required to approve this refund."
   },

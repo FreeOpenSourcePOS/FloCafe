@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán",
     "releaseScheduled": "Hẹn giờ",
     "releaseBlocked": "Chặn gửi bếp",
-    "markReady": "Đánh dấu sẵn sàng",
-    "pickedUp": "Đã nhận món",
-    "markedReady": "Đã đánh dấu đơn hàng sẵn sàng",
-    "markedPickedUp": "Đã đánh dấu đơn hàng đã nhận",
-    "updateStatusFailed": "Không thể cập nhật trạng thái đơn hàng",
     "refundOwnerOnlyNotice": "Phê duyệt hoàn tiền của quản lý đã bị tắt — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này.",
     "refundOutsideWindowNotice": "Đơn hàng này đã quá thời hạn phê duyệt của quản lý — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này."
   },

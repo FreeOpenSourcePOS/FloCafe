@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "Ora bisa nganyari cara pambayaran",
     "releaseScheduled": "Dijadwalake",
     "releaseBlocked": "Wetokake katahan",
-    "markReady": "Tandhani siap",
-    "pickedUp": "Wis dijupuk",
-    "markedReady": "Pesenan ditandhani siap",
-    "markedPickedUp": "Pesenan ditandhani wis dijupuk",
-    "updateStatusFailed": "Gagal nganyari status pesenan",
     "refundOwnerOnlyNotice": "Persetujuan bali dhuwit dening manajer dipateni — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki.",
     "refundOutsideWindowNotice": "Pesanan iki wis liwat wektu persetujuan manajer — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki."
   },

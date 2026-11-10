@@ -46,10 +46,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
 import { formatItemHeading } from '@/lib/printer/item-heading';
-import {
-  getOrderEffectivePrepStatus,
-  isTerminalItemStatus,
-} from '../../../../shared/order-item-status';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 import {
   canCheckoutOrder,
   getRefundEligibleBills,
@@ -171,8 +168,6 @@ export const ORDER_TYPE_KEYS = {
   online: 'online',
 } as const satisfies Record<Order['type'], OrdersKey>;
 
-export { getOrderEffectivePrepStatus };
-
 interface OrderCardProps {
   order: Order;
   now: number;
@@ -218,8 +213,6 @@ interface OrderCardProps {
   onDeleteItem?: (orderId: number, itemId: number) => void;
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
   onRestoreItem?: (orderId: number, itemId: number) => void;
-  onUpdatePrepStatus?: (orderId: number, targetStatus: 'ready' | 'served') => void;
-  updatingPrepOrderId?: number | null;
 }
 
 export function OrderCard({
@@ -264,8 +257,6 @@ export function OrderCard({
   onVoidItem,
   onRestoreItem,
   onItemEditResolved,
-  onUpdatePrepStatus,
-  updatingPrepOrderId,
 }: OrderCardProps) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -352,7 +343,6 @@ export function OrderCard({
   };
 
   const statusBadgeInfo = orderStatusBadge[order.status];
-  const effectivePrepStatus = getOrderEffectivePrepStatus(order, now);
   const orderPrints = bill?.id ? printHistory[bill.id] || [] : [];
   const printCount = orderPrints.length;
 
@@ -1134,30 +1124,6 @@ export function OrderCard({
               <Bike size={15} className="me-1.5 text-muted-foreground" />
             )}
             {tOrders('printDeliverySlip')}
-          </Button>
-        )}
-
-        {onUpdatePrepStatus &&
-          (effectivePrepStatus === 'pending' || effectivePrepStatus === 'preparing') && (
-            <Button
-              variant="outline"
-              data-testid={`order-mark-ready-${order.id}`}
-              onClick={() => onUpdatePrepStatus(order.id, 'ready')}
-              disabled={updatingPrepOrderId === order.id}
-              className="mt-2 w-full h-10 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40 active:scale-95 touch-manipulation font-semibold text-xs"
-            >
-              {tOrders('markReady')}
-            </Button>
-          )}
-        {onUpdatePrepStatus && effectivePrepStatus === 'ready' && (
-          <Button
-            variant="outline"
-            data-testid={`order-mark-picked-up-${order.id}`}
-            onClick={() => onUpdatePrepStatus(order.id, 'served')}
-            disabled={updatingPrepOrderId === order.id}
-            className="mt-2 w-full h-10 border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-950/40 active:scale-95 touch-manipulation font-semibold text-xs"
-          >
-            {tOrders('pickedUp')}
           </Button>
         )}
       </div>

@@ -862,11 +862,6 @@
     "correctPaymentMethodFailed": "결제 수단을 업데이트할 수 없습니다",
     "releaseScheduled": "예약됨",
     "releaseBlocked": "전송 보류",
-    "markReady": "준비 완료 표시",
-    "pickedUp": "수령 완료",
-    "markedReady": "주문이 준비 완료로 표시되었습니다",
-    "markedPickedUp": "주문이 수령 완료로 표시되었습니다",
-    "updateStatusFailed": "주문 상태를 업데이트하지 못했습니다",
     "refundOwnerOnlyNotice": "매니저 환불 승인이 비활성화되어 있습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다.",
     "refundOutsideWindowNotice": "이 주문은 매니저 승인 가능 시간을 지났습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다."
   },

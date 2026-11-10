@@ -4651,6 +4651,12 @@ export function restoreCompatibleBackupForDowngrade(
           `)
           .run(rotatedJwtSecret, credentialTimestamp);
         freshDb
+          .prepare('DELETE FROM settings WHERE key = ?')
+          .run(AUTH_CLOCK_HIGH_WATER_SETTING_KEY);
+        freshDb
+          .prepare('UPDATE users SET tokens_valid_after = ?, updated_at = ?')
+          .run(nextTokensValidAfterTimestamp(), credentialTimestamp);
+        freshDb
           .prepare("DELETE FROM settings WHERE key LIKE 'mobile\\_pairing\\_code%' ESCAPE '\\'")
           .run();
         executeSequenceRepair(freshDb);
@@ -5535,8 +5541,28 @@ export type RestoreOutboxState = {
   /** Device-local failure log; present on restores that predate it. */
   local?: Record<string, unknown>[];
 };
+const AUTH_CLOCK_HIGH_WATER_SETTING_KEY = 'auth_clock_high_water_ms';
+const MAX_AUTH_CLOCK_HIGH_WATER_MS = 8_639_999_999_999_000;
+const MAX_JS_DATE_NON_BOUNDARY_MS = 8_639_999_999_999_999;
+
+function parseValidAuthClockHighWaterMs(rawValue: string | null | undefined): number | null {
+  if (typeof rawValue !== 'string') return null;
+  const trimmed = rawValue.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const highWaterMs = Number.parseInt(trimmed, 10);
+  if (
+    !Number.isSafeInteger(highWaterMs) ||
+    highWaterMs <= 0 ||
+    highWaterMs > MAX_AUTH_CLOCK_HIGH_WATER_MS
+  ) {
+    return null;
+  }
+  return highWaterMs;
+}
+
 const RESTORE_PROTECTED_SETTING_KEYS = [
   'jwt_secret',
+  AUTH_CLOCK_HIGH_WATER_SETTING_KEY,
   'email',
   'cloud_api_key',
   'cloud_device_secret',
@@ -5594,6 +5620,15 @@ export function mergeRestoreProtectedSettings(
   // Clear cloud settings first; cloud identity is installation-local.
   dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
   for (const state of states) {
+    if (state.key === AUTH_CLOCK_HIGH_WATER_SETTING_KEY) {
+      const validLocalMs = state.present ? parseValidAuthClockHighWaterMs(state.value) : null;
+      if (validLocalMs !== null) {
+        upsert.run(state.key, String(validLocalMs), now());
+      } else {
+        dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+      }
+      continue;
+    }
     if (state.present) upsert.run(state.key, state.value, now());
     else if (!state.key.startsWith('cloud_'))
       dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
@@ -6467,6 +6502,9 @@ export function restoreBackup(
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
           `)
           .run(rotatedJwtSecret, credentialTimestamp);
+        freshDb
+          .prepare('DELETE FROM settings WHERE key = ?')
+          .run(AUTH_CLOCK_HIGH_WATER_SETTING_KEY);
         freshDb
           .prepare('UPDATE users SET tokens_valid_after = ?, updated_at = ?')
           .run(nextTokensValidAfterTimestamp(), credentialTimestamp);
@@ -11510,20 +11548,43 @@ let lastAuthLogicalMs = 0;
 
 function readPersistedMaxTokensValidAfterMs(): number {
   if (!db) return 0;
+  let maxMs = 0;
   try {
     const row = db
       .prepare(
-        'SELECT MAX(tokens_valid_after) AS max_valid_after FROM users WHERE tokens_valid_after IS NOT NULL',
+        `SELECT
+           MAX(CASE WHEN tokens_valid_after NOT LIKE '+%' THEN tokens_valid_after END) AS max_four_digit,
+           MAX(CASE WHEN tokens_valid_after LIKE '+%' THEN tokens_valid_after END) AS max_extended
+         FROM users
+         WHERE tokens_valid_after IS NOT NULL`,
       )
-      .get() as { max_valid_after?: string | null } | undefined;
-    if (!row?.max_valid_after) return 0;
-    const raw = row.max_valid_after.trim();
-    const parsedMs = parseDbTimestamp(raw).getTime();
-    if (!Number.isFinite(parsedMs)) return 0;
-    return /\.\d+/.test(raw) ? parsedMs : parsedMs + 999;
-  } catch {
-    return 0;
-  }
+      .get() as { max_four_digit?: string | null; max_extended?: string | null } | undefined;
+    for (const candidateRaw of [row?.max_four_digit, row?.max_extended]) {
+      if (!candidateRaw) continue;
+      const raw = candidateRaw.trim();
+      const parsedMs = parseDbTimestamp(raw).getTime();
+      if (
+        Number.isSafeInteger(parsedMs) &&
+        parsedMs > 0 &&
+        parsedMs <= MAX_AUTH_CLOCK_HIGH_WATER_MS
+      ) {
+        const candidateMs = /\.\d+/.test(raw) ? parsedMs : parsedMs + 999;
+        if (candidateMs <= MAX_AUTH_CLOCK_HIGH_WATER_MS) {
+          maxMs = Math.max(maxMs, candidateMs);
+        }
+      }
+    }
+  } catch {}
+  try {
+    const settingRow = db
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get(AUTH_CLOCK_HIGH_WATER_SETTING_KEY) as { value?: string | null } | undefined;
+    const highWaterMs = parseValidAuthClockHighWaterMs(settingRow?.value);
+    if (highWaterMs !== null) {
+      maxMs = Math.max(maxMs, highWaterMs);
+    }
+  } catch {}
+  return maxMs;
 }
 
 export function resetAuthClockForTests(): void {
@@ -11532,14 +11593,48 @@ export function resetAuthClockForTests(): void {
 
 /** Monotonic millisecond clock shared by JWT issuance and `tokens_valid_after` updates. */
 export function nextAuthTimestampMs(): number {
-  const wallMs = Date.now();
+  const rawWallMs = Date.now();
+  const wallMs =
+    Number.isSafeInteger(rawWallMs) && rawWallMs > 0
+      ? Math.min(rawWallMs, MAX_AUTH_CLOCK_HIGH_WATER_MS)
+      : 1;
   const persistedMaxMs = readPersistedMaxTokensValidAfterMs();
-  let nextMs = Math.max(wallMs, lastAuthLogicalMs + 1, persistedMaxMs > 0 ? persistedMaxMs + 1 : 0);
+  const boundedLastNextMs =
+    lastAuthLogicalMs > 0 ? Math.min(lastAuthLogicalMs + 1, MAX_JS_DATE_NON_BOUNDARY_MS) : 0;
+  const boundedPersistedNextMs =
+    persistedMaxMs > 0 ? Math.min(persistedMaxMs + 1, MAX_JS_DATE_NON_BOUNDARY_MS) : 0;
+  let nextMs = Math.max(wallMs, boundedLastNextMs, boundedPersistedNextMs);
   // Avoid exact `.000` second boundaries so sub-second `iat` remains distinct from legacy integer `iat`.
   if (nextMs % 1000 === 0) {
     nextMs += 1;
   }
+  if (nextMs > MAX_JS_DATE_NON_BOUNDARY_MS) {
+    nextMs = MAX_JS_DATE_NON_BOUNDARY_MS;
+  }
   lastAuthLogicalMs = nextMs;
+  if (db) {
+    const persistedHighWaterMs = Math.min(nextMs, MAX_AUTH_CLOCK_HIGH_WATER_MS);
+    try {
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+         WHERE settings.value IS NULL
+            OR settings.value = ''
+            OR length(settings.value) > 16
+            OR settings.value GLOB '*[^0-9]*'
+            OR CAST(settings.value AS INTEGER) <= 0
+            OR CAST(settings.value AS INTEGER) > ?
+            OR CAST(settings.value AS INTEGER) < CAST(excluded.value AS INTEGER)`,
+      ).run(
+        AUTH_CLOCK_HIGH_WATER_SETTING_KEY,
+        String(persistedHighWaterMs),
+        now(),
+        MAX_AUTH_CLOCK_HIGH_WATER_MS,
+      );
+    } catch (error) {
+      console.warn('[DB] Could not persist auth clock high-water mark:', error);
+    }
+  }
   return nextMs;
 }
 
@@ -11607,7 +11702,9 @@ export function recordAuthAudit(
 export function parseDbTimestamp(ts: string | null | undefined): Date {
   if (!ts) return new Date(NaN);
   // Space form: append a Z so V8 parses it as UTC instead of machine-local.
-  return /^\d{4}-\d{2}-\d{2} /.test(ts) ? new Date(`${ts.replace(' ', 'T')}Z`) : new Date(ts);
+  return /^(?:\d{4}|\+\d{6})-\d{2}-\d{2} /.test(ts)
+    ? new Date(`${ts.replace(' ', 'T')}Z`)
+    : new Date(ts);
 }
 
 /** "Today" as a `YYYY-MM-DD` string in UTC for non-tenant uses. */

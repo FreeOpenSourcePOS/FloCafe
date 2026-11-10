@@ -243,7 +243,9 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
         isDragging ? 'opacity-40' : ''
       } ${busy ? 'pointer-events-none opacity-60' : ''}`}
     >
-      <div className={`rounded-xl bg-card shadow-sm ring-1 ring-border/50 border-t-4 ${config.border} p-3 flex flex-col`}>
+      <div
+        className={`rounded-xl bg-card shadow-sm ring-1 ring-border/50 border-t-4 ${config.border} p-3 flex flex-col`}
+      >
         <div className="flex justify-between items-center mb-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <Ltr as="span" className="font-bold text-sm shrink-0">

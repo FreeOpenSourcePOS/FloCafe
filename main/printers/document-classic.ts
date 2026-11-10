@@ -205,13 +205,8 @@ export function buildBillPrintData(
       showTableNumber: business?.show_table_number !== false,
       showCustomerName: business?.show_customer_name !== false,
       showCustomerPhone: business?.show_customer_phone !== false,
-      ...(business?.show_large_order_number !== undefined ||
-      business?.showLargeOrderNumber !== undefined
-        ? {
-            showLargeOrderNumber:
-              (business?.show_large_order_number ?? business?.showLargeOrderNumber) === true ||
-              (business?.show_large_order_number ?? business?.showLargeOrderNumber) === 'true',
-          }
+      ...(typeof business?.show_large_order_number === 'boolean'
+        ? { showLargeOrderNumber: business.show_large_order_number }
         : {}),
       showLogo: business?.show_logo === true,
       receiptLogo: typeof business?.receipt_logo === 'string' ? business.receipt_logo : '',

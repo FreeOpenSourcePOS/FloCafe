@@ -272,8 +272,6 @@ export interface DocumentMetaBlock {
   readonly invoiceNumberLabel: SemanticLabel;
   /** Alternate bill-number label; layouts that head the receipt with "Bill #". */
   readonly billNumberLabel: SemanticLabel;
-  /** Label rendered alongside the order number when shown distinctly or in the large banner. */
-  readonly orderNumberLabel?: SemanticLabel;
   /** Date label for layouts that print a labeled date line (e.g. compact). */
   readonly dateLabel: SemanticLabel;
   readonly invoiceNumber: DirectionalText;
@@ -629,7 +627,6 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     title: resolveSemanticLabel(labels, hasTax ? 'print.taxInvoiceTitle' : 'print.invoiceTitle'),
     invoiceNumberLabel: resolveSemanticLabel(labels, 'print.invoiceNumber'),
     billNumberLabel: resolveSemanticLabel(labels, 'receipt.billNumber'),
-    orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     dateLabel: resolveSemanticLabel(labels, 'receipt.date'),
     invoiceNumber: directionalText(
       bill.billNumber.length > 0 ? bill.billNumber : order.orderNumber,
@@ -881,8 +878,6 @@ export interface KotOrderSnapshot {
   readonly customerName?: string;
   /** Order-level notes (allergy alerts, packing instructions), when present. */
   readonly orderNotes?: string;
-  /** Whether the KOT should print a large bold order number callout banner. */
-  readonly showLargeOrderNumber?: boolean;
 }
 
 /**
@@ -1391,7 +1386,6 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
         isSemanticLabel(value.title) &&
         isSemanticLabel(value.invoiceNumberLabel) &&
         isSemanticLabel(value.billNumberLabel) &&
-        (value.orderNumberLabel === undefined || isSemanticLabel(value.orderNumberLabel)) &&
         isSemanticLabel(value.dateLabel) &&
         isDirectionalText(value.invoiceNumber) &&
         (value.orderNumber === undefined || isOptionalDirectionalText(value.orderNumber)) &&
@@ -1618,10 +1612,6 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
   const primary = printContext.languages[0];
 
   const labels: LabelContext = { ctx: printContext, primary };
-  const rawKotShowLarge =
-    printData.showLargeOrderNumber !== undefined
-      ? printData.showLargeOrderNumber
-      : printData.order?.showLargeOrderNumber;
 
   const header: KotHeaderBlock = Object.freeze({
     kind: 'kot-header',
@@ -1631,7 +1621,9 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     stationName: directionalText(String(printData.stationName ?? ''), base),
     orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
-    ...(rawKotShowLarge !== undefined ? { showLargeOrderNumber: Boolean(rawKotShowLarge) } : {}),
+    ...(typeof printData.showLargeOrderNumber === 'boolean'
+      ? { showLargeOrderNumber: printData.showLargeOrderNumber }
+      : {}),
     table:
       typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
         ? Object.freeze({

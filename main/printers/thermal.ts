@@ -1197,11 +1197,9 @@ export async function printKOT(
     const warnings: PrintWarning[] = [];
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     const showLargeOrderNumber =
-      order?.show_large_order_number !== undefined
-        ? order.show_large_order_number !== false && order.show_large_order_number !== 'false'
-        : order?.showLargeOrderNumber !== undefined
-          ? order.showLargeOrderNumber !== false && order.showLargeOrderNumber !== 'false'
-          : getSettingValue('bill_show_large_order_number') !== 'false';
+      typeof order?.show_large_order_number === 'boolean'
+        ? order.show_large_order_number
+        : getSettingValue('bill_show_large_order_number') !== 'false';
     const kotOrder = { ...order, show_large_order_number: showLargeOrderNumber };
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {

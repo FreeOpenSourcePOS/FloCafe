@@ -348,10 +348,8 @@ export function buildTaxBillBytes(
   enc.newline();
 
   // ── Bill Details ─────────────────────────────────────────────────────────
-  const taxOrderNumber =
-    order?.order_number ?? (bill as Bill & { order_number?: string }).order_number;
-  if (opts.showLargeOrderNumber === true && taxOrderNumber) {
-    const cleanOrderNum = String(taxOrderNumber).trim().replace(/^#/, '');
+  if (opts.showLargeOrderNumber === true && order?.order_number) {
+    const cleanOrderNum = String(order.order_number).trim().replace(/^#/, '');
     if (cleanOrderNum.length > 0) {
       const bannerText = `ORDER #${cleanOrderNum}`;
       const layout = layoutStyledUnit(

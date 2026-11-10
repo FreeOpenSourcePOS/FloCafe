@@ -192,14 +192,8 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
     order_notes?: unknown;
     orderNotes?: unknown;
     notes?: unknown;
-    show_large_order_number?: unknown;
-    showLargeOrderNumber?: unknown;
   };
-  const rawShowLarge =
-    opts.showLargeOrderNumber ??
-    orderShape.show_large_order_number ??
-    orderShape.showLargeOrderNumber;
-  const showLargeOrderNumber = rawShowLarge !== false && rawShowLarge !== 'false';
+  const showLargeOrderNumber = opts.showLargeOrderNumber !== false;
   const cleanOrderNumber = orderNumber.text.trim().replace(/^#/, '');
   const orderNotes =
     [order.special_instructions, orderShape.order_notes, orderShape.orderNotes, orderShape.notes]

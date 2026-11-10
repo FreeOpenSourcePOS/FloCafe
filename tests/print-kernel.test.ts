@@ -30,7 +30,12 @@ import {
   resolveScopeDirection,
   resolveValueDirection,
   selectBilingualFit,
+  buildBillDocument,
+  buildKotDocument,
   buildZReportDocument,
+  getBlock,
+  isKotDocument,
+  isPrintDocument,
   displayCellWidth,
   fitThermalLine,
   graphemeSegments,
@@ -824,5 +829,96 @@ for (const [row, property, replacement] of [
 }
 
 console.log('✓ semantic thermal overflow and Z-report contracts');
+
+const kernelContext = {
+  columns: 48,
+  languages: ['en'] as const,
+  baseDirection: 'ltr' as const,
+  locale: 'en-US',
+  currency: 'USD',
+  currencySymbol: '$',
+  trimDecimals: false,
+  resolveLabel: (concept: string) => concept,
+};
+const kernelBillDoc = buildBillDocument(
+  {
+    isReprint: false,
+    order: {
+      orderNumber: 'ORD-0099',
+      createdAt: '2026-11-09 12:00:00',
+      tableName: '',
+      onlinePlatform: '',
+      externalOrderId: '',
+      deliveryAddress: '',
+      items: [],
+    },
+    bill: {
+      billNumber: 'INV-0099',
+      subtotal: 10,
+      discountAmount: 0,
+      taxAmount: 0,
+      total: 10,
+      serviceCharge: 0,
+      deliveryCharge: 0,
+      packagingCharge: 0,
+      chargesBreakdown: null,
+      taxComponents: [],
+      payments: [],
+      pointsEarned: 0,
+      pointsRedeemed: 0,
+      pointsBalance: null,
+    },
+    business: {
+      name: 'Cafe',
+      address: '',
+      phone: '',
+      taxRegistrationNumber: '',
+      taxIdLabel: 'Tax ID',
+      instagramHandle: '',
+      footerNote: '',
+      customerName: '',
+      customerPhone: '',
+      showLogo: false,
+      showName: true,
+      showAddress: true,
+      showPhone: true,
+      showTaxId: 'auto',
+      showTaxBreakdown: false,
+      showTableNumber: true,
+      showCustomerName: true,
+      showCustomerPhone: true,
+      showLargeOrderNumber: true,
+    },
+  },
+  kernelContext,
+);
+assert.equal(isPrintDocument(kernelBillDoc), true, 'buildBillDocument passes isPrintDocument');
+const kernelMeta = getBlock(kernelBillDoc, 'document-meta');
+assert.equal(kernelMeta?.orderNumber?.text, 'ORD-0099');
+assert.equal(kernelMeta?.showLargeOrderNumber, true);
+assert.equal(
+  kernelMeta !== undefined && 'orderNumberLabel' in kernelMeta,
+  false,
+  'DocumentMetaBlock omits unused orderNumberLabel',
+);
+
+const kernelKotDisabled = buildKotDocument(
+  {
+    stationName: 'Kitchen',
+    showLargeOrderNumber: false,
+    order: {
+      orderNumber: 'ORD-0099',
+      createdAt: '2026-11-09 12:00:00',
+      tableName: '',
+      orderType: 'takeaway',
+    },
+    items: [],
+  },
+  kernelContext,
+);
+assert.equal(isKotDocument(kernelKotDisabled), true, 'buildKotDocument passes isKotDocument');
+const kernelKotHeader = kernelKotDisabled.blocks[0];
+assert.equal(kernelKotHeader.kind, 'kot-header');
+assert.equal(kernelKotHeader.showLargeOrderNumber, false);
 
 console.log('\nAll print kernel tests passed.');

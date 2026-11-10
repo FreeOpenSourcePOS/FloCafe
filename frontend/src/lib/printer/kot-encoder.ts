@@ -169,15 +169,7 @@ export function buildKotBytes(
   writeKotHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', { isBanner: true });
   enc.width(1).height(1).bold(false);
 
-  const orderShowLarge = order as Order & {
-    show_large_order_number?: unknown;
-    showLargeOrderNumber?: unknown;
-  };
-  const rawShowLarge =
-    opts.showLargeOrderNumber ??
-    orderShowLarge.show_large_order_number ??
-    orderShowLarge.showLargeOrderNumber;
-  const showLargeOrderNumber = rawShowLarge !== false && rawShowLarge !== 'false';
+  const showLargeOrderNumber = opts.showLargeOrderNumber !== false;
   const cleanOrderNumber = String(order.order_number ?? '')
     .trim()
     .replace(/^#/, '');

@@ -1726,12 +1726,10 @@ export function buildDetailedReceiptBytes(
 
   enc.align('left').rule({ style: 'single' });
 
-  const detailedOrderNumber =
-    order?.order_number ?? (bill as Bill & { order_number?: string }).order_number;
-  if (opts.showLargeOrderNumber === true && detailedOrderNumber) {
+  if (opts.showLargeOrderNumber === true && order?.order_number) {
     printLargeOrderNumberBanner(
       enc,
-      detailedOrderNumber,
+      order.order_number,
       warnings,
       arabicShaping,
       cols,

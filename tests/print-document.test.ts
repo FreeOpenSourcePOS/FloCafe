@@ -1242,6 +1242,11 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
   const defaultMeta = getBlock(defaultDoc, 'document-meta');
   assert.equal(defaultMeta?.invoiceNumber.text, 'INV-PARITY-001');
   assert.equal(
+    defaultMeta !== undefined && 'orderNumberLabel' in defaultMeta,
+    false,
+    'DocumentMetaBlock does not carry unused orderNumberLabel',
+  );
+  assert.equal(
     defaultMeta?.orderNumber?.text,
     'ORD-PARITY-001',
     'meta.orderNumber preserves order.orderNumber alongside INV-... invoiceNumber',

@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "சீட்டு உருவாக்கப்பட்டு கட்டண வரிசைக்கு அனுப்பப்பட்டது.",
     "ticketNumber": "சீட்டு எண்",
     "paymentTicketInstruction": "பணம் செலுத்த இந்தச் சீட்டைக் கட்டணக் கவுண்டருக்குக் கொண்டு செல்லவும்.",
-    "selectCounter": "கவுண்டரைத் தேர்ந்தெடு"
+    "selectCounter": "கவுண்டரைத் தேர்ந்தெடு",
+    "decreaseQuantity": "அளவைக் குறை",
+    "increaseQuantity": "அளவை அதிகரி",
+    "distributeEvenly": "சமமாகப் பிரி"
   },
   "printTest": {
     "amt": "தொகை",

@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "티켓이 생성되어 결제 대기열로 전송되었습니다.",
     "ticketNumber": "티켓 번호",
     "paymentTicketInstruction": "이 티켓을 결제 카운터로 가져가 결제해 주세요.",
-    "selectCounter": "카운터 선택"
+    "selectCounter": "카운터 선택",
+    "decreaseQuantity": "수량 감소",
+    "increaseQuantity": "수량 증가",
+    "distributeEvenly": "균등 배분"
   },
   "printTest": {
     "amt": "금액",

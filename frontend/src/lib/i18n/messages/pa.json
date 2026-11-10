@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "ਟਿਕਟ ਬਣਾਈ ਗਈ ਅਤੇ ਭੁਗਤਾਨ ਕਤਾਰ ਵਿੱਚ ਭੇਜੀ ਗਈ।",
     "ticketNumber": "ਟਿਕਟ ਨੰਬਰ",
     "paymentTicketInstruction": "ਭੁਗਤਾਨ ਕਰਨ ਲਈ ਇਹ ਟਿਕਟ ਭੁਗਤਾਨ ਕਾਊਂਟਰ ਉੱਤੇ ਲੈ ਕੇ ਜਾਓ।",
-    "selectCounter": "ਕਾਊਂਟਰ ਚੁਣੋ"
+    "selectCounter": "ਕਾਊਂਟਰ ਚੁਣੋ",
+    "decreaseQuantity": "ਮਾਤਰਾ ਘਟਾਓ",
+    "increaseQuantity": "ਮਾਤਰਾ ਵਧਾਓ",
+    "distributeEvenly": "ਬਰਾਬਰ ਵੰਡੋ"
   },
   "printTest": {
     "amt": "ਰਕਮ",

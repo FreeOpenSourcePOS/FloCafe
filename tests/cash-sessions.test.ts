@@ -1476,6 +1476,7 @@ async function main() {
     `day close allowed after shift closed (got ${allowedDayClose.status}, code=${allowedDayClose.body?.display_code})`,
   );
   db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(allowedDayClose.body?.zReport?.id);
+  db.prepare(`DELETE FROM cash_drawer_movements WHERE business_date = ?`).run(todayLocal);
 
   console.log('Section Phase-1 validation: multi-shift same day + pending order carry-over');
   const turnA = await request(app)
@@ -2437,9 +2438,7 @@ async function main() {
           .send({ counted_cash_cents: 1000 });
         assert(s1Close.status === 200, '#1339 (setting off): User A closes shift (200)');
       });
-      db.prepare(
-        `DELETE FROM cash_drawer_movements WHERE business_date = '2026-11-10' AND movement_type = 'opening_float'`,
-      ).run();
+      db.prepare(`DELETE FROM cash_drawer_movements WHERE business_date = '2026-11-10'`).run();
       db.prepare(`DELETE FROM cash_sessions WHERE opened_at LIKE '2026-11-10%'`).run();
       db.prepare(`DELETE FROM cash_closures WHERE business_date = '2026-11-10'`).run();
 

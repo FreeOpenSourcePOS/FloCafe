@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "টিকিট তৈরি করে পেমেন্ট সারিতে পাঠানো হয়েছে।",
     "ticketNumber": "টিকিট নম্বর",
     "paymentTicketInstruction": "বিল পরিশোধ করতে এই টিকিটটি পেমেন্ট কাউন্টারে নিয়ে যান।",
-    "selectCounter": "কাউন্টার নির্বাচন করুন"
+    "selectCounter": "কাউন্টার নির্বাচন করুন",
+    "decreaseQuantity": "পরিমাণ কমান",
+    "increaseQuantity": "পরিমাণ বাড়ান",
+    "distributeEvenly": "সমানভাবে ভাগ করুন"
   },
   "printTest": {
     "amt": "এএমটি",

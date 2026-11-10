@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "Ticket creato e inviato alla coda pagamenti.",
     "ticketNumber": "Numero ticket",
     "paymentTicketInstruction": "Porta questo ticket alla cassa per completare il pagamento.",
-    "selectCounter": "Seleziona postazione"
+    "selectCounter": "Seleziona postazione",
+    "decreaseQuantity": "Diminuisci quantità",
+    "increaseQuantity": "Aumenta quantità",
+    "distributeEvenly": "Distribuisci equamente"
   },
   "printTest": {
     "amt": "Importo",

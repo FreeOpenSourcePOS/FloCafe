@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "Tiketi imeundwa na kutumwa kwenye foleni ya malipo.",
     "ticketNumber": "Nambari ya Tiketi",
     "paymentTicketInstruction": "Peleka tiketi hii kwenye kaunta ya malipo ili kulipa.",
-    "selectCounter": "Chagua Kaunta"
+    "selectCounter": "Chagua Kaunta",
+    "decreaseQuantity": "Punguza idadi",
+    "increaseQuantity": "Ongeza idadi",
+    "distributeEvenly": "Gawanya sawasawa"
   },
   "printTest": {
     "amt": "Kiasi",

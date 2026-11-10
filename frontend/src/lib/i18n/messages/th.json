@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "สร้างตั๋วและส่งเข้าคิวรอชำระเงินแล้ว",
     "ticketNumber": "หมายเลขตั๋ว",
     "paymentTicketInstruction": "นำตั๋วนี้ไปชำระเงินที่เคาน์เตอร์ชำระเงิน",
-    "selectCounter": "เลือกเคาน์เตอร์"
+    "selectCounter": "เลือกเคาน์เตอร์",
+    "decreaseQuantity": "ลดจำนวน",
+    "increaseQuantity": "เพิ่มจำนวน",
+    "distributeEvenly": "กระจายเท่า ๆ กัน"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

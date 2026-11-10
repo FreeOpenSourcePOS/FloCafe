@@ -202,8 +202,14 @@ function equalShareToggle(page: Page) {
 }
 
 async function openEqualShare(page: Page): Promise<void> {
-  await equalShareToggle(page).click();
-  await expect(equalShareToggle(page)).toHaveAttribute('aria-expanded', 'true');
+  const toggle = equalShareToggle(page);
+  await toggle.click();
+  const isPressed = await toggle.getAttribute('aria-pressed');
+  if (isPressed !== null) {
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  } else {
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  }
 }
 
 function payerCount(page: Page) {
@@ -1295,5 +1301,44 @@ test.describe('equal share payments', () => {
     await openEqualShare(page);
     await expect(payerCount(page)).toHaveValue('3');
     expect(await tenderAmount(page, 'Cash')).toBe('');
+  });
+
+  test('touch steppers, quick presets, and unified split tabs adjust shares without typing', async ({
+    page,
+    request,
+  }) => {
+    await writeSplitSetting(request, 'true');
+    const order = await createCheck(request, fixture.productId, 'Equal share steppers presets', 2, {
+      quantity: 2,
+    });
+
+    await login(page);
+    await openOrderCheckout(page, order.order_number);
+
+    // Both split modes live inside the unified Split card; Split by Items opens first.
+    const unifiedCard = page.getByTestId('unified-split-card');
+    await expect(unifiedCard).toBeVisible();
+    await expect(unifiedCard.getByTestId('split-check-section')).toBeVisible();
+    await expect(page.getByTestId('split-check-section')).toHaveCount(1);
+
+    // Switch to Equal Share via the unified tab and adjust count using presets and +/- steppers.
+    await openEqualShare(page);
+    await expect(payerCount(page)).toHaveValue('2');
+    await expect(page.getByTestId('equal-share-decrement')).toBeDisabled();
+
+    await page.getByTestId('equal-share-increment').click();
+    await expect(payerCount(page)).toHaveValue('3');
+    expect(await shareAmounts(page)).toEqual(['66.67', '66.67', '66.66']);
+
+    await page.getByTestId('equal-share-preset-4').click();
+    await expect(payerCount(page)).toHaveValue('4');
+    expect(await shareAmounts(page)).toEqual(['50.00', '50.00', '50.00', '50.00']);
+
+    await page.getByTestId('equal-share-decrement').click();
+    await expect(payerCount(page)).toHaveValue('3');
+
+    // Switching back to the By Items tab reveals Split check inside the same unified card.
+    await page.getByTestId('split-mode-items-tab').click();
+    await expect(unifiedCard.getByRole('button', { name: 'Split check' })).toBeEnabled();
   });
 });

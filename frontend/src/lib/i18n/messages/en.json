@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "Ticket created and sent to the payment queue.",
     "ticketNumber": "Ticket Number",
     "paymentTicketInstruction": "Take this ticket to the payment counter to pay.",
-    "selectCounter": "Select Counter"
+    "selectCounter": "Select Counter",
+    "decreaseQuantity": "Decrease quantity",
+    "increaseQuantity": "Increase quantity",
+    "distributeEvenly": "Distribute evenly"
   },
   "printTest": {
     "amt": "Amt",

@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "Bon aangemaakt en naar de betaalwachtrij gestuurd.",
     "ticketNumber": "Bonnummer",
     "paymentTicketInstruction": "Neem deze bon mee naar de kassa om te betalen.",
-    "selectCounter": "Balie selecteren"
+    "selectCounter": "Balie selecteren",
+    "decreaseQuantity": "Aantal verlagen",
+    "increaseQuantity": "Aantal verhogen",
+    "distributeEvenly": "Gelijk verdelen"
   },
   "printTest": {
     "amt": "Bedrag",

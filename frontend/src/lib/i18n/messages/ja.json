@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "伝票が作成され、会計待ち一覧に送信されました。",
     "ticketNumber": "伝票番号",
     "paymentTicketInstruction": "この伝票をお会計カウンターにお持ちください。",
-    "selectCounter": "カウンターを選択"
+    "selectCounter": "カウンターを選択",
+    "decreaseQuantity": "数量を減らす",
+    "increaseQuantity": "数量を増やす",
+    "distributeEvenly": "均等に割り振る"
   },
   "printTest": {
     "amt": "金額",

@@ -1280,7 +1280,10 @@
     "paymentTicketDesc": "Талон создан и отправлен в очередь на оплату.",
     "ticketNumber": "Номер талона",
     "paymentTicketInstruction": "Предъявите этот талон на кассе для оплаты.",
-    "selectCounter": "Выбрать кассу"
+    "selectCounter": "Выбрать кассу",
+    "decreaseQuantity": "Уменьшить количество",
+    "increaseQuantity": "Увеличить количество",
+    "distributeEvenly": "Распределить поровну"
   },
   "printTest": {
     "amt": "Сумма",

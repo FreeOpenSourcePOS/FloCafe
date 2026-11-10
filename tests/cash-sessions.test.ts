@@ -1885,6 +1885,7 @@ async function main() {
     db.prepare(
       `INSERT INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '00:00', ?) ON CONFLICT(key) DO UPDATE SET value='00:00', updated_at=excluded.updated_at`,
     ).run(now());
+    db.prepare(`DELETE FROM cash_drawer_movements WHERE business_date = ?`).run(todayLocal);
   }
 
   // ── Section 10: cross-midnight shift closure business date (#1360) ───

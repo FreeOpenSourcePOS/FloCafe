@@ -33,9 +33,16 @@ const customerReadRateLimit = expressRateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const configuredCustomerWriteLimit = Number.parseInt(
+  process.env.FLO_CUSTOMER_WRITE_RATE_LIMIT_MAX || '',
+  10,
+);
 const customerWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit:
+    Number.isFinite(configuredCustomerWriteLimit) && configuredCustomerWriteLimit > 0
+      ? configuredCustomerWriteLimit
+      : 60,
   standardHeaders: true,
   legacyHeaders: false,
 });

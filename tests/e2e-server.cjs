@@ -31,6 +31,9 @@ process.env.FLO_AUTH_RATE_LIMIT_MAX = '1000';
 // here 429s the suite's own page loads instead of rate-limiting an abusive caller.
 process.env.FLO_SETTINGS_READ_RATE_LIMIT_MAX = '100000';
 process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX = '1000';
+process.env.FLO_CATEGORY_WRITE_RATE_LIMIT_MAX = '1000';
+process.env.FLO_ADDON_GROUP_WRITE_RATE_LIMIT_MAX = '1000';
+process.env.FLO_CUSTOMER_WRITE_RATE_LIMIT_MAX = '1000';
 process.env.FLO_ORDER_READ_RATE_LIMIT_MAX = '100000';
 process.env.FLO_WHATSAPP_SOCKET_DISABLED = '1';
 process.env.FLO_MATRIX_OFFLINE = '1';

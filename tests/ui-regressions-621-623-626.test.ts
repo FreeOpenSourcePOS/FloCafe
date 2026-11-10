@@ -66,14 +66,6 @@ assert.match(
   'update failure copy has dark-mode contrast',
 );
 
-const kds = source('frontend/src/hooks/useKdsConnection.ts');
-assert.match(
-  kds,
-  /bg-yellow-50 dark:bg-yellow-950\/60/,
-  'waiting KDS cards use a dark-mode background',
-);
-assert.match(kds, /text-yellow-700 dark:text-yellow-300/, 'waiting KDS labels use dark-mode text');
-
 const customers = source('frontend/src/app/(dashboard)/customers/page.tsx');
 assert.match(
   customers,
@@ -679,6 +671,43 @@ try {
       defaultKdsMarkup,
       />Waiting<\/span>[\s\S]*?>Preparing<\/span>[\s\S]*?>Ready<\/span>[\s\S]*?>Delivered<\/span>/,
       'rendered KdsWorkspace mounts KdsKanbanBoard columns by default',
+    );
+
+    const waitingKdsMarkup = renderWithIntl(
+      React.createElement(KdsWorkspace, {
+        conn: {
+          ...baseKdsConn,
+          orders: [
+            {
+              id: 77,
+              order_number: 'ORD-077',
+              type: 'dine_in',
+              created_at: '2026-11-08 15:00:00',
+              items: [
+                {
+                  id: 701,
+                  order_id: 77,
+                  product_id: 'prod-1',
+                  product_name: 'Espresso',
+                  quantity: 1,
+                  status: 'pending',
+                },
+              ],
+            },
+          ],
+        },
+        serverDefault: null,
+      }),
+    );
+    assert.match(
+      waitingKdsMarkup,
+      /<div[^>]*class="[^"]*bg-yellow-50 dark:bg-yellow-950\/60[^"]*"[^>]*>[\s\S]*?ORD-077/,
+      'waiting KDS cards use a dark-mode background in rendered KdsWorkspace output',
+    );
+    assert.match(
+      waitingKdsMarkup,
+      /<span class="text-base font-semibold text-yellow-800 dark:text-yellow-200">Waiting<\/span>/,
+      'waiting KDS labels use dark-mode text in rendered KdsWorkspace output',
     );
 
     const tabsKdsMarkup = renderWithIntl(

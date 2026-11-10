@@ -9,6 +9,7 @@ import {
   normalizeAutoLockMinutesValue,
   type BillTemplate,
 } from '@/store/pos-settings';
+import { clearKdsThemeOverride } from '@/lib/i18n/server-language';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { usePosSortPreference } from '@/hooks/usePosSort';
@@ -550,6 +551,7 @@ export default function SettingsPage() {
     setThemeMode(next);
     try {
       await api.put('/settings/theme_mode', { value: next });
+      clearKdsThemeOverride();
       lastCommitted.current = next;
     } catch {
       setThemeMode(previous);
@@ -4632,6 +4634,7 @@ export default function SettingsPage() {
                           disabled={savingTheme}
                           onClick={() => {
                             if (!active) saveThemeMode(m);
+                            else clearKdsThemeOverride();
                           }}
                           className={`text-start rounded-lg border-2 px-4 py-3 transition flex-1 ${
                             active

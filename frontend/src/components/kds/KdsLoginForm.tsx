@@ -57,9 +57,9 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-6">
-          <ChefHat size={48} className="mx-auto text-brand mb-4" />
+          <ChefHat size={48} className="mx-auto text-brand dark:text-indigo-300 mb-4" />
           <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-          <p className="text-muted-foreground mt-2">{t('loginSubtitle')}</p>
+          <p className="text-slate-700 dark:text-slate-300 mt-2">{t('loginSubtitle')}</p>
         </div>
 
         {pinUsers.length > 0 && (
@@ -83,7 +83,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
               className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                 activeSignInMode === 'pin'
                   ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-foreground'
               }`}
             >
               <KeyRound className="size-4 shrink-0" />
@@ -103,7 +103,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
               className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                 activeSignInMode === 'password'
                   ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-foreground'
               }`}
             >
               <Mail className="size-4 shrink-0" />
@@ -115,12 +115,14 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
         {activeSignInMode === 'pin' ? (
           <div data-testid="pin-user-picker" className="space-y-4">
             <div className="flex items-center gap-2">
-              <KeyRound size={18} className="text-brand" />
+              <KeyRound size={18} className="text-brand dark:text-indigo-300" />
               <div>
                 <h2 className="text-sm font-semibold text-foreground">
                   {tAuth('quickSwitchTitle')}
                 </h2>
-                <p className="text-xs text-muted-foreground">{tAuth('quickSwitchSubtitle')}</p>
+                <p className="text-xs text-slate-700 dark:text-slate-300">
+                  {tAuth('quickSwitchSubtitle')}
+                </p>
               </div>
             </div>
 
@@ -145,12 +147,14 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                         : 'border-border hover:border-brand/50 hover:bg-muted/60'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-full bg-brand/15 text-brand flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-brand/15 text-brand dark:text-indigo-300 flex items-center justify-center shrink-0">
                       <UserRound size={16} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground truncate">{u.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{roleLabel}</p>
+                      <p className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                        {roleLabel}
+                      </p>
                     </div>
                   </button>
                 );
@@ -164,10 +168,12 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 className="pt-3 border-t border-border space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
                     {tAuth('enterPinFor', { name: selectedPinUser.name })}
                   </span>
-                  <span className="text-xs font-mono text-muted-foreground">{pin.length}/6</span>
+                  <span className="text-xs font-mono text-slate-700 dark:text-slate-300">
+                    {pin.length}/6
+                  </span>
                 </div>
 
                 <input
@@ -203,7 +209,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                     type="button"
                     data-testid="pin-pad-clear"
                     onClick={clearPin}
-                    className="h-11 rounded-lg border border-border bg-muted/50 hover:bg-muted text-xs font-medium text-muted-foreground transition-colors"
+                    className="h-11 rounded-lg border border-border bg-muted/50 hover:bg-muted text-xs font-medium text-slate-700 dark:text-slate-300 transition-colors"
                   >
                     {tCommon('clear')}
                   </button>
@@ -220,7 +226,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                     data-testid="pin-pad-backspace"
                     onClick={backspacePin}
                     aria-label={tCommon('delete')}
-                    className="h-11 rounded-lg border border-border bg-muted/50 hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors"
+                    className="h-11 rounded-lg border border-border bg-muted/50 hover:bg-muted flex items-center justify-center text-slate-700 dark:text-slate-300 transition-colors"
                   >
                     <Delete size={16} />
                   </button>
@@ -230,13 +236,13 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                   <p
                     role="alert"
                     data-testid="pin-login-error"
-                    className="text-xs text-destructive text-center font-medium"
+                    className="text-xs text-red-700 dark:text-red-300 text-center font-medium"
                   >
                     {conn.loginError}
                   </p>
                 )}
 
-                <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 select-none cursor-pointer">
                   <input
                     type="checkbox"
                     checked={conn.rememberMe}
@@ -255,7 +261,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                       setPin('');
                       conn.setLoginError?.('');
                     }}
-                    className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                    className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-foreground hover:bg-muted/50 transition-colors"
                   >
                     {tCommon('cancel')}
                   </button>
@@ -277,7 +283,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
               <div
                 role="alert"
                 aria-live="polite"
-                className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm"
+                className="bg-red-50 border border-red-300 text-red-800 dark:bg-red-950/90 dark:border-red-700 dark:text-red-200 px-4 py-3 rounded-lg text-sm"
               >
                 {conn.loginError}
               </div>
@@ -297,7 +303,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 value={conn.loginEmail}
                 onFocus={() => setSignInMode('password')}
                 onChange={(e) => conn.setLoginEmail(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-border bg-card text-foreground rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                 placeholder="chef@flo.local"
                 required
               />
@@ -317,13 +323,13 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                 value={conn.loginPassword}
                 onFocus={() => setSignInMode('password')}
                 onChange={(e) => conn.setLoginPassword(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-border bg-card text-foreground rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                 placeholder="••••••••"
                 required
               />
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 select-none cursor-pointer">
               <input
                 type="checkbox"
                 checked={conn.rememberMe}
@@ -344,7 +350,9 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
           </form>
         )}
 
-        <p className="text-xs text-gray-400 text-center mt-6">{t('loginHint')}</p>
+        <p className="text-xs text-slate-700 dark:text-slate-300 text-center mt-6">
+          {t('loginHint')}
+        </p>
       </div>
     </div>
   );

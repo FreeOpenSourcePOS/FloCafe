@@ -1716,6 +1716,25 @@ async function main() {
     'session uses its own float, not the movement',
   );
 
+  // Clear wall-clock ledger rows before fixed-date sections so real calendar dates never collide with fixtures.
+  for (const table of [
+    'refund_idempotency',
+    'refunds',
+    'payment_idempotency',
+    'print_logs',
+    'bill_items',
+    'bills',
+    'order_audit_log',
+    'order_item_addons',
+    'order_items',
+    'orders',
+    'cash_drawer_movements',
+    'cash_sessions',
+    'cash_closures',
+  ]) {
+    db.prepare(`DELETE FROM ${table}`).run();
+  }
+
   // ── Section 9: closed business day blocks new shift open ─────────────
   console.log('Section 9: closed business day blocks new shift open');
 

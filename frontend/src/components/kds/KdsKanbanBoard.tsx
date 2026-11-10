@@ -263,7 +263,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
               <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
             )}
           </div>
-          <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
+          <div className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-300 font-mono shrink-0">
             <Clock size={12} />
             <Ltr>
               <ElapsedTime dateStr={order.created_at} />
@@ -272,7 +272,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
         </div>
 
         {order.special_instructions && (
-          <p className="mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-sm text-amber-700 font-medium break-words">
+          <p className="mb-2 px-2 py-1 bg-amber-50 border border-amber-300 text-amber-900 dark:bg-amber-950/80 dark:border-amber-700 dark:text-amber-200 rounded text-sm font-medium break-words">
             📝 {order.special_instructions}
           </p>
         )}
@@ -302,7 +302,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
                   {item.addons.map((addon, i) => (
                     <span
                       key={`${addon.id ?? addon.name}-${i}`}
-                      className="text-[10px] bg-card/70 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200"
+                      className="text-xs font-medium bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-950/90 dark:text-blue-200 dark:border-blue-700 px-2 py-0.5 rounded-md"
                     >
                       + {addon.name}
                       {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
@@ -311,7 +311,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
                 </div>
               )}
               {item.special_instructions && (
-                <p className="ms-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
+                <p className="ms-[26px] mt-1 px-2 py-0.5 rounded border text-xs font-semibold italic break-words bg-red-50 text-red-800 border-red-300 dark:bg-red-950/90 dark:text-red-200 dark:border-red-700">
                   {`"${item.special_instructions}"`}
                 </p>
               )}
@@ -353,7 +353,7 @@ function VoidedColumn({
         {groups.map(({ order, items }) => (
           <div
             key={order.id}
-            className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm opacity-80`}
+            className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm`}
           >
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
               <Ltr as="span" className="font-bold text-sm shrink-0">
@@ -375,7 +375,7 @@ function VoidedColumn({
                     <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>
                       {item.quantity}×
                     </span>
-                    <span className="text-lg text-gray-400 line-through font-medium flex-1 truncate">
+                    <span className="text-lg text-slate-700 dark:text-slate-200 line-through font-medium flex-1 truncate">
                       {formatItemHeading(item.product_name, item.variant_selection)}
                     </span>
                   </div>
@@ -384,7 +384,7 @@ function VoidedColumn({
                       {item.addons.map((addon, i) => (
                         <span
                           key={`${addon.id ?? addon.name}-${i}`}
-                          className="text-[10px] bg-card/70 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200"
+                          className="text-xs font-medium bg-blue-50 text-blue-800 border border-blue-300 dark:bg-blue-950/90 dark:text-blue-200 dark:border-blue-700 px-2 py-0.5 rounded-md"
                         >
                           + {addon.name}
                           {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
@@ -393,7 +393,7 @@ function VoidedColumn({
                     </div>
                   )}
                   {item.special_instructions && (
-                    <p className="ms-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
+                    <p className="ms-[26px] mt-1 px-2 py-0.5 rounded border text-xs font-semibold italic break-words bg-red-50 text-red-800 border-red-300 dark:bg-red-950/90 dark:text-red-200 dark:border-red-700">
                       {`"${item.special_instructions}"`}
                     </p>
                   )}
@@ -403,7 +403,7 @@ function VoidedColumn({
           </div>
         ))}
         {count === 0 && (
-          <div className="flex flex-col items-center justify-center py-6 text-gray-400 text-xs">
+          <div className="flex flex-col items-center justify-center py-6 text-slate-700 dark:text-slate-300 text-xs">
             <span>{t('emptyColumn')}</span>
           </div>
         )}

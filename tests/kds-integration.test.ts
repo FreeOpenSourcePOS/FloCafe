@@ -430,7 +430,14 @@ async function run() {
       defaultInfoRes.body.kds_default_view === 'kanban',
       'Fresh DB migration seeds kds_default_view = kanban on standalone /api/kds/info',
     );
+    assert(
+      defaultInfoRes.body.theme_mode === null,
+      'Standalone /api/kds/info returns theme_mode = null when theme_mode is unset',
+    );
 
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('theme_mode', 'light', ?)",
+    ).run(now());
     const putTabsRes = await request(`http://127.0.0.1:${port}`)
       .put('/api/kds/view')
       .set('Authorization', `Bearer ${token}`)
@@ -449,6 +456,10 @@ async function run() {
       preservedTabsInfoRes.body.kds_default_view === 'tabs',
       'Existing installation with kds_default_view = tabs preserves tabs on /api/kds/info',
     );
+    assert(
+      preservedTabsInfoRes.body.theme_mode === 'light',
+      'Standalone /api/kds/info returns configured theme_mode = light',
+    );
 
     const invalidViewRes = await request(`http://127.0.0.1:${port}`)
       .put('/api/kds/view')
@@ -460,12 +471,22 @@ async function run() {
     );
 
     db.prepare("DELETE FROM settings WHERE key = 'kds_default_view'").run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('theme_mode', 'bogus', ?)",
+    ).run(now());
     const fallbackInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
     assert(
       fallbackInfoRes.body.kds_default_view === 'kanban',
       'Standalone /api/kds/info falls back to kanban when kds_default_view is unset',
     );
+    assert(
+      fallbackInfoRes.body.theme_mode === null,
+      'Standalone /api/kds/info normalizes invalid theme_mode to null',
+    );
 
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('theme_mode', 'dark', ?)",
+    ).run(now());
     db.prepare(`INSERT INTO user_permission_overrides
       (user_id, permission_id, effect, updated_by, created_at, updated_at)
       VALUES ('user-chef-1', 'kitchen.use', 'deny', 'user-chef-1', ?, ?)`).run(now(), now());
@@ -480,6 +501,10 @@ async function run() {
     // 8. Public KDS info endpoint responds and rate-limits repeated LAN requests (100 total requests per window)
     const infoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
     assert(infoRes.status === 200, 'Public info endpoint returns 200');
+    assert(
+      infoRes.body.theme_mode === 'dark',
+      'Standalone /api/kds/info returns configured theme_mode = dark',
+    );
 
     // The public endpoint must also throttle LAN clients before repeated database reads.
     for (let i = 4; i < 100; i += 1) {

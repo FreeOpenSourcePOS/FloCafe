@@ -22,11 +22,10 @@ import {
   isServerBillPrintingEnabled,
   recordAuthAudit,
   revokeDatabaseMaintenanceHandoff,
-  verifyPinAsync,
 } from './db';
 import { getJWTSecret } from './security/jwt-secret';
 import { asyncHandler } from './middleware/async-handler';
-import { handlePasswordChange, handlePinChange } from './routes/auth';
+import { authenticatePinLogin, handlePasswordChange, handlePinChange } from './routes/auth';
 import {
   authRateLimit,
   loginAuthRateLimit,
@@ -34,8 +33,6 @@ import {
   incrementFailedLogin,
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
-  normalizeIpForPinRateLimit,
-  withPinVerificationLock,
   staticRouteRateLimit,
   corsOptions,
   isTokenRevoked,
@@ -438,119 +435,25 @@ export function startServerApp(): Promise<void> {
             return res.status(400).json({ error: 'user_id and pin are required' });
           }
 
-          const canonicalIp = normalizeIpForPinRateLimit(ip);
-          const pinRateKey = `${canonicalIp}:pin:${userId}`;
-          const pinLockKey = `pin-user:${userId}`;
-          type VerifiedServerAppUser = {
-            id: string;
-            name: string;
-            email: string;
-            role: string;
-            is_active: number;
-            pin_hash: string | null;
-          };
-          type ServerAppPinLoginOutcome =
-            | { status: 429; body: Record<string, unknown> }
-            | { status: 401; body: Record<string, unknown> }
-            | { status: 403; body: Record<string, unknown> }
-            | { status: 200; user: VerifiedServerAppUser };
-
-          const verificationResult = await withPinVerificationLock<ServerAppPinLoginOutcome>(
-            pinLockKey,
-            async () => {
-              const ipRateLimit = checkLoginRateLimit(pinRateKey);
-              if (!ipRateLimit.allowed) {
-                const waitMinutes = ipRateLimit.waitMinutes || 0;
-                recordAuthAudit(db, {
-                  userId,
-                  eventType: 'pin_login',
-                  outcome: 'rate_limited',
-                  ipAddress: ip,
-                  details: { service: 'server-app', wait_minutes: waitMinutes },
-                });
-                return {
-                  status: 429,
-                  body: {
-                    error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
-                  },
-                };
-              }
-
-              if (!/^\d{4,6}$/.test(rawPin)) {
-                const attemptsRemaining = incrementFailedLogin(pinRateKey);
-                recordAuthAudit(db, {
-                  userId,
-                  eventType: 'pin_login',
-                  outcome: 'failure',
-                  ipAddress: ip,
-                  details: {
-                    service: 'server-app',
-                    reason: 'invalid_pin_format',
-                    attempts_remaining: attemptsRemaining,
-                  },
-                });
-                return {
-                  status: 401,
-                  body: {
-                    error: 'Invalid credentials',
-                    attempts_remaining: attemptsRemaining,
-                    lockout_minutes:
-                      attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-                  },
-                };
-              }
-
-              const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
-                | VerifiedServerAppUser
-                | undefined;
-              let pinMatches = false;
-              if (user && user.is_active === 1 && user.pin_hash) {
-                try {
-                  pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
-                } catch {
-                  pinMatches = false;
-                }
-              }
-
-              if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-                const attemptsRemaining = incrementFailedLogin(pinRateKey);
-                recordAuthAudit(db, {
-                  userId,
-                  eventType: 'pin_login',
-                  outcome: 'failure',
-                  ipAddress: ip,
-                  details: {
-                    service: 'server-app',
-                    reason: !user
-                      ? 'user_not_found'
-                      : user.is_active !== 1
-                        ? 'user_inactive'
-                        : !user.pin_hash
-                          ? 'pin_not_set'
-                          : 'invalid_pin',
-                    attempts_remaining: attemptsRemaining,
-                  },
-                });
-                return {
-                  status: 401,
-                  body: {
-                    error: 'Invalid credentials',
-                    attempts_remaining: attemptsRemaining,
-                    lockout_minutes:
-                      attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-                  },
-                };
-              }
-
-              if (!hasPermission(user.id, 'server-app.use')) {
-                recordAuthAudit(db, {
-                  userId: user.id,
+          const remember = !!(remember_me ?? rememberMe);
+          const result = await authenticatePinLogin({
+            db,
+            userId,
+            rawPin,
+            ip,
+            remember,
+            service: 'server-app',
+            authorizeUser: (currentDb, currentUser) => {
+              if (!hasPermission(currentUser.id, 'server-app.use')) {
+                recordAuthAudit(currentDb, {
+                  userId: currentUser.id,
                   eventType: 'pin_login',
                   outcome: 'failure',
                   ipAddress: ip,
                   details: { service: 'server-app', reason: 'permission_denied' },
                 });
                 return {
+                  ok: false,
                   status: 403,
                   body: {
                     error: 'Access denied. Only server, manager, or owner accounts allowed.',
@@ -558,37 +461,15 @@ export function startServerApp(): Promise<void> {
                   },
                 };
               }
-
-              resetSuccessfulLogin(pinRateKey);
-              recordAuthAudit(db, {
-                userId: user.id,
-                eventType: 'pin_login',
-                outcome: 'success',
-                ipAddress: ip,
-                details: { service: 'server-app', role: user.role },
-              });
-              return { status: 200, user };
+              return { ok: true, extra: undefined };
             },
-          );
+          });
 
-          if (verificationResult.status !== 200) {
-            return res.status(verificationResult.status).json(verificationResult.body);
+          if (result.status !== 200) {
+            return res.status(result.status).json(result.body);
           }
 
-          const { user } = verificationResult;
-          const remember = !!(remember_me ?? rememberMe);
-          const token = jwt.sign(
-            {
-              userId: user.id,
-              email: user.email,
-              role: user.role,
-              remember,
-              jti: randomUUID(),
-              iat: nextTokenIatSeconds(),
-              exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
-            },
-            getJWTSecret(),
-          );
+          const { token, user } = result;
 
           res.json({
             access_token: token,

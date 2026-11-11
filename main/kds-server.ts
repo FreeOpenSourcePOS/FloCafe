@@ -35,7 +35,6 @@ import {
   projectKdsOrder,
   recordAuthAudit,
   UNRELEASED_KDS_ORDER_ITEM_ERROR,
-  verifyPinAsync,
 } from './db';
 import { checkKdsWebSocketAdmission, setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { setKdsPort } from './server-state';
@@ -44,6 +43,7 @@ import { cloudSync } from './services/cloud-sync';
 import { getJWTSecret } from './security/jwt-secret';
 import { asyncHandler } from './middleware/async-handler';
 import {
+  authenticatePinLogin,
   handlePasswordChange,
   handlePinChange,
   normalizeEmail,
@@ -57,8 +57,6 @@ import {
   incrementFailedLogin,
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
-  normalizeIpForPinRateLimit,
-  withPinVerificationLock,
   staticRouteRateLimit,
   corsOptions,
   isTokenRevoked,
@@ -471,126 +469,28 @@ export function startKdsServer(): Promise<void> {
             return res.status(400).json({ error: 'user_id and pin are required' });
           }
 
-          const canonicalIp = normalizeIpForPinRateLimit(ip);
-          const pinRateKey = `${canonicalIp}:pin:${userId}`;
-          const pinLockKey = `pin-user:${userId}`;
-          type VerifiedKdsUser = {
-            id: string;
-            name: string;
-            email: string;
-            role: string;
-            is_active: number;
-            pin_hash: string | null;
-            category_ids: string | null;
-          };
-          type KdsPinLoginOutcome =
-            | { status: 429; body: Record<string, unknown> }
-            | { status: 401; body: Record<string, unknown> }
-            | { status: 403; body: Record<string, unknown> }
-            | { status: 500; body: Record<string, unknown> }
-            | {
-                status: 200;
-                user: VerifiedKdsUser;
-                stationIds: string[];
-                stationAssignmentsConfigured: boolean;
-              };
-
-          const verificationResult = await withPinVerificationLock<KdsPinLoginOutcome>(
-            pinLockKey,
-            async () => {
-              const ipRateLimit = checkLoginRateLimit(pinRateKey);
-              if (!ipRateLimit.allowed) {
-                const waitMinutes = ipRateLimit.waitMinutes || 0;
-                recordAuthAudit(db, {
-                  userId,
-                  eventType: 'pin_login',
-                  outcome: 'rate_limited',
-                  ipAddress: ip,
-                  details: { service: 'kds', wait_minutes: waitMinutes },
-                });
-                return {
-                  status: 429,
-                  body: {
-                    error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
-                  },
-                };
-              }
-
-              if (!/^\d{4,6}$/.test(rawPin)) {
-                const attemptsRemaining = incrementFailedLogin(pinRateKey);
-                recordAuthAudit(db, {
-                  userId,
-                  eventType: 'pin_login',
-                  outcome: 'failure',
-                  ipAddress: ip,
-                  details: {
-                    service: 'kds',
-                    reason: 'invalid_pin_format',
-                    attempts_remaining: attemptsRemaining,
-                  },
-                });
-                return {
-                  status: 401,
-                  body: {
-                    error: 'Invalid credentials',
-                    attempts_remaining: attemptsRemaining,
-                    lockout_minutes:
-                      attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-                  },
-                };
-              }
-
-              const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
-                | VerifiedKdsUser
-                | undefined;
-              let pinMatches = false;
-              if (user && user.is_active === 1 && user.pin_hash) {
-                try {
-                  pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
-                } catch {
-                  pinMatches = false;
-                }
-              }
-
-              if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-                const attemptsRemaining = incrementFailedLogin(pinRateKey);
-                recordAuthAudit(db, {
-                  userId,
-                  eventType: 'pin_login',
-                  outcome: 'failure',
-                  ipAddress: ip,
-                  details: {
-                    service: 'kds',
-                    reason: !user
-                      ? 'user_not_found'
-                      : user.is_active !== 1
-                        ? 'user_inactive'
-                        : !user.pin_hash
-                          ? 'pin_not_set'
-                          : 'invalid_pin',
-                    attempts_remaining: attemptsRemaining,
-                  },
-                });
-                return {
-                  status: 401,
-                  body: {
-                    error: 'Invalid credentials',
-                    attempts_remaining: attemptsRemaining,
-                    lockout_minutes:
-                      attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-                  },
-                };
-              }
-
-              if (!hasPermission(user.id, 'kitchen.use')) {
-                recordAuthAudit(db, {
-                  userId: user.id,
+          const remember = !!(rememberMe ?? remember_me);
+          const result = await authenticatePinLogin<{
+            stationIds: string[];
+            stationAssignmentsConfigured: boolean;
+          }>({
+            db,
+            userId,
+            rawPin,
+            ip,
+            remember,
+            service: 'kds',
+            authorizeUser: (currentDb, currentUser) => {
+              if (!hasPermission(currentUser.id, 'kitchen.use')) {
+                recordAuthAudit(currentDb, {
+                  userId: currentUser.id,
                   eventType: 'pin_login',
                   outcome: 'failure',
                   ipAddress: ip,
                   details: { service: 'kds', reason: 'permission_denied' },
                 });
                 return {
+                  ok: false,
                   status: 403,
                   body: {
                     error: 'Access denied. Only kitchen staff allowed.',
@@ -599,58 +499,45 @@ export function startKdsServer(): Promise<void> {
                 };
               }
 
-              const stationIds = getUserKdsStationIds(db, user.id);
-              const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
+              const stationIds = getUserKdsStationIds(currentDb, currentUser.id);
+              const stationAssignmentsConfigured = hasUserKdsStationAssignments(
+                currentDb,
+                currentUser.id,
+              );
               if (!stationIds || stationAssignmentsConfigured === null) {
                 return {
+                  ok: false,
                   status: 500,
                   body: { error: 'Could not load station permissions' },
                 };
               }
               if (stationAssignmentsConfigured && stationIds.length === 0) {
-                recordAuthAudit(db, {
-                  userId: user.id,
+                recordAuthAudit(currentDb, {
+                  userId: currentUser.id,
                   eventType: 'pin_login',
                   outcome: 'failure',
                   ipAddress: ip,
                   details: { service: 'kds', reason: 'no_active_station' },
                 });
                 return {
+                  ok: false,
                   status: 403,
                   body: { error: 'No active kitchen station is assigned to this user' },
                 };
               }
-
-              resetSuccessfulLogin(pinRateKey);
-              recordAuthAudit(db, {
-                userId: user.id,
-                eventType: 'pin_login',
-                outcome: 'success',
-                ipAddress: ip,
-                details: { service: 'kds', role: user.role },
-              });
-              return { status: 200, user, stationIds, stationAssignmentsConfigured };
+              return { ok: true, extra: { stationIds, stationAssignmentsConfigured } };
             },
-          );
+          });
 
-          if (verificationResult.status !== 200) {
-            return res.status(verificationResult.status).json(verificationResult.body);
+          if (result.status !== 200) {
+            return res.status(result.status).json(result.body);
           }
 
-          const { user, stationIds, stationAssignmentsConfigured } = verificationResult;
-          const remember = !!(rememberMe ?? remember_me);
-          const token = jwt.sign(
-            {
-              userId: user.id,
-              email: user.email,
-              role: user.role,
-              remember,
-              jti: randomUUID(),
-              iat: nextTokenIatSeconds(),
-              exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
-            },
-            getJWTSecret(),
-          );
+          const {
+            token,
+            user,
+            extra: { stationIds, stationAssignmentsConfigured },
+          } = result;
 
           res.json({
             access_token: token,

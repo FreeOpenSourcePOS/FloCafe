@@ -170,7 +170,7 @@ function printLargeOrderNumberBanner(
     .trim()
     .replace(/^#/, '');
   if (!cleanOrderNum) return;
-  const bannerText = `ORDER #${cleanOrderNum}`;
+  const bannerText = `#${cleanOrderNum}`;
   const layout = layoutStyledUnit(
     {
       text: bannerText,

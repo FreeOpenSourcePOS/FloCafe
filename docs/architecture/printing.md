@@ -203,7 +203,7 @@ tickets do not use the bill logo setting.
 The business setting `bill_show_large_order_number` controls whether customer receipts and kitchen
 tickets print a prominent, bold order number banner. On customer receipts (classic, compact,
 merchant, browser HTML, and WebUSB/tax-bill paths), the banner renders centered, double-height, bold
-`ORDER #<number>` below the invoice header, while preserving the underlying order number in
+`#<number>` below the invoice header, while preserving the underlying order number in
 `DocumentMetaBlock.orderNumber` when `invoiceNumber` is an invoice sequence. On kitchen tickets
 (`document-kot`, `kot-encoder`, and `kot-web-print`), it renders centered, double-height, bold
 `#<number>` in the header block. When the formatted banner text exceeds the printable width of

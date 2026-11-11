@@ -50,7 +50,7 @@ Browser bills center the logo above the business header. See the
 
 In **Settings > Printers > Bill Content**, the **Large Bold Order Number** toggle controls whether
 customer receipts and kitchen order tickets (KOT) print a prominent, bold order number banner
-(`ORDER #<number>` on customer receipts, `#<number>` on KOTs) for order pickup and handover
+(`#<number>` on both customer receipts and KOTs) for order pickup and handover
 verification. The toggle is enabled by default. Signed compliance-pack receipts omit the callout
 banner even when the toggle is enabled. On KDS order cards (both Kanban and Tabs views), order
 numbers are always displayed in prominent bold text to assist kitchen staff and expediters. See the

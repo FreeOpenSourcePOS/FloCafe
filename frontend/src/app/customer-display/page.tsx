@@ -616,26 +616,40 @@ function OrderBoardSection({
                   </span>
                 )}
               </div>
-              <div className="flex max-w-44 flex-wrap items-center justify-end gap-1.5">
-                {allPages.map((entry, index) => {
-                  const isActive = index === activePageIndex;
-                  return (
-                    <span
-                      key={`${entry.group}:${getPageKey(entry.page.map(getOrderId))}`}
-                      data-testid="customer-display-page-dot"
-                      data-active={isActive ? 'true' : 'false'}
-                      className={`h-2 rounded-full transition-all duration-300 ${
-                        isActive
-                          ? accent === 'blue'
-                            ? 'w-5 bg-blue-300'
-                            : 'w-5 bg-emerald-300'
-                          : accent === 'blue'
-                            ? 'w-2 bg-blue-300/35'
-                            : 'w-2 bg-emerald-300/35'
-                      }`}
-                    />
+              <div className="flex h-2 shrink-0 flex-nowrap items-center justify-end gap-1.5 overflow-hidden">
+                {(() => {
+                  const maxVisibleDots = 7;
+                  const windowSize = Math.min(allPages.length, maxVisibleDots);
+                  const dotWindowStart = Math.max(
+                    0,
+                    Math.min(
+                      activePageIndex - Math.floor(windowSize / 2),
+                      allPages.length - windowSize,
+                    ),
                   );
-                })}
+                  return allPages
+                    .slice(dotWindowStart, dotWindowStart + windowSize)
+                    .map((entry, offset) => {
+                      const index = dotWindowStart + offset;
+                      const isActive = index === activePageIndex;
+                      return (
+                        <span
+                          key={`${entry.group}:${getPageKey(entry.page.map(getOrderId))}`}
+                          data-testid="customer-display-page-dot"
+                          data-active={isActive ? 'true' : 'false'}
+                          className={`h-2 shrink-0 rounded-full transition-all duration-300 ${
+                            isActive
+                              ? accent === 'blue'
+                                ? 'w-5 bg-blue-300'
+                                : 'w-5 bg-emerald-300'
+                              : accent === 'blue'
+                                ? 'w-2 bg-blue-300/35'
+                                : 'w-2 bg-emerald-300/35'
+                          }`}
+                        />
+                      );
+                    });
+                })()}
               </div>
             </div>
           )}

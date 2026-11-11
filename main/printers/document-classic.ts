@@ -666,7 +666,7 @@ export function renderBillDocumentToClassicLines(
         segment.sourceControlLines.main.push(dash);
         const cleanOrderNumber = block.orderNumber?.text.trim().replace(/^#/, '') ?? '';
         if (block.showLargeOrderNumber === true && cleanOrderNumber.length > 0) {
-          const orderBannerText = `ORDER #${cleanOrderNumber}`;
+          const orderBannerText = `#${cleanOrderNumber}`;
           const layout = layoutStyledUnit(
             { text: orderBannerText, widthMultiplier: 2, field: 'order number banner' },
             {

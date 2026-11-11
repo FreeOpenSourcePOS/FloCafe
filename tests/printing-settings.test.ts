@@ -27,7 +27,11 @@ const {
   assertEqual,
   getResults,
   closeDatabase,
+  now,
 } = require('./helpers/test-setup');
+const { getJWTSecret } = require('../main/routes/auth');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { settingsRoutes } = require('../main/routes/settings');
 
 const basePayload = {
@@ -95,6 +99,21 @@ async function main() {
       initialBusinessSettings.data.bill_show_large_order_number,
       true,
       'GET /api/settings/business returns bill_show_large_order_number: true by default',
+    );
+
+    const initialPrintingRead = await api(baseUrl, '/api/settings/printing', {
+      headers: owner.authHeader,
+    });
+    assertEqual(initialPrintingRead.status, 200, 'GET /api/settings/printing succeeds for owner');
+    assertEqual(
+      initialPrintingRead.data.bill_show_large_order_number,
+      true,
+      'GET /api/settings/printing defaults bill_show_large_order_number to true',
+    );
+    assertEqual(
+      initialPrintingRead.data.bill_show_customer_phone,
+      true,
+      'GET /api/settings/printing defaults bill_show_customer_phone to true',
     );
 
     const ownerResponse = await api(baseUrl, '/api/settings/printing', {
@@ -276,6 +295,91 @@ async function main() {
       largeOrderRead.data.setting.value,
       'true',
       'GET /api/settings/bill_show_large_order_number returns persisted value',
+    );
+
+    // Scoped read for a delegated printer specialist lacking settings.view and bills.* permissions.
+    const specialistId = 'printer-specialist-001';
+    db.prepare(
+      `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+       VALUES (?, 'Printer Specialist', 'printer@test.local', ?, 'cashier', 1, ?, ?)`,
+    ).run(specialistId, bcrypt.hashSync('testpass123', 10), now(), now());
+    const upsertOverride = db.prepare(
+      `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    upsertOverride.run(specialistId, 'printers.manage', 'allow', owner.userId, now(), now());
+    for (const deniedPerm of ['settings.view', 'bills.read', 'bills.print', 'bills.generate']) {
+      upsertOverride.run(specialistId, deniedPerm, 'deny', owner.userId, now(), now());
+    }
+    const specialistToken = jwt.sign(
+      { userId: specialistId, email: 'printer@test.local', role: 'cashier' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
+    const specialistHeaders = { Authorization: `Bearer ${specialistToken}` };
+
+    const specialistBusinessDenied = await api(baseUrl, '/api/settings/business', {
+      headers: specialistHeaders,
+    });
+    assertEqual(
+      specialistBusinessDenied.status,
+      403,
+      'printer specialist without settings.view/bills.* cannot read /api/settings/business',
+    );
+    const specialistWildcardDenied = await api(baseUrl, '/api/settings/printer_trim_decimals', {
+      headers: specialistHeaders,
+    });
+    assertEqual(
+      specialistWildcardDenied.status,
+      403,
+      'printer specialist without settings.view cannot read /api/settings/:key',
+    );
+
+    const specialistPrintingRead = await api(baseUrl, '/api/settings/printing', {
+      headers: specialistHeaders,
+    });
+    assertEqual(
+      specialistPrintingRead.status,
+      200,
+      'printer specialist can read scoped /api/settings/printing',
+    );
+    assertEqual(
+      specialistPrintingRead.data.bill_show_customer_phone,
+      true,
+      'scoped GET /api/settings/printing returns bill_show_customer_phone',
+    );
+    assertEqual(
+      specialistPrintingRead.data.bill_show_name,
+      false,
+      'scoped GET /api/settings/printing returns persisted bill_show_name',
+    );
+
+    // User without printers.manage or settings.view is rejected with 403.
+    const unprivilegedId = 'unprivileged-server-001';
+    db.prepare(
+      `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+       VALUES (?, 'Unprivileged Server', 'unpriv@test.local', ?, 'server', 1, ?, ?)`,
+    ).run(unprivilegedId, bcrypt.hashSync('testpass123', 10), now(), now());
+    upsertOverride.run(unprivilegedId, 'settings.view', 'deny', owner.userId, now(), now());
+    const unprivToken = jwt.sign(
+      { userId: unprivilegedId, email: 'unpriv@test.local', role: 'server' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
+    const unprivDenied = await api(baseUrl, '/api/settings/printing', {
+      headers: { Authorization: `Bearer ${unprivToken}` },
+    });
+    assertEqual(
+      unprivDenied.status,
+      403,
+      'GET /api/settings/printing rejects caller lacking printers.manage and settings.view',
+    );
+
+    const unauthPrintingGet = await api(baseUrl, '/api/settings/printing', {});
+    assertEqual(
+      unauthPrintingGet.status,
+      401,
+      'GET /api/settings/printing rejects unauthenticated',
     );
 
     console.log(`\n${getResults().passed}/${getResults().total} passed`);

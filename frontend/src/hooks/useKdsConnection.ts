@@ -188,6 +188,9 @@ export interface UseKdsConnectionOptions {
   endpoints?: UseKdsConnectionEndpoints;
   /** Session restore, WebSocket, and REST polling stay idle until confirmed on. */
   enabled: boolean;
+  /** Synchronizes an embedded host store when KDS clears or rotates the shared token. */
+  onSessionCleared?: (clearedToken: string | null) => void;
+  onSessionTokenReplaced?: (nextToken: string, hasPin?: boolean) => void;
 }
 
 export interface UseKdsConnectionResult {
@@ -255,7 +258,7 @@ function markKdsAuthBlocked(): void {
 }
 
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
-  const { api, endpoints, enabled } = options;
+  const { api, endpoints, enabled, onSessionCleared, onSessionTokenReplaced } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
   const pinUsersPath =
     endpoints?.pinUsers ??
@@ -309,6 +312,26 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const tryWebSocketRef = useRef<(token: string, retryDuringMaintenance?: boolean) => void>(
     () => {},
   );
+  const onSessionClearedRef = useRef(onSessionCleared);
+  onSessionClearedRef.current = onSessionCleared;
+  const onSessionTokenReplacedRef = useRef(onSessionTokenReplaced);
+  onSessionTokenReplacedRef.current = onSessionTokenReplaced;
+  const activeTokenRef = useRef<string | null>(null);
+  const clearStoredSession = useCallback((expectedToken?: string | null) => {
+    const fallbackToken = expectedToken !== undefined ? expectedToken : activeTokenRef.current;
+    const tokenToClear =
+      fallbackToken ??
+      (typeof window !== 'undefined' ? window.localStorage.getItem('token') : null);
+    activeTokenRef.current = null;
+    if (
+      typeof window !== 'undefined' &&
+      tokenToClear &&
+      window.localStorage.getItem('token') === tokenToClear
+    ) {
+      window.localStorage.removeItem('token');
+    }
+    onSessionClearedRef.current?.(tokenToClear ?? null);
+  }, []);
 
   const stopRestPolling = useCallback(() => {
     if (restIntervalRef.current) {
@@ -387,7 +410,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setConnected(false);
           setConnectionMode(null);
           setLoading(false);
-          if (typeof window !== 'undefined') window.localStorage.removeItem('token');
+          clearStoredSession();
         } else if (status === 403) {
           const message = axiosError.response?.data?.error || t('authFailed');
           const kdsDisabled = /kds is disabled/i.test(message);
@@ -472,7 +495,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           );
         if (statusCode === 401 || (statusCode === 403 && !kdsDisabled && authorizationFailure)) {
           sessionGenerationRef.current += 1;
-          if (statusCode === 401) window.localStorage.removeItem('token');
+          if (statusCode === 401) clearStoredSession();
           else markKdsAuthBlocked();
           stopRestPolling();
           if (reconnectTimerRef.current) {
@@ -670,7 +693,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             setConnected(false);
             setConnectionMode(null);
             if (authorizationFailure) markKdsAuthBlocked();
-            if (invalidSession) window.localStorage.removeItem('token');
+            if (invalidSession) clearStoredSession(token);
             if (temporaryUnavailable) {
               setLoading(true);
               const delay = kdsReconnectDelay(reconnectAttemptRef.current++);
@@ -744,6 +767,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
         };
 
+        activeTokenRef.current = token;
         setUser(loggedInUser);
         window.localStorage.setItem('token', token);
         if (Array.isArray(data.tenants) && data.tenants.length > 0) {
@@ -794,6 +818,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
         };
 
+        activeTokenRef.current = token;
         setUser(loggedInUser);
         window.localStorage.setItem('token', token);
         tryWebSocket(token);
@@ -838,7 +863,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     const activeWs = wsRef.current;
     wsRef.current = null;
     if (activeWs) activeWs.close();
-    const token = user?.token || window.localStorage.getItem('token');
+    const token = user?.token || window.localStorage.getItem('token') || activeTokenRef.current;
     if (token) {
       try {
         await api.post(logoutPath, undefined, { headers: { Authorization: `Bearer ${token}` } });
@@ -855,8 +880,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     setCounts({});
     setConnected(false);
     setConnectionMode(null);
-    window.localStorage.removeItem('token');
-  }, [api, confirm, logoutPath, stopRestPolling, tNav, user]);
+    clearStoredSession(token ?? null);
+  }, [api, clearStoredSession, confirm, logoutPath, stopRestPolling, tNav, user]);
 
   const persistViewMode = useCallback(
     (view: 'tabs' | 'kanban') => {
@@ -870,6 +895,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const replaceSessionToken = useCallback((nextToken: string, hasPin?: boolean) => {
     if (!nextToken) return;
+    activeTokenRef.current = nextToken;
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('token', nextToken);
     }
@@ -890,6 +916,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           }
         : prev,
     );
+    onSessionTokenReplacedRef.current?.(nextToken, hasPin);
     tryWebSocketRef.current(nextToken);
   }, []);
 
@@ -913,6 +940,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           window.localStorage.getItem('token') !== savedToken
         )
           return;
+        activeTokenRef.current = savedToken;
         setUser({
           id: data.user.id,
           name: data.user.name,
@@ -940,7 +968,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setCounts({});
           setConnected(false);
           setConnectionMode(null);
-          window.localStorage.removeItem('token');
+          clearStoredSession(savedToken);
         } else if (status === 403) {
           sessionGenerationRef.current += 1;
           markKdsAuthBlocked();

@@ -84,6 +84,7 @@ import {
   Z_REPORT_LANGUAGE_POLICY_KEY,
   LANGUAGE_POLICY_SETTING_KEYS,
   defaultLanguagePolicySettingJson,
+  parseStoredLanguagePolicy,
   validateLanguagePolicySetting,
 } from '../lib/print-language-settings';
 import { isThemeMode } from '../title-bar-theme';
@@ -2172,6 +2173,77 @@ const PRINTING_BATCH_KEYS = new Set<string>([
   'cash_drawer_pulse_enabled',
   'cash_drawer_pulse_methods',
 ]);
+
+function parseCashDrawerPulseMethods(raw: string | undefined): string[] {
+  if (!raw) return ['cash', 'card'];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return ['cash', 'card'];
+    const valid = parsed.filter(
+      (method: unknown): method is string => typeof method === 'string' && method.trim().length > 0,
+    );
+    return parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+  } catch {
+    return ['cash', 'card'];
+  }
+}
+
+function printingShape(s: Record<string, string>) {
+  return {
+    auto_print_kot: s.auto_print_kot === 'true',
+    printer_use_unicode: s.printer_use_unicode === 'true',
+    printer_arabic_shaping: s.printer_arabic_shaping === 'true',
+    printer_trim_decimals: s.printer_trim_decimals === 'true',
+    bill_language_policy: parseStoredLanguagePolicy(
+      BILL_LANGUAGE_POLICY_KEY,
+      s[BILL_LANGUAGE_POLICY_KEY],
+    ),
+    kot_language_policy: parseStoredLanguagePolicy(
+      KOT_LANGUAGE_POLICY_KEY,
+      s[KOT_LANGUAGE_POLICY_KEY],
+    ),
+    z_report_language_policy: s[Z_REPORT_LANGUAGE_POLICY_KEY]
+      ? parseStoredLanguagePolicy(Z_REPORT_LANGUAGE_POLICY_KEY, s[Z_REPORT_LANGUAGE_POLICY_KEY])
+      : null,
+    bill_show_logo: s.bill_show_logo === 'true',
+    bill_show_name: s.bill_show_name !== 'false',
+    bill_show_address: s.bill_show_address !== 'false',
+    bill_show_phone: s.bill_show_phone !== 'false',
+    bill_show_tax_id: s.bill_show_tax_id === 'true',
+    bill_show_tax_breakdown: s.bill_show_tax_breakdown !== 'false',
+    bill_show_customer_name: s.bill_show_customer_name !== 'false',
+    bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
+    bill_delivery_show_customer_phone_always:
+      s.bill_delivery_show_customer_phone_always !== 'false',
+    bill_show_table_number: s.bill_show_table_number !== 'false',
+    bill_show_large_order_number: s.bill_show_large_order_number !== 'false',
+    cash_drawer_pulse_enabled:
+      s.cash_drawer_pulse_enabled === 'true'
+        ? true
+        : s.cash_drawer_pulse_enabled === 'false'
+          ? false
+          : null,
+    cash_drawer_pulse_methods: parseCashDrawerPulseMethods(s.cash_drawer_pulse_methods),
+    kot_printing_enabled: s.kot_printing_enabled !== 'false',
+    kds_enabled: s.kds_enabled !== 'false',
+  };
+}
+
+router.get(
+  '/printing',
+  settingsReadRateLimit,
+  requireAnyPermission('printers.manage', 'settings.view'),
+  (_req: Request, res: Response) => {
+    try {
+      const s = getAllSettings(getDatabase());
+      res.json(printingShape(s));
+    } catch (error: any) {
+      res.locals.postHogError = error;
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 router.put(
   '/printing',

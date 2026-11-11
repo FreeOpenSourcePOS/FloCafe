@@ -360,7 +360,11 @@ router.post(
         }
       }
 
-      if (!user || !passwordMatches) {
+      const currentUser =
+        user && passwordMatches
+          ? (db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(user.id) as any)
+          : undefined;
+      if (!user || !passwordMatches || !currentUser || currentUser.password !== user.password) {
         const attemptsRemaining = incrementFailedLogin(ip);
         return res.status(401).json({
           error: 'Invalid credentials',
@@ -374,9 +378,9 @@ router.post(
       const remember = !!rememberMe;
       const token = jwt.sign(
         {
-          userId: user.id,
-          email: user.email,
-          role: user.role,
+          userId: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role,
           remember,
           jti: randomUUID(),
           iat: nextTokenIatSeconds(),
@@ -385,19 +389,19 @@ router.post(
         getJWTSecret(),
       );
 
-      const tenant = buildLocalTenant(db, user.id, user.role);
+      const tenant = buildLocalTenant(db, currentUser.id, currentUser.role);
 
       res.json({
         access_token: token,
         token_type: 'bearer',
         expires_in: expiresInSecondsFor(remember),
         user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          has_pin: Boolean(user.pin_hash),
-          category_ids: parseCategoryIds(user.category_ids),
+          id: currentUser.id,
+          name: currentUser.name,
+          email: currentUser.email,
+          role: currentUser.role,
+          has_pin: Boolean(currentUser.pin_hash),
+          category_ids: parseCategoryIds(currentUser.category_ids),
         },
         // Single tenant — frontend auto-selects when tenants.length === 1
         tenants: [tenant],
@@ -466,6 +470,235 @@ router.get('/pin-users', authRateLimit({ max: 600 }), (req: Request, res: Respon
 // ── POST /api/auth/pin-login ──────────────────────────────────────────────────
 // Quick user switch via PIN for a specifically selected user_id.
 
+export type PinAuthUserRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: number;
+  pin_hash: string | null;
+  category_ids: string | null;
+};
+
+export type PinSurfaceAuthorizeResult<TExtra> =
+  | { ok: true; extra: TExtra }
+  | { ok: false; status: 403 | 500; body: Record<string, unknown> };
+
+function buildInvalidPinCredentialsResult(
+  db: ReturnType<typeof getDatabase>,
+  opts: {
+    userId: string;
+    ip: string;
+    pinRateKey: string;
+    service?: 'kds' | 'server-app';
+    reason: string;
+  },
+): { status: 401; body: Record<string, unknown> } {
+  const attemptsRemaining = incrementFailedLogin(opts.pinRateKey);
+  recordAuthAudit(db, {
+    userId: opts.userId,
+    eventType: 'pin_login',
+    outcome: 'failure',
+    ipAddress: opts.ip,
+    details: {
+      ...(opts.service ? { service: opts.service } : {}),
+      reason: opts.reason,
+      attempts_remaining: attemptsRemaining,
+    },
+  });
+  return {
+    status: 401,
+    body: {
+      error: 'Invalid credentials',
+      attempts_remaining: attemptsRemaining,
+      lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+    },
+  };
+}
+
+/**
+ * Verifies a user's PIN under the per-user lock and synchronously revalidates the
+ * stored credential hash, active status, and surface authorization at issuance so
+ * an in-flight PIN reset or permission revocation cannot mint a stale token.
+ */
+export async function authenticatePinLogin<TExtra = undefined>(opts: {
+  db: ReturnType<typeof getDatabase>;
+  userId: string;
+  rawPin: string;
+  ip: string;
+  remember: boolean;
+  service?: 'kds' | 'server-app';
+  authorizeUser?: (
+    db: ReturnType<typeof getDatabase>,
+    user: PinAuthUserRow,
+  ) => PinSurfaceAuthorizeResult<TExtra>;
+}): Promise<
+  | { status: 401 | 403 | 429 | 500; body: Record<string, unknown> }
+  | { status: 200; token: string; user: PinAuthUserRow; extra: TExtra }
+> {
+  const canonicalIp = normalizeIpForPinRateLimit(opts.ip);
+  const pinRateKey = `${canonicalIp}:pin:${opts.userId}`;
+  const pinLockKey = `pin-user:${opts.userId}`;
+
+  type VerificationOutcome =
+    | { status: 401 | 403 | 429 | 500; body: Record<string, unknown> }
+    | { status: 200; verifiedPinHash: string };
+
+  const verificationResult = await withPinVerificationLock<VerificationOutcome>(
+    pinLockKey,
+    async () => {
+      const ipRateLimit = checkLoginRateLimit(pinRateKey);
+      if (!ipRateLimit.allowed) {
+        const waitMinutes = ipRateLimit.waitMinutes || 0;
+        recordAuthAudit(opts.db, {
+          userId: opts.userId,
+          eventType: 'pin_login',
+          outcome: 'rate_limited',
+          ipAddress: opts.ip,
+          details: {
+            ...(opts.service ? { service: opts.service } : {}),
+            wait_minutes: waitMinutes,
+          },
+        });
+        return {
+          status: 429,
+          body: {
+            error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
+          },
+        };
+      }
+
+      if (!/^\d{4,6}$/.test(opts.rawPin)) {
+        return buildInvalidPinCredentialsResult(opts.db, {
+          userId: opts.userId,
+          ip: opts.ip,
+          pinRateKey,
+          service: opts.service,
+          reason: 'invalid_pin_format',
+        });
+      }
+
+      const initialUser = opts.db.prepare('SELECT * FROM users WHERE id = ?').get(opts.userId) as
+        | PinAuthUserRow
+        | undefined;
+      const verifiedPinHash = initialUser?.pin_hash ?? null;
+      let pinMatches = false;
+      if (initialUser && initialUser.is_active === 1 && verifiedPinHash) {
+        try {
+          pinMatches = await verifyPinAsync(verifiedPinHash, opts.rawPin);
+        } catch {
+          pinMatches = false;
+        }
+      }
+
+      const currentUser = opts.db.prepare('SELECT * FROM users WHERE id = ?').get(opts.userId) as
+        | PinAuthUserRow
+        | undefined;
+      if (
+        !currentUser ||
+        currentUser.is_active !== 1 ||
+        !currentUser.pin_hash ||
+        !verifiedPinHash ||
+        currentUser.pin_hash !== verifiedPinHash ||
+        !pinMatches
+      ) {
+        const reason = !currentUser
+          ? 'user_not_found'
+          : currentUser.is_active !== 1
+            ? 'user_inactive'
+            : !currentUser.pin_hash
+              ? 'pin_not_set'
+              : !pinMatches
+                ? 'invalid_pin'
+                : 'pin_changed';
+        return buildInvalidPinCredentialsResult(opts.db, {
+          userId: opts.userId,
+          ip: opts.ip,
+          pinRateKey,
+          service: opts.service,
+          reason,
+        });
+      }
+
+      if (opts.authorizeUser) {
+        const authz = opts.authorizeUser(opts.db, currentUser);
+        if (!authz.ok) {
+          return { status: authz.status, body: authz.body };
+        }
+      }
+
+      return { status: 200, verifiedPinHash };
+    },
+  );
+
+  if (verificationResult.status !== 200) {
+    return verificationResult;
+  }
+
+  // Revalidate synchronously against live SQLite state right at token issuance
+  // with zero intervening awaits between the check and jwt.sign.
+  const issuedUser = opts.db.prepare('SELECT * FROM users WHERE id = ?').get(opts.userId) as
+    | PinAuthUserRow
+    | undefined;
+  if (
+    !issuedUser ||
+    issuedUser.is_active !== 1 ||
+    !issuedUser.pin_hash ||
+    issuedUser.pin_hash !== verificationResult.verifiedPinHash
+  ) {
+    const reason = !issuedUser
+      ? 'user_not_found'
+      : issuedUser.is_active !== 1
+        ? 'user_inactive'
+        : !issuedUser.pin_hash
+          ? 'pin_not_set'
+          : 'pin_changed';
+    return buildInvalidPinCredentialsResult(opts.db, {
+      userId: opts.userId,
+      ip: opts.ip,
+      pinRateKey,
+      service: opts.service,
+      reason,
+    });
+  }
+
+  let extra = undefined as TExtra;
+  if (opts.authorizeUser) {
+    const authz = opts.authorizeUser(opts.db, issuedUser);
+    if (!authz.ok) {
+      return { status: authz.status, body: authz.body };
+    }
+    extra = authz.extra;
+  }
+
+  resetSuccessfulLogin(pinRateKey);
+  recordAuthAudit(opts.db, {
+    userId: issuedUser.id,
+    eventType: 'pin_login',
+    outcome: 'success',
+    ipAddress: opts.ip,
+    details: {
+      ...(opts.service ? { service: opts.service } : {}),
+      role: issuedUser.role,
+    },
+  });
+
+  const token = jwt.sign(
+    {
+      userId: issuedUser.id,
+      email: issuedUser.email,
+      role: issuedUser.role,
+      remember: opts.remember,
+      jti: randomUUID(),
+      iat: nextTokenIatSeconds(),
+      exp: tokenExpSeconds(opts.remember),
+    },
+    getJWTSecret(),
+  );
+
+  return { status: 200, token, user: issuedUser, extra };
+}
+
 router.post(
   '/pin-login',
   authRateLimit({
@@ -510,139 +743,20 @@ router.post(
         return res.status(400).json({ error: 'user_id and pin are required' });
       }
 
-      // Scope failed-attempt lockout per (normalized client IP or IPv6 /64 prefix, user ID) to preserve
-      // main POS terminal availability on shared restaurant LANs; trade-off: reduced multi-device guessing resistance.
-      const canonicalIp = normalizeIpForPinRateLimit(ip);
-      const pinRateKey = `${canonicalIp}:pin:${userId}`;
-      const pinLockKey = `pin-user:${userId}`;
-      type VerifiedUser = {
-        id: string;
-        name: string;
-        email: string;
-        role: string;
-        is_active: number;
-        pin_hash: string | null;
-        category_ids: string | null;
-      };
-      type PinLoginOutcome =
-        | { status: 429; body: Record<string, unknown> }
-        | { status: 401; body: Record<string, unknown> }
-        | { status: 200; user: VerifiedUser };
+      const remember = !!rememberMe;
+      const result = await authenticatePinLogin({
+        db,
+        userId,
+        rawPin,
+        ip,
+        remember,
+      });
 
-      const verificationResult = await withPinVerificationLock<PinLoginOutcome>(
-        pinLockKey,
-        async () => {
-          const ipRateLimit = checkLoginRateLimit(pinRateKey);
-          if (!ipRateLimit.allowed) {
-            const waitMinutes = ipRateLimit.waitMinutes || 0;
-            recordAuthAudit(db, {
-              userId,
-              eventType: 'pin_login',
-              outcome: 'rate_limited',
-              ipAddress: ip,
-              details: { wait_minutes: waitMinutes },
-            });
-            return {
-              status: 429,
-              body: {
-                error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
-              },
-            };
-          }
-
-          if (!/^\d{4,6}$/.test(rawPin)) {
-            const attemptsRemaining = incrementFailedLogin(pinRateKey);
-            recordAuthAudit(db, {
-              userId,
-              eventType: 'pin_login',
-              outcome: 'failure',
-              ipAddress: ip,
-              details: {
-                reason: 'invalid_pin_format',
-                attempts_remaining: attemptsRemaining,
-              },
-            });
-            return {
-              status: 401,
-              body: {
-                error: 'Invalid credentials',
-                attempts_remaining: attemptsRemaining,
-                lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-              },
-            };
-          }
-
-          const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
-            | VerifiedUser
-            | undefined;
-          let pinMatches = false;
-          if (user && user.is_active === 1 && user.pin_hash) {
-            try {
-              pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
-            } catch {
-              pinMatches = false;
-            }
-          }
-
-          if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-            const attemptsRemaining = incrementFailedLogin(pinRateKey);
-            recordAuthAudit(db, {
-              userId,
-              eventType: 'pin_login',
-              outcome: 'failure',
-              ipAddress: ip,
-              details: {
-                reason: !user
-                  ? 'user_not_found'
-                  : user.is_active !== 1
-                    ? 'user_inactive'
-                    : !user.pin_hash
-                      ? 'pin_not_set'
-                      : 'invalid_pin',
-                attempts_remaining: attemptsRemaining,
-              },
-            });
-            return {
-              status: 401,
-              body: {
-                error: 'Invalid credentials',
-                attempts_remaining: attemptsRemaining,
-                lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-              },
-            };
-          }
-
-          resetSuccessfulLogin(pinRateKey);
-          recordAuthAudit(db, {
-            userId: user.id,
-            eventType: 'pin_login',
-            outcome: 'success',
-            ipAddress: ip,
-            details: { role: user.role },
-          });
-          return { status: 200, user };
-        },
-      );
-
-      if (verificationResult.status !== 200) {
-        return res.status(verificationResult.status).json(verificationResult.body);
+      if (result.status !== 200) {
+        return res.status(result.status).json(result.body);
       }
 
-      const { user } = verificationResult;
-      const remember = !!rememberMe;
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          email: user.email,
-          role: user.role,
-          remember,
-          jti: randomUUID(),
-          iat: nextTokenIatSeconds(),
-          exp: tokenExpSeconds(remember),
-        },
-        getJWTSecret(),
-      );
-
+      const { token, user } = result;
       const tenant = buildLocalTenant(db, user.id, user.role);
 
       res.json({
@@ -836,6 +950,28 @@ router.get('/me', (req: Request, res: Response) => {
 
 // ── POST /api/auth/password/change ────────────────────────────────────────────
 
+function isSessionLiveAtCommit(
+  db: ReturnType<typeof getDatabase>,
+  token: string,
+  decoded: { userId?: unknown; iat?: unknown; exp?: unknown },
+): boolean {
+  if (isTokenRevoked(token)) return false;
+  if (typeof decoded.exp === 'number' && decoded.exp <= Math.floor(Date.now() / 1000)) {
+    return false;
+  }
+  const latestUser = db
+    .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+    .get(decoded.userId) as { is_active: number; tokens_valid_after: string | null } | undefined;
+  return Boolean(
+    latestUser &&
+    latestUser.is_active === 1 &&
+    !isTokenStale(
+      typeof decoded.iat === 'number' ? decoded.iat : undefined,
+      latestUser.tokens_valid_after,
+    ),
+  );
+}
+
 export async function handlePasswordChange(req: Request, res: Response): Promise<void> {
   try {
     const { current_password, password } = req.body || {};
@@ -907,37 +1043,43 @@ export async function handlePasswordChange(req: Request, res: Response): Promise
     const hashedPassword = await bcrypt.hash(password, 10);
     const changedAt = now();
     const tokensValidAfter = nextTokensValidAfterTimestamp();
-    const updateResult = db
-      .prepare(
-        'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND password = ?',
-      )
-      .run(
-        hashedPassword,
-        tokensValidAfter,
-        changedAt,
-        user.id,
-        user.tokens_valid_after ?? null,
-        user.password,
-      );
-
-    if (updateResult.changes === 0) {
-      const latestUser = db
-        .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
-        .get(user.id) as { is_active: number; tokens_valid_after: string | null } | undefined;
-      if (
-        !latestUser ||
-        latestUser.is_active !== 1 ||
-        isTokenStale(decoded.iat, latestUser.tokens_valid_after)
-      ) {
-        res.status(401).json({ error: 'Invalid token' });
-        return;
+    const commitOutcome = db.transaction((): 'ok' | 'invalid_token' | 'conflict' => {
+      if (!isSessionLiveAtCommit(db, token, decoded)) {
+        return 'invalid_token';
       }
+      const updateResult = db
+        .prepare(
+          'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND password = ?',
+        )
+        .run(
+          hashedPassword,
+          tokensValidAfter,
+          changedAt,
+          user.id,
+          user.tokens_valid_after ?? null,
+          user.password,
+        );
+      if (updateResult.changes === 0) {
+        return isSessionLiveAtCommit(db, token, decoded) ? 'conflict' : 'invalid_token';
+      }
+      return 'ok';
+    })();
+
+    if (commitOutcome === 'invalid_token') {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (commitOutcome === 'conflict') {
       res.status(409).json({ error: 'Credentials were modified concurrently' });
       return;
     }
     invalidateUserAuthCache(user.id);
 
-    const freshToken = signFreshSessionToken(user, decoded);
+    const committedUser =
+      (db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(user.id) as
+        | { id: string; email: string; role: string }
+        | undefined) ?? user;
+    const freshToken = signFreshSessionToken(committedUser, decoded);
     res.json({ message: 'Password changed successfully', token: freshToken });
   } catch (error: any) {
     res.locals.postHogError = error;
@@ -990,6 +1132,9 @@ export async function handlePinChange(req: Request, res: Response): Promise<void
     const outcome = await withPinVerificationLock<PinChangeOutcome>(
       `pin-change:${initialUser.id}`,
       async () => {
+        if (!isSessionLiveAtCommit(db, token, decoded)) {
+          return { status: 401, body: { error: 'Invalid token' } };
+        }
         const user = db.prepare('SELECT * FROM users WHERE id = ?').get(initialUser.id) as any;
         if (!user) {
           return { status: 404, body: { error: 'User not found' } };
@@ -1073,35 +1218,41 @@ export async function handlePinChange(req: Request, res: Response): Promise<void
         const hashedPin = await bcrypt.hash(rawPin, 10);
         const changedAt = now();
         const tokensValidAfter = nextTokensValidAfterTimestamp();
-        const updateResult = db
-          .prepare(
-            'UPDATE users SET pin_hash = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND pin_hash IS ?',
-          )
-          .run(
-            hashedPin,
-            tokensValidAfter,
-            changedAt,
-            user.id,
-            user.tokens_valid_after ?? null,
-            user.pin_hash ?? null,
-          );
-
-        if (updateResult.changes === 0) {
-          const latestUser = db
-            .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
-            .get(user.id) as { is_active: number; tokens_valid_after: string | null } | undefined;
-          if (
-            !latestUser ||
-            latestUser.is_active !== 1 ||
-            isTokenStale(decoded.iat, latestUser.tokens_valid_after)
-          ) {
-            return { status: 401, body: { error: 'Invalid token' } };
+        const commitOutcome = db.transaction((): 'ok' | 'invalid_token' | 'conflict' => {
+          if (!isSessionLiveAtCommit(db, token, decoded)) {
+            return 'invalid_token';
           }
+          const updateResult = db
+            .prepare(
+              'UPDATE users SET pin_hash = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND pin_hash IS ?',
+            )
+            .run(
+              hashedPin,
+              tokensValidAfter,
+              changedAt,
+              user.id,
+              user.tokens_valid_after ?? null,
+              user.pin_hash ?? null,
+            );
+          if (updateResult.changes === 0) {
+            return isSessionLiveAtCommit(db, token, decoded) ? 'conflict' : 'invalid_token';
+          }
+          return 'ok';
+        })();
+
+        if (commitOutcome === 'invalid_token') {
+          return { status: 401, body: { error: 'Invalid token' } };
+        }
+        if (commitOutcome === 'conflict') {
           return { status: 409, body: { error: 'Credentials were modified concurrently' } };
         }
         invalidateUserAuthCache(user.id);
 
-        const freshToken = signFreshSessionToken(user, decoded);
+        const committedUser =
+          (db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(user.id) as
+            | { id: string; email: string; role: string }
+            | undefined) ?? user;
+        const freshToken = signFreshSessionToken(committedUser, decoded);
         return {
           status: 200,
           body: {

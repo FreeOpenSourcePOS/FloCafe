@@ -353,6 +353,22 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
+let bcryptCompareInterceptor:
+  | ((
+      plain: string,
+      hash: string,
+      next: (plain: string, hash: string) => Promise<boolean>,
+    ) => Promise<boolean>)
+  | null = null;
+{
+  const loadedBcrypt = require('bcryptjs');
+  const origCompare = loadedBcrypt.compare.bind(loadedBcrypt);
+  loadedBcrypt.compare = (plain: string, hash: string) =>
+    bcryptCompareInterceptor
+      ? bcryptCompareInterceptor(plain, hash, origCompare)
+      : origCompare(plain, hash);
+}
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
@@ -380,7 +396,7 @@ const {
 } = require('../main/routes/orders');
 const { settingsRoutes } = require('../main/routes/settings');
 const { refundRoutes } = require('../main/routes/refunds');
-const { resetSuccessfulLogin } = require('../main/middleware/security');
+const { resetSuccessfulLogin, clearLoginRateLimits } = require('../main/middleware/security');
 
 function makeToken(id: string, role: string, email: string) {
   const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
@@ -2509,6 +2525,137 @@ async function run() {
         saValidBody.user.permission_ids.includes('server-app.use'),
       'Server App pin-login includes permission_ids with server-app.use',
     );
+
+    // 14. Superseded PIN verification rejected at issuance boundary (#1524)
+    console.log('\n── 14. Revalidate PIN & active status at LAN/POS session issuance (#1524)');
+    const runPausedPinCompareRace = async <T extends { status: number }>(
+      triggerRequest: () => Promise<T>,
+      mutateDuringVerify: () => Promise<void>,
+    ): Promise<T> => {
+      clearLoginRateLimits();
+      let signalEntered!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        signalEntered = resolve;
+      });
+      let releaseCompare!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releaseCompare = resolve;
+      });
+      bcryptCompareInterceptor = async (plain, hash, next) => {
+        signalEntered();
+        await gate;
+        return next(plain, hash);
+      };
+      try {
+        const responsePromise = triggerRequest();
+        await Promise.race([
+          entered,
+          responsePromise.then((earlyRes) => {
+            throw new Error(
+              `Request returned status ${earlyRes.status} before entering bcrypt.compare`,
+            );
+          }),
+        ]);
+        await mutateDuringVerify();
+        releaseCompare();
+        return await responsePromise;
+      } finally {
+        releaseCompare();
+        bcryptCompareInterceptor = null;
+      }
+    };
+
+    // KDS: PIN reset while verifyPinAsync is in flight
+    const kdsPinResetRaceRes = await runPausedPinCompareRace(
+      () =>
+        fetch(`${kdsUrl}/api/auth/pin-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: 'chef-pin', pin: '4321' }),
+        }),
+      async () => {
+        const res = await request(app)
+          .put('/api/staff/chef-pin')
+          .set(makeToken('owner-1', 'owner', 'owner@test.local'))
+          .send({ pin: '9999' });
+        assertEqualOrThrow(
+          res.status,
+          200,
+          'Owner resets chef PIN while verification is in flight',
+        );
+      },
+    );
+    assertEqualOrThrow(
+      kdsPinResetRaceRes.status,
+      401,
+      'KDS rejects superseded PIN verification after concurrent PIN reset',
+    );
+    const kdsPinResetBody = (await kdsPinResetRaceRes.json()) as { access_token?: string };
+    assertOrThrow(!kdsPinResetBody.access_token, 'KDS race rejection returns no access_token');
+
+    const kdsNewPinRes = await fetch(`${kdsUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'chef-pin', pin: '9999' }),
+    });
+    assertEqualOrThrow(kdsNewPinRes.status, 200, 'KDS accepts current PIN after reset');
+
+    // Server App: deactivation while verifyPinAsync is in flight
+    const saDeactivateRaceRes = await runPausedPinCompareRace(
+      () =>
+        fetch(`${serverAppUrl}/api/auth/pin-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: 'server-pin', pin: '3456' }),
+        }),
+      async () => {
+        const res = await request(app)
+          .post('/api/staff/server-pin/deactivate')
+          .set(makeToken('owner-1', 'owner', 'owner@test.local'));
+        assertEqualOrThrow(
+          res.status,
+          200,
+          'Owner deactivates server while PIN verification is in flight',
+        );
+      },
+    );
+    assertEqualOrThrow(
+      saDeactivateRaceRes.status,
+      401,
+      'Server App rejects superseded PIN verification after concurrent deactivation',
+    );
+    const saDeactivateBody = (await saDeactivateRaceRes.json()) as { access_token?: string };
+    assertOrThrow(
+      !saDeactivateBody.access_token,
+      'Server App race rejection returns no access_token',
+    );
+
+    const reactivateRes = await request(app)
+      .post('/api/staff/server-pin/reactivate')
+      .set(makeToken('owner-1', 'owner', 'owner@test.local'));
+    assertEqualOrThrow(reactivateRes.status, 200, 'Owner reactivates server-pin');
+
+    // Main POS /api/auth/pin-login: PIN reset while verifyPinAsync is in flight
+    const posPinRaceRes = await runPausedPinCompareRace(
+      () =>
+        request(app)
+          .post('/api/auth/pin-login')
+          .send({ user_id: 'server-pin', pin: '3456' })
+          .then((res: any) => res),
+      async () => {
+        const res = await request(app)
+          .put('/api/staff/server-pin')
+          .set(makeToken('owner-1', 'owner', 'owner@test.local'))
+          .send({ pin: '7777' });
+        assertEqualOrThrow(res.status, 200, 'Owner resets server PIN while POS verify in flight');
+      },
+    );
+    assertEqualOrThrow(
+      posPinRaceRes.status,
+      401,
+      'POS /api/auth/pin-login rejects superseded PIN verification after PIN reset',
+    );
+    assertOrThrow(!posPinRaceRes.body.access_token, 'POS race rejection returns no access_token');
   } finally {
     await stopServerApp();
     await stopKdsServer();

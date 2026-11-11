@@ -482,6 +482,92 @@ async function run() {
 
   resetCredentialChangeRateLimitsForTests();
 
+  // ── 3b. Concurrent password change lockout serialization ───────────────────
+  console.log(
+    '\n3b. Per-user concurrent password change lockout on POST /api/auth/password/change',
+  );
+  seedUser(db, {
+    id: 'self-concurrency-server',
+    name: 'Concurrency Server',
+    email: 'self-concurrency-server@flo.local',
+    password: 'ConcurrencyPass1!',
+    role: 'server',
+    pin: null,
+  });
+
+  clearLoginRateLimits();
+  resetCredentialChangeRateLimitsForTests();
+
+  const concurLogin = await request(app).post('/api/auth/login').send({
+    email: 'self-concurrency-server@flo.local',
+    password: 'ConcurrencyPass1!',
+  });
+  assertEqualOrThrow(concurLogin.status, 200, 'Concurrency server logs in');
+  const concurToken = concurLogin.body.access_token as string;
+
+  const concurrentResults = await Promise.all(
+    Array.from({ length: 8 }, () =>
+      request(app)
+        .post('/api/auth/password/change')
+        .set('Authorization', `Bearer ${concurToken}`)
+        .send({
+          current_password: 'WrongPassword999!',
+          password: 'ValidNewPassword123!',
+        }),
+    ),
+  );
+
+  const status400Responses = concurrentResults.filter((r: any) => r.status === 400);
+  const status429Responses = concurrentResults.filter((r: any) => r.status === 429);
+
+  assertEqualOrThrow(
+    status400Responses.length,
+    5,
+    'Exactly 5 concurrent password change attempts return 400',
+  );
+  assertEqualOrThrow(
+    status429Responses.length,
+    3,
+    'Exactly 3 concurrent password change attempts return 429',
+  );
+
+  const remainingCounts = status400Responses
+    .map((r: any) => r.body.attempts_remaining)
+    .sort((a: number, b: number) => b - a);
+  assertEqualOrThrow(
+    remainingCounts.join(','),
+    '4,3,2,1,0',
+    'Concurrent password change attempts_remaining count down from 4 to 0',
+  );
+
+  for (const res of status429Responses) {
+    assertOrThrow(
+      typeof res.body.error === 'string' &&
+        res.body.error.includes('Too many password change attempts'),
+      'HTTP 429 response reports too many password change attempts',
+    );
+  }
+
+  const isolatedCashierPwAttempt = await request(app)
+    .post('/api/auth/password/change')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({
+      current_password: 'WrongPassword999!',
+      password: 'ValidNewPassword123!',
+    });
+  assertEqualOrThrow(
+    isolatedCashierPwAttempt.status,
+    400,
+    'Cashier password-change attempts remain isolated from locked-out concurrency user',
+  );
+  assertEqualOrThrow(
+    isolatedCashierPwAttempt.body.attempts_remaining,
+    4,
+    'Unaffected user retains full password-change attempt allowance',
+  );
+
+  resetCredentialChangeRateLimitsForTests();
+
   // ── 4. Standalone KDS (:3002) & Standalone Server App (:3003) self-service ──
   console.log('\n4. Standalone KDS (:3002) and Server App (:3003) self-service Password & PIN');
   seedUser(db, {

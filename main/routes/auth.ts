@@ -972,6 +972,7 @@ function isSessionLiveAtCommit(
   );
 }
 
+/** Rotates the signed-in user's password under a per-user verification lock. */
 export async function handlePasswordChange(req: Request, res: Response): Promise<void> {
   try {
     const { current_password, password } = req.body || {};
@@ -996,91 +997,123 @@ export async function handlePasswordChange(req: Request, res: Response): Promise
     }
 
     const db = getDatabase();
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
-    if (!user) {
+    const initialUser = db
+      .prepare('SELECT id, is_active, tokens_valid_after FROM users WHERE id = ?')
+      .get(decoded.userId) as any;
+    if (!initialUser) {
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
+    if (initialUser.is_active !== 1 || isTokenStale(decoded.iat, initialUser.tokens_valid_after)) {
       res.status(401).json({ error: 'Invalid token' });
       return;
     }
 
-    const passwordChangeRateLimit = checkPasswordChangeRateLimit(user.id);
-    if (!passwordChangeRateLimit.allowed) {
-      res.status(429).json({
-        error: `Too many password change attempts. Try again in ${passwordChangeRateLimit.waitMinutes} minutes.`,
-      });
-      return;
-    }
+    type PasswordChangeOutcome = { status: number; body: Record<string, unknown> };
+    const outcome = await withPinVerificationLock<PasswordChangeOutcome>(
+      `password-change:${initialUser.id}`,
+      async () => {
+        if (!isSessionLiveAtCommit(db, token, decoded)) {
+          return { status: 401, body: { error: 'Invalid token' } };
+        }
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(initialUser.id) as any;
+        if (!user) {
+          return { status: 404, body: { error: 'User not found' } };
+        }
+        if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
+          return { status: 401, body: { error: 'Invalid token' } };
+        }
 
-    if (typeof current_password !== 'string' || !current_password) {
-      res.status(400).json({ error: 'Current password is required' });
-      return;
-    }
-    if (typeof password !== 'string' || !password) {
-      res.status(400).json({ error: 'Password is required' });
-      return;
-    }
-    const passwordMatches = await bcrypt.compare(current_password, user.password);
-    if (!passwordMatches) {
-      const attemptsRemaining = incrementFailedPasswordChange(user.id);
-      res.status(400).json({
-        error: 'Current password is incorrect',
-        attempts_remaining: attemptsRemaining,
-        lockout_minutes: attemptsRemaining === 0 ? PASSWORD_CHANGE_LOCKOUT_MINUTES : undefined,
-      });
-      return;
-    }
-    resetPasswordChangeRateLimit(user.id);
-    if (!validatePassword(password)) {
-      res.status(400).json({
-        error: PASSWORD_POLICY_MESSAGE,
-      });
-      return;
-    }
+        const passwordChangeRateLimit = checkPasswordChangeRateLimit(user.id);
+        if (!passwordChangeRateLimit.allowed) {
+          return {
+            status: 429,
+            body: {
+              error: `Too many password change attempts. Try again in ${passwordChangeRateLimit.waitMinutes} minutes.`,
+            },
+          };
+        }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const changedAt = now();
-    const tokensValidAfter = nextTokensValidAfterTimestamp();
-    const commitOutcome = db.transaction((): 'ok' | 'invalid_token' | 'conflict' => {
-      if (!isSessionLiveAtCommit(db, token, decoded)) {
-        return 'invalid_token';
-      }
-      const updateResult = db
-        .prepare(
-          'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND password = ?',
-        )
-        .run(
-          hashedPassword,
-          tokensValidAfter,
-          changedAt,
-          user.id,
-          user.tokens_valid_after ?? null,
-          user.password,
-        );
-      if (updateResult.changes === 0) {
-        return isSessionLiveAtCommit(db, token, decoded) ? 'conflict' : 'invalid_token';
-      }
-      return 'ok';
-    })();
+        if (typeof current_password !== 'string' || !current_password) {
+          return { status: 400, body: { error: 'Current password is required' } };
+        }
+        if (typeof password !== 'string' || !password) {
+          return { status: 400, body: { error: 'Password is required' } };
+        }
+        let passwordMatches = false;
+        try {
+          passwordMatches = await bcrypt.compare(current_password, user.password);
+        } catch {
+          passwordMatches = false;
+        }
+        if (!passwordMatches) {
+          const attemptsRemaining = incrementFailedPasswordChange(user.id);
+          return {
+            status: 400,
+            body: {
+              error: 'Current password is incorrect',
+              attempts_remaining: attemptsRemaining,
+              lockout_minutes:
+                attemptsRemaining === 0 ? PASSWORD_CHANGE_LOCKOUT_MINUTES : undefined,
+            },
+          };
+        }
+        resetPasswordChangeRateLimit(user.id);
+        if (!validatePassword(password)) {
+          return {
+            status: 400,
+            body: {
+              error: PASSWORD_POLICY_MESSAGE,
+            },
+          };
+        }
 
-    if (commitOutcome === 'invalid_token') {
-      res.status(401).json({ error: 'Invalid token' });
-      return;
-    }
-    if (commitOutcome === 'conflict') {
-      res.status(409).json({ error: 'Credentials were modified concurrently' });
-      return;
-    }
-    invalidateUserAuthCache(user.id);
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const changedAt = now();
+        const tokensValidAfter = nextTokensValidAfterTimestamp();
+        const commitOutcome = db.transaction((): 'ok' | 'invalid_token' | 'conflict' => {
+          if (!isSessionLiveAtCommit(db, token, decoded)) {
+            return 'invalid_token';
+          }
+          const updateResult = db
+            .prepare(
+              'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND tokens_valid_after IS ? AND password = ?',
+            )
+            .run(
+              hashedPassword,
+              tokensValidAfter,
+              changedAt,
+              user.id,
+              user.tokens_valid_after ?? null,
+              user.password,
+            );
+          if (updateResult.changes === 0) {
+            return isSessionLiveAtCommit(db, token, decoded) ? 'conflict' : 'invalid_token';
+          }
+          return 'ok';
+        })();
 
-    const committedUser =
-      (db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(user.id) as
-        | { id: string; email: string; role: string }
-        | undefined) ?? user;
-    const freshToken = signFreshSessionToken(committedUser, decoded);
-    res.json({ message: 'Password changed successfully', token: freshToken });
+        if (commitOutcome === 'invalid_token') {
+          return { status: 401, body: { error: 'Invalid token' } };
+        }
+        if (commitOutcome === 'conflict') {
+          return { status: 409, body: { error: 'Credentials were modified concurrently' } };
+        }
+        invalidateUserAuthCache(user.id);
+
+        const committedUser =
+          (db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(user.id) as
+            | { id: string; email: string; role: string }
+            | undefined) ?? user;
+        const freshToken = signFreshSessionToken(committedUser, decoded);
+        return {
+          status: 200,
+          body: { message: 'Password changed successfully', token: freshToken },
+        };
+      },
+    );
+
+    res.status(outcome.status).json(outcome.body);
   } catch (error: any) {
     res.locals.postHogError = error;
     console.error('[API] Internal error:', error);

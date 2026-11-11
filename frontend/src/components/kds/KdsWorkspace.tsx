@@ -8,6 +8,7 @@ import { KdsTabsView } from '@/components/kds/KdsTabsView';
 import { useKdsView } from '@/hooks/useKdsView';
 import type { UseKdsConnectionResult } from '@/hooks/useKdsConnection';
 
+/** Renders the KDS header, active view mode, and self-service credentials dialog. */
 export function KdsWorkspace({
   conn,
   serverDefault,
@@ -58,6 +59,9 @@ export function KdsWorkspace({
           endpoints={conn.credentialEndpoints}
           initialHasPin={conn.user?.has_pin}
           userId={conn.user?.id}
+          getSessionToken={() =>
+            typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+          }
           onSessionUpdated={({ token, hasPin }) => conn.replaceSessionToken?.(token, hasPin)}
         />
       )}

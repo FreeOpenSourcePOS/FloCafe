@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import axios, { type AxiosInstance } from 'axios';
 import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { useTranslations } from 'use-intl';
@@ -35,10 +35,21 @@ export interface AccountCredentialsDialogProps {
   initialHasPin?: boolean;
   userId?: string | number;
   onSessionUpdated?: (payload: { token: string; hasPin?: boolean }) => void;
+  getSessionToken?: () => string | null;
 }
 
 const PIN_PATTERN = /^\d{4,6}$/;
 
+interface SubmissionSession {
+  userId?: string;
+  propUserId?: string;
+  token?: string | null;
+  callerToken?: string | null;
+  storeUserId?: string;
+  storeToken?: string | null;
+}
+
+/** Self-service dialog for rotating the signed-in user's password and PIN. */
 export function AccountCredentialsDialog({
   open,
   onOpenChange,
@@ -47,7 +58,32 @@ export function AccountCredentialsDialog({
   initialHasPin,
   userId,
   onSessionUpdated,
+  getSessionToken,
 }: AccountCredentialsDialogProps) {
+  const mountedRef = useRef(true);
+  const openRef = useRef(open);
+  const openSeqRef = useRef(0);
+  const userIdRef = useRef(userId);
+  const getSessionTokenRef = useRef(getSessionToken);
+  const passwordSubmitSeqRef = useRef(0);
+  const pinSubmitSeqRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (openRef.current !== open) {
+      openSeqRef.current += 1;
+      openRef.current = open;
+    }
+    userIdRef.current = userId;
+    getSessionTokenRef.current = getSessionToken;
+  }, [open, userId, getSessionToken]);
+
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations('common');
   const client = apiClient ?? defaultApi;
@@ -97,7 +133,12 @@ export function AccountCredentialsDialog({
     setPinSubmitting(false);
   };
 
+  /** Resets form inputs on close and advances the open-cycle sequence. */
   const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (openRef.current !== nextOpen) {
+      openSeqRef.current += 1;
+      openRef.current = nextOpen;
+    }
     if (!nextOpen) {
       resetForms();
       setActiveTab('password');
@@ -153,72 +194,149 @@ export function AccountCredentialsDialog({
     return tCommon('somethingWrong');
   };
 
-  const captureSubmissionSession = () => {
+  /** Captures live user and token identifiers before an async credential request. */
+  const captureSubmissionSession = (): SubmissionSession => {
     const currentStore = useAuthStore.getState();
+    const storageToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    const liveToken = currentStore.token ?? storageToken;
+    const callerToken = getSessionTokenRef.current ? getSessionTokenRef.current() : undefined;
+    const propUserId = userId !== undefined ? String(userId) : undefined;
     const resolvedUserId =
-      userId !== undefined
-        ? String(userId)
+      propUserId !== undefined
+        ? propUserId
         : currentStore.user?.id !== undefined
           ? String(currentStore.user.id)
           : undefined;
     return {
       userId: resolvedUserId,
+      propUserId,
+      token: liveToken,
+      callerToken,
       storeUserId: currentStore.user?.id !== undefined ? String(currentStore.user.id) : undefined,
       storeToken: currentStore.token,
     };
   };
 
-  const isSessionValid = (submittingSession: {
-    userId?: string;
-    storeUserId?: string;
-    storeToken?: string | null;
-  }) => {
-    if (!open) return false;
+  /** Checks whether the bound userId prop still belongs to the submitting user. */
+  const isUserIdUnchanged = (submittingSession: SubmissionSession) => {
+    if (submittingSession.propUserId !== undefined) {
+      return (
+        userIdRef.current !== undefined &&
+        String(userIdRef.current) === submittingSession.propUserId
+      );
+    }
+    return (
+      userIdRef.current === undefined ||
+      submittingSession.userId === undefined ||
+      String(userIdRef.current) === submittingSession.userId
+    );
+  };
+
+  /** Ensures the dialog remains mounted and the submitting session has not logged out or switched. */
+  const isSessionValid = (submittingSession: SubmissionSession) => {
+    if (!mountedRef.current) return false;
+    if (!isUserIdUnchanged(submittingSession)) return false;
+
     if (onSessionUpdated) {
-      if (
-        submittingSession.userId !== undefined &&
-        userId !== undefined &&
-        String(userId) !== submittingSession.userId
-      ) {
-        return false;
+      if (getSessionTokenRef.current) {
+        const liveCallerToken = getSessionTokenRef.current();
+        if (!liveCallerToken) return false;
+        if (submittingSession.callerToken && liveCallerToken !== submittingSession.callerToken) {
+          return false;
+        }
       }
       return true;
     }
+
     const currentStore = useAuthStore.getState();
-    if (!currentStore.token || !currentStore.user) {
+    const hasStorage = typeof localStorage !== 'undefined';
+    const liveStorageToken = hasStorage ? localStorage.getItem('token') : currentStore.token;
+    if (!currentStore.token || !liveStorageToken || currentStore.token !== liveStorageToken) {
       return false;
     }
-    if (
-      submittingSession.storeUserId !== undefined &&
-      String(currentStore.user.id) !== submittingSession.storeUserId
-    ) {
+    if (submittingSession.token && liveStorageToken !== submittingSession.token) {
       return false;
+    }
+
+    if (submittingSession.storeUserId !== undefined) {
+      if (!currentStore.user || String(currentStore.user.id) !== submittingSession.storeUserId) {
+        return false;
+      }
     }
     if (submittingSession.storeToken && currentStore.token !== submittingSession.storeToken) {
       return false;
     }
+
     return true;
   };
 
-  const applySessionUpdate = (token: unknown, submittingUserId?: string, nextHasPin?: boolean) => {
-    if (typeof token !== 'string' || !token) return;
+  /** Applies a rotated JWT and optional PIN status if the submitting session is still active. */
+  const applySessionUpdate = (
+    token: unknown,
+    submittingSession: SubmissionSession,
+    nextHasPin?: boolean,
+  ) => {
+    if (typeof token !== 'string' || !token || !isSessionValid(submittingSession)) return;
+
     const authState = useAuthStore.getState();
     const userUpdates = nextHasPin !== undefined ? { has_pin: nextHasPin } : undefined;
     if (onSessionUpdated) {
       if (
         authState.token &&
-        submittingUserId !== undefined &&
+        submittingSession.userId !== undefined &&
         authState.user?.id !== undefined &&
-        String(authState.user.id) === submittingUserId
+        String(authState.user.id) === submittingSession.userId
       ) {
         authState.replaceSessionToken(token, userUpdates);
       }
       onSessionUpdated({ token, hasPin: nextHasPin });
       return;
     }
+
     authState.replaceSessionToken(token, userUpdates);
   };
 
+  /** Runs a credential mutation while enforcing live-session and unmount guards. */
+  const executeCredentialRequest = async (
+    request: () => Promise<{ data?: { token?: unknown } }>,
+    options: {
+      submitSeqRef: { current: number };
+      setSubmitting: (submitting: boolean) => void;
+      setError: (msg: string | null) => void;
+      successMessage: string;
+      nextHasPin?: boolean;
+      onApplied?: () => void;
+    },
+  ) => {
+    const submittingSession = captureSubmissionSession();
+    const submitOpenSeq = openSeqRef.current;
+    const submitSeq = ++options.submitSeqRef.current;
+    options.setSubmitting(true);
+    try {
+      const { data } = await request();
+      if (!isSessionValid(submittingSession)) return;
+      options.onApplied?.();
+      applySessionUpdate(data?.token, submittingSession, options.nextHasPin);
+      toast.success(options.successMessage);
+      if (openRef.current && openSeqRef.current === submitOpenSeq) {
+        handleDialogOpenChange(false);
+      }
+    } catch (error) {
+      if (!isSessionValid(submittingSession)) return;
+      const message = formatCredentialError(error);
+      if (openRef.current && openSeqRef.current === submitOpenSeq) {
+        options.setError(message);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      if (mountedRef.current && options.submitSeqRef.current === submitSeq) {
+        options.setSubmitting(false);
+      }
+    }
+  };
+
+  /** Validates inputs and submits a self-service password rotation request. */
   const handlePasswordSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setPasswordError(null);
@@ -231,29 +349,22 @@ export function AccountCredentialsDialog({
       return;
     }
 
-    const submittingSession = captureSubmissionSession();
-    setPasswordSubmitting(true);
-    try {
-      const { data } = await client.post(passwordChangePath, {
-        current_password: currentPassword,
-        password: newPassword,
-      });
-      if (!isSessionValid(submittingSession)) {
-        return;
-      }
-      applySessionUpdate(data?.token, submittingSession.userId);
-      toast.success(tAuth('passwordChangedSuccess'));
-      handleDialogOpenChange(false);
-    } catch (error) {
-      if (!isSessionValid(submittingSession)) {
-        return;
-      }
-      setPasswordError(formatCredentialError(error));
-    } finally {
-      setPasswordSubmitting(false);
-    }
+    await executeCredentialRequest(
+      () =>
+        client.post(passwordChangePath, {
+          current_password: currentPassword,
+          password: newPassword,
+        }),
+      {
+        submitSeqRef: passwordSubmitSeqRef,
+        setSubmitting: setPasswordSubmitting,
+        setError: setPasswordError,
+        successMessage: tAuth('passwordChangedSuccess'),
+      },
+    );
   };
 
+  /** Validates inputs and submits a self-service PIN setup or rotation request. */
   const handlePinSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setPinError(null);
@@ -266,28 +377,17 @@ export function AccountCredentialsDialog({
       return;
     }
 
-    const submittingSession = captureSubmissionSession();
-    setPinSubmitting(true);
-    try {
-      const payload = hasPin
-        ? { current_pin: currentPin, pin: newPin }
-        : { current_password: pinCurrentPassword, pin: newPin };
-      const { data } = await client.post(pinChangePath, payload);
-      if (!isSessionValid(submittingSession)) {
-        return;
-      }
-      setFetchedHasPin(true);
-      applySessionUpdate(data?.token, submittingSession.userId, true);
-      toast.success(tAuth('pinChangedSuccess'));
-      handleDialogOpenChange(false);
-    } catch (error) {
-      if (!isSessionValid(submittingSession)) {
-        return;
-      }
-      setPinError(formatCredentialError(error));
-    } finally {
-      setPinSubmitting(false);
-    }
+    const payload = hasPin
+      ? { current_pin: currentPin, pin: newPin }
+      : { current_password: pinCurrentPassword, pin: newPin };
+    await executeCredentialRequest(() => client.post(pinChangePath, payload), {
+      submitSeqRef: pinSubmitSeqRef,
+      setSubmitting: setPinSubmitting,
+      setError: setPinError,
+      successMessage: tAuth('pinChangedSuccess'),
+      nextHasPin: true,
+      onApplied: () => setFetchedHasPin(true),
+    });
   };
 
   return (

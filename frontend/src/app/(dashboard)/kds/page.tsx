@@ -53,6 +53,7 @@ function useDashboardKdsDefault(userId?: string | null): KdsViewMode | null {
   return view;
 }
 
+/** Renders the dashboard-embedded KDS workspace with shared POS session synchronization. */
 export default function KdsPage() {
   useSyncServerLanguage();
   const t = useTranslations('kds');
@@ -70,13 +71,21 @@ export default function KdsPage() {
         .getState()
         .replaceSessionToken(nextToken, hasPin !== undefined ? { has_pin: hasPin } : undefined);
     },
+    onSessionAuthenticated: ({ token, user, tenant, tenants }) => {
+      useAuthStore.getState().syncAuthenticatedSession({
+        token,
+        user,
+        currentTenant: tenant,
+        tenants,
+      });
+    },
   });
   const kdsDefaultView = useDashboardKdsDefault(conn.user?.id);
 
   useEffect(() => {
     if (
       conn.user &&
-      !useAuthStore.getState().user &&
+      String(useAuthStore.getState().user?.id) !== String(conn.user.id) &&
       typeof window !== 'undefined' &&
       Boolean(window.localStorage.getItem('token')) &&
       Boolean(window.localStorage.getItem('tenant'))

@@ -63,6 +63,12 @@ interface AuthState {
   refreshAuthContext: () => Promise<void>;
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
   replaceSessionToken: (token: string, userUpdates?: Partial<User>) => void;
+  syncAuthenticatedSession: (payload: {
+    token: string;
+    user: User;
+    currentTenant: Tenant | null;
+    tenants?: Tenant[];
+  }) => void;
 }
 
 /** Thrown when browser local storage is unavailable to persist session tokens. */
@@ -254,8 +260,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
+  /** Replaces the active JWT after credential rotation without clearing user identity. */
   replaceSessionToken: (token, userUpdates) => {
     if (!token) return;
+    ++authOperation;
     try {
       localStorage.setItem('token', token);
     } catch {
@@ -265,6 +273,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       token,
       user: state.user && userUpdates ? { ...state.user, ...userUpdates } : state.user,
     }));
+  },
+
+  /** Syncs a KDS login into the shared dashboard store and warms print policies. */
+  syncAuthenticatedSession: (payload) => {
+    const operation = ++authOperation;
+    clearBillTemplateProvenance();
+    const tenants = payload.tenants ?? (payload.currentTenant ? [payload.currentTenant] : []);
+    const currentTenant = payload.currentTenant ?? (tenants.length === 1 ? tenants[0] : null);
+    persistSession(payload.token, currentTenant);
+    syncTenantLanguage(currentTenant);
+    notifySessionBoundary('login');
+    set({
+      user: payload.user,
+      token: payload.token,
+      currentTenant,
+      tenants,
+      isLocked: false,
+      loading: false,
+      printLanguageLoadErrors: [],
+    });
+    if (currentTenant) {
+      void syncPrintPoliciesAtBootstrap(
+        currentTenant,
+        usePosSettingsStore,
+        () => operation === authOperation,
+      )
+        .then((failedLanguages) => {
+          if (operation === authOperation) {
+            set({ printLanguageLoadErrors: failedLanguages });
+          }
+        })
+        .catch(() => {});
+    }
   },
 
   refreshAuthContext: async () => {
@@ -285,6 +326,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: data.user, tenants, currentTenant });
   },
 
+  /** Hydrates session state from localStorage while keeping tokens on transient errors. */
   loadFromStorage: async () => {
     const operation = ++authOperation;
     clearBillTemplateProvenance();
@@ -339,15 +381,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (operation !== authOperation || failedLanguages === null) return;
           set({ loading: false, printLanguageLoadErrors: failedLanguages });
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (operation !== authOperation) return;
-          localStorage.removeItem('token');
-          localStorage.removeItem('tenant');
+          const status = (error as { response?: { status?: number } })?.response?.status;
+          if (status === 401 || status === 403) {
+            const currentStoredToken = readStoredToken();
+            if (currentStoredToken === null || currentStoredToken === token) {
+              try {
+                localStorage.removeItem('token');
+                localStorage.removeItem('tenant');
+              } catch {
+                // Ignore storage removal errors in non-browser contexts.
+              }
+              set({
+                user: null,
+                token: null,
+                tenants: [],
+                currentTenant: null,
+                loading: false,
+                printLanguageLoadErrors: [],
+              });
+              return;
+            }
+          }
           set({
-            user: null,
-            token: null,
-            tenants: [],
-            currentTenant: null,
             loading: false,
             printLanguageLoadErrors: [],
           });

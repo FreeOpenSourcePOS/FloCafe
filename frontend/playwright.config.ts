@@ -8,8 +8,10 @@ export default defineConfig({
   testIgnore: /.*\.electron\.spec\.ts/,
   workers: 1, // Single shared backend server requires serial execution to prevent DB state races
   retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
   use: {
     headless: true,
+    actionTimeout: 20_000,
     trace: 'on-first-retry', // Upload traces for debugging CI flakes
   },
   webServer: {
@@ -28,7 +30,5 @@ export default defineConfig({
       E2E_SERVER_APP_BASE_URL,
     },
   },
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'], baseURL: E2E_BASE_URL } },
-  ],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], baseURL: E2E_BASE_URL } }],
 });

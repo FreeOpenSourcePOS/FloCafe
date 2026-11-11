@@ -377,7 +377,7 @@ export function generateBillHtml(
     </div>
 
     <!-- Bill Details -->
-    ${largeOrderNumber ? `<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate; font-size: 1.5em; font-weight: 800; text-align: center; border: 2px solid #000; padding: 4px 8px; margin: 6px 0;">ORDER #${escapeHtml(largeOrderNumber)}</div>` : ''}
+    ${largeOrderNumber ? `<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate; font-size: 1.5em; font-weight: 800; text-align: center; border: 2px solid #000; padding: 4px 8px; margin: 6px 0;">#${escapeHtml(largeOrderNumber)}</div>` : ''}
     <div class="bill-details">
       <table>
         <tr>

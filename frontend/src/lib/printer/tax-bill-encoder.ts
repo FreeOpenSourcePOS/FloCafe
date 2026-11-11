@@ -351,7 +351,7 @@ export function buildTaxBillBytes(
   if (opts.showLargeOrderNumber === true && order?.order_number) {
     const cleanOrderNum = String(order.order_number).trim().replace(/^#/, '');
     if (cleanOrderNum.length > 0) {
-      const bannerText = `ORDER #${cleanOrderNum}`;
+      const bannerText = `#${cleanOrderNum}`;
       const layout = layoutStyledUnit(
         {
           text: bannerText,

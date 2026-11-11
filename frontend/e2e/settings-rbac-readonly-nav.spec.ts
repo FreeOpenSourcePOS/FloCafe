@@ -85,6 +85,7 @@ async function loginAs(page: Page, email: string): Promise<void> {
     localStorage.removeItem('token');
     localStorage.removeItem('auth-storage');
   });
+  await page.goto('about:blank');
   await page.goto(`${BASE}/auth/login`);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(E2E_PASSWORD);
@@ -515,6 +516,155 @@ test.describe('Settings RBAC read-only enforcement & unsaved-changes navigation 
       await expect(page.getByText('Settings saved', { exact: true })).toBeVisible({
         timeout: 20_000,
       });
+      await expect(page.getByTestId('settings-unsaved-bar')).toHaveCount(0);
+    }
+
+    // 4. Scoped printer specialist (`printers.manage` WITHOUT `settings.view`, `bills.*`, or
+    //    `print-templates.view`) preserves unrelated receipt toggles (e.g. customer phone hidden)
+    //    when saving Trim decimals, and refuses writes when printing hydration fails.
+    const initialPrinting = await ownerApi<Record<string, unknown>>(page, '/settings/printing');
+    try {
+      await ownerApi(page, '/settings/printing', {
+        method: 'PUT',
+        data: {
+          auto_print_kot: Boolean(initialPrinting.auto_print_kot),
+          printer_use_unicode: Boolean(initialPrinting.printer_use_unicode),
+          printer_arabic_shaping: Boolean(initialPrinting.printer_arabic_shaping),
+          printer_trim_decimals: false,
+          bill_language_policy: initialPrinting.bill_language_policy,
+          kot_language_policy: initialPrinting.kot_language_policy,
+          ...(initialPrinting.z_report_language_policy
+            ? { z_report_language_policy: initialPrinting.z_report_language_policy }
+            : {}),
+          bill_show_logo: Boolean(initialPrinting.bill_show_logo),
+          bill_show_name: false,
+          bill_show_address: Boolean(initialPrinting.bill_show_address),
+          bill_show_phone: Boolean(initialPrinting.bill_show_phone),
+          bill_show_tax_id: Boolean(initialPrinting.bill_show_tax_id),
+          bill_show_tax_breakdown: Boolean(initialPrinting.bill_show_tax_breakdown),
+          bill_show_customer_name: Boolean(initialPrinting.bill_show_customer_name),
+          bill_show_customer_phone: false,
+          bill_delivery_show_customer_phone_always: Boolean(
+            initialPrinting.bill_delivery_show_customer_phone_always,
+          ),
+          bill_show_table_number: Boolean(initialPrinting.bill_show_table_number),
+          bill_show_large_order_number: false,
+          ...(typeof initialPrinting.cash_drawer_pulse_enabled === 'boolean'
+            ? {
+                cash_drawer_pulse_enabled: initialPrinting.cash_drawer_pulse_enabled,
+                cash_drawer_pulse_methods: initialPrinting.cash_drawer_pulse_methods,
+              }
+            : {}),
+        },
+      });
+
+      const verifiedSetup = await ownerApi<Record<string, unknown>>(page, '/settings/printing');
+      expect(verifiedSetup.bill_show_customer_phone).toBe(false);
+
+      await setUserOverrides(page, cashierId, [
+        { permission_id: 'printers.manage', effect: 'allow' },
+        { permission_id: 'settings.view', effect: 'deny' },
+        { permission_id: 'bills.read', effect: 'deny' },
+        { permission_id: 'bills.print', effect: 'deny' },
+        { permission_id: 'bills.generate', effect: 'deny' },
+        { permission_id: 'print-templates.view', effect: 'deny' },
+      ]);
+      await loginAs(page, 'rbac-cashier@flo.local');
+      const specialistDialog = page.getByTestId('update-available-dialog');
+      if (await specialistDialog.isVisible().catch(() => false)) {
+        await specialistDialog.getByRole('button', { name: 'Later' }).click();
+      }
+
+      const specialistPrintingResponsePromise = page.waitForResponse(
+        (res) =>
+          res.request().method() === 'GET' &&
+          new URL(res.url()).pathname === '/api/settings/printing',
+      );
+      await page.goto(`${BASE}/settings?tab=receipts-printers`);
+      const specialistPrintingResponse = await specialistPrintingResponsePromise;
+      expect(specialistPrintingResponse.status()).toBe(200);
+      const specialistPrintingPayload = (await specialistPrintingResponse.json()) as Record<
+        string,
+        unknown
+      >;
+      expect(specialistPrintingPayload.bill_show_customer_phone).toBe(false);
+      const specialistTrimSwitch = page
+        .locator('[data-setting-section="printing-options"]')
+        .getByRole('switch', { name: 'Trim decimals' });
+      const customerPhoneSwitch = page
+        .locator('[data-setting-section="bill-content"]')
+        .getByRole('switch', { name: 'Customer Number', exact: true });
+      await expect(specialistTrimSwitch).toBeEnabled({ timeout: 20_000 });
+      await expect(specialistTrimSwitch).toHaveAttribute('aria-checked', 'false');
+      await expect(customerPhoneSwitch).toHaveAttribute('aria-checked', 'false');
+
+      await specialistTrimSwitch.click();
+      await expect(page.getByTestId('settings-unsaved-bar')).toBeVisible();
+      await page.getByRole('button', { name: 'Save Changes' }).click();
+      await expect(page.getByText('Settings saved', { exact: true })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByTestId('settings-unsaved-bar')).toHaveCount(0);
+
+      const persistedAfterSpecialist = await ownerApi<Record<string, unknown>>(
+        page,
+        '/settings/printing',
+      );
+      expect(persistedAfterSpecialist.printer_trim_decimals).toBe(true);
+      expect(persistedAfterSpecialist.bill_show_customer_phone).toBe(false);
+      expect(persistedAfterSpecialist.bill_show_name).toBe(false);
+      expect(persistedAfterSpecialist.bill_show_large_order_number).toBe(false);
+
+      // Failed printing read must keep controls locked and block writes.
+      let putAttempted = false;
+      await page.route('**/api/settings/printing', async (route) => {
+        if (route.request().method() === 'PUT') putAttempted = true;
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Printing read failure' }),
+        });
+      });
+      await page.goto(`${BASE}/settings?tab=receipts-printers`);
+      await expect(page.getByTestId('printing-hydration-error')).toBeVisible({ timeout: 20_000 });
+      await expect(specialistTrimSwitch).toBeDisabled();
+      await expect(page.getByTestId('settings-unsaved-bar')).toHaveCount(0);
+      expect(putAttempted).toBe(false);
+    } finally {
+      await page.unroute('**/api/settings/printing').catch(() => {});
+      await ownerApi(page, '/settings/printing', {
+        method: 'PUT',
+        data: {
+          auto_print_kot: Boolean(initialPrinting.auto_print_kot),
+          printer_use_unicode: Boolean(initialPrinting.printer_use_unicode),
+          printer_arabic_shaping: Boolean(initialPrinting.printer_arabic_shaping),
+          printer_trim_decimals: Boolean(initialPrinting.printer_trim_decimals),
+          bill_language_policy: initialPrinting.bill_language_policy,
+          kot_language_policy: initialPrinting.kot_language_policy,
+          ...(initialPrinting.z_report_language_policy
+            ? { z_report_language_policy: initialPrinting.z_report_language_policy }
+            : {}),
+          bill_show_logo: Boolean(initialPrinting.bill_show_logo),
+          bill_show_name: Boolean(initialPrinting.bill_show_name),
+          bill_show_address: Boolean(initialPrinting.bill_show_address),
+          bill_show_phone: Boolean(initialPrinting.bill_show_phone),
+          bill_show_tax_id: Boolean(initialPrinting.bill_show_tax_id),
+          bill_show_tax_breakdown: Boolean(initialPrinting.bill_show_tax_breakdown),
+          bill_show_customer_name: Boolean(initialPrinting.bill_show_customer_name),
+          bill_show_customer_phone: Boolean(initialPrinting.bill_show_customer_phone),
+          bill_delivery_show_customer_phone_always: Boolean(
+            initialPrinting.bill_delivery_show_customer_phone_always,
+          ),
+          bill_show_table_number: Boolean(initialPrinting.bill_show_table_number),
+          bill_show_large_order_number: Boolean(initialPrinting.bill_show_large_order_number),
+          ...(typeof initialPrinting.cash_drawer_pulse_enabled === 'boolean'
+            ? {
+                cash_drawer_pulse_enabled: initialPrinting.cash_drawer_pulse_enabled,
+                cash_drawer_pulse_methods: initialPrinting.cash_drawer_pulse_methods,
+              }
+            : {}),
+        },
+      }).catch(() => {});
     }
   });
 });

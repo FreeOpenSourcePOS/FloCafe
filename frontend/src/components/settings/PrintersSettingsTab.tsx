@@ -143,6 +143,8 @@ export interface PrintersSettingsTabProps {
   isActive: boolean;
   isAdmin?: boolean;
   canManagePrinters?: boolean;
+  printingHydrated?: boolean;
+  printingHydrationFailed?: boolean;
   hwPrinters: HwPrinter[];
   setHwPrinters: React.Dispatch<React.SetStateAction<HwPrinter[]>>;
   printingForm: PrintingForm;
@@ -167,6 +169,8 @@ export function PrintersSettingsTab({
   isActive,
   isAdmin = true,
   canManagePrinters = true,
+  printingHydrated = true,
+  printingHydrationFailed = false,
   hwPrinters,
   setHwPrinters,
   printingForm,
@@ -186,6 +190,7 @@ export function PrintersSettingsTab({
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const { refreshHardwarePrinter, setPrintMethod } = usePrinterStore();
+  const canEditPrintingOptions = canManagePrinters && printingHydrated && !printingHydrationFailed;
 
   const [printerForm, setPrinterForm] = useState<PrinterForm>(emptyPrinterForm);
   const [paperWidthTouched, setPaperWidthTouched] = useState(false);
@@ -886,6 +891,17 @@ export function PrintersSettingsTab({
           </h2>
         </div>
 
+        {printingHydrationFailed && (
+          <div
+            role="alert"
+            data-testid="printing-hydration-error"
+            className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800/50 dark:bg-red-950/40 dark:text-red-200"
+          >
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{t('reloadFailed')}</span>
+          </div>
+        )}
+
         <div
           data-setting-section="printing-options"
           className="bg-card rounded-xl border border-border p-6"
@@ -903,9 +919,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerEnabled}
                 label={t('enablePrinter')}
-                disabled={!canManagePrinters}
+                disabled={!canEditPrintingOptions}
                 onChange={(v) => {
-                  if (!canManagePrinters) return;
+                  if (!canEditPrintingOptions) return;
                   markHydrationTouched('printerEnabled');
                   setPrintingForm((p) => ({ ...p, printerEnabled: v }));
                 }}
@@ -923,9 +939,9 @@ export function PrintersSettingsTab({
                 <Toggle
                   value={!!printingForm.cashDrawerPulseEnabled}
                   label={t('sendPulseToCashDrawer')}
-                  disabled={!canManagePrinters}
+                  disabled={!canEditPrintingOptions}
                   onChange={(v) => {
-                    if (!canManagePrinters) return;
+                    if (!canEditPrintingOptions) return;
                     markHydrationTouched('cashDrawerPulseEnabled');
                     setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }));
                   }}
@@ -961,10 +977,10 @@ export function PrintersSettingsTab({
                         >
                           <input
                             type="checkbox"
-                            disabled={!canManagePrinters}
+                            disabled={!canEditPrintingOptions}
                             checked={printingForm.cashDrawerPulseMethods.includes(value)}
                             onChange={(e) => {
-                              if (!canManagePrinters) return;
+                              if (!canEditPrintingOptions) return;
                               markHydrationTouched('cashDrawerPulseMethods');
                               setPrintingForm((p) => ({
                                 ...p,
@@ -990,9 +1006,9 @@ export function PrintersSettingsTab({
               <p className="font-medium text-foreground mb-2">{t('printMethod')}</p>
               <select
                 value={printingForm.printMethod}
-                disabled={!canManagePrinters}
+                disabled={!canEditPrintingOptions}
                 onChange={(e) => {
-                  if (!canManagePrinters) return;
+                  if (!canEditPrintingOptions) return;
                   markHydrationTouched('printMethod');
                   setPrintingForm((p) => ({
                     ...p,
@@ -1044,9 +1060,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
                 label={t('autoPrintKot')}
-                disabled={!canManagePrinters || !kotPrintingEnabledSetting}
+                disabled={!canEditPrintingOptions || !kotPrintingEnabledSetting}
                 onChange={(v) => {
-                  if (!canManagePrinters || !kotPrintingEnabledSetting) return;
+                  if (!canEditPrintingOptions || !kotPrintingEnabledSetting) return;
                   markHydrationTouched('autoPrintKot');
                   setPrintingForm((p) => ({ ...p, autoPrintKot: v }));
                 }}
@@ -1071,9 +1087,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.autoPrintBill}
                 label={t('autoPrintBill')}
-                disabled={!canManagePrinters}
+                disabled={!canEditPrintingOptions}
                 onChange={(v) => {
-                  if (!canManagePrinters) return;
+                  if (!canEditPrintingOptions) return;
                   markHydrationTouched('autoPrintBill');
                   setPrintingForm((p) => ({ ...p, autoPrintBill: v }));
                 }}
@@ -1087,9 +1103,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerUseUnicode}
                 label={t('printerUnicode')}
-                disabled={!canManagePrinters}
+                disabled={!canEditPrintingOptions}
                 onChange={(v) => {
-                  if (!canManagePrinters) return;
+                  if (!canEditPrintingOptions) return;
                   markHydrationTouched('printerUseUnicode');
                   setPrintingForm((p) => ({ ...p, printerUseUnicode: v }));
                 }}
@@ -1103,9 +1119,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerArabicShaping}
                 label={t('printerArabicShaping')}
-                disabled={!canManagePrinters}
+                disabled={!canEditPrintingOptions}
                 onChange={(v) => {
-                  if (!canManagePrinters) return;
+                  if (!canEditPrintingOptions) return;
                   markHydrationTouched('printerArabicShaping');
                   setPrintingForm((p) => ({ ...p, printerArabicShaping: v }));
                 }}
@@ -1119,9 +1135,9 @@ export function PrintersSettingsTab({
               <Toggle
                 value={printingForm.printerTrimDecimals}
                 label={t('trimDecimals')}
-                disabled={!canManagePrinters}
+                disabled={!canEditPrintingOptions}
                 onChange={(v) => {
-                  if (!canManagePrinters) return;
+                  if (!canEditPrintingOptions) return;
                   markHydrationTouched('printerTrimDecimals');
                   setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }));
                 }}
@@ -1144,9 +1160,9 @@ export function PrintersSettingsTab({
                   <select
                     id="receipt-primary-language"
                     value={printingForm.receiptPrimaryLanguage}
-                    disabled={!canManagePrinters}
+                    disabled={!canEditPrintingOptions}
                     onChange={(e) => {
-                      if (!canManagePrinters) return;
+                      if (!canEditPrintingOptions) return;
                       markHydrationTouched('receiptPrimaryLanguage');
                       setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value }));
                     }}
@@ -1170,9 +1186,9 @@ export function PrintersSettingsTab({
                   <select
                     id="receipt-second-language"
                     value={printingForm.receiptSecondLanguage}
-                    disabled={!canManagePrinters}
+                    disabled={!canEditPrintingOptions}
                     onChange={(e) => {
-                      if (!canManagePrinters) return;
+                      if (!canEditPrintingOptions) return;
                       markHydrationTouched('receiptSecondLanguage');
                       setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value }));
                     }}
@@ -1196,9 +1212,9 @@ export function PrintersSettingsTab({
                   <select
                     id="kot-language"
                     value={printingForm.kotLanguage}
-                    disabled={!canManagePrinters}
+                    disabled={!canEditPrintingOptions}
                     onChange={(e) => {
-                      if (!canManagePrinters) return;
+                      if (!canEditPrintingOptions) return;
                       markHydrationTouched('kotLanguage');
                       setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value }));
                     }}
@@ -1222,9 +1238,9 @@ export function PrintersSettingsTab({
                   <select
                     id="z-report-primary-language"
                     value={printingForm.zReportPrimaryLanguage}
-                    disabled={!canManagePrinters}
+                    disabled={!canEditPrintingOptions}
                     onChange={(e) => {
-                      if (!canManagePrinters) return;
+                      if (!canEditPrintingOptions) return;
                       markHydrationTouched('zReportPrimaryLanguage');
                       setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value }));
                     }}
@@ -1248,9 +1264,9 @@ export function PrintersSettingsTab({
                   <select
                     id="z-report-second-language"
                     value={printingForm.zReportSecondLanguage}
-                    disabled={!canManagePrinters}
+                    disabled={!canEditPrintingOptions}
                     onChange={(e) => {
-                      if (!canManagePrinters) return;
+                      if (!canEditPrintingOptions) return;
                       markHydrationTouched('zReportSecondLanguage');
                       setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value }));
                     }}
@@ -1306,9 +1322,9 @@ export function PrintersSettingsTab({
                     <Toggle
                       value={printingForm[item.key]}
                       label={item.label}
-                      disabled={!canManagePrinters}
+                      disabled={!canEditPrintingOptions}
                       onChange={(value) => {
-                        if (!canManagePrinters) return;
+                        if (!canEditPrintingOptions) return;
                         markHydrationTouched(item.key);
                         setPrintingForm((previous) => ({ ...previous, [item.key]: value }));
                       }}
@@ -1333,9 +1349,9 @@ export function PrintersSettingsTab({
                     <Toggle
                       value={printingForm.billDeliveryShowCustomerPhoneAlways}
                       label={t('deliveryShowCustomerPhoneAlways')}
-                      disabled={!canManagePrinters}
+                      disabled={!canEditPrintingOptions}
                       onChange={(value) => {
-                        if (!canManagePrinters) return;
+                        if (!canEditPrintingOptions) return;
                         markHydrationTouched('billDeliveryShowCustomerPhoneAlways');
                         setPrintingForm((previous) => ({
                           ...previous,
@@ -1388,9 +1404,9 @@ export function PrintersSettingsTab({
             <Toggle
               value={printingForm.whatsappShareEnabled}
               label={t('enableWhatsappShare')}
-              disabled={!canManagePrinters}
+              disabled={!canEditPrintingOptions}
               onChange={(v) => {
-                if (!canManagePrinters) return;
+                if (!canEditPrintingOptions) return;
                 markHydrationTouched('whatsappShareEnabled');
                 setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }));
               }}

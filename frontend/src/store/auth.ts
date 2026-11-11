@@ -31,6 +31,18 @@ function readStoredToken(): string | null {
   }
 }
 
+function removeSessionStorageKeys(): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('tenant');
+    }
+  } catch {
+    // Ignore storage removal errors in non-browser contexts.
+  }
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -46,6 +58,7 @@ interface AuthState {
   lock: () => Promise<void>;
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
+  clearLocalSession: (expectedToken?: string | null) => void;
   loadFromStorage: () => Promise<void>;
   refreshAuthContext: () => Promise<void>;
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
@@ -193,9 +206,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    ++authOperation;
-    clearBillTemplateProvenance();
-    notifySessionBoundary('logout');
     const tokenToRevoke = get().token ?? readStoredToken();
     api
       .post(
@@ -204,8 +214,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
       )
       .catch(() => {});
-    localStorage.removeItem('token');
-    localStorage.removeItem('tenant');
+    get().clearLocalSession();
+  },
+
+  clearLocalSession: (expectedToken) => {
+    if (expectedToken !== undefined) {
+      const storedToken = readStoredToken();
+      const storeToken = get().token;
+      if (expectedToken === null) {
+        if (storedToken !== null) return;
+      } else if (
+        storedToken !== null
+          ? storedToken !== expectedToken
+          : storeToken !== null && storeToken !== expectedToken
+      ) {
+        return;
+      }
+    }
+    ++authOperation;
+    clearBillTemplateProvenance();
+    notifySessionBoundary('logout');
+    removeSessionStorageKeys();
     set({
       user: null,
       token: null,

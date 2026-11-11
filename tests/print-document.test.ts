@@ -1265,7 +1265,7 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
     cutMode: 'full' as const,
   };
 
-  // Omitted / false showLargeOrderNumber omits the large ORDER # banner.
+  // Omitted / false showLargeOrderNumber omits the large # banner.
   const enabledData = buildBillPrintData(
     { ...order, order_number: '0012' },
     bill,
@@ -1289,18 +1289,36 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
   assert(
     classicEnabled.some((line) =>
       line.includes(
-        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}ORDER #0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
       ),
     ),
-    'classic thermal receipt emits centered bold double-size ORDER #0012 banner when enabled',
+    'classic thermal receipt emits centered bold double-size #0012 banner when enabled',
+  );
+  assert(
+    !classicEnabled.some((line) => line.includes('ORDER #')),
+    'classic thermal receipt uses language-neutral # banner without hardcoded English ORDER #',
   );
   assert(
     classicEnabled.some((line) => line.includes('INV-PARITY-001')),
-    'classic thermal receipt keeps INV-PARITY-001 invoice line alongside ORDER #0012 banner',
+    'classic thermal receipt keeps INV-PARITY-001 invoice line alongside #0012 banner',
   );
   assert(
-    !classicDisabled.some((line) => line.includes('ORDER #0012')),
-    'classic thermal receipt omits ORDER # banner when showLargeOrderNumber is false',
+    !classicDisabled.some((line) => line.includes('{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#0012')),
+    'classic thermal receipt omits # banner when showLargeOrderNumber is false',
+  );
+
+  const classicGermanEnabled = renderBillDocumentToClassicLines(enabledDoc, {
+    ...renderOpts,
+    language: 'de',
+    locale: 'de-DE',
+  });
+  assert(
+    classicGermanEnabled.some((line) =>
+      line.includes(
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+      ),
+    ) && !classicGermanEnabled.some((line) => line.includes('ORDER #')),
+    'classic German thermal receipt emits language-neutral #0012 banner without English ORDER #',
   );
 
   const compactEnabled = renderBillDocumentToCompactLines(enabledDoc, renderOpts);
@@ -1308,16 +1326,20 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
   assert(
     compactEnabled.some((line) =>
       line.includes(
-        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}ORDER #0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+        '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#0012{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
       ),
     ),
-    'compact thermal receipt emits centered bold double-size ORDER #0012 banner when enabled',
+    'compact thermal receipt emits centered bold double-size #0012 banner when enabled',
   );
   assert(
-    !compactDisabled.some((line) => line.includes('ORDER #0012')),
-    'compact thermal receipt omits ORDER # banner when showLargeOrderNumber is false',
+    !compactEnabled.some((line) => line.includes('ORDER #')),
+    'compact thermal receipt uses language-neutral # banner without hardcoded English ORDER #',
   );
-  ok('backend document-classic and document-compact render/omit large bold ORDER # banner');
+  assert(
+    !compactDisabled.some((line) => line.includes('{DOUBLE_HEIGHT}{DOUBLE_WIDTH}#0012')),
+    'compact thermal receipt omits # banner when showLargeOrderNumber is false',
+  );
+  ok('backend document-classic and document-compact render/omit large bold # banner');
 
   // Frontend ESC/POS encoders (classic, compact, detailed, tax-bill) and HTML web-print.
   const feBill: any = {
@@ -1368,12 +1390,23 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
       buildFn(feBill, feTenant, { columns: 48, showLargeOrderNumber: false } as any),
     );
     assert(
-      onText.includes('ORDER #ORD-20261109-0012'),
-      `${label} emits ORDER #ORD-20261109-0012 when showLargeOrderNumber is true`,
+      onText.includes('#ORD-20261109-0012') && !onText.includes('ORDER #'),
+      `${label} emits language-neutral #ORD-20261109-0012 when showLargeOrderNumber is true`,
     );
     assert(
-      !offText.includes('ORDER #ORD-20261109-0012'),
-      `${label} omits ORDER #ORD-20261109-0012 when showLargeOrderNumber is false`,
+      !offText.includes('#ORD-20261109-0012') && !offText.includes('ORDER #'),
+      `${label} omits #ORD-20261109-0012 when showLargeOrderNumber is false`,
+    );
+    const onGermanText = escPosToText(
+      buildFn(feBill, feTenant, {
+        columns: 48,
+        languages: ['de'],
+        showLargeOrderNumber: true,
+      } as any),
+    );
+    assert(
+      onGermanText.includes('#ORD-20261109-0012') && !onGermanText.includes('ORDER #'),
+      `${label} emits #ORD-20261109-0012 without English ORDER # in German receipts`,
     );
     const warnings58: any[] = [];
     const on58Text = escPosToText(
@@ -1385,8 +1418,8 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
       ),
     );
     assert(
-      on58Text.includes('ORDER #ORD-20261109-0012'),
-      `${label} preserves full ORDER #ORD-20261109-0012 on 58mm (32 columns)`,
+      on58Text.includes('#ORD-20261109-0012') && !on58Text.includes('ORDER #'),
+      `${label} preserves full #ORD-20261109-0012 on 58mm (32 columns)`,
     );
     assert.equal(
       warnings58.length,
@@ -1413,23 +1446,37 @@ console.log('\n▶ Large bold Order Number banner on customer receipts');
     languages: ['ar'],
     showLargeOrderNumber: true,
   });
+  const htmlDe = webPrint.generateBillHtml(feBill, feTenant, {
+    paperSize: 'thermal80',
+    columns: 48,
+    languages: ['de'],
+    showLargeOrderNumber: true,
+  });
   assert(
-    htmlOn.includes('class="order-number-banner"') && htmlOn.includes('ORDER #ORD-20261109-0012'),
-    'generateBillHtml renders .order-number-banner with ORDER #ORD-20261109-0012 when enabled',
+    htmlOn.includes('class="order-number-banner"') &&
+      htmlOn.includes('>#ORD-20261109-0012</div>') &&
+      !htmlOn.includes('ORDER #'),
+    'generateBillHtml renders .order-number-banner with #ORD-20261109-0012 when enabled',
   );
   assert(
     htmlRtl.includes('dir="rtl"') &&
-      /<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate;[^"]*">ORDER #ORD-20261109-0012<\/div>/.test(
+      /<div class="order-number-banner" dir="ltr" style="direction: ltr; unicode-bidi: isolate;[^"]*">#ORD-20261109-0012<\/div>/.test(
         htmlRtl,
-      ),
-    'generateBillHtml isolates .order-number-banner as dir="ltr" inside RTL receipts',
+      ) &&
+      !htmlRtl.includes('ORDER #'),
+    'generateBillHtml isolates .order-number-banner as dir="ltr" inside RTL receipts without English ORDER #',
+  );
+  assert(
+    htmlDe.includes('>#ORD-20261109-0012</div>') && !htmlDe.includes('ORDER #'),
+    'generateBillHtml renders #ORD-20261109-0012 without English ORDER # in German receipts',
   );
   assert(
     !htmlOff.includes('class="order-number-banner"') &&
-      !htmlOff.includes('ORDER #ORD-20261109-0012'),
+      !htmlOff.includes('#ORD-20261109-0012') &&
+      !htmlOff.includes('ORDER #'),
     'generateBillHtml omits .order-number-banner when showLargeOrderNumber is false',
   );
-  ok('frontend thermal encoders and browser HTML receipt render/omit large bold ORDER # banner');
+  ok('frontend thermal encoders and browser HTML receipt render/omit large bold # banner');
 }
 
 console.log(`\nPrintDocument unit tests: ${passed} checks passed.`);

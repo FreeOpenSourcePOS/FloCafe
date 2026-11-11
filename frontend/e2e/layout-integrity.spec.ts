@@ -3325,6 +3325,102 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         .catch(() => {});
     }
   });
+
+  test('keeps a large 550-order feed bounded at 1024x600 without page dots expanding the header', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await loginAsManager(page);
+    await page.clock.install();
+    await mockDisplayOrders(page, displayOrders(350, 200));
+    await page.goto(`${BASE}/customer-display`);
+
+    const preparing = page.getByTestId('customer-display-preparing-scroll');
+    const ready = page.getByTestId('customer-display-ready-scroll');
+    await expect(
+      preparing.locator('[data-order-id^="display-preparing-"]:visible').first(),
+    ).toBeVisible();
+    await expect(ready.locator('[data-order-id^="display-ready-"]:visible').first()).toBeVisible();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
+
+    const preparingSection = preparing.locator('..');
+    const readySection = ready.locator('..');
+    for (const [name, section, scroll] of [
+      ['preparing', preparingSection, preparing],
+      ['ready', readySection, ready],
+    ] as const) {
+      const indicator = section.getByTestId('customer-display-page-indicator');
+      await expect(indicator, `${name} shows numeric page indicator`).toContainText(/^1 \/ \d+/);
+      const dots = section.getByTestId('customer-display-page-dot');
+      expect(
+        await dots.count(),
+        `${name} caps rendered dots to a sliding window`,
+      ).toBeLessThanOrEqual(7);
+      await expect(dots.nth(0)).toHaveAttribute('data-active', 'true');
+
+      const dotRowHeight = await dots
+        .first()
+        .evaluate((dot) => dot.parentElement?.getBoundingClientRect().height ?? 0);
+      expect(dotRowHeight, `${name} dot row remains single-line bounded`).toBeLessThanOrEqual(12);
+
+      const layout = await scroll.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const usableTop = bounds.top + Number.parseFloat(style.paddingTop);
+        const usableBottom = bounds.bottom - Number.parseFloat(style.paddingBottom);
+        const visibleRows = [
+          ...element.querySelectorAll('[data-testid="customer-display-order-row"]'),
+        ]
+          .filter((row) => getComputedStyle(row).visibility === 'visible')
+          .map((row) => {
+            const rect = row.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom };
+          });
+        return {
+          clientHeight: element.clientHeight,
+          usableTop,
+          usableBottom,
+          visibleRows,
+        };
+      });
+      expect(layout.clientHeight, `${name} order scroll stays visible at 1024x600`).toBeGreaterThan(
+        100,
+      );
+      expect(
+        layout.visibleRows.length,
+        `${name} renders visible order rows on page 1`,
+      ).toBeGreaterThan(0);
+      expect(
+        layout.visibleRows.every(
+          (row) => row.top >= layout.usableTop - 1 && row.bottom <= layout.usableBottom + 1,
+        ),
+        `${name} rows remain within the viewport scroll area`,
+      ).toBe(true);
+    }
+
+    const headerTopBefore = await page
+      .locator('header')
+      .evaluate((el) => el.getBoundingClientRect().top);
+    await page.clock.runFor(10_000);
+    await expect(preparingSection.getByTestId('customer-display-page-indicator')).toContainText(
+      /^2 \/ \d+/,
+    );
+    await expect(preparingSection.getByTestId('customer-display-page-dot').nth(1)).toHaveAttribute(
+      'data-active',
+      'true',
+    );
+    const headerTopAfter = await page
+      .locator('header')
+      .evaluate((el) => el.getBoundingClientRect().top);
+    expect(
+      Math.abs(headerTopAfter - headerTopBefore),
+      'header does not oscillate vertically',
+    ).toBeLessThanOrEqual(1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1),
+      'customer display does not overflow viewport vertically at 1024x600',
+    ).toBe(true);
+  });
 });
 
 /**

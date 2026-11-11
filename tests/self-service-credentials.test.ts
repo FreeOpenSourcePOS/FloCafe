@@ -28,6 +28,22 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
+let bcryptHashInterceptor:
+  | ((
+      value: string,
+      rounds: number | string,
+      next: (value: string, rounds: number | string) => Promise<string>,
+    ) => Promise<string>)
+  | null = null;
+{
+  const loadedBcrypt = require('bcryptjs');
+  const origHash = loadedBcrypt.hash.bind(loadedBcrypt);
+  loadedBcrypt.hash = (value: string, rounds: number | string) =>
+    bcryptHashInterceptor
+      ? bcryptHashInterceptor(value, rounds, origHash)
+      : origHash(value, rounds);
+}
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
@@ -1012,6 +1028,135 @@ async function run() {
     stalePinChangeRes.status,
     401,
     'In-flight PIN change with stale token rejected with 401',
+  );
+
+  // Logout during hashing must prevent credential changes from committing.
+  console.log('\nRevoking the initiating session during bcrypt.hash aborts commit');
+  clearLoginRateLimits();
+  clearRevokedTokens();
+  resetCredentialChangeRateLimitsForTests();
+  seedUser(db, {
+    id: 'self-race-cashier',
+    name: 'Race Cashier',
+    email: 'self-race-cashier@flo.local',
+    password: 'RacePass-1!',
+    role: 'cashier',
+    pin: '4321',
+  });
+
+  const runPausedHashRace = async (
+    triggerChange: () => Promise<any>,
+    logoutToken: string,
+  ): Promise<any> => {
+    let signalEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      signalEntered = resolve;
+    });
+    let releaseHash!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseHash = resolve;
+    });
+    bcryptHashInterceptor = async (value, rounds, next) => {
+      signalEntered();
+      await gate;
+      return next(value, rounds);
+    };
+    try {
+      const responsePromise = triggerChange();
+      await Promise.race([
+        entered,
+        responsePromise.then((earlyRes: any) => {
+          throw new Error(
+            `Request returned status ${earlyRes?.status} before entering bcrypt.hash`,
+          );
+        }),
+      ]);
+      const logoutRes = await request(app)
+        .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${logoutToken}`);
+      assertEqualOrThrow(
+        logoutRes.status,
+        200,
+        'Concurrent /api/auth/logout revokes initiating session during hash',
+      );
+      releaseHash();
+      return await responsePromise;
+    } finally {
+      releaseHash();
+      bcryptHashInterceptor = null;
+    }
+  };
+
+  const racePwToken = await loginFor('self-race-cashier@flo.local', 'RacePass-1!');
+  assertOrThrow(Boolean(racePwToken), 'Race cashier logs in for password-change logout race');
+  const pwLogoutRaceRes = await runPausedHashRace(
+    () =>
+      request(app)
+        .post('/api/auth/password/change')
+        .set('Authorization', `Bearer ${racePwToken}`)
+        .send({
+          current_password: 'RacePass-1!',
+          password: 'BlockedNewPass-2!',
+        })
+        .then((res: any) => res),
+    racePwToken,
+  );
+  assertEqualOrThrow(
+    pwLogoutRaceRes.status,
+    401,
+    'Password change returns 401 when initiating session is logged out during hashing',
+  );
+  assertOrThrow(
+    !pwLogoutRaceRes.body.token,
+    'Aborted password change does not return a replacement token',
+  );
+  const blockedPwLoginRes = await request(app).post('/api/auth/login').send({
+    email: 'self-race-cashier@flo.local',
+    password: 'BlockedNewPass-2!',
+  });
+  assertEqualOrThrow(
+    blockedPwLoginRes.status,
+    401,
+    'Aborted password change did not persist new password',
+  );
+
+  const racePinToken = await loginFor('self-race-cashier@flo.local', 'RacePass-1!');
+  assertOrThrow(
+    Boolean(racePinToken),
+    'Original password still works after aborted password change',
+  );
+  const pinLogoutRaceRes = await runPausedHashRace(
+    () =>
+      request(app)
+        .post('/api/auth/pin/change')
+        .set('Authorization', `Bearer ${racePinToken}`)
+        .send({
+          current_pin: '4321',
+          pin: '9876',
+        })
+        .then((res: any) => res),
+    racePinToken,
+  );
+  assertEqualOrThrow(
+    pinLogoutRaceRes.status,
+    401,
+    'PIN change returns 401 when initiating session is logged out during hashing',
+  );
+  assertOrThrow(
+    !pinLogoutRaceRes.body.token,
+    'Aborted PIN change does not return a replacement token',
+  );
+  const blockedPinLoginRes = await request(app)
+    .post('/api/auth/pin-login')
+    .send({ user_id: 'self-race-cashier', pin: '9876' });
+  assertEqualOrThrow(blockedPinLoginRes.status, 401, 'Aborted PIN change did not persist new PIN');
+  const originalPinLoginRes = await request(app)
+    .post('/api/auth/pin-login')
+    .send({ user_id: 'self-race-cashier', pin: '4321' });
+  assertEqualOrThrow(
+    originalPinLoginRes.status,
+    200,
+    'Original PIN still valid after aborted PIN change',
   );
 
   console.log('\n✅ All Self-Service Password & PIN + staff.credentials.reset tests passed!');

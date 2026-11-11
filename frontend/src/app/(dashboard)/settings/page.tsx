@@ -508,6 +508,11 @@ export default function SettingsPage() {
       confirmedKitchenVersions.current.clear();
       failedKitchenSaveVersions.current.clear();
       confirmedKitchenSettings.current = { tenantId };
+      printingHydratedRef.current = false;
+      printingHydrationTenant.current = null;
+      setPrintingHydrated(false);
+      setPrintingHydrationFailed(false);
+      setZReportLanguagePolicyLoaded(false);
       setRefundPolicyHydrated(false);
     }
   };
@@ -1730,10 +1735,18 @@ export default function SettingsPage() {
     });
   };
   const [zReportLanguagePolicyLoaded, setZReportLanguagePolicyLoaded] = useState(false);
+  const [printingHydrated, setPrintingHydrated] = useState(false);
+  const [printingHydrationFailed, setPrintingHydrationFailed] = useState(false);
+  const printingHydratedRef = useRef(false);
+  const printingHydrationTenant = useRef<number | null>(null);
   const [savingPrinting, setSavingPrinting] = useState(false);
   const printingSaveInFlight = useRef(false);
   const savePrinting = async (silent: boolean = false) => {
     if (!canManagePrinters) return;
+    if (!printingHydratedRef.current || printingHydrationTenant.current !== getActiveTenantId()) {
+      if (!silent) toast.error(t('saveFailed'));
+      throw new Error('Printing settings are not hydrated');
+    }
     if (printingSaveInFlight.current) return;
     printingSaveInFlight.current = true;
     setSavingPrinting(true);
@@ -2668,160 +2681,119 @@ export default function SettingsPage() {
     const loadPrinting = async (
       printingAtHydrationStart: PrintingForm,
       billFormAtHydrationStart: BillTemplateForm,
+      canReadBusiness: boolean,
+      canReadTemplates: boolean,
     ) => {
-      const [
-        autoPrintKotResponse,
-        useUnicodeResponse,
-        arabicShapingResponse,
-        trimResponse,
-        cashEnabledResponse,
-        cashMethodsResponse,
-        billLanguageResponse,
-        kotLanguageResponse,
-      ] = await Promise.all([
-        readOptional('/settings/auto_print_kot'),
-        readOptional('/settings/printer_use_unicode'),
-        readOptional('/settings/printer_arabic_shaping'),
-        readOptional('/settings/printer_trim_decimals'),
-        readOptional('/settings/cash_drawer_pulse_enabled'),
-        readOptional('/settings/cash_drawer_pulse_methods'),
-        readOptional('/settings/bill_language_policy'),
-        readOptional('/settings/kot_language_policy'),
-      ]);
-      if (!active()) return;
-
-      const autoPrintKotSetting = autoPrintKotResponse?.data?.setting;
-      if (
-        autoPrintKotSetting?.updated_at != null &&
-        (autoPrintKotSetting.value === 'true' || autoPrintKotSetting.value === 'false')
-      ) {
-        const enabled = autoPrintKotSetting.value === 'true';
-        posSettings.setAutoPrintKot(enabled);
-        mergeHydratedPrinting(
-          { autoPrintKot: enabled },
-          printingAtHydrationStart,
-          hydrationTouchSnapshot,
-        );
-        setSavedPrinting((p) => ({ ...p, autoPrintKot: enabled }));
-      }
-      const useUnicodeSetting = useUnicodeResponse?.data?.setting;
-      if (
-        useUnicodeSetting?.updated_at != null &&
-        (useUnicodeSetting.value === 'true' || useUnicodeSetting.value === 'false')
-      ) {
-        const enabled = useUnicodeSetting.value === 'true';
-        posSettings.setPrinterUseUnicode(enabled);
-        mergeHydratedPrinting(
-          { printerUseUnicode: enabled },
-          printingAtHydrationStart,
-          hydrationTouchSnapshot,
-        );
-        setSavedPrinting((p) => ({ ...p, printerUseUnicode: enabled }));
-      }
-      const arabicShapingSetting = arabicShapingResponse?.data?.setting;
-      if (
-        arabicShapingSetting?.updated_at != null &&
-        (arabicShapingSetting.value === 'true' || arabicShapingSetting.value === 'false')
-      ) {
-        const enabled = arabicShapingSetting.value === 'true';
-        posSettings.setPrinterArabicShaping(enabled);
-        mergeHydratedPrinting(
-          { printerArabicShaping: enabled },
-          printingAtHydrationStart,
-          hydrationTouchSnapshot,
-        );
-        setSavedPrinting((p) => ({ ...p, printerArabicShaping: enabled }));
+      let printingPayload: Record<string, unknown>;
+      try {
+        const res = await get('/settings/printing');
+        if (!active()) return;
+        printingPayload =
+          res?.data && typeof res.data === 'object' ? (res.data as Record<string, unknown>) : {};
+      } catch (error) {
+        if (!isRequestCancelled(error) && active()) {
+          printingHydratedRef.current = false;
+          printingHydrationTenant.current = null;
+          setPrintingHydrated(false);
+          setPrintingHydrationFailed(true);
+        }
+        throw error;
       }
 
-      if (trimResponse) {
-        const enabled = trimResponse.data.setting?.value === 'true';
-        posSettings.setPrinterTrimDecimals(enabled);
-        mergeHydratedPrinting(
-          { printerTrimDecimals: enabled },
-          printingAtHydrationStart,
-          hydrationTouchSnapshot,
-        );
-        setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
-      }
-      if (cashEnabledResponse) {
-        const raw = cashEnabledResponse.data.setting?.value;
-        if (raw === 'true' || raw === 'false') {
-          const enabled = raw === 'true';
-          setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
-          // Missing rows intentionally remain undefined so thermal printing keeps
-          // its legacy per-printer fallback.
-          mergeHydratedPrinting(
-            { cashDrawerPulseEnabled: enabled },
-            printingAtHydrationStart,
-            hydrationTouchSnapshot,
-          );
+      const printingPatch: Partial<PrintingForm> = {};
+      const booleanFieldMap: Array<
+        [string, keyof PrintingForm, ((enabled: boolean) => void) | undefined]
+      > = [
+        ['auto_print_kot', 'autoPrintKot', posSettings.setAutoPrintKot],
+        ['printer_use_unicode', 'printerUseUnicode', posSettings.setPrinterUseUnicode],
+        ['printer_arabic_shaping', 'printerArabicShaping', posSettings.setPrinterArabicShaping],
+        ['printer_trim_decimals', 'printerTrimDecimals', posSettings.setPrinterTrimDecimals],
+        ['bill_show_logo', 'billShowLogo', posSettings.setBillShowLogo],
+        ['bill_show_name', 'billShowName', posSettings.setBillShowName],
+        ['bill_show_address', 'billShowAddress', posSettings.setBillShowAddress],
+        ['bill_show_phone', 'billShowPhone', posSettings.setBillShowPhone],
+        ['bill_show_tax_id', 'billShowTaxId', posSettings.setBillShowTaxId],
+        ['bill_show_tax_breakdown', 'billShowTaxBreakdown', posSettings.setBillShowTaxBreakdown],
+        ['bill_show_customer_name', 'billShowCustomerName', posSettings.setBillShowCustomerName],
+        ['bill_show_customer_phone', 'billShowCustomerPhone', posSettings.setBillShowCustomerPhone],
+        [
+          'bill_delivery_show_customer_phone_always',
+          'billDeliveryShowCustomerPhoneAlways',
+          posSettings.setBillDeliveryShowCustomerPhoneAlways,
+        ],
+        ['bill_show_table_number', 'billShowTableNumber', posSettings.setBillShowTableNumber],
+        [
+          'bill_show_large_order_number',
+          'billShowLargeOrderNumber',
+          posSettings.setBillShowLargeOrderNumber,
+        ],
+      ];
+      for (const [apiKey, formKey, setter] of booleanFieldMap) {
+        const value = printingPayload[apiKey];
+        if (typeof value === 'boolean') {
+          setter?.(value);
+          (printingPatch as Record<string, unknown>)[formKey] = value;
         }
       }
-      if (cashMethodsResponse) {
-        try {
-          const methods = JSON.parse(cashMethodsResponse.data.setting?.value || '[]');
-          if (Array.isArray(methods)) {
-            const valid = methods.filter(
-              (method: unknown): method is string => typeof method === 'string',
-            );
-            const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-            mergeHydratedPrinting(
-              { cashDrawerPulseMethods: normalized },
-              printingAtHydrationStart,
-              hydrationTouchSnapshot,
-            );
-            setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-          }
-        } catch {
-          /* Use the safe defaults. */
-        }
+
+      if (typeof printingPayload.cash_drawer_pulse_enabled === 'boolean') {
+        printingPatch.cashDrawerPulseEnabled = printingPayload.cash_drawer_pulse_enabled;
       }
-      if (billLanguageResponse) {
-        const policy = parseStoredReceiptLanguagePolicy(billLanguageResponse.data?.setting?.value);
-        if (policy) {
-          posSettings.setBillLanguagePolicy(policy);
-          const formPatch = {
-            receiptPrimaryLanguage:
-              policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-            receiptSecondLanguage: policy.additional[0] ?? 'none',
-          };
-          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
-          setSavedPrinting((p) => ({ ...p, ...formPatch }));
-        }
+      if (Array.isArray(printingPayload.cash_drawer_pulse_methods)) {
+        const methods = printingPayload.cash_drawer_pulse_methods;
+        const valid = methods.filter((method): method is string => typeof method === 'string');
+        printingPatch.cashDrawerPulseMethods =
+          methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
       }
-      if (kotLanguageResponse) {
-        const policy = parseStoredKotLanguagePolicy(kotLanguageResponse.data?.setting?.value);
-        if (policy) {
-          posSettings.setKotLanguagePolicy(policy);
-          const formPatch = {
-            kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-          };
-          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
-          setSavedPrinting((p) => ({ ...p, ...formPatch }));
-        }
+
+      const billPolicy = parseStoredReceiptLanguagePolicy(printingPayload.bill_language_policy);
+      if (billPolicy) {
+        posSettings.setBillLanguagePolicy(billPolicy);
+        printingPatch.receiptPrimaryLanguage =
+          billPolicy.primary.mode === 'fixed' ? billPolicy.primary.language : 'inherit';
+        printingPatch.receiptSecondLanguage = billPolicy.additional[0] ?? 'none';
       }
-      const zReportResponse = await readOptional('/settings/z_report_language_policy');
-      if (!active()) return;
-      if (zReportResponse) {
-        const policy = parseStoredReceiptLanguagePolicy(zReportResponse.data?.setting?.value);
-        if (policy) {
-          const formPatch = {
-            zReportPrimaryLanguage:
-              policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-            zReportSecondLanguage: policy.additional[0] ?? 'none',
-          };
-          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
-          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+      const kotPolicy = parseStoredKotLanguagePolicy(printingPayload.kot_language_policy);
+      if (kotPolicy) {
+        posSettings.setKotLanguagePolicy(kotPolicy);
+        printingPatch.kotLanguage =
+          kotPolicy.primary.mode === 'fixed' ? kotPolicy.primary.language : 'inherit';
+      }
+      if (Object.prototype.hasOwnProperty.call(printingPayload, 'z_report_language_policy')) {
+        if (printingPayload.z_report_language_policy === null) {
           setZReportLanguagePolicyLoaded(true);
+        } else {
+          const zReportPolicy = parseStoredReceiptLanguagePolicy(
+            printingPayload.z_report_language_policy,
+          );
+          if (zReportPolicy) {
+            printingPatch.zReportPrimaryLanguage =
+              zReportPolicy.primary.mode === 'fixed' ? zReportPolicy.primary.language : 'inherit';
+            printingPatch.zReportSecondLanguage = zReportPolicy.additional[0] ?? 'none';
+            setZReportLanguagePolicyLoaded(true);
+          }
         }
-      } else {
-        setZReportLanguagePolicyLoaded(true);
       }
+      if (!canReadBusiness && typeof printingPayload.kot_printing_enabled === 'boolean') {
+        applyHydratedKitchenSetting('kotPrintingEnabled', printingPayload.kot_printing_enabled);
+      }
+      if (!canReadBusiness && typeof printingPayload.kds_enabled === 'boolean') {
+        applyHydratedKitchenSetting('kdsEnabled', printingPayload.kds_enabled);
+      }
+
+      if (Object.keys(printingPatch).length > 0) {
+        mergeHydratedPrinting(printingPatch, printingAtHydrationStart, hydrationTouchSnapshot);
+        setSavedPrinting((p) => ({ ...p, ...printingPatch }));
+      }
+      printingHydratedRef.current = true;
+      printingHydrationTenant.current = tenantIdAtHydrationStart;
+      setPrintingHydrated(true);
+      setPrintingHydrationFailed(false);
 
       const [templatesResponse, templateResponse, footerResponse] = await Promise.all([
-        readOptional('/settings/bill-templates'),
-        readOptional('/settings/bill_template'),
-        readOptional('/settings/bill_footer_message'),
+        canReadTemplates ? readOptional('/settings/bill-templates') : Promise.resolve(null),
+        canReadBusiness ? readOptional('/settings/bill_template') : Promise.resolve(null),
+        canReadBusiness ? readOptional('/settings/bill_footer_message') : Promise.resolve(null),
       ]);
       if (!active()) return;
       const pluginCards: TemplateCard[] = (templatesResponse?.data?.plugins || []).map(
@@ -2957,20 +2929,34 @@ export default function SettingsPage() {
       if (tab === 'receipts-printers') {
         const printingAtHydrationStart = { ...printingFormRef.current };
         const billFormAtHydrationStart = { ...billFormRef.current };
-        if (tenantCan(currentTenant, 'settings.view')) {
-          await loadBusiness();
-        }
+        const canReadBusiness = tenantCan(currentTenant, 'settings.view');
+        const canReadTemplates = tenantCan(currentTenant, 'print-templates.view');
         await Promise.all([
+          canReadBusiness ? loadBusiness() : Promise.resolve(),
           fetchPrinters(signal),
-          loadPrinting(printingAtHydrationStart, billFormAtHydrationStart),
-          readOptional('/settings/kot_printing_enabled').then((res) => {
-            if (!active()) return;
-            applyHydratedKitchenSetting('kotPrintingEnabled', res?.data.setting?.value !== 'false');
-          }),
-          readOptional('/settings/kds_enabled').then((res) => {
-            if (!active()) return;
-            applyHydratedKitchenSetting('kdsEnabled', res?.data.setting?.value !== 'false');
-          }),
+          canManagePrinters || canReadBusiness
+            ? loadPrinting(
+                printingAtHydrationStart,
+                billFormAtHydrationStart,
+                canReadBusiness,
+                canReadTemplates,
+              )
+            : Promise.resolve(),
+          ...(canReadBusiness
+            ? [
+                readOptional('/settings/kot_printing_enabled').then((res) => {
+                  if (!active()) return;
+                  applyHydratedKitchenSetting(
+                    'kotPrintingEnabled',
+                    res?.data.setting?.value !== 'false',
+                  );
+                }),
+                readOptional('/settings/kds_enabled').then((res) => {
+                  if (!active()) return;
+                  applyHydratedKitchenSetting('kdsEnabled', res?.data.setting?.value !== 'false');
+                }),
+              ]
+            : []),
         ]);
         return;
       }
@@ -4312,7 +4298,9 @@ export default function SettingsPage() {
       discountRequiresApproval !== savedDiscountRequiresApproval ||
       JSON.stringify(orderNumberForm) !== JSON.stringify(savedOrderNumberForm));
   const printingDirty =
-    canManagePrinters && JSON.stringify(printingForm) !== JSON.stringify(savedPrinting);
+    canManagePrinters &&
+    printingHydrated &&
+    JSON.stringify(printingForm) !== JSON.stringify(savedPrinting);
   const cloudDirty =
     canManageCloud && JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings);
   const hasSaveableDirtyChanges = adminDirty || printingDirty || cloudDirty;
@@ -6736,6 +6724,8 @@ export default function SettingsPage() {
               isActive={activeTab === 'receipts-printers'}
               isAdmin={isAdmin}
               canManagePrinters={canManagePrinters}
+              printingHydrated={printingHydrated}
+              printingHydrationFailed={printingHydrationFailed}
               hwPrinters={hwPrinters}
               setHwPrinters={setHwPrinters}
               printingForm={printingForm}

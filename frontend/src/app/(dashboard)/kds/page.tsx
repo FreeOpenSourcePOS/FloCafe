@@ -59,7 +59,18 @@ export default function KdsPage() {
   const kdsEnabled = useKdsEnabledCheck();
   // Stay idle until the feature is confirmed on: a disabled KDS refuses the
   // /kds upgrade with 404, which only logs handshake failures.
-  const conn = useKdsConnection({ api, enabled: kdsEnabled === true });
+  const conn = useKdsConnection({
+    api,
+    enabled: kdsEnabled === true,
+    onSessionCleared: (clearedToken) => {
+      useAuthStore.getState().clearLocalSession(clearedToken);
+    },
+    onSessionTokenReplaced: (nextToken, hasPin) => {
+      useAuthStore
+        .getState()
+        .replaceSessionToken(nextToken, hasPin !== undefined ? { has_pin: hasPin } : undefined);
+    },
+  });
   const kdsDefaultView = useDashboardKdsDefault(conn.user?.id);
 
   useEffect(() => {

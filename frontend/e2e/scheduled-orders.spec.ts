@@ -895,13 +895,34 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
       await route.continue();
     });
 
-    await cartShell.getByRole('button', { name: 'Place Order' }).click();
-    await expect(page.getByRole('status').last()).toContainText(
-      'FloCafe could not confirm whether the order or payment was saved.',
-    );
-    expect(submittedOrders).toHaveLength(1);
-    expect(submittedOrders[0].idempotencyKey).toBeTruthy();
-    expect(submittedOrders[0].body.scheduled_for).toBe(firstScheduleWall);
+    const unconfirmedToastText =
+      'FloCafe could not confirm whether the order or payment was saved.';
+    const submitExpectedAbortedOrder = async (
+      expectedCount: number,
+      expectedScheduledFor: string,
+    ) => {
+      const orderPostReqPromise = page.waitForRequest(
+        (req) => req.method() === 'POST' && new URL(req.url()).pathname === '/api/orders',
+      );
+      const orderPostFailedPromise = page.waitForEvent(
+        'requestfailed',
+        (req) => req.method() === 'POST' && new URL(req.url()).pathname === '/api/orders',
+      );
+      await cartShell.getByRole('button', { name: 'Place Order' }).click();
+      const orderPostReq = await orderPostReqPromise;
+      await orderPostFailedPromise;
+      await expect(
+        page.getByRole('status').filter({ hasText: unconfirmedToastText }).last(),
+      ).toBeVisible();
+      await expect.poll(() => submittedOrders.length).toBe(expectedCount);
+      expect(submittedOrders).toHaveLength(expectedCount);
+      const entry = submittedOrders[expectedCount - 1];
+      expect(entry.idempotencyKey).toBe(orderPostReq.headers()['idempotency-key']);
+      expect(entry.idempotencyKey).toBeTruthy();
+      expect(entry.body.scheduled_for).toBe(expectedScheduledFor);
+    };
+
+    await submitExpectedAbortedOrder(1, firstScheduleWall);
 
     const navMenu = page.getByRole('navigation', { name: 'Menu' });
 
@@ -973,13 +994,7 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
     await expect(detailsDrawer).toHaveCount(0);
 
     abortSecondOrderPost = true;
-    await cartShell.getByRole('button', { name: 'Place Order' }).click();
-    await expect(page.getByRole('status').last()).toContainText(
-      'FloCafe could not confirm whether the order or payment was saved.',
-    );
-    expect(submittedOrders).toHaveLength(3);
-    expect(submittedOrders[2].idempotencyKey).toBeTruthy();
-    expect(submittedOrders[2].body.scheduled_for).toBe(secondScheduleWall);
+    await submitExpectedAbortedOrder(3, secondScheduleWall);
 
     // Disable scheduling and remount POS
     const disableToggleRes = await page.request.put(
@@ -1051,13 +1066,7 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
     await expect(detailsDrawer).toHaveCount(0);
 
     abortWithoutCommitOrderPost = true;
-    await cartShell.getByRole('button', { name: 'Place Order' }).click();
-    await expect(page.getByRole('status').last()).toContainText(
-      'FloCafe could not confirm whether the order or payment was saved.',
-    );
-    expect(submittedOrders).toHaveLength(5);
-    expect(submittedOrders[4].idempotencyKey).toBeTruthy();
-    expect(submittedOrders[4].body.scheduled_for).toBe(thirdScheduleWall);
+    await submitExpectedAbortedOrder(5, thirdScheduleWall);
 
     const disableForRejectRes = await page.request.put(
       `${BASE}/api/settings/scheduled_orders_enabled`,

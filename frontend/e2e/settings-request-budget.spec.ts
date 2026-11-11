@@ -96,12 +96,7 @@ test('Store Settings does not hydrate inactive tabs', async ({ page }) => {
       '/api/settings/kds_enabled',
       '/api/settings/server_app_enabled',
       '/api/settings/kot_printing_enabled',
-      '/api/settings/printer_trim_decimals',
-      '/api/settings/cash_drawer_pulse_enabled',
-      '/api/settings/cash_drawer_pulse_methods',
-      '/api/settings/bill_language_policy',
-      '/api/settings/kot_language_policy',
-      '/api/settings/z_report_language_policy',
+      '/api/settings/printing',
       '/api/settings/bill-templates',
       '/api/settings/bill_template',
       '/api/settings/bill_footer_message',
@@ -1091,17 +1086,21 @@ test('Save All preserves printing edits during business hydration', async ({ pag
 test('Printers tab hydrates KOT/Unicode/shaping flags and writes false', async ({ page }) => {
   await startMockedSettingsSession(page);
   const savedPrintingRequests: Record<string, unknown>[] = [];
-  for (const key of ['auto_print_kot', 'printer_use_unicode', 'printer_arabic_shaping']) {
-    await page.route(`**/api/settings/${key}`, async (route) => {
+  await page.route('**/api/settings/printing', async (route) => {
+    if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          setting: { key, value: 'true', updated_at: '2026-01-01T00:00:00.000Z' },
+          auto_print_kot: true,
+          printer_use_unicode: true,
+          printer_arabic_shaping: true,
         }),
       });
-    });
-  }
+      return;
+    }
+    await route.fallback();
+  });
   page.on('request', (request) => {
     if (
       request.method() === 'PUT' &&
@@ -1230,8 +1229,7 @@ test('Save All hydrates settings before writing and skips mobile status requests
   expect(firstWrite).toBeGreaterThan(-1);
   for (const path of [
     '/api/settings/business',
-    '/api/settings/printer_trim_decimals',
-    '/api/settings/z_report_language_policy',
+    '/api/settings/printing',
     '/api/settings/loyalty',
     '/api/settings/discount',
     '/api/settings/cloud',
@@ -1288,7 +1286,7 @@ test('Save All stops when printing hydration fails', async ({ page }) => {
     const path = new URL(request.url()).pathname;
     if (request.method() === 'PUT' && path.startsWith('/api/settings/')) writes.push(path);
   });
-  await page.route('**/api/settings/z_report_language_policy', async (route) => {
+  await page.route('**/api/settings/printing', async (route) => {
     await printingHydrationHeld;
     await route.fulfill({
       status: 503,
@@ -1314,15 +1312,17 @@ test('Save All persists when a settings read is rate limited', async ({ page }) 
   let throttledAttempts = 0;
   // A 429 is throttling, not unavailability, so the read must be retried. Treating it
   // as a failed hydration used to make Save Changes discard the whole edit set.
-  await page.route('**/api/settings/z_report_language_policy', async (route) => {
-    throttledAttempts += 1;
-    if (throttledAttempts === 1) {
-      await route.fulfill({
-        status: 429,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Too many requests' }),
-      });
-      return;
+  await page.route('**/api/settings/printing', async (route) => {
+    if (route.request().method() === 'GET') {
+      throttledAttempts += 1;
+      if (throttledAttempts === 1) {
+        await route.fulfill({
+          status: 429,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Too many requests' }),
+        });
+        return;
+      }
     }
     await route.fallback();
   });

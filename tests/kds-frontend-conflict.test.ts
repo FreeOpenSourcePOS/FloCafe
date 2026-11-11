@@ -962,6 +962,362 @@ async function runTests() {
     Module._resolveFilename = originalResolveFilename;
   }
 
+  // Dashboard KDS logout synchronizes shared authentication while standalone sessions stay isolated.
+  const prevLoad = Module._load;
+  const origWindow = (globalThis as any).window;
+  const origLocalStorage = (globalThis as any).localStorage;
+  const origWebSocket = (globalThis as any).WebSocket;
+  const storage = new Map<string, string>();
+  const mockLocalStorage = {
+    getItem: (key: string) => (storage.has(key) ? storage.get(key)! : null),
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
+    removeItem: (key: string) => {
+      storage.delete(key);
+    },
+  };
+  const states: any[] = [];
+  const refs: Array<{ current: any }> = [];
+  const callbacks: Array<{ fn: any; deps?: any[] }> = [];
+  const effects: Array<{ effect: () => any; cleanup?: () => any; deps?: any[] }> = [];
+  let stateIdx = 0;
+  let refIdx = 0;
+  let callbackIdx = 0;
+  let effectIdx = 0;
+
+  const hookReact = {
+    useState(init: any) {
+      const i = stateIdx++;
+      if (i >= states.length) states[i] = typeof init === 'function' ? init() : init;
+      return [
+        states[i],
+        (action: any) => {
+          states[i] = typeof action === 'function' ? action(states[i]) : action;
+        },
+      ];
+    },
+    useRef(init: any) {
+      const i = refIdx++;
+      if (i >= refs.length) refs[i] = { current: init };
+      return refs[i];
+    },
+    useCallback(fn: any, deps?: any[]) {
+      const i = callbackIdx++;
+      const prev = callbacks[i];
+      if (!prev || !deps || !prev.deps || deps.some((d, idx) => d !== prev.deps![idx])) {
+        callbacks[i] = { fn, deps };
+      }
+      return callbacks[i].fn;
+    },
+    useEffect(effect: () => any, deps?: any[]) {
+      const i = effectIdx++;
+      const prev = effects[i];
+      if (!prev || !deps || !prev.deps || deps.some((d, idx) => d !== prev.deps![idx])) {
+        if (prev?.cleanup) prev.cleanup();
+        const cleanup = effect();
+        effects[i] = {
+          effect,
+          cleanup: typeof cleanup === 'function' ? cleanup : undefined,
+          deps,
+        };
+      }
+    },
+  };
+
+  function resetHooks() {
+    states.length = 0;
+    refs.length = 0;
+    callbacks.length = 0;
+    for (const e of effects) {
+      if (typeof e.cleanup === 'function') e.cleanup();
+    }
+    effects.length = 0;
+  }
+
+  class MockWebSocket {
+    onopen: (() => void) | null = null;
+    onmessage: ((evt: any) => void) | null = null;
+    onerror: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+    send() {}
+    close() {}
+  }
+
+  try {
+    (globalThis as any).localStorage = mockLocalStorage;
+    (globalThis as any).window = {
+      localStorage: mockLocalStorage,
+      sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+      setInterval: globalThis.setInterval,
+      clearInterval: globalThis.clearInterval,
+      dispatchEvent: () => true,
+      location: { protocol: 'http:', host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000' },
+    };
+    (globalThis as any).WebSocket = MockWebSocket;
+
+    Module._resolveFilename = function (
+      request: string,
+      parent: any,
+      isMain: boolean,
+      options?: any,
+    ) {
+      let resolvedRequest = frontendResolved.get(request) ?? request;
+      if (request.startsWith('@/')) {
+        resolvedRequest = path.resolve(process.cwd(), 'frontend/src', request.slice(2));
+      } else if (request.startsWith('@print/')) {
+        resolvedRequest = path.resolve(
+          process.cwd(),
+          'shared/print',
+          request.slice('@print/'.length),
+        );
+      } else if (request.startsWith('@shared/')) {
+        resolvedRequest = path.resolve(process.cwd(), 'shared', request.slice('@shared/'.length));
+      }
+      return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+    };
+
+    const kdsHookPath = require.resolve('../frontend/src/hooks/useKdsConnection');
+    const authStorePath = require.resolve('../frontend/src/store/auth');
+    delete require.cache[kdsHookPath];
+    delete require.cache[authStorePath];
+
+    Module._load = function (requestName: string) {
+      if (requestName === 'react') return hookReact;
+      if (requestName === '@/hooks/use-confirm') {
+        return { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) };
+      }
+      if (requestName === 'react-hot-toast') {
+        const toast = { success: () => {}, error: () => {}, default: null as any };
+        toast.default = toast;
+        return toast;
+      }
+      if (requestName === 'use-intl') return { useTranslations: () => (k: string) => k };
+      return prevLoad.apply(this, arguments as any);
+    };
+
+    const { useKdsConnection } = require('../frontend/src/hooks/useKdsConnection');
+    const { useAuthStore } = require('../frontend/src/store/auth');
+    const api = require('../frontend/src/lib/api').default;
+
+    const origSharedApiPost = api.post;
+    const sharedPostCalls: string[] = [];
+    api.post = async (url: string) => {
+      sharedPostCalls.push(url);
+      return { data: {} };
+    };
+
+    try {
+      const tenant = { id: 1, name: 'Test Cafe', role: 'chef' };
+      const chefUser = { id: 'chef-1', name: 'Chef', email: 'chef@test.local', role: 'chef' };
+
+      // Dashboard logout clears the shared session with one logout request.
+      let kdsLogoutCalls = 0;
+      const apiDefaults = { baseURL: 'http://127.0.0.1:3001/api' };
+      const kdsApi: any = {
+        defaults: apiDefaults,
+        get: async (url: string) =>
+          url === '/auth/me' ? { data: { user: { ...chefUser, has_pin: true } } } : { data: {} },
+        post: async (url: string) => {
+          if (url === '/auth/logout') kdsLogoutCalls += 1;
+          return { data: {} };
+        },
+        patch: async () => ({ data: {} }),
+      };
+
+      storage.set('token', 'tok-kds-1');
+      storage.set('user', JSON.stringify(chefUser));
+      storage.set('tenant', JSON.stringify(tenant));
+      useAuthStore.setState({
+        user: chefUser,
+        token: 'tok-kds-1',
+        tenants: [tenant],
+        currentTenant: tenant,
+        loading: false,
+      });
+
+      const renderDashboardKds = () => {
+        stateIdx = 0;
+        refIdx = 0;
+        callbackIdx = 0;
+        effectIdx = 0;
+        return useKdsConnection({
+          api: kdsApi,
+          enabled: true,
+          onSessionCleared: (clearedToken: string | null) =>
+            useAuthStore.getState().clearLocalSession(clearedToken),
+          onSessionTokenReplaced: (nextToken: string, hasPin?: boolean) =>
+            useAuthStore
+              .getState()
+              .replaceSessionToken(
+                nextToken,
+                hasPin !== undefined ? { has_pin: hasPin } : undefined,
+              ),
+        });
+      };
+
+      let hook = renderDashboardKds();
+      await new Promise<void>((r) => setImmediate(r));
+      hook = renderDashboardKds();
+      assert.equal(hook.user?.id, 'chef-1', 'dashboard KDS restores chef session');
+
+      await hook.handleLogout();
+      assert.equal(kdsLogoutCalls, 1, 'dashboard KDS posts /auth/logout once');
+      assert.equal(
+        sharedPostCalls.length,
+        0,
+        'dashboard KDS logout clears shared auth store locally without a second /auth/logout POST',
+      );
+      assert.equal(storage.get('token'), undefined, 'dashboard KDS logout clears token storage');
+      assert.equal(storage.get('user'), undefined, 'dashboard KDS logout clears user storage');
+      assert.equal(storage.get('tenant'), undefined, 'dashboard KDS logout clears tenant storage');
+      assert.equal(
+        useAuthStore.getState().user,
+        null,
+        'dashboard KDS logout clears shared POS user',
+      );
+      assert.equal(
+        useAuthStore.getState().token,
+        null,
+        'dashboard KDS logout clears shared POS token',
+      );
+      assert.equal(
+        useAuthStore.getState().currentTenant,
+        null,
+        'dashboard KDS logout clears shared POS currentTenant',
+      );
+
+      // A delayed logout preserves a newer session.
+      resetHooks();
+      let resolveDelayedLogout!: () => void;
+      const delayedKdsApi: any = {
+        defaults: apiDefaults,
+        get: async () => ({ data: { user: { ...chefUser, has_pin: false } } }),
+        post: (url: string) =>
+          url === '/auth/logout'
+            ? new Promise((resolve) => {
+                resolveDelayedLogout = () => resolve({ data: {} });
+              })
+            : Promise.resolve({ data: {} }),
+        patch: async () => ({ data: {} }),
+      };
+
+      storage.set('token', 'tok-kds-old');
+      storage.set('user', JSON.stringify(chefUser));
+      storage.set('tenant', JSON.stringify(tenant));
+      useAuthStore.setState({
+        user: chefUser,
+        token: 'tok-kds-old',
+        tenants: [tenant],
+        currentTenant: tenant,
+        loading: false,
+      });
+
+      const renderDelayedKds = () => {
+        stateIdx = 0;
+        refIdx = 0;
+        callbackIdx = 0;
+        effectIdx = 0;
+        return useKdsConnection({
+          api: delayedKdsApi,
+          enabled: true,
+          onSessionCleared: (clearedToken: string | null) =>
+            useAuthStore.getState().clearLocalSession(clearedToken),
+          onSessionTokenReplaced: (nextToken: string, hasPin?: boolean) =>
+            useAuthStore
+              .getState()
+              .replaceSessionToken(
+                nextToken,
+                hasPin !== undefined ? { has_pin: hasPin } : undefined,
+              ),
+        });
+      };
+
+      hook = renderDelayedKds();
+      await new Promise<void>((r) => setImmediate(r));
+      hook = renderDelayedKds();
+      const pendingLogout = hook.handleLogout();
+      await new Promise<void>((r) => setImmediate(r));
+
+      hook.replaceSessionToken?.('tok-kds-new', true);
+      assert.equal(
+        useAuthStore.getState().token,
+        'tok-kds-new',
+        'replaceSessionToken propagates new token to shared POS auth store',
+      );
+
+      resolveDelayedLogout();
+      await pendingLogout;
+      useAuthStore.getState().clearLocalSession('tok-kds-old');
+      assert.equal(
+        storage.get('token'),
+        'tok-kds-new',
+        'delayed logout preserves newer token in localStorage',
+      );
+      assert.equal(
+        Boolean(storage.get('tenant')),
+        true,
+        'delayed logout preserves newer tenant in localStorage',
+      );
+      assert.equal(
+        useAuthStore.getState().token,
+        'tok-kds-new',
+        'delayed logout preserves newer token in shared POS auth store',
+      );
+      assert.equal(
+        useAuthStore.getState().user?.id,
+        'chef-1',
+        'delayed logout preserves signed-in user in shared POS auth store',
+      );
+
+      // Standalone logout preserves the shared POS session.
+      resetHooks();
+      storage.set('token', 'tok-standalone');
+      storage.set('tenant', JSON.stringify(tenant));
+      useAuthStore.setState({
+        user: chefUser,
+        token: 'tok-pos-unrelated',
+        tenants: [tenant],
+        currentTenant: tenant,
+        loading: false,
+      });
+
+      const renderStandaloneKds = () => {
+        stateIdx = 0;
+        refIdx = 0;
+        callbackIdx = 0;
+        effectIdx = 0;
+        return useKdsConnection({ api: kdsApi, enabled: true });
+      };
+      hook = renderStandaloneKds();
+      await new Promise<void>((r) => setImmediate(r));
+      hook = renderStandaloneKds();
+      await hook.handleLogout();
+      assert.equal(storage.get('token'), undefined, 'standalone KDS logout removes its token');
+      assert.equal(
+        useAuthStore.getState().token,
+        'tok-pos-unrelated',
+        'standalone KDS logout does not clear shared POS auth store',
+      );
+    } finally {
+      api.post = origSharedApiPost;
+      resetHooks();
+      delete require.cache[kdsHookPath];
+      delete require.cache[authStorePath];
+    }
+  } finally {
+    Module._load = prevLoad;
+    Module._resolveFilename = originalResolveFilename;
+    if (origWebSocket === undefined) delete (globalThis as any).WebSocket;
+    else (globalThis as any).WebSocket = origWebSocket;
+    if (origLocalStorage === undefined) delete (globalThis as any).localStorage;
+    else (globalThis as any).localStorage = origLocalStorage;
+    if (origWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = origWindow;
+  }
+
   console.log('✅ KDS frontend conflict refresh & Kanban inline add-ons regression test passed');
 }
 

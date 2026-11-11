@@ -282,7 +282,7 @@ export function renderBillDocumentToCompactLines(
   if (meta) {
     const cleanOrderNumber = meta.orderNumber?.text.trim().replace(/^#/, '') ?? '';
     if (meta.showLargeOrderNumber === true && cleanOrderNumber.length > 0) {
-      const orderBannerText = `ORDER #${cleanOrderNumber}`;
+      const orderBannerText = `#${cleanOrderNumber}`;
       const layout = layoutStyledUnit(
         { text: orderBannerText, widthMultiplier: 2, field: 'order number banner' },
         {

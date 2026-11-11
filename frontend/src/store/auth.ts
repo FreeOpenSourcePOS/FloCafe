@@ -63,6 +63,12 @@ interface AuthState {
   refreshAuthContext: () => Promise<void>;
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
   replaceSessionToken: (token: string, userUpdates?: Partial<User>) => void;
+  syncAuthenticatedSession: (payload: {
+    token: string;
+    user: User;
+    currentTenant: Tenant | null;
+    tenants?: Tenant[];
+  }) => void;
 }
 
 /** Thrown when browser local storage is unavailable to persist session tokens. */
@@ -256,6 +262,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   replaceSessionToken: (token, userUpdates) => {
     if (!token) return;
+    ++authOperation;
     try {
       localStorage.setItem('token', token);
     } catch {
@@ -265,6 +272,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       token,
       user: state.user && userUpdates ? { ...state.user, ...userUpdates } : state.user,
     }));
+  },
+
+  syncAuthenticatedSession: (payload) => {
+    ++authOperation;
+    const tenants = payload.tenants ?? (payload.currentTenant ? [payload.currentTenant] : []);
+    const currentTenant = payload.currentTenant ?? (tenants.length === 1 ? tenants[0] : null);
+    persistSession(payload.token, currentTenant);
+    syncTenantLanguage(currentTenant);
+    notifySessionBoundary('login');
+    set({
+      user: payload.user,
+      token: payload.token,
+      currentTenant,
+      tenants,
+      isLocked: false,
+      loading: false,
+    });
   },
 
   refreshAuthContext: async () => {
@@ -339,15 +363,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (operation !== authOperation || failedLanguages === null) return;
           set({ loading: false, printLanguageLoadErrors: failedLanguages });
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (operation !== authOperation) return;
-          localStorage.removeItem('token');
-          localStorage.removeItem('tenant');
+          const status = (error as { response?: { status?: number } })?.response?.status;
+          if (status === 401 || status === 403) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('tenant');
+            set({
+              user: null,
+              token: null,
+              tenants: [],
+              currentTenant: null,
+              loading: false,
+              printLanguageLoadErrors: [],
+            });
+            return;
+          }
           set({
-            user: null,
-            token: null,
-            tenants: [],
-            currentTenant: null,
             loading: false,
             printLanguageLoadErrors: [],
           });

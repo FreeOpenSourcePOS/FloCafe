@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import axios, { type AxiosInstance } from 'axios';
 import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { useTranslations } from 'use-intl';
@@ -48,6 +48,16 @@ export function AccountCredentialsDialog({
   userId,
   onSessionUpdated,
 }: AccountCredentialsDialogProps) {
+  const openRef = useRef(open);
+  const userIdRef = useRef(userId);
+  useEffect(() => {
+    openRef.current = open;
+    userIdRef.current = userId;
+    return () => {
+      openRef.current = false;
+    };
+  }, [open, userId]);
+
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations('common');
   const client = apiClient ?? defaultApi;
@@ -98,6 +108,7 @@ export function AccountCredentialsDialog({
   };
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
+    openRef.current = nextOpen;
     if (!nextOpen) {
       resetForms();
       setActiveTab('password');
@@ -155,6 +166,8 @@ export function AccountCredentialsDialog({
 
   const captureSubmissionSession = () => {
     const currentStore = useAuthStore.getState();
+    const liveToken =
+      currentStore.token ?? (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
     const resolvedUserId =
       userId !== undefined
         ? String(userId)
@@ -163,6 +176,7 @@ export function AccountCredentialsDialog({
           : undefined;
     return {
       userId: resolvedUserId,
+      token: liveToken,
       storeUserId: currentStore.user?.id !== undefined ? String(currentStore.user.id) : undefined,
       storeToken: currentStore.token,
     };
@@ -170,38 +184,60 @@ export function AccountCredentialsDialog({
 
   const isSessionValid = (submittingSession: {
     userId?: string;
+    token?: string | null;
     storeUserId?: string;
     storeToken?: string | null;
   }) => {
-    if (!open) return false;
+    if (!openRef.current) return false;
+
     if (onSessionUpdated) {
-      if (
-        submittingSession.userId !== undefined &&
-        userId !== undefined &&
-        String(userId) !== submittingSession.userId
-      ) {
-        return false;
+      if (userIdRef.current !== undefined && submittingSession.userId !== undefined) {
+        if (String(userIdRef.current) !== submittingSession.userId) {
+          return false;
+        }
       }
       return true;
     }
-    const currentStore = useAuthStore.getState();
-    if (!currentStore.token || !currentStore.user) {
+
+    const currentLiveToken =
+      useAuthStore.getState().token ??
+      (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+    if (!currentLiveToken) return false;
+
+    if (submittingSession.token && currentLiveToken !== submittingSession.token) {
       return false;
     }
-    if (
-      submittingSession.storeUserId !== undefined &&
-      String(currentStore.user.id) !== submittingSession.storeUserId
-    ) {
-      return false;
+
+    if (userIdRef.current !== undefined && submittingSession.userId !== undefined) {
+      if (String(userIdRef.current) !== submittingSession.userId) {
+        return false;
+      }
+    }
+
+    const currentStore = useAuthStore.getState();
+    if (submittingSession.storeUserId !== undefined) {
+      if (!currentStore.user || String(currentStore.user.id) !== submittingSession.storeUserId) {
+        return false;
+      }
     }
     if (submittingSession.storeToken && currentStore.token !== submittingSession.storeToken) {
       return false;
     }
+
     return true;
   };
 
   const applySessionUpdate = (token: unknown, submittingUserId?: string, nextHasPin?: boolean) => {
     if (typeof token !== 'string' || !token) return;
+    if (!openRef.current) return;
+
+    if (!onSessionUpdated) {
+      const currentLiveToken =
+        useAuthStore.getState().token ??
+        (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+      if (!currentLiveToken) return;
+    }
+
     const authState = useAuthStore.getState();
     const userUpdates = nextHasPin !== undefined ? { has_pin: nextHasPin } : undefined;
     if (onSessionUpdated) {

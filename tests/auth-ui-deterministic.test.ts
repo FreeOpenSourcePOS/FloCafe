@@ -729,6 +729,235 @@ async function run() {
       'non-bootstrap 401 still redirects to /auth/login via window.location.assign',
     );
 
+    // 5a.1 loadFromStorage() preserves saved tokens on transient network error
+    memStorage.set('token', 'valid-kds-session-token');
+    memStorage.set('tenant', JSON.stringify({ id: 1, business_name: 'Cafe' }));
+    realAuthStore.setState({
+      user: null,
+      token: null,
+      loading: true,
+    });
+    realApi.defaults.adapter = async (config: any) => {
+      throw new axiosPkg.AxiosError('Network Error', 'ERR_NETWORK', config, null, undefined);
+    };
+    await realAuthStore.getState().loadFromStorage();
+    assert.equal(
+      memStorage.get('token'),
+      'valid-kds-session-token',
+      'transient network error preserves token in localStorage',
+    );
+    assert.equal(
+      memStorage.get('tenant'),
+      JSON.stringify({ id: 1, business_name: 'Cafe' }),
+      'transient network error preserves tenant in localStorage',
+    );
+    assert.equal(
+      realAuthStore.getState().loading,
+      false,
+      'loading is set to false after transient network error',
+    );
+
+    // 5a.2 loadFromStorage() preserves saved tokens on transient HTTP 503
+    memStorage.set('token', 'valid-kds-session-token');
+    memStorage.set('tenant', JSON.stringify({ id: 1, business_name: 'Cafe' }));
+    realAuthStore.setState({
+      user: null,
+      token: null,
+      loading: true,
+    });
+    realApi.defaults.adapter = async (config: any) => {
+      throw new axiosPkg.AxiosError('Service Unavailable', 'ERR_BAD_RESPONSE', config, null, {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {},
+        config,
+        data: { error: 'Service Unavailable' },
+      });
+    };
+    await realAuthStore.getState().loadFromStorage();
+    assert.equal(
+      memStorage.get('token'),
+      'valid-kds-session-token',
+      'transient HTTP 503 preserves token in localStorage',
+    );
+    assert.equal(
+      memStorage.get('tenant'),
+      JSON.stringify({ id: 1, business_name: 'Cafe' }),
+      'transient HTTP 503 preserves tenant in localStorage',
+    );
+    assert.equal(
+      realAuthStore.getState().loading,
+      false,
+      'loading is set to false after transient HTTP 503',
+    );
+
+    // 5a.3 loadFromStorage() clears tokens on HTTP 403 Forbidden
+    memStorage.set('token', 'forbidden-token');
+    memStorage.set('tenant', JSON.stringify({ id: 1, business_name: 'Cafe' }));
+    realAuthStore.setState({
+      user: { id: 'u1', name: 'Server', email: 'server@cafe.local', role: 'server' },
+      token: 'forbidden-token',
+      loading: true,
+    });
+    realApi.defaults.adapter = async (config: any) => {
+      throw new axiosPkg.AxiosError('Forbidden', 'ERR_BAD_REQUEST', config, null, {
+        status: 403,
+        statusText: 'Forbidden',
+        headers: {},
+        config,
+        data: { error: 'Forbidden' },
+      });
+    };
+    await realAuthStore.getState().loadFromStorage();
+    assert.equal(memStorage.get('token'), undefined, 'HTTP 403 removes token from localStorage');
+    assert.equal(memStorage.get('tenant'), undefined, 'HTTP 403 removes tenant from localStorage');
+    assert.equal(realAuthStore.getState().user, null, 'user is cleared after HTTP 403');
+    assert.equal(realAuthStore.getState().token, null, 'token is cleared after HTTP 403');
+    assert.equal(realAuthStore.getState().loading, false, 'loading is set to false after HTTP 403');
+
+    // 5a.4 syncAuthenticatedSession() synchronously syncs user, token, and storage
+    realAuthStore.setState({
+      isLocked: true,
+      loading: true,
+    });
+    realAuthStore.getState().syncAuthenticatedSession({
+      token: 'synced-token-chef',
+      user: { id: 'u-chef', name: 'Chef Bob', email: 'bob@cafe.local', role: 'chef' },
+      currentTenant: { id: 1, business_name: 'Cafe Kitchen', language: 'en' },
+      tenants: [{ id: 1, business_name: 'Cafe Kitchen', language: 'en' }],
+    });
+    assert.equal(
+      memStorage.get('token'),
+      'synced-token-chef',
+      'syncAuthenticatedSession updates localStorage token',
+    );
+    assert.equal(
+      realAuthStore.getState().user?.name,
+      'Chef Bob',
+      'syncAuthenticatedSession updates user',
+    );
+    assert.equal(
+      realAuthStore.getState().token,
+      'synced-token-chef',
+      'syncAuthenticatedSession updates token',
+    );
+    assert.equal(
+      realAuthStore.getState().isLocked,
+      false,
+      'syncAuthenticatedSession clears isLocked',
+    );
+    assert.equal(
+      realAuthStore.getState().loading,
+      false,
+      'syncAuthenticatedSession sets loading to false',
+    );
+
+    // 5a.5 syncAuthenticatedSession() increments authOperation so in-flight loadFromStorage() 401 does not purge new session
+    memStorage.set('token', 'expired-token-before-kds');
+    memStorage.set('tenant', JSON.stringify({ id: 1 }));
+    let rejectMeRequest: (() => void) | null = null;
+    let resolveMeRequest: ((data: any) => void) | null = null;
+    realApi.defaults.adapter = async (config: any) => {
+      return new Promise((resolve, reject) => {
+        rejectMeRequest = () =>
+          reject(
+            new axiosPkg.AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, {
+              status: 401,
+              statusText: 'Unauthorized',
+              headers: {},
+              config,
+              data: { error: 'Token expired' },
+            }),
+          );
+        resolveMeRequest = (data: any) =>
+          resolve({
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+            data,
+          });
+      });
+    };
+
+    let loadPromise = realAuthStore.getState().loadFromStorage();
+    await new Promise((r) => setImmediate(r));
+
+    realAuthStore.getState().syncAuthenticatedSession({
+      token: 'valid-new-chef-token',
+      user: { id: 'chef-mario', name: 'Chef Mario', role: 'chef' },
+      currentTenant: { id: 1, business_name: 'Main' },
+      tenants: [{ id: 1, business_name: 'Main' }],
+    });
+
+    rejectMeRequest!();
+    await loadPromise;
+
+    assert.equal(
+      realAuthStore.getState().user?.name,
+      'Chef Mario',
+      'Chef session preserved after in-flight 401 resolution',
+    );
+    assert.equal(
+      realAuthStore.getState().token,
+      'valid-new-chef-token',
+      'Chef token preserved in store after in-flight 401 resolution',
+    );
+    assert.equal(
+      memStorage.get('token'),
+      'valid-new-chef-token',
+      'Chef token preserved in localStorage after in-flight 401 resolution',
+    );
+
+    // 5a.6 in-flight loadFromStorage() 200 resolution does not overwrite syncAuthenticatedSession
+    memStorage.set('token', 'old-server-token');
+    loadPromise = realAuthStore.getState().loadFromStorage();
+    await new Promise((r) => setImmediate(r));
+
+    realAuthStore.getState().syncAuthenticatedSession({
+      token: 'valid-chef-token-2',
+      user: { id: 'chef-luigi', name: 'Chef Luigi', role: 'chef' },
+      currentTenant: { id: 1, business_name: 'Main' },
+      tenants: [{ id: 1, business_name: 'Main' }],
+    });
+
+    resolveMeRequest!({
+      user: { id: 'stale-user', name: 'Server Sam', role: 'server' },
+      tenants: [{ id: 1, business_name: 'Main' }],
+    });
+    await loadPromise;
+
+    assert.equal(
+      realAuthStore.getState().user?.name,
+      'Chef Luigi',
+      'Chef session preserved after in-flight 200 resolution of previous user',
+    );
+    assert.equal(
+      realAuthStore.getState().token,
+      'valid-chef-token-2',
+      'Chef token preserved in store after in-flight 200 resolution of previous token',
+    );
+
+    // 5a.7 replaceSessionToken increments authOperation so in-flight loadFromStorage() 401 does not destroy replacement
+    memStorage.set('token', 'expired-token-before-replace');
+    loadPromise = realAuthStore.getState().loadFromStorage();
+    await new Promise((r) => setImmediate(r));
+
+    realAuthStore.getState().replaceSessionToken('valid-replaced-token', { has_pin: true });
+    rejectMeRequest!();
+    await loadPromise;
+
+    assert.equal(
+      realAuthStore.getState().token,
+      'valid-replaced-token',
+      'Replaced token preserved after in-flight 401 resolution',
+    );
+    assert.equal(
+      memStorage.get('token'),
+      'valid-replaced-token',
+      'Replaced token preserved in localStorage after in-flight 401 resolution',
+    );
+
     // 5b. AuthGuard setup-status check retries on transient error and falls back to /auth/login (never /setup)
     const pushedRoutes: string[] = [];
     const scheduledTimers: Array<{ fn: () => void; delay: number; cleared: boolean }> = [];
@@ -2339,6 +2568,378 @@ async function run() {
 
         (globalThis as any).window.removeEventListener('flo-restore-from-file', onRestoreEvent);
         delete (globalThis as any).window.electronAPI;
+
+        // Subcase 7: AccountCredentialsDialog caller-managed sessions and unmount resilience
+        for (const slot of effectSlots) {
+          if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+        }
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let credToastSuccess: string | null = null;
+        let credToastError: string | null = null;
+        const credToastStub = {
+          success: (msg: string) => {
+            credToastSuccess = msg;
+          },
+          error: (msg: string) => {
+            credToastError = msg;
+          },
+        };
+
+        const uiCredStub = ({ children }: any) => children;
+        const stubCredComp = (name: string) => {
+          const comp = (props: any) => ({ type: name, props });
+          comp.displayName = name;
+          return comp;
+        };
+
+        let dialogMockAuthState = {
+          token: null as string | null,
+          user: null as any,
+          replaceSessionToken: (_tok: string, _updates?: any) => {},
+        };
+
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') return reactHooks;
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'use-intl') {
+            return {
+              useTranslations: () => (key: string) => key,
+            };
+          }
+          if (request === 'react-hot-toast') {
+            return { __esModule: true, default: credToastStub, ...credToastStub };
+          }
+          if (request === 'lucide-react') {
+            return new Proxy({}, { get: () => IconStub });
+          }
+          if (request === '@/components/ui/dialog') {
+            return {
+              Dialog: ({ open, children }: any) => (open ? children : null),
+              DialogContent: uiCredStub,
+              DialogHeader: uiCredStub,
+              DialogTitle: uiCredStub,
+              DialogDescription: uiCredStub,
+              DialogFooter: uiCredStub,
+            };
+          }
+          if (request === '@/components/ui/tabs') {
+            return {
+              Tabs: uiCredStub,
+              TabsList: uiCredStub,
+              TabsTrigger: uiCredStub,
+              TabsContent: uiCredStub,
+            };
+          }
+          if (request === '@/components/ui/button') return { Button: stubCredComp('Button') };
+          if (request === '@/components/ui/input') return { Input: stubCredComp('Input') };
+          if (request === '@/components/ui/label') return { Label: uiCredStub };
+          if (request === '@/lib/api') return { __esModule: true, default: {} };
+          if (request === '@/store/auth') {
+            return {
+              useAuthStore: {
+                getState: () => dialogMockAuthState,
+              },
+            };
+          }
+          if (request === '@shared/password-policy') {
+            return require(path.join(rootDir, 'shared/password-policy'));
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[
+          path.resolve(rootDir, 'frontend/src/components/auth/AccountCredentialsDialog.tsx')
+        ];
+        const {
+          AccountCredentialsDialog: CredentialsDialogComp,
+        } = require('../frontend/src/components/auth/AccountCredentialsDialog');
+
+        // 7a: Caller-managed session with onSessionUpdated succeeds when store token and localStorage are null
+        let updatedCallerSession: { token: string; hasPin?: boolean } | null = null;
+        let isCredDialogOpen = true;
+        let resolveCredPost: (() => void) | null = null;
+        const callerApiClient = {
+          get: async () => ({ data: { user: { has_pin: false } } }),
+          post: async () => {
+            return new Promise((resolve) => {
+              resolveCredPost = () => resolve({ data: { token: 'server-app-fresh-token' } });
+            });
+          },
+        };
+
+        const renderCredentialsDialog = (props: {
+          open: boolean;
+          userId: string;
+          onSessionUpdated?: (p: { token: string; hasPin?: boolean }) => void;
+          onOpenChange?: (open: boolean) => void;
+        }) => {
+          currentStateIdx = 0;
+          currentRefIdx = 0;
+          currentEffectIdx = 0;
+          const tree = CredentialsDialogComp({
+            open: props.open,
+            onOpenChange:
+              props.onOpenChange ??
+              ((next: boolean) => {
+                isCredDialogOpen = next;
+              }),
+            apiClient: callerApiClient,
+            initialHasPin: false,
+            userId: props.userId,
+            onSessionUpdated: props.onSessionUpdated,
+          });
+          while (pendingEffects.length > 0) {
+            pendingEffects.shift()!();
+          }
+          return tree;
+        };
+
+        let credTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        const passCurrentInput = findNodes(
+          credTree,
+          (el) => el.props?.id === 'self-current-password',
+        )[0];
+        const passNewInput = findNodes(credTree, (el) => el.props?.id === 'self-new-password')[0];
+        const passConfirmInput = findNodes(
+          credTree,
+          (el) => el.props?.id === 'self-confirm-password',
+        )[0];
+
+        (passCurrentInput.props as any).onChange({ target: { value: 'OldSecret123!' } });
+        (passNewInput.props as any).onChange({ target: { value: 'NewSecret123!' } });
+        (passConfirmInput.props as any).onChange({ target: { value: 'NewSecret123!' } });
+        credTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        const credForms = findNodes(credTree, (el) => el.type === 'form');
+        const credSubmitPromise = (credForms[0].props as any).onSubmit({
+          preventDefault: () => {},
+        });
+        resolveCredPost!();
+        await credSubmitPromise;
+
+        assert.equal(
+          updatedCallerSession?.token,
+          'server-app-fresh-token',
+          'Caller-managed session receives token update without global store token',
+        );
+        assert.equal(isCredDialogOpen, false, 'Dialog closes on successful credential change');
+        assert.equal(
+          credToastSuccess,
+          'passwordChangedSuccess',
+          'Success toast triggered for caller-managed session',
+        );
+
+        // 7b: Unmount cleanup resets openRef.current = false and blocks late response
+        isCredDialogOpen = true;
+        updatedCallerSession = null;
+        credToastSuccess = null;
+        credTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        (
+          findNodes(credTree, (el) => el.props?.id === 'self-current-password')[0].props as any
+        ).onChange({
+          target: { value: 'OldSecret123!' },
+        });
+        (
+          findNodes(credTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({
+          target: { value: 'NewSecret123!' },
+        });
+        (
+          findNodes(credTree, (el) => el.props?.id === 'self-confirm-password')[0].props as any
+        ).onChange({
+          target: { value: 'NewSecret123!' },
+        });
+        credTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        const credForms2 = findNodes(credTree, (el) => el.type === 'form');
+        const credSubmitPromise2 = (credForms2[0].props as any).onSubmit({
+          preventDefault: () => {},
+        });
+
+        // Unmount dialog by executing effect cleanups
+        for (const slot of effectSlots) {
+          if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+        }
+
+        resolveCredPost!();
+        await credSubmitPromise2;
+
+        assert.equal(
+          updatedCallerSession,
+          null,
+          'Late response after unmount does not invoke onSessionUpdated',
+        );
+        assert.equal(
+          credToastSuccess,
+          null,
+          'Late response after unmount does not trigger success toast',
+        );
+
+        // 7c: Default caller without onSessionUpdated is rejected when global store token is null
+        memStorage.delete('token');
+        let defaultDialogClosed = false;
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let defaultTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            defaultDialogClosed = !next;
+          },
+        });
+
+        (
+          findNodes(defaultTree, (el) => el.props?.id === 'self-current-password')[0].props as any
+        ).onChange({
+          target: { value: 'OldSecret123!' },
+        });
+        (
+          findNodes(defaultTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({
+          target: { value: 'NewSecret123!' },
+        });
+        (
+          findNodes(defaultTree, (el) => el.props?.id === 'self-confirm-password')[0].props as any
+        ).onChange({
+          target: { value: 'NewSecret123!' },
+        });
+        defaultTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            defaultDialogClosed = !next;
+          },
+        });
+
+        const defaultForms = findNodes(defaultTree, (el) => el.type === 'form');
+        const defaultSubmitPromise = (defaultForms[0].props as any).onSubmit({
+          preventDefault: () => {},
+        });
+        resolveCredPost!();
+        await defaultSubmitPromise;
+
+        assert.equal(
+          defaultDialogClosed,
+          false,
+          'Default caller without store token does not close dialog',
+        );
+        assert.equal(
+          credToastSuccess,
+          null,
+          'Default caller without store token does not trigger success toast',
+        );
+
+        // 7d: Default caller logs out during in-flight credential change -> late response is rejected
+        memStorage.set('token', 'active-user-token');
+        dialogMockAuthState = {
+          token: 'active-user-token',
+          user: { id: 'pos-user-1', name: 'Server Sally' },
+          replaceSessionToken: (_tok: string, _updates?: any) => {},
+        };
+        let logoutDialogClosed = false;
+        let replaceTokenCalled = false;
+        dialogMockAuthState.replaceSessionToken = () => {
+          replaceTokenCalled = true;
+        };
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let logoutTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            logoutDialogClosed = !next;
+          },
+        });
+
+        (
+          findNodes(logoutTree, (el) => el.props?.id === 'self-current-password')[0].props as any
+        ).onChange({
+          target: { value: 'OldSecret123!' },
+        });
+        (
+          findNodes(logoutTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({
+          target: { value: 'NewSecret123!' },
+        });
+        (
+          findNodes(logoutTree, (el) => el.props?.id === 'self-confirm-password')[0].props as any
+        ).onChange({
+          target: { value: 'NewSecret123!' },
+        });
+        logoutTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            logoutDialogClosed = !next;
+          },
+        });
+
+        const logoutForms = findNodes(logoutTree, (el) => el.type === 'form');
+        const logoutSubmitPromise = (logoutForms[0].props as any).onSubmit({
+          preventDefault: () => {},
+        });
+
+        // User logs out in flight: token cleared
+        memStorage.delete('token');
+        dialogMockAuthState.token = null;
+        dialogMockAuthState.user = null;
+
+        resolveCredPost!();
+        await logoutSubmitPromise;
+
+        assert.equal(logoutDialogClosed, false, 'Late response after logout does not close dialog');
+        assert.equal(
+          replaceTokenCalled,
+          false,
+          'Late response after logout does not replace session token',
+        );
+        assert.equal(
+          credToastSuccess,
+          null,
+          'Late response after logout does not trigger success toast',
+        );
       } finally {
         (globalThis as any).fetch = originalFetch;
       }

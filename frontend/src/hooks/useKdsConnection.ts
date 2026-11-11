@@ -6,6 +6,7 @@ import type { AxiosInstance } from 'axios';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import { parseLoginFailure } from '../lib/login-errors';
+import type { User, Tenant } from '@/lib/types';
 
 // Exponential backoff for KDS WebSocket reconnects (1s to 30s)
 // preventing server hammering during outages.
@@ -191,6 +192,12 @@ export interface UseKdsConnectionOptions {
   /** Synchronizes an embedded host store when KDS clears or rotates the shared token. */
   onSessionCleared?: (clearedToken: string | null) => void;
   onSessionTokenReplaced?: (nextToken: string, hasPin?: boolean) => void;
+  onSessionAuthenticated?: (payload: {
+    token: string;
+    user: User;
+    tenant: Tenant | null;
+    tenants: Tenant[];
+  }) => void;
 }
 
 export interface UseKdsConnectionResult {
@@ -258,7 +265,14 @@ function markKdsAuthBlocked(): void {
 }
 
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
-  const { api, endpoints, enabled, onSessionCleared, onSessionTokenReplaced } = options;
+  const {
+    api,
+    endpoints,
+    enabled,
+    onSessionCleared,
+    onSessionTokenReplaced,
+    onSessionAuthenticated,
+  } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
   const pinUsersPath =
     endpoints?.pinUsers ??
@@ -316,6 +330,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   onSessionClearedRef.current = onSessionCleared;
   const onSessionTokenReplacedRef = useRef(onSessionTokenReplaced);
   onSessionTokenReplacedRef.current = onSessionTokenReplaced;
+  const onSessionAuthenticatedRef = useRef(onSessionAuthenticated);
+  onSessionAuthenticatedRef.current = onSessionAuthenticated;
   const activeTokenRef = useRef<string | null>(null);
   const clearStoredSession = useCallback((expectedToken?: string | null) => {
     const fallbackToken = expectedToken !== undefined ? expectedToken : activeTokenRef.current;
@@ -770,14 +786,26 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         activeTokenRef.current = token;
         setUser(loggedInUser);
         window.localStorage.setItem('token', token);
-        if (Array.isArray(data.tenants) && data.tenants.length > 0) {
+        const tenant =
+          data.tenant ??
+          (Array.isArray(data.tenants) && data.tenants.length > 0 ? data.tenants[0] : null);
+        const tenants = Array.isArray(data.tenants) ? data.tenants : tenant ? [tenant] : [];
+        if (data.user) {
           try {
             window.localStorage.setItem('user', JSON.stringify(data.user));
-            if (!window.localStorage.getItem('tenant')) {
-              window.localStorage.setItem('tenant', JSON.stringify(data.tenants[0]));
-            }
           } catch {}
         }
+        if (tenant) {
+          try {
+            window.localStorage.setItem('tenant', JSON.stringify(tenant));
+          } catch {}
+        }
+        onSessionAuthenticatedRef.current?.({
+          token,
+          user: data.user,
+          tenant,
+          tenants,
+        });
         tryWebSocket(token);
       } catch {
         if (generation !== sessionGenerationRef.current) return;
@@ -821,6 +849,26 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         activeTokenRef.current = token;
         setUser(loggedInUser);
         window.localStorage.setItem('token', token);
+        const tenant =
+          data.tenant ??
+          (Array.isArray(data.tenants) && data.tenants.length > 0 ? data.tenants[0] : null);
+        const tenants = Array.isArray(data.tenants) ? data.tenants : tenant ? [tenant] : [];
+        if (data.user) {
+          try {
+            window.localStorage.setItem('user', JSON.stringify(data.user));
+          } catch {}
+        }
+        if (tenant) {
+          try {
+            window.localStorage.setItem('tenant', JSON.stringify(tenant));
+          } catch {}
+        }
+        onSessionAuthenticatedRef.current?.({
+          token,
+          user: data.user,
+          tenant,
+          tenants,
+        });
         tryWebSocket(token);
       } catch (error: unknown) {
         if (generation === sessionGenerationRef.current) {

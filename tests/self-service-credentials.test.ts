@@ -1030,8 +1030,8 @@ async function run() {
     'In-flight PIN change with stale token rejected with 401',
   );
 
-  // 6c: Concurrency check (#1540): logout during async bcrypt.hash stops password/PIN change at commit boundary
-  console.log('\n6c. Revoking initiating session during bcrypt.hash aborts commit (#1540)');
+  // Logout during hashing must prevent credential changes from committing.
+  console.log('\nRevoking the initiating session during bcrypt.hash aborts commit');
   clearLoginRateLimits();
   clearRevokedTokens();
   resetCredentialChangeRateLimitsForTests();

@@ -962,7 +962,7 @@ async function runTests() {
     Module._resolveFilename = originalResolveFilename;
   }
 
-  // 4. Dashboard /kds logout clears shared useAuthStore + localStorage without touching standalone mode (#1525)
+  // Dashboard KDS logout synchronizes shared authentication while standalone sessions stay isolated.
   const prevLoad = Module._load;
   const origWindow = (globalThis as any).window;
   const origLocalStorage = (globalThis as any).localStorage;
@@ -1113,7 +1113,7 @@ async function runTests() {
       const tenant = { id: 1, name: 'Test Cafe', role: 'chef' };
       const chefUser = { id: 'chef-1', name: 'Chef', email: 'chef@test.local', role: 'chef' };
 
-      // 4a: Dashboard KDS logout clears shared POS auth store + storage without duplicate /auth/logout POST
+      // Dashboard logout clears the shared session with one logout request.
       let kdsLogoutCalls = 0;
       const apiDefaults = { baseURL: 'http://127.0.0.1:3001/api' };
       const kdsApi: any = {
@@ -1189,7 +1189,7 @@ async function runTests() {
         'dashboard KDS logout clears shared POS currentTenant',
       );
 
-      // 4b: Delayed logout does not clobber a newer rotated session or re-login
+      // A delayed logout preserves a newer session.
       resetHooks();
       let resolveDelayedLogout!: () => void;
       const delayedKdsApi: any = {
@@ -1272,7 +1272,7 @@ async function runTests() {
         'delayed logout preserves signed-in user in shared POS auth store',
       );
 
-      // 4c: Standalone KDS (no onSessionCleared) leaves shared useAuthStore untouched
+      // Standalone logout preserves the shared POS session.
       resetHooks();
       storage.set('token', 'tok-standalone');
       storage.set('tenant', JSON.stringify(tenant));

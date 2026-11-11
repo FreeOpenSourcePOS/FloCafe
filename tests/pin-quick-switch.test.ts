@@ -2526,8 +2526,8 @@ async function run() {
       'Server App pin-login includes permission_ids with server-app.use',
     );
 
-    // 14. Superseded PIN verification rejected at issuance boundary (#1524)
-    console.log('\n── 14. Revalidate PIN & active status at LAN/POS session issuance (#1524)');
+    // Superseded PIN verification is rejected before session issuance.
+    console.log('\nRevalidate PIN and active status at LAN/POS session issuance');
     const runPausedPinCompareRace = async <T extends { status: number }>(
       triggerRequest: () => Promise<T>,
       mutateDuringVerify: () => Promise<void>,

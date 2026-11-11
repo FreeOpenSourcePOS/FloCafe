@@ -58,6 +58,9 @@ export function KdsWorkspace({
           endpoints={conn.credentialEndpoints}
           initialHasPin={conn.user?.has_pin}
           userId={conn.user?.id}
+          getSessionToken={() =>
+            typeof window !== 'undefined' ? window.localStorage.getItem('token') : null
+          }
           onSessionUpdated={({ token, hasPin }) => conn.replaceSessionToken?.(token, hasPin)}
         />
       )}

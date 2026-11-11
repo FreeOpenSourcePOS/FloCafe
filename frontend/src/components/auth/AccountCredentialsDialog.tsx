@@ -35,6 +35,7 @@ export interface AccountCredentialsDialogProps {
   initialHasPin?: boolean;
   userId?: string | number;
   onSessionUpdated?: (payload: { token: string; hasPin?: boolean }) => void;
+  getSessionToken?: () => string | null;
 }
 
 const PIN_PATTERN = /^\d{4,6}$/;
@@ -47,16 +48,19 @@ export function AccountCredentialsDialog({
   initialHasPin,
   userId,
   onSessionUpdated,
+  getSessionToken,
 }: AccountCredentialsDialogProps) {
   const openRef = useRef(open);
   const userIdRef = useRef(userId);
+  const getSessionTokenRef = useRef(getSessionToken);
   useEffect(() => {
     openRef.current = open;
     userIdRef.current = userId;
+    getSessionTokenRef.current = getSessionToken;
     return () => {
       openRef.current = false;
     };
-  }, [open, userId]);
+  }, [open, userId, getSessionToken]);
 
   const tAuth = useTranslations('auth');
   const tCommon = useTranslations('common');
@@ -166,8 +170,9 @@ export function AccountCredentialsDialog({
 
   const captureSubmissionSession = () => {
     const currentStore = useAuthStore.getState();
-    const liveToken =
-      currentStore.token ?? (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+    const storageToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    const liveToken = currentStore.token ?? storageToken;
+    const callerToken = getSessionTokenRef.current ? getSessionTokenRef.current() : undefined;
     const resolvedUserId =
       userId !== undefined
         ? String(userId)
@@ -177,44 +182,48 @@ export function AccountCredentialsDialog({
     return {
       userId: resolvedUserId,
       token: liveToken,
+      callerToken,
       storeUserId: currentStore.user?.id !== undefined ? String(currentStore.user.id) : undefined,
       storeToken: currentStore.token,
     };
   };
 
+  const isUserIdUnchanged = (submittingUserId?: string) =>
+    userIdRef.current === undefined ||
+    submittingUserId === undefined ||
+    String(userIdRef.current) === submittingUserId;
+
   const isSessionValid = (submittingSession: {
     userId?: string;
     token?: string | null;
+    callerToken?: string | null;
     storeUserId?: string;
     storeToken?: string | null;
   }) => {
     if (!openRef.current) return false;
+    if (!isUserIdUnchanged(submittingSession.userId)) return false;
 
     if (onSessionUpdated) {
-      if (userIdRef.current !== undefined && submittingSession.userId !== undefined) {
-        if (String(userIdRef.current) !== submittingSession.userId) {
+      if (getSessionTokenRef.current) {
+        const liveCallerToken = getSessionTokenRef.current();
+        if (!liveCallerToken) return false;
+        if (submittingSession.callerToken && liveCallerToken !== submittingSession.callerToken) {
           return false;
         }
       }
       return true;
     }
 
-    const currentLiveToken =
-      useAuthStore.getState().token ??
-      (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
-    if (!currentLiveToken) return false;
-
-    if (submittingSession.token && currentLiveToken !== submittingSession.token) {
+    const currentStore = useAuthStore.getState();
+    const hasStorage = typeof localStorage !== 'undefined';
+    const liveStorageToken = hasStorage ? localStorage.getItem('token') : currentStore.token;
+    if (!currentStore.token || !liveStorageToken || currentStore.token !== liveStorageToken) {
+      return false;
+    }
+    if (submittingSession.token && liveStorageToken !== submittingSession.token) {
       return false;
     }
 
-    if (userIdRef.current !== undefined && submittingSession.userId !== undefined) {
-      if (String(userIdRef.current) !== submittingSession.userId) {
-        return false;
-      }
-    }
-
-    const currentStore = useAuthStore.getState();
     if (submittingSession.storeUserId !== undefined) {
       if (!currentStore.user || String(currentStore.user.id) !== submittingSession.storeUserId) {
         return false;
@@ -229,18 +238,14 @@ export function AccountCredentialsDialog({
 
   const applySessionUpdate = (token: unknown, submittingUserId?: string, nextHasPin?: boolean) => {
     if (typeof token !== 'string' || !token) return;
-    if (!openRef.current) return;
-
-    if (!onSessionUpdated) {
-      const currentLiveToken =
-        useAuthStore.getState().token ??
-        (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
-      if (!currentLiveToken) return;
-    }
+    if (!openRef.current || !isUserIdUnchanged(submittingUserId)) return;
 
     const authState = useAuthStore.getState();
     const userUpdates = nextHasPin !== undefined ? { has_pin: nextHasPin } : undefined;
     if (onSessionUpdated) {
+      if (getSessionTokenRef.current && !getSessionTokenRef.current()) {
+        return;
+      }
       if (
         authState.token &&
         submittingUserId !== undefined &&
@@ -252,6 +257,10 @@ export function AccountCredentialsDialog({
       onSessionUpdated({ token, hasPin: nextHasPin });
       return;
     }
+
+    const liveStorageToken =
+      typeof localStorage !== 'undefined' ? localStorage.getItem('token') : authState.token;
+    if (!authState.token || !liveStorageToken) return;
     authState.replaceSessionToken(token, userUpdates);
   };
 

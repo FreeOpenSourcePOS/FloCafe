@@ -288,6 +288,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       tenants,
       isLocked: false,
       loading: false,
+      printLanguageLoadErrors: [],
     });
   },
 
@@ -367,17 +368,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (operation !== authOperation) return;
           const status = (error as { response?: { status?: number } })?.response?.status;
           if (status === 401 || status === 403) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('tenant');
-            set({
-              user: null,
-              token: null,
-              tenants: [],
-              currentTenant: null,
-              loading: false,
-              printLanguageLoadErrors: [],
-            });
-            return;
+            const currentStoredToken = readStoredToken();
+            if (currentStoredToken === null || currentStoredToken === token) {
+              try {
+                localStorage.removeItem('token');
+                localStorage.removeItem('tenant');
+              } catch {
+                // Ignore storage removal errors in non-browser contexts.
+              }
+              set({
+                user: null,
+                token: null,
+                tenants: [],
+                currentTenant: null,
+                loading: false,
+                printLanguageLoadErrors: [],
+              });
+              return;
+            }
           }
           set({
             loading: false,

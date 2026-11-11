@@ -958,6 +958,32 @@ async function run() {
       'Replaced token preserved in localStorage after in-flight 401 resolution',
     );
 
+    // 5a.8 loadFromStorage() 401 does not remove a newer token written directly to localStorage
+    memStorage.set('token', 'expired-token-external-swap');
+    memStorage.set('tenant', JSON.stringify({ id: 1, business_name: 'Cafe' }));
+    realAuthStore.setState({
+      user: { id: 'u1', name: 'Server', email: 'server@cafe.local', role: 'server' },
+      token: 'expired-token-external-swap',
+      loading: true,
+    });
+    loadPromise = realAuthStore.getState().loadFromStorage();
+    await new Promise((r) => setImmediate(r));
+
+    memStorage.set('token', 'newer-external-token');
+    rejectMeRequest!();
+    await loadPromise;
+
+    assert.equal(
+      memStorage.get('token'),
+      'newer-external-token',
+      '401 for old token preserves newer token written to localStorage',
+    );
+    assert.equal(
+      memStorage.get('tenant'),
+      JSON.stringify({ id: 1, business_name: 'Cafe' }),
+      '401 for old token preserves tenant when localStorage token already changed',
+    );
+
     // 5b. AuthGuard setup-status check retries on transient error and falls back to /auth/login (never /setup)
     const pushedRoutes: string[] = [];
     const scheduledTimers: Array<{ fn: () => void; delay: number; cleared: boolean }> = [];
@@ -2677,6 +2703,7 @@ async function run() {
           open: boolean;
           userId: string;
           onSessionUpdated?: (p: { token: string; hasPin?: boolean }) => void;
+          getSessionToken?: () => string | null;
           onOpenChange?: (open: boolean) => void;
         }) => {
           currentStateIdx = 0;
@@ -2693,6 +2720,7 @@ async function run() {
             initialHasPin: false,
             userId: props.userId,
             onSessionUpdated: props.onSessionUpdated,
+            getSessionToken: props.getSessionToken,
           });
           while (pendingEffects.length > 0) {
             pendingEffects.shift()!();
@@ -2939,6 +2967,129 @@ async function run() {
           credToastSuccess,
           null,
           'Late response after logout does not trigger success toast',
+        );
+
+        // 7e: Caller-managed session with getSessionToken rejects late response when token cleared while dialog stays open
+        let callerLiveToken: string | null = 'server-app-token-1';
+        updatedCallerSession = null;
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let callerGuardTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          getSessionToken: () => callerLiveToken,
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+        (
+          findNodes(callerGuardTree, (el) => el.props?.id === 'self-current-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'OldSecret123!' } });
+        (
+          findNodes(callerGuardTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        (
+          findNodes(callerGuardTree, (el) => el.props?.id === 'self-confirm-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        callerGuardTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          getSessionToken: () => callerLiveToken,
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        const callerGuardSubmit = (
+          findNodes(callerGuardTree, (el) => el.type === 'form')[0].props as any
+        ).onSubmit({ preventDefault: () => {} });
+
+        // Simulate 401 or cross-tab logout clearing caller storage token while dialog remains mounted/open
+        callerLiveToken = null;
+        resolveCredPost!();
+        await callerGuardSubmit;
+
+        assert.equal(
+          updatedCallerSession,
+          null,
+          'Caller-managed session ignores late response after live token is cleared',
+        );
+        assert.equal(
+          credToastSuccess,
+          null,
+          'Caller-managed session does not show success toast after live token is cleared',
+        );
+
+        // 7f: Default caller rejects late response when localStorage token is cleared while store token remains stale
+        memStorage.set('token', 'active-user-token');
+        dialogMockAuthState = {
+          token: 'active-user-token',
+          user: { id: 'pos-user-1', name: 'Server Sally' },
+          replaceSessionToken: () => {
+            replaceTokenCalled = true;
+          },
+        };
+        replaceTokenCalled = false;
+        logoutDialogClosed = false;
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let staleStoreTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            logoutDialogClosed = !next;
+          },
+        });
+        (
+          findNodes(staleStoreTree, (el) => el.props?.id === 'self-current-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'OldSecret123!' } });
+        (
+          findNodes(staleStoreTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        (
+          findNodes(staleStoreTree, (el) => el.props?.id === 'self-confirm-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        staleStoreTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            logoutDialogClosed = !next;
+          },
+        });
+
+        const staleStoreSubmit = (
+          findNodes(staleStoreTree, (el) => el.type === 'form')[0].props as any
+        ).onSubmit({ preventDefault: () => {} });
+
+        // Clear localStorage token (e.g. another tab or api.ts 401 handler) while store token stays stale
+        memStorage.delete('token');
+        resolveCredPost!();
+        await staleStoreSubmit;
+
+        assert.equal(
+          replaceTokenCalled,
+          false,
+          'Default caller does not restore localStorage token from stale store state',
+        );
+        assert.equal(logoutDialogClosed, false, 'Default caller keeps dialog open check rejected');
+        assert.equal(
+          credToastSuccess,
+          null,
+          'Default caller does not toast success when localStorage token was cleared',
         );
       } finally {
         (globalThis as any).fetch = originalFetch;

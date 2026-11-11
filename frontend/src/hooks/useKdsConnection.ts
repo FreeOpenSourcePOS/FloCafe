@@ -755,6 +755,52 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     tryWebSocketRef.current = tryWebSocket;
   }, [tryWebSocket]);
 
+  const completeAuthenticatedLogin = useCallback(
+    (data: {
+      access_token?: string;
+      token?: string;
+      user: User & { role?: string };
+      tenant?: Tenant | null;
+      tenants?: Tenant[];
+    }) => {
+      const token = data.access_token ?? data.token;
+      if (!token) return;
+      const loggedInUser: KdsUser = {
+        id: String(data.user.id),
+        name: data.user.name,
+        role: String(data.user.role ?? ''),
+        token,
+        has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
+      };
+
+      activeTokenRef.current = token;
+      setUser(loggedInUser);
+      window.localStorage.setItem('token', token);
+      const tenant =
+        data.tenant ??
+        (Array.isArray(data.tenants) && data.tenants.length > 0 ? data.tenants[0] : null);
+      const tenants = Array.isArray(data.tenants) ? data.tenants : tenant ? [tenant] : [];
+      if (data.user) {
+        try {
+          window.localStorage.setItem('user', JSON.stringify(data.user));
+        } catch {}
+      }
+      if (tenant) {
+        try {
+          window.localStorage.setItem('tenant', JSON.stringify(tenant));
+        } catch {}
+      }
+      onSessionAuthenticatedRef.current?.({
+        token,
+        user: data.user,
+        tenant,
+        tenants,
+      });
+      tryWebSocket(token);
+    },
+    [tryWebSocket],
+  );
+
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -774,39 +820,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         });
 
         if (generation !== sessionGenerationRef.current) return;
-        const token = data.access_token ?? data.token;
-        const loggedInUser: KdsUser = {
-          id: data.user.id,
-          name: data.user.name,
-          role: data.user.role,
-          token,
-          has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
-        };
-
-        activeTokenRef.current = token;
-        setUser(loggedInUser);
-        window.localStorage.setItem('token', token);
-        const tenant =
-          data.tenant ??
-          (Array.isArray(data.tenants) && data.tenants.length > 0 ? data.tenants[0] : null);
-        const tenants = Array.isArray(data.tenants) ? data.tenants : tenant ? [tenant] : [];
-        if (data.user) {
-          try {
-            window.localStorage.setItem('user', JSON.stringify(data.user));
-          } catch {}
-        }
-        if (tenant) {
-          try {
-            window.localStorage.setItem('tenant', JSON.stringify(tenant));
-          } catch {}
-        }
-        onSessionAuthenticatedRef.current?.({
-          token,
-          user: data.user,
-          tenant,
-          tenants,
-        });
-        tryWebSocket(token);
+        completeAuthenticatedLogin(data);
       } catch {
         if (generation !== sessionGenerationRef.current) return;
         setLoginError(t('loginFailed'));
@@ -817,7 +831,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }
     },
-    [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket, enabled],
+    [loginEmail, loginPassword, rememberMe, loginPath, api, t, completeAuthenticatedLogin, enabled],
   );
 
   const handlePinLogin = useCallback(
@@ -837,39 +851,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         });
 
         if (generation !== sessionGenerationRef.current) return;
-        const token = data.access_token ?? data.token;
-        const loggedInUser: KdsUser = {
-          id: data.user.id,
-          name: data.user.name,
-          role: data.user.role,
-          token,
-          has_pin: typeof data.user.has_pin === 'boolean' ? data.user.has_pin : undefined,
-        };
-
-        activeTokenRef.current = token;
-        setUser(loggedInUser);
-        window.localStorage.setItem('token', token);
-        const tenant =
-          data.tenant ??
-          (Array.isArray(data.tenants) && data.tenants.length > 0 ? data.tenants[0] : null);
-        const tenants = Array.isArray(data.tenants) ? data.tenants : tenant ? [tenant] : [];
-        if (data.user) {
-          try {
-            window.localStorage.setItem('user', JSON.stringify(data.user));
-          } catch {}
-        }
-        if (tenant) {
-          try {
-            window.localStorage.setItem('tenant', JSON.stringify(tenant));
-          } catch {}
-        }
-        onSessionAuthenticatedRef.current?.({
-          token,
-          user: data.user,
-          tenant,
-          tenants,
-        });
-        tryWebSocket(token);
+        completeAuthenticatedLogin(data);
       } catch (error: unknown) {
         if (generation === sessionGenerationRef.current) {
           const failure = parseLoginFailure(error);
@@ -897,7 +879,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }
     },
-    [rememberMe, pinLoginPath, api, t, tAuth, tryWebSocket, enabled],
+    [rememberMe, pinLoginPath, api, t, tAuth, completeAuthenticatedLogin, enabled],
   );
 
   const handleLogout = useCallback(async () => {

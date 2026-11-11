@@ -1039,7 +1039,12 @@ export async function handlePasswordChange(req: Request, res: Response): Promise
         if (typeof password !== 'string' || !password) {
           return { status: 400, body: { error: 'Password is required' } };
         }
-        const passwordMatches = await bcrypt.compare(current_password, user.password);
+        let passwordMatches = false;
+        try {
+          passwordMatches = await bcrypt.compare(current_password, user.password);
+        } catch {
+          passwordMatches = false;
+        }
         if (!passwordMatches) {
           const attemptsRemaining = incrementFailedPasswordChange(user.id);
           return {

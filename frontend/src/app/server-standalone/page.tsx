@@ -2000,7 +2000,9 @@ export default function ServerStandalonePage() {
           }}
           initialHasPin={user.has_pin}
           userId={user.id}
+          getSessionToken={() => localStorage.getItem(TOKEN_KEY)}
           onSessionUpdated={({ token: freshToken, hasPin }) => {
+            if (!localStorage.getItem(TOKEN_KEY)) return;
             localStorage.setItem(TOKEN_KEY, freshToken);
             setUser((prev) =>
               prev ? { ...prev, ...(hasPin !== undefined ? { has_pin: hasPin } : {}) } : prev,

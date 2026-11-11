@@ -35,6 +35,7 @@ async function cleanupDisposableStaff(request: APIRequestContext, staffId: strin
   } catch {}
 }
 
+/** Switches the login page out of Quick Switch PIN mode when password sign-in is needed. */
 async function ensurePasswordTabSelected(page: Page) {
   const passwordTab = page.getByTestId('signin-mode-password');
   try {
@@ -45,6 +46,7 @@ async function ensurePasswordTabSelected(page: Page) {
   }
 }
 
+/** Signs in through the UI password form after resetting client storage and service workers. */
 async function loginViaUi(
   page: Page,
   email: string,
@@ -540,28 +542,34 @@ test.describe.serial('Session, Authentication & KDS Identity Regressions', () =>
       }
     });
 
+    const meStatuses: number[] = [];
     let failedOnce = false;
-    await page.route('**/api/auth/me', async (route) => {
-      if (!failedOnce) {
-        failedOnce = true;
-        await route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'Service temporarily unavailable' }),
-        });
-        return;
-      }
-      await route.continue();
-    });
-
     try {
       await loginViaUi(page, 'manager@flo.local', E2E_PASSWORD);
       const tokenBefore = await page.evaluate(() => localStorage.getItem('token'));
       expect(tokenBefore).toBeTruthy();
 
+      await page.route('**/api/auth/me', async (route) => {
+        if (!failedOnce) {
+          failedOnce = true;
+          meStatuses.push(503);
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'Service temporarily unavailable' }),
+          });
+          return;
+        }
+        const upstream = await route.fetch();
+        meStatuses.push(upstream.status());
+        await route.fulfill({ response: upstream });
+      });
+
       await page.goto(`${E2E_BASE_URL}/kds`);
       await expect(page.getByTestId('kds-workspace')).toBeVisible({ timeout: 15_000 });
       expect(failedOnce).toBe(true);
+      expect(meStatuses[0]).toBe(503);
+      expect(meStatuses.filter((status) => status === 200).length).toBeGreaterThanOrEqual(2);
 
       const tokenAfter = await page.evaluate(() => localStorage.getItem('token'));
       expect(tokenAfter).toBe(tokenBefore);
@@ -571,6 +579,104 @@ test.describe.serial('Session, Authentication & KDS Identity Regressions', () =>
     } finally {
       await page.unroute('**/api/auth/me').catch(() => {});
       await page.unroute(kdsNavPattern).catch(() => {});
+    }
+  });
+
+  test('closing credentials dialog during committed password change still rotates token and keeps session signed in', async ({
+    page,
+    request,
+  }) => {
+    const pageErrors: Error[] = [];
+    page.on('pageerror', (err) => pageErrors.push(err));
+
+    const unique = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const email = `close-dialog-${unique}@flo.local`;
+    const newPassword = 'RotatedPassword99!';
+    const staffId = await createDisposableStaff(request, {
+      name: `Close Dialog ${unique}`,
+      email,
+      password: E2E_PASSWORD,
+      role: 'manager',
+    });
+
+    let markIntercepted: () => void = () => {};
+    let releaseGate: () => void = () => {};
+    const interceptedPromise = new Promise<void>((resolve) => {
+      markIntercepted = resolve;
+    });
+    const gatePromise = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+
+    try {
+      await loginViaUi(page, email, E2E_PASSWORD);
+      const tokenBefore = await page.evaluate(() => localStorage.getItem('token'));
+      expect(tokenBefore).toBeTruthy();
+
+      await page.route('**/api/auth/password/change', async (route) => {
+        const upstream = await route.fetch();
+        expect(upstream.status()).toBe(200);
+        markIntercepted();
+        await gatePromise;
+        await route.fulfill({ response: upstream });
+      });
+
+      const userMenuButton = page
+        .locator('[data-sidebar="footer"] [data-sidebar="menu-button"]')
+        .last()
+        .or(page.locator('button:has(svg.lucide-user-circle)'));
+      await expect(userMenuButton).toBeVisible({ timeout: 10_000 });
+      await userMenuButton.click();
+
+      const changeCredentialsButton = page.getByTestId('sidebar-change-credentials-button');
+      await expect(changeCredentialsButton).toBeVisible({ timeout: 5_000 });
+      await changeCredentialsButton.click();
+
+      const credentialsDialog = page.getByTestId('account-credentials-dialog');
+      await expect(credentialsDialog).toBeVisible({ timeout: 5_000 });
+
+      await page.getByTestId('self-current-password').fill(E2E_PASSWORD);
+      await page.getByTestId('self-new-password').fill(newPassword);
+      await page.getByTestId('self-confirm-password').fill(newPassword);
+      await page.getByTestId('self-password-submit').click();
+
+      await interceptedPromise;
+      await page.keyboard.press('Escape');
+      await expect(credentialsDialog).toBeHidden({ timeout: 5_000 });
+
+      releaseGate();
+      await page.waitForFunction(
+        (prev) => {
+          const current = localStorage.getItem('token');
+          return Boolean(current && current !== prev);
+        },
+        tokenBefore,
+        { timeout: 10_000 },
+      );
+
+      const tokenAfter = await page.evaluate(() => localStorage.getItem('token'));
+      expect(tokenAfter).toBeTruthy();
+      expect(tokenAfter).not.toBe(tokenBefore);
+
+      const meRes = await request.get(`${E2E_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${tokenAfter}` },
+      });
+      expect(meRes.status()).toBe(200);
+
+      await page.reload();
+      await expect(page).not.toHaveURL(/\/auth\/login/);
+      await expect(page.locator('[data-sidebar="footer"]')).toContainText(
+        `Close Dialog ${unique}`,
+        {
+          timeout: 15_000,
+        },
+      );
+
+      expect(pageErrors).toHaveLength(0);
+    } finally {
+      releaseGate();
+      await page.unroute('**/api/auth/password/change').catch(() => {});
+      await cleanupDisposableStaff(request, staffId);
     }
   });
 });

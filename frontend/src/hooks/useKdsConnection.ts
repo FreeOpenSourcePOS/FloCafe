@@ -755,6 +755,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     tryWebSocketRef.current = tryWebSocket;
   }, [tryWebSocket]);
 
+  /** Persists a successful KDS login, syncs shared dashboard state, and connects WebSocket. */
   const completeAuthenticatedLogin = useCallback(
     (data: {
       access_token?: string;
@@ -801,6 +802,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [tryWebSocket],
   );
 
+  /** Authenticates KDS using email and password credentials. */
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -834,6 +836,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [loginEmail, loginPassword, rememberMe, loginPath, api, t, completeAuthenticatedLogin, enabled],
   );
 
+  /** Authenticates KDS using a staff quick-switch PIN. */
   const handlePinLogin = useCallback(
     async (userId: string, pin: string) => {
       if (!enabled || kdsDisabledRef.current) return;

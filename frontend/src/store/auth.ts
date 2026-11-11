@@ -260,6 +260,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
+  /** Replaces the active JWT after credential rotation without clearing user identity. */
   replaceSessionToken: (token, userUpdates) => {
     if (!token) return;
     ++authOperation;
@@ -274,8 +275,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }));
   },
 
+  /** Syncs a KDS login into the shared dashboard store and warms print policies. */
   syncAuthenticatedSession: (payload) => {
-    ++authOperation;
+    const operation = ++authOperation;
+    clearBillTemplateProvenance();
     const tenants = payload.tenants ?? (payload.currentTenant ? [payload.currentTenant] : []);
     const currentTenant = payload.currentTenant ?? (tenants.length === 1 ? tenants[0] : null);
     persistSession(payload.token, currentTenant);
@@ -290,6 +293,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       loading: false,
       printLanguageLoadErrors: [],
     });
+    if (currentTenant) {
+      void syncPrintPoliciesAtBootstrap(
+        currentTenant,
+        usePosSettingsStore,
+        () => operation === authOperation,
+      )
+        .then((failedLanguages) => {
+          if (operation === authOperation) {
+            set({ printLanguageLoadErrors: failedLanguages });
+          }
+        })
+        .catch(() => {});
+    }
   },
 
   refreshAuthContext: async () => {
@@ -310,6 +326,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: data.user, tenants, currentTenant });
   },
 
+  /** Hydrates session state from localStorage while keeping tokens on transient errors. */
   loadFromStorage: async () => {
     const operation = ++authOperation;
     clearBillTemplateProvenance();

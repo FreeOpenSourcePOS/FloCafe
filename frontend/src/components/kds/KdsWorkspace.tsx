@@ -8,6 +8,7 @@ import { KdsTabsView } from '@/components/kds/KdsTabsView';
 import { useKdsView } from '@/hooks/useKdsView';
 import type { UseKdsConnectionResult } from '@/hooks/useKdsConnection';
 
+/** Renders the KDS header, active view mode, and self-service credentials dialog. */
 export function KdsWorkspace({
   conn,
   serverDefault,

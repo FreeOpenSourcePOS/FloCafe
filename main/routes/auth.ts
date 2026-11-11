@@ -972,6 +972,7 @@ function isSessionLiveAtCommit(
   );
 }
 
+/** Rotates the signed-in user's password under a per-user verification lock. */
 export async function handlePasswordChange(req: Request, res: Response): Promise<void> {
   try {
     const { current_password, password } = req.body || {};

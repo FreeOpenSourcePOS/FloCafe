@@ -53,6 +53,7 @@ function useDashboardKdsDefault(userId?: string | null): KdsViewMode | null {
   return view;
 }
 
+/** Renders the dashboard-embedded KDS workspace with shared POS session synchronization. */
 export default function KdsPage() {
   useSyncServerLanguage();
   const t = useTranslations('kds');

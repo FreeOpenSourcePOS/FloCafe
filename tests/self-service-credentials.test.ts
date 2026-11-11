@@ -548,6 +548,24 @@ async function run() {
     );
   }
 
+  const isolatedCashierPwAttempt = await request(app)
+    .post('/api/auth/password/change')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({
+      current_password: 'WrongPassword999!',
+      password: 'ValidNewPassword123!',
+    });
+  assertEqualOrThrow(
+    isolatedCashierPwAttempt.status,
+    400,
+    'Cashier password-change attempts remain isolated from locked-out concurrency user',
+  );
+  assertEqualOrThrow(
+    isolatedCashierPwAttempt.body.attempts_remaining,
+    4,
+    'Unaffected user retains full password-change attempt allowance',
+  );
+
   resetCredentialChangeRateLimitsForTests();
 
   // ── 4. Standalone KDS (:3002) & Standalone Server App (:3003) self-service ──

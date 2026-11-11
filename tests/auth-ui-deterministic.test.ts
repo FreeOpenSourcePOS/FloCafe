@@ -984,6 +984,153 @@ async function run() {
       '401 for old token preserves tenant when localStorage token already changed',
     );
 
+    // 5a.9 syncAuthenticatedSession clears bill template provenance, warms print policies, and guards against logout
+    const prevPosGetState = posSettingsMock.getState;
+    const { LANGUAGES: i18nLanguages } = require('../frontend/src/lib/i18n/languages');
+    const origFrLoad = i18nLanguages.fr?.load;
+    const origEsLoad = i18nLanguages.es?.load;
+    try {
+      const provenanceCalls: Array<[string, unknown]> = [];
+      let appliedBillPolicy: any = null;
+      let appliedKotPolicy: any = null;
+      (posSettingsMock as any).getState = () => ({
+        setLanguage: () => {},
+        setBillTemplateSource: (src: unknown) => provenanceCalls.push(['source', src]),
+        setAutoLockMinutes: (mins: unknown) => provenanceCalls.push(['autoLock', mins]),
+        setBillLanguagePolicy: (p: unknown) => {
+          appliedBillPolicy = p;
+        },
+        setKotLanguagePolicy: (p: unknown) => {
+          appliedKotPolicy = p;
+        },
+      });
+
+      let resolveFr!: (mod: { default: Record<string, unknown> }) => void;
+      i18nLanguages.fr.load = () =>
+        new Promise((resolve) => {
+          resolveFr = resolve;
+        });
+
+      realAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-print-policy-tok',
+        user: { id: 'chef-1', name: 'Chef', email: 'chef@cafe.local', role: 'chef' },
+        currentTenant: {
+          id: 1,
+          business_name: 'Cafe',
+          language: 'en',
+          bill_language_policy: JSON.stringify({
+            primary: { mode: 'fixed', language: 'fr' },
+            additional: [],
+          }),
+          kot_language_policy: JSON.stringify({
+            primary: { mode: 'fixed', language: 'en' },
+            additional: [],
+          }),
+        },
+      });
+
+      assert.deepEqual(
+        provenanceCalls,
+        [
+          ['source', null],
+          ['autoLock', 0],
+        ],
+        'syncAuthenticatedSession clears bill template provenance immediately',
+      );
+      resolveFr({ default: { ok: true } });
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+
+      assert.equal(
+        appliedBillPolicy?.primary?.mode,
+        'fixed',
+        'syncAuthenticatedSession applies bill policy mode',
+      );
+      assert.equal(
+        appliedBillPolicy?.primary?.language,
+        'fr',
+        'syncAuthenticatedSession applies bill policy language',
+      );
+      assert.equal(
+        appliedKotPolicy?.primary?.mode,
+        'fixed',
+        'syncAuthenticatedSession applies KOT policy mode',
+      );
+      assert.equal(
+        appliedKotPolicy?.primary?.language,
+        'en',
+        'syncAuthenticatedSession applies KOT policy language',
+      );
+      assert.deepEqual(
+        realAuthStore.getState().printLanguageLoadErrors,
+        [],
+        'printLanguageLoadErrors stays empty when bootstrap locales load',
+      );
+
+      let rejectEs!: (err: Error) => void;
+      i18nLanguages.es.load = () =>
+        new Promise((_, reject) => {
+          rejectEs = reject;
+        });
+      realAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-print-fail-tok',
+        user: { id: 'chef-1', name: 'Chef', email: 'chef@cafe.local', role: 'chef' },
+        currentTenant: {
+          id: 1,
+          business_name: 'Cafe',
+          language: 'en',
+          bill_language_policy: JSON.stringify({
+            primary: { mode: 'fixed', language: 'es' },
+            additional: [],
+          }),
+          kot_language_policy: JSON.stringify({
+            primary: { mode: 'fixed', language: 'en' },
+            additional: [],
+          }),
+        },
+      });
+      rejectEs(new Error('chunk missing'));
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      assert.deepEqual(
+        realAuthStore.getState().printLanguageLoadErrors,
+        ['es'],
+        'printLanguageLoadErrors captures failed locale warmup',
+      );
+
+      realAuthStore.setState({ printLanguageLoadErrors: [] });
+      realAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-print-supersede-tok',
+        user: { id: 'chef-2', name: 'Chef 2', email: 'chef2@cafe.local', role: 'chef' },
+        currentTenant: {
+          id: 1,
+          business_name: 'Cafe',
+          language: 'en',
+          bill_language_policy: JSON.stringify({
+            primary: { mode: 'fixed', language: 'es' },
+            additional: [],
+          }),
+          kot_language_policy: JSON.stringify({
+            primary: { mode: 'fixed', language: 'en' },
+            additional: [],
+          }),
+        },
+      });
+      realAuthStore.getState().clearLocalSession();
+      rejectEs(new Error('late chunk failure after logout'));
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      assert.deepEqual(
+        realAuthStore.getState().printLanguageLoadErrors,
+        [],
+        'superseded syncAuthenticatedSession print bootstrap ignores late errors after logout',
+      );
+    } finally {
+      if (origFrLoad) i18nLanguages.fr.load = origFrLoad;
+      if (origEsLoad) i18nLanguages.es.load = origEsLoad;
+      posSettingsMock.getState = prevPosGetState;
+    }
+
     // 5b. AuthGuard setup-status check retries on transient error and falls back to /auth/login (never /setup)
     const pushedRoutes: string[] = [];
     const scheduledTimers: Array<{ fn: () => void; delay: number; cleared: boolean }> = [];
@@ -3090,6 +3237,215 @@ async function run() {
           credToastSuccess,
           null,
           'Default caller does not toast success when localStorage token was cleared',
+        );
+
+        // 7g: Closing dialog while mounted & signed in still applies rotated token (default + caller-managed)
+        memStorage.set('token', 'active-user-token');
+        let replacedTokenDuringClose: string | null = null;
+        dialogMockAuthState = {
+          token: 'active-user-token',
+          user: { id: 'pos-user-1', name: 'Server Sally' },
+          replaceSessionToken: (tok: string) => {
+            replacedTokenDuringClose = tok;
+          },
+        };
+        let reopenedCloseCount = 0;
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let closeMidflightTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            if (!next) reopenedCloseCount += 1;
+            isCredDialogOpen = next;
+          },
+        });
+        (
+          findNodes(closeMidflightTree, (el) => el.props?.id === 'self-current-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'OldSecret123!' } });
+        (
+          findNodes(closeMidflightTree, (el) => el.props?.id === 'self-new-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        (
+          findNodes(closeMidflightTree, (el) => el.props?.id === 'self-confirm-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        closeMidflightTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            if (!next) reopenedCloseCount += 1;
+            isCredDialogOpen = next;
+          },
+        });
+
+        const closeMidflightSubmit = (
+          findNodes(closeMidflightTree, (el) => el.type === 'form')[0].props as any
+        ).onSubmit({ preventDefault: () => {} });
+
+        // Close dialog while remaining mounted and signed in
+        isCredDialogOpen = false;
+        closeMidflightTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'pos-user-1',
+          onOpenChange: (next: boolean) => {
+            if (!next) reopenedCloseCount += 1;
+            isCredDialogOpen = next;
+          },
+        });
+
+        resolveCredPost!();
+        await closeMidflightSubmit;
+
+        assert.equal(
+          replacedTokenDuringClose,
+          'server-app-fresh-token',
+          'Default caller applies rotated token when dialog closes while session stays active',
+        );
+        assert.equal(
+          credToastSuccess,
+          'passwordChangedSuccess',
+          'Default caller shows success toast when committed change finishes after dialog closes',
+        );
+        assert.equal(
+          reopenedCloseCount,
+          0,
+          'Already-closed dialog does not redundantly invoke onOpenChange(false)',
+        );
+
+        // Caller-managed session closing dialog mid-flight while signed in
+        callerLiveToken = 'server-app-token-1';
+        updatedCallerSession = null;
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let callerClosedTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          getSessionToken: () => callerLiveToken,
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+        (
+          findNodes(callerClosedTree, (el) => el.props?.id === 'self-current-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'OldSecret123!' } });
+        (
+          findNodes(callerClosedTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        (
+          findNodes(callerClosedTree, (el) => el.props?.id === 'self-confirm-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        callerClosedTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          getSessionToken: () => callerLiveToken,
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        const callerClosedSubmit = (
+          findNodes(callerClosedTree, (el) => el.type === 'form')[0].props as any
+        ).onSubmit({ preventDefault: () => {} });
+
+        isCredDialogOpen = false;
+        callerClosedTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          getSessionToken: () => callerLiveToken,
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        resolveCredPost!();
+        await callerClosedSubmit;
+
+        assert.equal(
+          updatedCallerSession?.token,
+          'server-app-fresh-token',
+          'Caller-managed session applies rotated token after dialog dismissal when token stays live',
+        );
+        assert.equal(
+          credToastSuccess,
+          'passwordChangedSuccess',
+          'Caller-managed session reports success after dialog dismissal',
+        );
+
+        // 7h: Caller with onSessionUpdated and userId (without getSessionToken) rejects response when userId clears on logout
+        updatedCallerSession = null;
+        isCredDialogOpen = true;
+        credToastSuccess = null;
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pendingEffects.length = 0;
+
+        let noTokenCallerTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+        (
+          findNodes(noTokenCallerTree, (el) => el.props?.id === 'self-current-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'OldSecret123!' } });
+        (
+          findNodes(noTokenCallerTree, (el) => el.props?.id === 'self-new-password')[0].props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        (
+          findNodes(noTokenCallerTree, (el) => el.props?.id === 'self-confirm-password')[0]
+            .props as any
+        ).onChange({ target: { value: 'NewSecret123!' } });
+        noTokenCallerTree = renderCredentialsDialog({
+          open: isCredDialogOpen,
+          userId: 'waiter-77',
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        const noTokenSubmit = (
+          findNodes(noTokenCallerTree, (el) => el.type === 'form')[0].props as any
+        ).onSubmit({ preventDefault: () => {} });
+
+        // Caller clears userId to undefined on logout without unmounting
+        renderCredentialsDialog({
+          open: false,
+          userId: undefined as any,
+          onSessionUpdated: (payload) => {
+            updatedCallerSession = payload;
+          },
+        });
+
+        resolveCredPost!();
+        await noTokenSubmit;
+
+        assert.equal(
+          updatedCallerSession,
+          null,
+          'Caller without getSessionToken still ignores late response after userId clears on logout',
+        );
+        assert.equal(
+          credToastSuccess,
+          null,
+          'Caller without getSessionToken does not toast success after userId clears',
         );
       } finally {
         (globalThis as any).fetch = originalFetch;

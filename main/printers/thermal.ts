@@ -1836,8 +1836,11 @@ function reportPrintFailure(
   printerOverride?: { connection_type?: unknown } | null,
 ): void {
   let connectionType = 'unknown';
+  let printerName: string | undefined;
   try {
-    const configured = printerOverride?.connection_type ?? getPrinterConfig()?.connection_type;
+    const config = getPrinterConfig();
+    printerName = typeof config?.name === 'string' ? config.name : undefined;
+    const configured = printerOverride?.connection_type ?? config?.connection_type;
     if (configured === 'network' || configured === 'usb' || configured === 'webusb')
       connectionType = configured;
   } catch {
@@ -1861,6 +1864,7 @@ function reportPrintFailure(
       result.warnings && hasFinancialPrintWarning(result.warnings)
         ? makeFinancialPrintRefusalMessage(result.warnings, false)
         : result.detail,
+    printer_name: printerName,
   });
 }
 

@@ -115,6 +115,36 @@ async function mainTest(): Promise<void> {
   assert.ok(String(event?.error_text).length > 0);
   assert.equal('printer_make_model' in (event ?? {}), false, 'make and model are not known here');
 
+  // The queue the till prints to never leaves the machine, in the text or on its own.
+  capturePostHogPrintFailure({
+    kind: 'kot',
+    connection_type: 'usb',
+    failure_class: 'not_configured',
+    correlation_id: 'print-4711-abcdef',
+    detail: 'lp: Error - unable to access "EPSON_TM-T20III" - No such file or directory',
+    printer_name: 'EPSON_TM-T20III',
+  });
+  const queued = latestEvent();
+  assert.equal(String(queued?.error_text).includes('EPSON'), false, 'the queue name is scrubbed');
+  assert.equal(JSON.stringify(queued).includes('EPSON'), false, 'no property carries the queue');
+  assert.ok(String(queued?.error_text).includes('No such file or directory'), 'the reason stays');
+
+  // The gate itself scrubs the text, whatever the caller passed.
+  const gated = scrubPostHogEvent(
+    {
+      event: 'printer_failed',
+      properties: {
+        capture_point: 'printer',
+        error_text: 'Error: connect ECONNREFUSED 192.168.1.50:9100 at /var/spool/cups/d00471-001',
+      },
+    },
+    { telemetryEnabled: false, accountLinked: false, allowExceptions: true },
+  );
+  const gatedText = String(gated?.properties?.error_text);
+  assert.ok(gatedText.includes('ECONNREFUSED'), 'the reason stays');
+  assert.equal(gatedText.includes('192.168'), false, 'the gate drops the host address');
+  assert.equal(gatedText.includes('spool'), false, 'the gate drops the spool path');
+
   // Unknown values and a foreign event name never pass the allowlist.
   const dropped = scrubPostHogEvent(
     { event: 'printer_failed', properties: { capture_point: 'printer', kind: 'whatever' } },

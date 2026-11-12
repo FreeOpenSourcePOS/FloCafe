@@ -476,6 +476,13 @@
     "profitMarginLabel": "ਮੁਨਾਫ਼ਾ: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "ਰੋਜ਼ਾਨਾ ਵਿਕਰੀ ਰਿਪੋਰਟ"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe ਨੇ ਇਸ ਡਿਵਾਈਸ ਉੱਤੇ {count, plural, one {# ਸਮੱਸਿਆ} other {# ਸਮੱਸਿਆਵਾਂ}} ਦਰਜ ਕੀਤੀ। ਇਹਨਾਂ ਨੂੰ ਠੀਕ ਕਰ ਸਕੀਏ, ਇਸ ਲਈ ਬਿਨਾਂ ਨਾਮ ਦੀ ਗਲਤੀ ਰਿਪੋਰਟ ਭੇਜੀਏ?",
+    "send": "ਰਿਪੋਰਟ ਭੇਜੋ",
+    "notNow": "ਹੁਣ ਨਹੀਂ",
+    "dontAsk": "ਦੁਬਾਰਾ ਨਾ ਪੁੱਛੋ",
+    "whatIsSent": "ਕੀ ਭੇਜਿਆ ਜਾਂਦਾ ਹੈ"
+  },
   "expenses": {
     "addTitle": "ਖਰਚਾ ਜੋੜੋ",
     "detailTitle": "ਖਰਚੇ ਦਾ ਵੇਰਵਾ",

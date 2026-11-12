@@ -476,6 +476,13 @@
     "profitMarginLabel": "Winst: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Dagelijks verkooprapport"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe heeft {count, plural, one {# probleem} other {# problemen}} op dit apparaat vastgelegd. Anonieme foutrapporten sturen zodat we ze kunnen oplossen?",
+    "send": "Rapporten sturen",
+    "notNow": "Niet nu",
+    "dontAsk": "Niet meer vragen",
+    "whatIsSent": "Wat er wordt verstuurd"
+  },
   "expenses": {
     "addTitle": "Onkost toevoegen",
     "detailTitle": "Onkostdetails",

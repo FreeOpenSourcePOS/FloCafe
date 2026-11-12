@@ -476,6 +476,13 @@
     "profitMarginLabel": "이익: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "일일 매출 보고서"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe가 이 기기에서 {count, plural, other {#건의 문제}}를 기록했습니다. 수정할 수 있도록 익명 오류 보고서를 보낼까요?",
+    "send": "보고서 보내기",
+    "notNow": "나중에",
+    "dontAsk": "다시 묻지 않기",
+    "whatIsSent": "전송되는 내용"
+  },
   "expenses": {
     "addTitle": "경비 추가",
     "detailTitle": "경비 상세",

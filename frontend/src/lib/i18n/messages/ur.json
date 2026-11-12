@@ -476,6 +476,13 @@
     "profitMarginLabel": "منافع: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "روزانہ فروخت کی رپورٹ"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe نے اس ڈیوائس پر {count, plural, one {# مسئلہ} other {# مسائل}} ریکارڈ کیا۔ انہیں ٹھیک کر سکیں، اس لیے بےنام خرابی کی رپورٹیں بھیجیں؟",
+    "send": "رپورٹیں بھیجیں",
+    "notNow": "ابھی نہیں",
+    "dontAsk": "دوبارہ نہ پوچھیں",
+    "whatIsSent": "کیا بھیجا جاتا ہے"
+  },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
     "detailTitle": "خرچ کی تفصیل",

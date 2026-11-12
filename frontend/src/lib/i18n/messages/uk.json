@@ -476,6 +476,13 @@
     "profitMarginLabel": "Прибуток: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Щоденний звіт про продажі"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe зафіксував {count, plural, one {# проблему} few {# проблеми} many {# проблем} other {# проблеми}} на цьому пристрої. Надсилати анонімні звіти про помилки, щоб ми могли їх виправити?",
+    "send": "Надіслати звіти",
+    "notNow": "Не зараз",
+    "dontAsk": "Більше не питати",
+    "whatIsSent": "Що надсилається"
+  },
   "expenses": {
     "addTitle": "Додати витрату",
     "detailTitle": "Деталі витрати",

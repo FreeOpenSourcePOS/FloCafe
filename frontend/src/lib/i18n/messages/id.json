@@ -476,6 +476,13 @@
     "profitMarginLabel": "Laba: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Laporan Penjualan Harian"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe mencatat {count, plural, other {# masalah}} di perangkat ini. Kirim laporan galat anonim agar bisa kami perbaiki?",
+    "send": "Kirim laporan",
+    "notNow": "Nanti saja",
+    "dontAsk": "Jangan tanya lagi",
+    "whatIsSent": "Yang dikirim"
+  },
   "expenses": {
     "addTitle": "Tambah pengeluaran",
     "detailTitle": "Detail pengeluaran",

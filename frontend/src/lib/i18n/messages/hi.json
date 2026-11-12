@@ -476,6 +476,13 @@
     "profitMarginLabel": "लाभ: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "दैनिक बिक्री रिपोर्ट"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe ने इस डिवाइस पर {count, plural, one {# समस्या} other {# समस्याएँ}} दर्ज कीं। इन्हें ठीक कर सकें, इसलिए गुमनाम त्रुटि रिपोर्ट भेजें?",
+    "send": "रिपोर्ट भेजें",
+    "notNow": "अभी नहीं",
+    "dontAsk": "दोबारा न पूछें",
+    "whatIsSent": "क्या भेजा जाता है"
+  },
   "expenses": {
     "addTitle": "व्यय जोड़ें",
     "detailTitle": "व्यय विवरण",

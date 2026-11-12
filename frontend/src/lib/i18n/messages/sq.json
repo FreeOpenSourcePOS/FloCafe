@@ -476,6 +476,13 @@
     "profitMarginLabel": "Fitimi: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Raporti i shitjeve ditore"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe regjistroi {count, plural, one {# problem} other {# probleme}} në këtë pajisje. Të dërgohen raporte anonime gabimesh që t'i rregullojmë?",
+    "send": "Dërgo raportet",
+    "notNow": "Jo tani",
+    "dontAsk": "Mos pyet më",
+    "whatIsSent": "Çfarë dërgohet"
+  },
   "expenses": {
     "addTitle": "Shto shpenzim",
     "detailTitle": "Detajet e shpenzimit",

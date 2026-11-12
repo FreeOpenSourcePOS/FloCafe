@@ -1,6 +1,11 @@
 /** Counters behind the error-report card. The card decides; this stores the facts. */
 
-import { getDatabase, getSettingValue, upsertSettings } from '../db';
+import {
+  getDatabase,
+  getSettingValue,
+  isDiagnosticsTransmissionEnabled,
+  upsertSettings,
+} from '../db';
 import { DIAGNOSTICS_PROMPT_MAX } from '../../shared/diagnostics-prompt';
 
 const COUNT_KEY = 'diagnostics_prompt_count';
@@ -39,7 +44,7 @@ function countProblemsSince(askedAt: string | null): number {
 export function readDiagnosticsPromptState(): DiagnosticsPromptState {
   const lastAskedAt = readLastAskedAt();
   return {
-    enabled: getSettingValue('diagnostics_transmission_enabled') === 'true',
+    enabled: isDiagnosticsTransmissionEnabled(),
     dismissed: getSettingValue(DISMISSED_KEY) === 'true',
     prompt_count: readCount(),
     last_asked_at: lastAskedAt,

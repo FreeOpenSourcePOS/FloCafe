@@ -20,8 +20,6 @@ export interface DiagnosticsPromptFacts {
   lastAskedAt: string | null;
   /** Failures logged locally since the last ask. */
   problemsSince: number;
-  /** An order or a payment surface is open. */
-  orderOrPaymentOpen: boolean;
   now: number;
 }
 
@@ -29,7 +27,6 @@ export function shouldShowDiagnosticsPrompt(facts: DiagnosticsPromptFacts): bool
   if (facts.enabled || facts.dismissed) return false;
   if (facts.problemsSince < 1) return false;
   if (facts.promptCount >= DIAGNOSTICS_PROMPT_MAX) return false;
-  if (facts.orderOrPaymentOpen) return false;
   if (!facts.lastAskedAt) return true;
   const last = Date.parse(facts.lastAskedAt);
   // An unreadable timestamp must not silence the card forever.

@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Raporti i shitjeve ditore"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe regjistroi {count, plural, one {# problem} other {# probleme}} në këtë pajisje. Të dërgohen raporte anonime gabimesh që t'i rregullojmë?",
+    "body": "FloCafe regjistroi {count, plural, one {# problem} other {# probleme}} në këtë pajisje. Të dërgohen raportet e gabimeve automatikisht? Ato na ndihmojnë të gjejmë gabime në FloCafe dhe nuk përmbajnë të dhëna klientësh ose pagesash.",
     "send": "Dërgo raportet",
     "notNow": "Jo tani",
     "dontAsk": "Mos pyet më",
-    "whatIsSent": "Çfarë dërgohet"
+    "whatIsSent": "Çfarë dërgohet",
+    "whatIsSentBody": "Një raport përmban gabimin, versionin e FloCafe dhe sistemin operativ. Një gabim printeri shton mesazhin e printerit, pa emrat dhe adresat. Raportet nuk përmbajnë emra klientësh, porosi, shuma dhe pagesa. Mund t'i çaktivizosh kur të duash te {place}."
   },
   "expenses": {
     "addTitle": "Shto shpenzim",

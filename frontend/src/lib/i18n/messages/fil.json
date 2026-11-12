@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Ulat ng Pang-araw-araw na Benta"
   },
   "diagnosticsPrompt": {
-    "body": "May {count, plural, one {# problemang} other {# problemang}} naitala ang FloCafe sa device na ito. Magpadala ng anonymous na ulat ng error para maayos namin ito?",
+    "body": "May {count, plural, one {# problemang} other {# problemang}} na naitala ang FloCafe sa device na ito. Awtomatikong ipadala ang mga ulat ng error? Tinutulungan nila kaming makahanap ng mga bug sa FloCafe at wala silang data ng customer o bayad.",
     "send": "Ipadala ang ulat",
     "notNow": "Mamaya na",
     "dontAsk": "Huwag nang itanong",
-    "whatIsSent": "Ano ang ipinapadala"
+    "whatIsSent": "Ano ang ipinapadala",
+    "whatIsSentBody": "May laman ang isang ulat na ang error, ang bersyon ng FloCafe at ang operating system. Kapag error sa printer, idinadagdag ang mensahe ng printer na tinanggal ang mga pangalan at address. Hindi kasama sa mga ulat ang mga pangalan ng customer, order, halaga at bayad. Maaari mong i-off ang mga ito anumang oras sa {place}."
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",

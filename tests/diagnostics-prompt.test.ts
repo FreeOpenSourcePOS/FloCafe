@@ -41,7 +41,6 @@ const base = {
   promptCount: 0,
   lastAskedAt: null,
   problemsSince: 1,
-  orderOrPaymentOpen: false,
   now: NOW,
 };
 
@@ -97,11 +96,6 @@ async function main() {
     }),
     true,
     'it may ask again once the interval has passed',
-  );
-  assertEqualOrThrow(
-    shouldShowDiagnosticsPrompt({ ...base, orderOrPaymentOpen: true }),
-    false,
-    'it never covers a running order or a payment',
   );
 
   console.log('\n2. The counters the card reads and writes');

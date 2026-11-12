@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Dagelijks verkooprapport"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe heeft {count, plural, one {# probleem} other {# problemen}} op dit apparaat vastgelegd. Anonieme foutrapporten sturen zodat we ze kunnen oplossen?",
+    "body": "FloCafe heeft {count, plural, one {# probleem} other {# problemen}} op dit apparaat vastgelegd. Foutrapporten automatisch versturen? Ze helpen ons fouten in FloCafe te vinden en bevatten geen klant- of betaalgegevens.",
     "send": "Rapporten sturen",
     "notNow": "Niet nu",
     "dontAsk": "Niet meer vragen",
-    "whatIsSent": "Wat er wordt verstuurd"
+    "whatIsSent": "Wat er wordt verstuurd",
+    "whatIsSentBody": "Een rapport bevat de fout, de FloCafe-versie en het besturingssysteem. Bij een printerfout komt het bericht van de printer erbij, zonder namen en adressen. Rapporten bevatten geen klantnamen, bestellingen, bedragen en betalingen. Je kunt ze altijd uitzetten in {place}."
   },
   "expenses": {
     "addTitle": "Onkost toevoegen",

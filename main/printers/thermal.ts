@@ -1833,13 +1833,14 @@ export async function printPaymentTicketDetailed(
 function reportPrintFailure(
   kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket',
   result: PrintResult,
-  printerOverride?: { connection_type?: unknown } | null,
+  printerOverride?: { connection_type?: unknown; name?: unknown } | null,
 ): void {
   let connectionType = 'unknown';
   let printerName: string | undefined;
   try {
     const config = getPrinterConfig();
-    printerName = typeof config?.name === 'string' ? config.name : undefined;
+    const name = printerOverride?.name ?? config?.name;
+    printerName = typeof name === 'string' ? name : undefined;
     const configured = printerOverride?.connection_type ?? config?.connection_type;
     if (configured === 'network' || configured === 'usb' || configured === 'webusb')
       connectionType = configured;

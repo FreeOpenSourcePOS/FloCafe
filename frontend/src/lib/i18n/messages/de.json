@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Tagesumsatzbericht"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe hat {count, plural, one {# Problem} other {# Probleme}} auf diesem Gerät aufgezeichnet. Anonyme Fehlerberichte senden, damit wir sie beheben können?",
+    "body": "FloCafe hat {count, plural, one {# Problem} other {# Probleme}} auf diesem Gerät aufgezeichnet. Fehlerberichte automatisch senden? Sie helfen uns, Fehler in FloCafe zu finden, und enthalten keine Kunden- oder Zahlungsdaten.",
     "send": "Berichte senden",
     "notNow": "Jetzt nicht",
     "dontAsk": "Nicht mehr fragen",
-    "whatIsSent": "Was gesendet wird"
+    "whatIsSent": "Was gesendet wird",
+    "whatIsSentBody": "Ein Bericht enthält den Fehler, die FloCafe-Version und das Betriebssystem. Bei einem Druckerfehler kommt die Meldung des Druckers dazu, ohne Namen und Adressen. Berichte enthalten keine Kundennamen, Bestellungen, Beträge und Zahlungen. Du kannst sie jederzeit unter {place} ausschalten."
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",

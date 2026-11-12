@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Laporan Penjualan Harian"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe mencatat {count, plural, other {# masalah}} di perangkat ini. Kirim laporan galat anonim agar bisa kami perbaiki?",
+    "body": "FloCafe mencatat {count, plural, other {# masalah}} di perangkat ini. Kirim laporan galat secara otomatis? Laporan ini membantu kami menemukan bug di FloCafe dan tidak berisi data pelanggan atau pembayaran.",
     "send": "Kirim laporan",
     "notNow": "Nanti saja",
     "dontAsk": "Jangan tanya lagi",
-    "whatIsSent": "Yang dikirim"
+    "whatIsSent": "Yang dikirim",
+    "whatIsSentBody": "Satu laporan berisi galat, versi FloCafe, dan sistem operasi. Galat printer menambahkan pesan printer, dengan nama dan alamat dihapus. Laporan tidak memuat nama pelanggan, pesanan, jumlah, dan pembayaran. Anda dapat mematikannya kapan saja di {place}."
   },
   "expenses": {
     "addTitle": "Tambah pengeluaran",

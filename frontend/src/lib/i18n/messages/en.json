@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Daily Sales Report"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe recorded {count, plural, one {# problem} other {# problems}} on this device. Send anonymous error reports so we can fix them?",
+    "body": "FloCafe recorded {count, plural, one {# problem} other {# problems}} on this device. Send error reports automatically? They help us find bugs in FloCafe and contain no customer or payment data.",
     "send": "Send reports",
     "notNow": "Not now",
     "dontAsk": "Don't ask again",
-    "whatIsSent": "What is sent"
+    "whatIsSent": "What is sent",
+    "whatIsSentBody": "A report has the error, the FloCafe version and the operating system. A printer error adds the printer's message with names and addresses removed. Reports leave out customer names, orders, amounts and payments. You can turn them off at any time in {place}."
   },
   "expenses": {
     "addTitle": "Add expense",

@@ -183,6 +183,8 @@ export class ChromiumRasterRenderer {
   }
 
   private isSurfaceSender(sender: Electron.WebContents): boolean {
+    // Reading webContents on a closed window throws, so check the surface first.
+    if (this.isDestroyed()) return false;
     return sender === this.surface.webContents;
   }
 
@@ -204,10 +206,10 @@ export class ChromiumRasterRenderer {
     this.pending.clear();
     this.ipc.removeListener('flo:raster-ready', this.onReady);
     this.ipc.removeListener('flo:raster-result', this.onResult);
-    this.surface.removeListener('closed', this.onSurfaceClosed);
-    this.surface.webContents.removeListener('did-fail-load', this.onLoadFailure);
-    this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
     if (!this.surface.isDestroyed()) {
+      this.surface.removeListener('closed', this.onSurfaceClosed);
+      this.surface.webContents.removeListener('did-fail-load', this.onLoadFailure);
+      this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
       try {
         this.surface.close();
       } catch {}

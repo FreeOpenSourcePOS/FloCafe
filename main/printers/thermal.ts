@@ -36,6 +36,7 @@ import {
 import { renderMerchantReceiptViaDocument } from './document-merchant';
 import { correlationId, type FloErrorCode } from '../errors';
 import { cloudSync } from '../services/cloud-sync';
+import { capturePostHogPrintFailure } from '../services/posthog';
 import { printLabel } from '../print/print-labels.generated';
 import { receiptChargeLines } from '../../shared/charges';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
@@ -1419,7 +1420,7 @@ export async function printDeliverySlipDetailed(
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
-    if (!result.ok) reportPrintFailure('delivery_slip', result);
+    if (!result.ok) reportPrintFailure('delivery_slip', result, args[4]);
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -1432,7 +1433,7 @@ export async function printDeliverySlipDetailed(
       failureClass: classifyPrintFailure(detail),
       platformErrorCode: extractPlatformErrorCode(detail),
     };
-    reportPrintFailure('delivery_slip', result);
+    reportPrintFailure('delivery_slip', result, args[4]);
     return result;
   }
 }
@@ -1808,7 +1809,7 @@ export async function printPaymentTicketDetailed(
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
-    if (!result.ok) reportPrintFailure('payment_ticket', result);
+    if (!result.ok) reportPrintFailure('payment_ticket', result, args[2]?.targetPrinter);
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -1821,7 +1822,7 @@ export async function printPaymentTicketDetailed(
       failureClass: classifyPrintFailure(detail),
       platformErrorCode: extractPlatformErrorCode(detail),
     };
-    reportPrintFailure('payment_ticket', result);
+    reportPrintFailure('payment_ticket', result, args[2]?.targetPrinter);
     return result;
   }
 }
@@ -1832,7 +1833,7 @@ export async function printPaymentTicketDetailed(
 function reportPrintFailure(
   kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket',
   result: PrintResult,
-  printerOverride?: { connection_type?: string } | null,
+  printerOverride?: { connection_type?: unknown } | null,
 ): void {
   let connectionType = 'unknown';
   try {
@@ -1850,6 +1851,16 @@ function reportPrintFailure(
     outcome: result.stage === 'prepare' ? 'not_applied' : 'unknown',
     correlation_id: result.correlationId,
     facts: { connection_type: connectionType, failure_class: failureClass, kind },
+  });
+  capturePostHogPrintFailure({
+    kind,
+    connection_type: connectionType,
+    failure_class: failureClass,
+    correlation_id: result.correlationId,
+    detail:
+      result.warnings && hasFinancialPrintWarning(result.warnings)
+        ? makeFinancialPrintRefusalMessage(result.warnings, false)
+        : result.detail,
   });
 }
 

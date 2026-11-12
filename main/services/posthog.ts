@@ -222,9 +222,16 @@ function exceptionContext(): ExceptionContext {
     platform: process.platform,
     install_source: getInstallSource(),
     process_type: 'main',
+    ...readOsProperties(),
+  });
+}
+
+/** The OS PostHog reports, from the Node platform. */
+export function readOsProperties(): { $os: string; $os_version: string } {
+  return {
     $os: OS_NAMES[process.platform] ?? process.platform,
     $os_version: osVersion(),
-  });
+  };
 }
 
 function emailField(value: unknown): string | undefined {
@@ -624,6 +631,42 @@ export function capturePostHogException(
   } catch {
     // A failed PostHog send is dropped. There is no outbox.
     return false;
+  }
+}
+
+/** The facts a failed print job carries. No queue name, no host, no path. */
+export interface PrintFailureFacts {
+  kind: string;
+  connection_type: string;
+  failure_class: string;
+  correlation_id?: string;
+  detail?: string;
+}
+
+/** Sends a failed print job while error sending is on. Make and model are not known here. */
+export function capturePostHogPrintFailure(facts: PrintFailureFacts): void {
+  try {
+    if (!getConsentState().diagnosticsEnabled) return;
+    const current = activeClient();
+    if (!current) return;
+    const who = identity();
+    current.capture({
+      distinctId: who.distinctId,
+      event: 'printer_failed',
+      properties: {
+        ...readSuperProperties(who),
+        ...readOsProperties(),
+        process_type: 'main',
+        capture_point: 'printer',
+        kind: facts.kind,
+        connection_type: facts.connection_type,
+        failure_class: facts.failure_class,
+        ...(facts.correlation_id ? { correlation_id: facts.correlation_id } : {}),
+        ...(facts.detail ? { error_text: facts.detail } : {}),
+      },
+    });
+  } catch {
+    // A failed PostHog send is dropped. There is no outbox.
   }
 }
 

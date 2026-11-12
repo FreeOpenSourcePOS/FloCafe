@@ -175,6 +175,17 @@ export interface PostHogScrubOptions {
   accountLinked: boolean;
   /** Exceptions. Follows diagnostics transmission. */
   allowExceptions: boolean;
+  /** Release and device facts an exception may arrive without; the sender knows them. */
+  exceptionContext?: ExceptionContext;
+}
+
+export interface ExceptionContext {
+  app_version?: string;
+  platform?: string;
+  install_source?: string;
+  process_type?: string;
+  $os?: string;
+  $os_version?: string;
 }
 
 export function isPostHogCapturePoint(value: unknown): value is PostHogCapturePoint {
@@ -280,7 +291,10 @@ function nonNegativeInteger(value: unknown): number | null {
   return Number.isInteger(number) && number >= 0 && number <= 10_000 ? number : null;
 }
 
-function scrubFrame(frame: unknown): Record<string, unknown> | null {
+function scrubFrame(
+  frame: unknown,
+  fallbackPlatform: string | null,
+): Record<string, unknown> | null {
   if (!frame || typeof frame !== 'object') return null;
   const item = frame as Record<string, unknown>;
   const filename = typeof item.filename === 'string' ? projectRelativeFile(item.filename) : null;
@@ -295,6 +309,8 @@ function scrubFrame(frame: unknown): Record<string, unknown> | null {
   if (typeof item.in_app === 'boolean') next.in_app = item.in_app;
   if (typeof item.platform === 'string' && /^[\w:]{1,40}$/.test(item.platform)) {
     next.platform = item.platform;
+  } else if (fallbackPlatform) {
+    next.platform = fallbackPlatform;
   }
   if (typeof item.chunk_id === 'string' && CHUNK_ID.test(item.chunk_id)) {
     next.chunk_id = item.chunk_id;
@@ -320,7 +336,8 @@ function scrubMechanism(value: unknown): Record<string, unknown> | undefined {
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-function scrubExceptionList(value: unknown): Array<Record<string, unknown>> {
+function scrubExceptionList(value: unknown, platform?: unknown): Array<Record<string, unknown>> {
+  const fallback = typeof platform === 'string' && /^[\w:]{1,40}$/.test(platform) ? platform : null;
   const entries = Array.isArray(value) && value.length > 0 ? value.slice(0, 5) : [{}];
   return entries.map((entry) => {
     const record = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
@@ -330,15 +347,15 @@ function scrubExceptionList(value: unknown): Array<Record<string, unknown>> {
         : {};
     const rawFrames = Array.isArray(stacktrace.frames) ? stacktrace.frames : [];
     const frames = rawFrames
-      .map(scrubFrame)
+      .map((frame) => scrubFrame(frame, fallback))
       .filter((frame): frame is Record<string, unknown> => frame !== null)
       .slice(-MAX_FRAMES);
     const next: Record<string, unknown> = {
       type: sanitizeErrorName(record.type),
       stacktrace: { type: 'raw', frames },
     };
-    const message = redactExceptionMessage(record.value);
-    if (message) next.value = message;
+    // PostHog needs a message on every exception, so an empty one falls back to the type.
+    next.value = redactExceptionMessage(record.value) || String(next.type);
     const mechanism = scrubMechanism(record.mechanism);
     if (mechanism) next.mechanism = mechanism;
     return next;
@@ -509,14 +526,23 @@ function scrubPageview(event: ScrubbableEvent): ScrubbableEvent | null {
 
 function scrubException(
   event: ScrubbableEvent,
-  defaultCapturePoint: PostHogCapturePoint | undefined,
+  options: PostHogScrubOptions & { defaultCapturePoint?: PostHogCapturePoint },
 ): ScrubbableEvent | null {
   const source = event.properties ?? {};
-  const capturePoint = source.capture_point ?? defaultCapturePoint;
+  const capturePoint = source.capture_point ?? options.defaultCapturePoint;
   if (!isPostHogCapturePoint(capturePoint)) return null;
-  const list = scrubExceptionList(source.$exception_list);
+  const context = contextProperties(source);
+  // An exception captured outside FloCafe's own calls arrives without these fields.
+  for (const [key, value] of Object.entries(options.exceptionContext ?? {})) {
+    if (context[key] === undefined && typeof value === 'string' && value) context[key] = value;
+  }
+  // PostHog parses a frame by its language tag, not the OS; main-process frames are Node.
+  const list = scrubExceptionList(
+    source.$exception_list,
+    options.exceptionContext ? 'node:javascript' : undefined,
+  );
   const properties: Record<string, unknown> = {
-    ...contextProperties(source),
+    ...context,
     capture_point: capturePoint,
     $exception_list: list,
   };
@@ -584,7 +610,7 @@ function scrubAllowed(
   }
   if (event.event === '$exception') {
     if (!options.allowExceptions) return null;
-    const scrubbed = scrubException(event, options.defaultCapturePoint);
+    const scrubbed = scrubException(event, options);
     // With telemetry off nothing may link an exception to the device, the store, or a staff member.
     if (scrubbed && !options.telemetryEnabled) {
       for (const key of ['install_ref', 'store_ref', 'staff_ref'])

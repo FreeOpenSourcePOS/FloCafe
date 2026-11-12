@@ -4,6 +4,7 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
+import * as os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import {
   getDatabase,
@@ -45,6 +46,7 @@ import {
   sanitizeErrorName,
   scrubPostHogEvent,
   stackFrameLines,
+  type ExceptionContext,
   type PostHogCapturePoint,
   type PostHogUsageEvent,
   type ScrubbableEvent,
@@ -198,6 +200,33 @@ export function readSuperProperties(current: PostHogIdentity = identity()): Supe
   };
 }
 
+/** macOS 15.6, not the Darwin kernel 24.6.0 that `os.release()` gives. */
+function osVersion(): string {
+  return typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : os.release();
+}
+
+/** The OS names PostHog reports, from the Node platform. */
+const OS_NAMES: Record<string, string> = {
+  darwin: 'Mac OS X',
+  win32: 'Windows',
+  linux: 'Linux',
+};
+
+let cachedExceptionContext: ExceptionContext | undefined;
+
+/** Release, OS, install source, and process: an exception must carry them even if it arrived bare. */
+function exceptionContext(): ExceptionContext {
+  // Fixed for the life of the process; on Linux the install source reads /etc/os-release.
+  return (cachedExceptionContext ??= {
+    app_version: appVersion(),
+    platform: process.platform,
+    install_source: getInstallSource(),
+    process_type: 'main',
+    $os: OS_NAMES[process.platform] ?? process.platform,
+    $os_version: osVersion(),
+  });
+}
+
 function emailField(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
@@ -328,6 +357,7 @@ function createClient(token: string, host: string, abortSignal: AbortSignal): Po
         telemetryEnabled: level !== 'off',
         accountLinked: level === 'full',
         allowExceptions: diagnosticsEnabled,
+        exceptionContext: exceptionContext(),
       });
     },
   });

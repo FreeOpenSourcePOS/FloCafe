@@ -3,6 +3,8 @@
  * only the `full` level, and exceptions follow diagnostics transmission.
  */
 
+import { scrubPrinterErrorText } from './printer-error-text';
+
 export const POSTHOG_CAPTURE_POINTS = [
   'uncaughtException',
   'unhandledRejection',
@@ -610,7 +612,7 @@ function scrubDiagnosticEvent(event: ScrubbableEvent): ScrubbableEvent | null {
   if (typeof source.correlation_id === 'string' && DIAGNOSTIC_ID.test(source.correlation_id)) {
     properties.correlation_id = source.correlation_id;
   }
-  const errorText = redactExceptionMessage(source.error_text);
+  const errorText = scrubPrinterErrorText(source.error_text);
   if (errorText) properties.error_text = errorText;
   return { ...withoutPersonOperators(event), properties };
 }

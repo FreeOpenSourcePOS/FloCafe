@@ -40,6 +40,7 @@ import {
   type ProductAnalyticsLevel,
 } from './posthog-identity';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
+import { scrubPrinterErrorText } from '../../shared/printer-error-text';
 import {
   isPostHogCapturePoint,
   redactExceptionMessage,
@@ -641,6 +642,8 @@ export interface PrintFailureFacts {
   failure_class: string;
   correlation_id?: string;
   detail?: string;
+  /** Removed from the text before it is sent; the queue name itself never leaves the machine. */
+  printer_name?: string;
 }
 
 /** Sends a failed print job while error sending is on. Make and model are not known here. */
@@ -662,7 +665,9 @@ export function capturePostHogPrintFailure(facts: PrintFailureFacts): void {
         connection_type: facts.connection_type,
         failure_class: facts.failure_class,
         ...(facts.correlation_id ? { correlation_id: facts.correlation_id } : {}),
-        ...(facts.detail ? { error_text: facts.detail } : {}),
+        ...(facts.detail
+          ? { error_text: scrubPrinterErrorText(facts.detail, facts.printer_name) }
+          : {}),
       },
     });
   } catch {

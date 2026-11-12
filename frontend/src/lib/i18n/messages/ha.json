@@ -476,6 +476,13 @@
     "profitMarginLabel": "Riba: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Rahoton Ciniki na Yau da Kullum"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe ya rubuta {count, plural, one {matsala #} other {matsaloli #}} a wannan na'urar. Aika rahoton kuskure mara suna domin mu gyara su?",
+    "send": "Aika rahotanni",
+    "notNow": "Ba yanzu ba",
+    "dontAsk": "Kada a sake tambaya",
+    "whatIsSent": "Abin da ake aikawa"
+  },
   "expenses": {
     "addTitle": "Ƙara kashe kuɗi",
     "detailTitle": "Cikakken bayanin kashe kuɗi",

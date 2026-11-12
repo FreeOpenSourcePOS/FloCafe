@@ -476,6 +476,13 @@
     "profitMarginLabel": "Lucro: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Relatório de vendas diárias"
   },
+  "diagnosticsPrompt": {
+    "body": "O FloCafe registou {count, plural, one {# problema} other {# problemas}} neste dispositivo. Enviar relatórios de erro anónimos para que os possamos corrigir?",
+    "send": "Enviar relatórios",
+    "notNow": "Agora não",
+    "dontAsk": "Não perguntar novamente",
+    "whatIsSent": "O que é enviado"
+  },
   "expenses": {
     "addTitle": "Adicionar despesa",
     "detailTitle": "Detalhe da despesa",

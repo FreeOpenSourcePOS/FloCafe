@@ -476,6 +476,13 @@
     "profitMarginLabel": "Lợi nhuận: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Báo cáo doanh thu hằng ngày"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe đã ghi nhận {count, plural, other {# vấn đề}} trên thiết bị này. Gửi báo cáo lỗi ẩn danh để chúng tôi sửa được không?",
+    "send": "Gửi báo cáo",
+    "notNow": "Để sau",
+    "dontAsk": "Không hỏi lại",
+    "whatIsSent": "Nội dung được gửi"
+  },
   "expenses": {
     "addTitle": "Thêm chi phí",
     "detailTitle": "Chi tiết chi phí",

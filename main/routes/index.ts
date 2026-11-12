@@ -21,6 +21,7 @@ import { kitchenRoutes } from './kitchen';
 import { customerRoutes, parseCustomer, getWalletBalance } from './customers';
 import { staffRoutes } from './staff';
 import { settingsRoutes } from './settings';
+import { diagnosticsPromptRoutes } from './diagnostics-prompt';
 import { paymentMethodRoutes } from './payment-methods';
 import { reportRoutes } from './reports';
 import { kdsRoutes } from './kds';
@@ -129,6 +130,8 @@ export function registerRoutes(app: Express): void {
   app.use('/api/customers', customerRoutes);
   app.use('/api/staff', staffRoutes); // users with POS roles
   app.use('/api/users', staffRoutes); // same router, dual-mounted
+  // Registered before the settings wildcard, which would otherwise swallow it.
+  app.use('/api/settings/diagnostics-prompt', diagnosticsPromptRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/payment-methods', paymentMethodRoutes);
   app.use('/api/reports', reportRoutes);

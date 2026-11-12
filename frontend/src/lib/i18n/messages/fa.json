@@ -476,6 +476,13 @@
     "profitMarginLabel": "سود: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "گزارش فروش روزانه"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe روی این دستگاه {count, plural, one {# مشکل} other {# مشکل}} ثبت کرد. برای اینکه بتوانیم رفعشان کنیم، گزارش‌های خطای ناشناس فرستاده شود؟",
+    "send": "ارسال گزارش‌ها",
+    "notNow": "اکنون نه",
+    "dontAsk": "دیگر نپرس",
+    "whatIsSent": "چه چیزی فرستاده می‌شود"
+  },
   "expenses": {
     "addTitle": "افزودن هزینه",
     "detailTitle": "جزئیات هزینه",

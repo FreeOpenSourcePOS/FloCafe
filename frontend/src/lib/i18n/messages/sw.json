@@ -476,6 +476,13 @@
     "profitMarginLabel": "Faida: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Ripoti ya Mauzo ya Kila Siku"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe ilirekodi {count, plural, one {tatizo #} other {matatizo #}} kwenye kifaa hiki. Tuma ripoti za hitilafu zisizo na jina ili tuweze kuyarekebisha?",
+    "send": "Tuma ripoti",
+    "notNow": "Sio sasa",
+    "dontAsk": "Usiulize tena",
+    "whatIsSent": "Kinachotumwa"
+  },
   "expenses": {
     "addTitle": "Ongeza gharama",
     "detailTitle": "Maelezo ya gharama",

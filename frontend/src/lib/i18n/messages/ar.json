@@ -476,6 +476,13 @@
     "profitMarginLabel": "الربح: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "تقرير المبيعات اليومية"
   },
+  "diagnosticsPrompt": {
+    "body": "سجّل FloCafe {count, plural, one {مشكلة واحدة} two {مشكلتين} few {# مشاكل} many {# مشكلة} other {# مشكلة}} على هذا الجهاز. هل ترسل تقارير أخطاء مجهولة لنتمكن من إصلاحها؟",
+    "send": "إرسال التقارير",
+    "notNow": "ليس الآن",
+    "dontAsk": "لا تسأل مرة أخرى",
+    "whatIsSent": "ما الذي يُرسل"
+  },
   "expenses": {
     "addTitle": "إضافة مصروف",
     "detailTitle": "تفاصيل المصروف",

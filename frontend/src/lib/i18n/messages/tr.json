@@ -476,6 +476,13 @@
     "profitMarginLabel": "Kâr: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Günlük Satış Raporu"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe bu cihazda {count, plural, one {# sorun} other {# sorun}} kaydetti. Düzeltebilmemiz için anonim hata raporları gönderilsin mi?",
+    "send": "Raporları gönder",
+    "notNow": "Şimdi değil",
+    "dontAsk": "Bir daha sorma",
+    "whatIsSent": "Neler gönderilir"
+  },
   "expenses": {
     "addTitle": "Gider ekle",
     "detailTitle": "Gider ayrıntısı",

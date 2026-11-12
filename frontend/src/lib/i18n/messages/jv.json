@@ -476,6 +476,13 @@
     "profitMarginLabel": "Bathi: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Laporan Dodolan Saben Dina"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe nyathet {count, plural, other {# masalah}} ing piranti iki. Kirim laporan kesalahan anonim supaya bisa didandani?",
+    "send": "Kirim laporan",
+    "notNow": "Mengko wae",
+    "dontAsk": "Aja takon maneh",
+    "whatIsSent": "Sing dikirim"
+  },
   "expenses": {
     "addTitle": "Tambah pangeluaran",
     "detailTitle": "Rincian pangeluaran",

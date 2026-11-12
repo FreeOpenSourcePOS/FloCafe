@@ -476,6 +476,13 @@
     "profitMarginLabel": "লাভ: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "দৈনিক বিক্রয় প্রতিবেদন"
   },
+  "diagnosticsPrompt": {
+    "body": "FloCafe এই ডিভাইসে {count, plural, one {#টি সমস্যা} other {#টি সমস্যা}} রেকর্ড করেছে। সমাধান করতে পারি বলে বেনামি ত্রুটি রিপোর্ট পাঠাবেন?",
+    "send": "রিপোর্ট পাঠান",
+    "notNow": "এখন নয়",
+    "dontAsk": "আর জিজ্ঞাসা করবেন না",
+    "whatIsSent": "কী পাঠানো হয়"
+  },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",
     "detailTitle": "খরচের বিস্তারিত",

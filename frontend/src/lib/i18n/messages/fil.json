@@ -476,6 +476,13 @@
     "profitMarginLabel": "Tubo: {profit} ({margin})",
     "dailySalesWhatsAppTitle": "Ulat ng Pang-araw-araw na Benta"
   },
+  "diagnosticsPrompt": {
+    "body": "May {count, plural, one {# problemang} other {# problemang}} naitala ang FloCafe sa device na ito. Magpadala ng anonymous na ulat ng error para maayos namin ito?",
+    "send": "Ipadala ang ulat",
+    "notNow": "Mamaya na",
+    "dontAsk": "Huwag nang itanong",
+    "whatIsSent": "Ano ang ipinapadala"
+  },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
     "detailTitle": "Detalye ng gastos",

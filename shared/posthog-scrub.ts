@@ -9,9 +9,15 @@ export const POSTHOG_CAPTURE_POINTS = [
   'renderer-autocapture',
   'react-error-boundary',
   'api-5xx',
+  'printer',
 ] as const;
 
 export type PostHogCapturePoint = (typeof POSTHOG_CAPTURE_POINTS)[number];
+
+/** Diagnostics events that follow error-sending consent, not the usage level. */
+export const POSTHOG_DIAGNOSTIC_EVENTS = ['printer_failed'] as const;
+
+export type PostHogDiagnosticEvent = (typeof POSTHOG_DIAGNOSTIC_EVENTS)[number];
 
 export const POSTHOG_USAGE_EVENTS = [
   'app_launch',
@@ -104,6 +110,7 @@ export const POSTHOG_STAFF_KEYS = ['staff_role', 'staff_ref'] as const;
 const PAGEVIEW_KEYS = new Set(['screen', 'settings_tab', 'repeat_views']);
 
 const CAPTURE_POINT_SET = new Set<string>(POSTHOG_CAPTURE_POINTS);
+const DIAGNOSTIC_EVENT_SET = new Set<string>(POSTHOG_DIAGNOSTIC_EVENTS);
 const USAGE_EVENT_SET = new Set<string>(POSTHOG_USAGE_EVENTS);
 const PERSON_KEY_SET = new Set<string>(POSTHOG_PERSON_KEYS);
 const USAGE_PROPERTY_KEY_SET = new Set<string>(POSTHOG_USAGE_PROPERTY_KEYS);
@@ -136,6 +143,26 @@ const CONTEXT_KEYS = new Set<string>([
 ]);
 
 const API_FAILURE_KEYS = new Set(['http_method', 'http_route', 'http_status']);
+
+/** Closed sets for a print failure, so a queue or staff name can never ride along. */
+const PRINT_ENUM_KEYS: Record<string, Set<string>> = {
+  kind: new Set(['receipt', 'kot', 'delivery_slip', 'payment_ticket']),
+  connection_type: new Set(['network', 'usb', 'webusb', 'unknown']),
+  failure_class: new Set([
+    'not_configured',
+    'offline',
+    'needs_attention',
+    'queue_unavailable',
+    'spooler_error',
+    'driver_error',
+    'permission_denied',
+    'timeout',
+    'write_error',
+    'unsupported',
+    'unknown',
+  ]),
+};
+const DIAGNOSTIC_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const PROJECT_MARKERS = [
   'frontend/src/',
@@ -568,6 +595,37 @@ function scrubException(
   return { ...withoutPersonOperators(event), properties };
 }
 
+function scrubDiagnosticEvent(event: ScrubbableEvent): ScrubbableEvent | null {
+  const source = event.properties ?? {};
+  const capturePoint = source.capture_point;
+  if (!isPostHogCapturePoint(capturePoint)) return null;
+  const properties: Record<string, unknown> = {
+    ...contextProperties(source),
+    capture_point: capturePoint,
+  };
+  for (const [key, allowed] of Object.entries(PRINT_ENUM_KEYS)) {
+    const value = source[key];
+    if (typeof value === 'string' && allowed.has(value)) properties[key] = value;
+  }
+  if (typeof source.correlation_id === 'string' && DIAGNOSTIC_ID.test(source.correlation_id)) {
+    properties.correlation_id = source.correlation_id;
+  }
+  const errorText = redactExceptionMessage(source.error_text);
+  if (errorText) properties.error_text = errorText;
+  return { ...withoutPersonOperators(event), properties };
+}
+
+/** With telemetry off nothing may link an exception or a failure to the device or the store. */
+function withoutLinkedRefs(
+  scrubbed: ScrubbableEvent | null,
+  telemetryEnabled: boolean,
+): ScrubbableEvent | null {
+  if (scrubbed && !telemetryEnabled) {
+    for (const key of ['install_ref', 'store_ref', 'staff_ref']) delete scrubbed.properties?.[key];
+  }
+  return scrubbed;
+}
+
 /**
  * Returns the event as it may leave the machine, or null when it must not.
  * `defaultCapturePoint` tags exceptions an SDK captured on its own (renderer autocapture).
@@ -610,13 +668,11 @@ function scrubAllowed(
   }
   if (event.event === '$exception') {
     if (!options.allowExceptions) return null;
-    const scrubbed = scrubException(event, options);
-    // With telemetry off nothing may link an exception to the device, the store, or a staff member.
-    if (scrubbed && !options.telemetryEnabled) {
-      for (const key of ['install_ref', 'store_ref', 'staff_ref'])
-        delete scrubbed.properties?.[key];
-    }
-    return scrubbed;
+    return withoutLinkedRefs(scrubException(event, options), options.telemetryEnabled);
+  }
+  if (DIAGNOSTIC_EVENT_SET.has(event.event)) {
+    if (!options.allowExceptions) return null;
+    return withoutLinkedRefs(scrubDiagnosticEvent(event), options.telemetryEnabled);
   }
   if (!options.telemetryEnabled) return null;
   if (event.event === '$pageview') return scrubPageview(event);

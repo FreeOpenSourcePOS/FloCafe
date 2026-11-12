@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Rahoton Ciniki na Yau da Kullum"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe ya rubuta {count, plural, one {matsala #} other {matsaloli #}} a wannan na'urar. Aika rahoton kuskure mara suna domin mu gyara su?",
+    "body": "FloCafe ya rubuta {count, plural, one {matsala #} other {matsaloli #}} a wannan na'urar. A aika rahoton kuskure kai tsaye? Suna taimaka mana mu sami kurakurai a FloCafe kuma ba su da bayanan abokin ciniki ko biyan kuɗi.",
     "send": "Aika rahotanni",
     "notNow": "Ba yanzu ba",
     "dontAsk": "Kada a sake tambaya",
-    "whatIsSent": "Abin da ake aikawa"
+    "whatIsSent": "Abin da ake aikawa",
+    "whatIsSentBody": "Rahoto yana ɗauke da kuskuren, sigar FloCafe da tsarin aiki. Kuskuren firinta yana ƙara saƙon firintar, ba tare da sunaye da adireshi ba. Rahotanni ba sa ɗauke da sunayen abokan ciniki, oda, adadi ko biyan kuɗi. Za ka iya kashe su a kowane lokaci a {place}."
   },
   "expenses": {
     "addTitle": "Ƙara kashe kuɗi",

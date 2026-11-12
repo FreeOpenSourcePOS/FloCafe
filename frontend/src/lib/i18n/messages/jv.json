@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Laporan Dodolan Saben Dina"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe nyathet {count, plural, other {# masalah}} ing piranti iki. Kirim laporan kesalahan anonim supaya bisa didandani?",
+    "body": "FloCafe nyathet {count, plural, other {# masalah}} ing piranti iki. Ngirim laporan kesalahan kanthi otomatis? Laporan iki mbantu kita nemokake bug ing FloCafe lan ora ngemot data pelanggan utawa pambayaran.",
     "send": "Kirim laporan",
     "notNow": "Mengko wae",
     "dontAsk": "Aja takon maneh",
-    "whatIsSent": "Sing dikirim"
+    "whatIsSent": "Sing dikirim",
+    "whatIsSentBody": "Siji laporan ngemot kesalahan, versi FloCafe lan sistem operasi. Kesalahan printer nambahake pesen printer, tanpa jeneng lan alamat. Laporan ora ngemot jeneng pelanggan, pesenan, cacahe dhuwit lan pambayaran. Panjenengan bisa mateni kapan wae ing {place}."
   },
   "expenses": {
     "addTitle": "Tambah pangeluaran",

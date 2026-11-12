@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Báo cáo doanh thu hằng ngày"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe đã ghi nhận {count, plural, other {# vấn đề}} trên thiết bị này. Gửi báo cáo lỗi ẩn danh để chúng tôi sửa được không?",
+    "body": "FloCafe đã ghi nhận {count, plural, other {# vấn đề}} trên thiết bị này. Tự động gửi báo cáo lỗi? Báo cáo giúp chúng tôi tìm lỗi trong FloCafe và không chứa dữ liệu khách hàng hay thanh toán.",
     "send": "Gửi báo cáo",
     "notNow": "Để sau",
     "dontAsk": "Không hỏi lại",
-    "whatIsSent": "Nội dung được gửi"
+    "whatIsSent": "Nội dung được gửi",
+    "whatIsSentBody": "Một báo cáo gồm lỗi, phiên bản FloCafe và hệ điều hành. Lỗi máy in thêm thông báo của máy in, đã bỏ tên và địa chỉ. Báo cáo không gồm tên khách hàng, đơn hàng, số tiền và thanh toán. Bạn có thể tắt bất cứ lúc nào trong {place}."
   },
   "expenses": {
     "addTitle": "Thêm chi phí",

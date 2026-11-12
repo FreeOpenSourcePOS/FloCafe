@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "일일 매출 보고서"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe가 이 기기에서 {count, plural, other {#건의 문제}}를 기록했습니다. 수정할 수 있도록 익명 오류 보고서를 보낼까요?",
+    "body": "FloCafe가 이 기기에서 {count, plural, other {#건의 문제}}를 기록했습니다. 오류 보고서를 자동으로 보낼까요? 보고서는 FloCafe의 버그를 찾는 데 도움이 되며 고객이나 결제 데이터는 들어 있지 않습니다.",
     "send": "보고서 보내기",
     "notNow": "나중에",
     "dontAsk": "다시 묻지 않기",
-    "whatIsSent": "전송되는 내용"
+    "whatIsSent": "전송되는 내용",
+    "whatIsSentBody": "보고서에는 오류, FloCafe 버전, 운영 체제가 들어 있습니다. 프린터 오류인 경우 이름과 주소를 지운 프린터 메시지가 더해집니다. 보고서에는 고객 이름, 주문, 금액, 결제가 들어 있지 않습니다. {place}에서 언제든 끌 수 있습니다."
   },
   "expenses": {
     "addTitle": "경비 추가",

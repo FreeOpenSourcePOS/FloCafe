@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Ripoti ya Mauzo ya Kila Siku"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe ilirekodi {count, plural, one {tatizo #} other {matatizo #}} kwenye kifaa hiki. Tuma ripoti za hitilafu zisizo na jina ili tuweze kuyarekebisha?",
+    "body": "FloCafe ilirekodi {count, plural, one {tatizo #} other {matatizo #}} kwenye kifaa hiki. Tuma ripoti za hitilafu kiotomatiki? Zinatusaidia kupata hitilafu katika FloCafe na hazina data ya wateja au malipo.",
     "send": "Tuma ripoti",
     "notNow": "Sio sasa",
     "dontAsk": "Usiulize tena",
-    "whatIsSent": "Kinachotumwa"
+    "whatIsSent": "Kinachotumwa",
+    "whatIsSentBody": "Ripoti ina hitilafu, toleo la FloCafe na mfumo wa uendeshaji. Hitilafu ya printa huongeza ujumbe wa printa, bila majina na anwani. Ripoti hazina majina ya wateja, oda, viwango na malipo. Unaweza kuzizima wakati wowote katika {place}."
   },
   "expenses": {
     "addTitle": "Ongeza gharama",

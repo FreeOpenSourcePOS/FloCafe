@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "每日销售报表"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe 在此设备上记录了 {count, plural, other {# 个问题}}。发送匿名错误报告，以便我们修复？",
+    "body": "FloCafe 在此设备上记录了 {count, plural, other {# 个问题}}。自动发送错误报告吗？这些报告帮助我们找出 FloCafe 的缺陷，并且不含客户或支付数据。",
     "send": "发送报告",
     "notNow": "暂不",
     "dontAsk": "不再询问",
-    "whatIsSent": "发送的内容"
+    "whatIsSent": "发送的内容",
+    "whatIsSentBody": "报告包含错误、FloCafe 版本和操作系统。打印机错误还会加上打印机的消息，并去掉名称和地址。报告不含客户姓名、订单、金额和支付。你可以在 {place} 中随时关闭。"
   },
   "expenses": {
     "addTitle": "添加支出",

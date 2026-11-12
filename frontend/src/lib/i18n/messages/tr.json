@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Günlük Satış Raporu"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe bu cihazda {count, plural, one {# sorun} other {# sorun}} kaydetti. Düzeltebilmemiz için anonim hata raporları gönderilsin mi?",
+    "body": "FloCafe bu cihazda {count, plural, one {# sorun} other {# sorun}} kaydetti. Hata raporları otomatik olarak gönderilsin mi? FloCafe'teki hataları bulmamıza yardımcı olurlar ve müşteri veya ödeme verisi içermezler.",
     "send": "Raporları gönder",
     "notNow": "Şimdi değil",
     "dontAsk": "Bir daha sorma",
-    "whatIsSent": "Neler gönderilir"
+    "whatIsSent": "Neler gönderilir",
+    "whatIsSentBody": "Bir raporda hata, FloCafe sürümü ve işletim sistemi bulunur. Yazıcı hatasında, adlar ve adresler çıkarılmış yazıcı mesajı da eklenir. Raporlarda müşteri adları, siparişler, tutarlar ve ödemeler yer almaz. Bunları istediğiniz zaman {place} bölümünden kapatabilirsiniz."
   },
   "expenses": {
     "addTitle": "Gider ekle",

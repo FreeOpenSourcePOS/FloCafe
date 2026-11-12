@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "Rapport des ventes quotidiennes"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe a enregistré {count, plural, one {# problème} other {# problèmes}} sur cet appareil. Envoyer des rapports d'erreur anonymes pour que nous puissions les corriger ?",
+    "body": "FloCafe a enregistré {count, plural, one {# problème} other {# problèmes}} sur cet appareil. Envoyer automatiquement les rapports d'erreur ? Ils nous aident à trouver les bogues de FloCafe et ne contiennent aucune donnée client ni de paiement.",
     "send": "Envoyer les rapports",
     "notNow": "Pas maintenant",
     "dontAsk": "Ne plus demander",
-    "whatIsSent": "Ce qui est envoyé"
+    "whatIsSent": "Ce qui est envoyé",
+    "whatIsSentBody": "Un rapport contient l'erreur, la version de FloCafe et le système d'exploitation. Une erreur d'imprimante ajoute le message de l'imprimante, sans les noms ni les adresses. Les rapports ne contiennent pas les noms des clients, les commandes, les montants ni les paiements. Vous pouvez les désactiver à tout moment dans {place}."
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",

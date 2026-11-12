@@ -477,11 +477,12 @@
     "dailySalesWhatsAppTitle": "日次売上レポート"
   },
   "diagnosticsPrompt": {
-    "body": "FloCafe はこの端末で {count, plural, other {# 件の問題}} を記録しました。修正できるよう、匿名のエラーレポートを送信しますか？",
+    "body": "FloCafe はこの端末で {count, plural, other {# 件の問題}} を記録しました。エラーレポートを自動で送信しますか？レポートは FloCafe の不具合を見つけるのに役立ち、顧客データや支払いデータは含まれません。",
     "send": "レポートを送信",
     "notNow": "後で",
     "dontAsk": "今後表示しない",
-    "whatIsSent": "送信される内容"
+    "whatIsSent": "送信される内容",
+    "whatIsSentBody": "レポートには、エラー、FloCafe のバージョン、オペレーティングシステムが含まれます。プリンターのエラーでは、名前と住所を除いたプリンターのメッセージも追加されます。レポートには顧客名、注文、金額、支払いは含まれません。{place} でいつでもオフにできます。"
   },
   "expenses": {
     "addTitle": "経費を追加",

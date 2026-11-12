@@ -660,6 +660,7 @@ export function capturePostHogPrintFailure(facts: PrintFailureFacts): void {
         ...readSuperProperties(who),
         ...readOsProperties(),
         process_type: 'main',
+        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
         capture_point: 'printer',
         kind: facts.kind,
         connection_type: facts.connection_type,

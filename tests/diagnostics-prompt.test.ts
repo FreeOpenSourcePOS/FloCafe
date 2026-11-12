@@ -151,6 +151,11 @@ async function main() {
   const repeated = await post('shown');
   assertEqualOrThrow(repeated.data.prompt_count, 2, 'each shown card counts once');
 
+  const accepted = await post('accepted');
+  assertEqualOrThrow(accepted.status, 200, 'the card reports an accepted ask');
+  assertEqualOrThrow(accepted.data.prompt_count, 2, 'accepting is an event, not another ask');
+  assertEqualOrThrow(accepted.data.dismissed, false, 'accepting is not a dismissal');
+
   const dismissed = await post('dismissed');
   assertEqualOrThrow(dismissed.status, 200, '"Don\'t ask again" is accepted');
   assertEqualOrThrow(dismissed.data.dismissed, true, 'the dismissal is stored');

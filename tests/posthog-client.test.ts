@@ -823,6 +823,21 @@ async function main() {
     null,
     'usage events follow telemetry',
   );
+  for (const event of ['diagnostics_prompt_shown', 'diagnostics_prompt_accepted']) {
+    assert.equal(
+      scrubPostHogEvent({ event, properties: {} }, on)?.event,
+      event,
+      `${event} rides the usage consent`,
+    );
+    assert.equal(
+      scrubPostHogEvent(
+        { event, properties: {} },
+        { telemetryEnabled: false, accountLinked: false, allowExceptions: true },
+      ),
+      null,
+      `${event} is dropped when usage sharing is off`,
+    );
+  }
 
   const identified = scrubPostHogEvent(
     { event: '$identify', properties: { $set: { email: 'a@b.c', name: 'A', plan: 'secret' } } },

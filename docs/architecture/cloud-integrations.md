@@ -270,6 +270,9 @@ onto another terminal brings its seed, so both terminals share a device id.
   (`http_route`), `http_status`, `duration_ms`, `db_ms`, the statement count (`db_queries`),
   `occurrences`, and the slowest statement (`slowest_query_ms`, `slowest_query`). Every such request
   writes one `console.warn` line, whether or not telemetry is on.
+- The error-report card counts `diagnostics_prompt_shown` each time it appears and
+  `diagnostics_prompt_accepted` when Send reports is chosen, under the same usage consent as every
+  other usage event. The device-side counters, not these events, enforce the ask cap.
 - The renderer sends at most one `$pageview` per screen per staff member every 30 minutes
   (`shared/posthog-screen-views.ts`); views inside the window are folded into the next pageview's
   `repeat_views`. A screen is the route path with id-like segments removed, plus `settings_tab` on

@@ -44,6 +44,11 @@ export default function DiagnosticsPromptCard() {
     const sendReports = async () => {
       close();
       try {
+        await api.post('/settings/diagnostics-prompt', { event: 'accepted' });
+      } catch {
+        /* The count is optional; turning reports on is not. */
+      }
+      try {
         await api.put('/settings/diagnostics_consent', { value: 'true' });
         await api.put('/settings/diagnostics_transmission_enabled', { value: 'true' });
       } catch {

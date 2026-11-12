@@ -7,6 +7,7 @@ import {
   readDiagnosticsPromptState,
   recordDiagnosticsPromptShown,
 } from '../services/diagnostics-prompt';
+import { capturePostHogUsage } from '../services/posthog';
 
 export const diagnosticsPromptRoutes = Router();
 
@@ -36,13 +37,19 @@ diagnosticsPromptRoutes.post(
       const event = req.body?.event;
       if (event === 'shown') {
         res.json(recordDiagnosticsPromptShown());
+        capturePostHogUsage('diagnostics_prompt_shown');
+        return;
+      }
+      if (event === 'accepted') {
+        capturePostHogUsage('diagnostics_prompt_accepted');
+        res.json(readDiagnosticsPromptState());
         return;
       }
       if (event === 'dismissed') {
         res.json(dismissDiagnosticsPrompt());
         return;
       }
-      res.status(400).json({ error: 'event must be "shown" or "dismissed"' });
+      res.status(400).json({ error: 'event must be "shown", "accepted" or "dismissed"' });
     } catch (error) {
       fail(res, error);
     }

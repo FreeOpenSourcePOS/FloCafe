@@ -29,6 +29,8 @@ export const POSTHOG_USAGE_EVENTS = [
   'first_order_created',
   'first_bill_paid',
   'api_slow_request',
+  'diagnostics_prompt_shown',
+  'diagnostics_prompt_accepted',
 ] as const;
 
 export type PostHogUsageEvent = (typeof POSTHOG_USAGE_EVENTS)[number];

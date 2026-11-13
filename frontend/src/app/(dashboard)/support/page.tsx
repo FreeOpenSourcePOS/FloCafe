@@ -1,5 +1,6 @@
 'use client';
 
+import { NETWORK_FAILURE_CLASSES } from '@/lib/transport-failure';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LifeBuoy } from 'lucide-react';
@@ -117,15 +118,7 @@ const HELP_DISPLAY_CODES = new Set([
   'charge_not_waivable',
   'charge_always_applied',
 ]);
-const HELP_FAILURE_CLASSES = new Set([
-  'timeout',
-  'dns',
-  'connection_refused',
-  'offline',
-  'unreachable',
-  'invalid_response',
-  'unknown',
-]);
+const HELP_FAILURE_CLASSES = new Set<string>(NETWORK_FAILURE_CLASSES);
 const HELP_PERSISTENCE_FAILURE_CLASSES = new Set([
   'busy_or_locked',
   'constraint',

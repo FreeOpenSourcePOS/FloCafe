@@ -41,6 +41,8 @@ const NETWORK_FAILURE_CLASSES = [
   'timeout',
   'dns',
   'connection_refused',
+  'connection_reset',
+  'aborted',
   'offline',
   'unreachable',
   'invalid_response',

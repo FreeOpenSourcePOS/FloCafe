@@ -319,6 +319,7 @@ export type OperationFailureMetadata = {
   correlationId: string | null;
   displayCode: string | null;
   failureClass: string | null;
+  stockRefusal: { stock_scope: string; stock_shortfall: string } | null;
   serverError: string | null;
   trusted: boolean;
 };
@@ -618,6 +619,8 @@ const CHARGE_DISPLAY_CODES = [
   'charge_not_waivable',
   'charge_always_applied',
 ] as const;
+const STOCK_SCOPES = ['product', 'variant', 'addon'] as const;
+const STOCK_SHORTFALLS = ['out_of_stock', 'partial'] as const;
 const PERSISTENCE_FAILURE_CLASSES = [
   'busy_or_locked',
   'constraint',
@@ -726,6 +729,7 @@ export function classifyOrderRequestFailure(
     correlationId: null,
     displayCode: null,
     failureClass: null,
+    stockRefusal: null,
     serverError: null,
     trusted: false,
   };
@@ -742,21 +746,40 @@ export function classifyOrderRequestFailure(
     payload.reason_code === 'persistence.failed' &&
     payload.stage === 'persistence' &&
     (expected.operation === 'order.create' || expected.operation === 'bill.generate');
+  const allowsStockRefusal =
+    payload.reason_code === 'order.stock_insufficient' &&
+    payload.stage === 'validation' &&
+    expected.operation === 'order.create';
   let failureClass: string | null = null;
+  let stockRefusal: OperationFailureMetadata['stockRefusal'] = null;
   if (payload.facts !== undefined) {
     if (!plainRecord(payload.facts)) return fallback;
     const factKeys = Object.keys(payload.facts);
     if (factKeys.length > 0) {
-      if (
-        !allowsPersistenceFailureClass ||
-        factKeys.length !== 1 ||
-        factKeys[0] !== 'failure_class' ||
-        typeof payload.facts.failure_class !== 'string' ||
-        !(PERSISTENCE_FAILURE_CLASSES as readonly string[]).includes(payload.facts.failure_class)
-      ) {
-        return fallback;
+      if (allowsStockRefusal) {
+        const { stock_scope: scope, stock_shortfall: shortfall } = payload.facts;
+        if (
+          factKeys.length !== 2 ||
+          typeof scope !== 'string' ||
+          typeof shortfall !== 'string' ||
+          !(STOCK_SCOPES as readonly string[]).includes(scope) ||
+          !(STOCK_SHORTFALLS as readonly string[]).includes(shortfall)
+        ) {
+          return fallback;
+        }
+        stockRefusal = { stock_scope: scope, stock_shortfall: shortfall };
+      } else {
+        if (
+          !allowsPersistenceFailureClass ||
+          factKeys.length !== 1 ||
+          factKeys[0] !== 'failure_class' ||
+          typeof payload.facts.failure_class !== 'string' ||
+          !(PERSISTENCE_FAILURE_CLASSES as readonly string[]).includes(payload.facts.failure_class)
+        ) {
+          return fallback;
+        }
+        failureClass = payload.facts.failure_class;
       }
-      failureClass = payload.facts.failure_class;
     }
   }
   const operationDefinitions = STRUCTURED_FAILURES[expected.operation];
@@ -806,6 +829,7 @@ export function classifyOrderRequestFailure(
     correlationId: expected.correlationId,
     displayCode: typeof displayCode === 'string' ? displayCode : null,
     failureClass,
+    stockRefusal,
     serverError,
     detail,
     trusted: true,

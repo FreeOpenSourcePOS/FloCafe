@@ -36,7 +36,12 @@ export type SupportOperationFailure = {
   capture_point: string;
   operation_id: string;
   outcome: string;
-  facts?: { display_code?: string; failure_class?: string };
+  facts?: {
+    display_code?: string;
+    failure_class?: string;
+    stock_scope?: string;
+    stock_shortfall?: string;
+  };
 };
 
 type SupportProfile = {

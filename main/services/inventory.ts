@@ -1,17 +1,36 @@
 import { getDatabase, now } from '../db';
+import { STOCK_SCOPES, STOCK_SHORTFALLS } from '../lib/operation-failure';
 
 export type InventoryMovementType = 'sale' | 'cancel_restore' | 'adjustment';
 
 const INVENTORY_QUANTITY_PRECISION = 8;
 const INVENTORY_QUANTITY_TOLERANCE = 1e-8;
 
+export type StockScope = (typeof STOCK_SCOPES)[number];
+export type StockShortfall = (typeof STOCK_SHORTFALLS)[number];
+
+/** Low-cardinality description of a refused deduction: no item identity, no quantities. */
+export interface StockRefusal {
+  stock_scope: StockScope;
+  stock_shortfall: StockShortfall;
+}
+
+export function describeStockRefusal(scope: StockScope, available: number): StockRefusal {
+  return {
+    stock_scope: scope,
+    stock_shortfall: available > INVENTORY_QUANTITY_TOLERANCE ? 'partial' : 'out_of_stock',
+  };
+}
+
 export class InventoryServiceError extends Error {
   readonly statusCode: number;
+  readonly refusal?: StockRefusal;
 
-  constructor(statusCode: number, message: string) {
+  constructor(statusCode: number, message: string, refusal?: StockRefusal) {
     super(message);
     this.name = 'InventoryServiceError';
     this.statusCode = statusCode;
+    this.refusal = refusal;
   }
 }
 
@@ -275,6 +294,7 @@ export function adjustProductStock(
     throw new InventoryServiceError(
       400,
       itemName ? `Insufficient stock for ${itemName}` : 'Insufficient stock',
+      describeStockRefusal(addonId ? 'addon' : variantId ? 'variant' : 'product', stockBefore),
     );
   }
 

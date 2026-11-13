@@ -1,5 +1,6 @@
 'use client';
 
+import { classifyTransportFailure } from '@/lib/transport-failure';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
@@ -166,6 +167,8 @@ type SupportOperationFailure = {
     failure_class?: string;
     kind?: string;
     connection_type?: string;
+    stock_scope?: string;
+    stock_shortfall?: string;
   };
 };
 
@@ -921,18 +924,7 @@ export default function POSPage() {
       operation === 'order.create' ||
       operation === 'payment.create' ||
       operation === 'order.append';
-    const failureClass = (() => {
-      const code = (error as { code?: unknown } | null)?.code;
-      return code === 'ECONNABORTED' || code === 'ETIMEDOUT'
-        ? 'timeout'
-        : code === 'ENOTFOUND' || code === 'EAI_AGAIN'
-          ? 'dns'
-          : code === 'ECONNREFUSED'
-            ? 'connection_refused'
-            : typeof navigator !== 'undefined' && !navigator.onLine
-              ? 'offline'
-              : 'unreachable';
-    })();
+    const failureClass = classifyTransportFailure(error);
     const clientFailurePhase =
       operation === 'order.append' && stage === 'recovery' ? 'recovery' : 'transport';
     const clientCapturePoint = `fc.frontend.pos.${operation}.${clientFailurePhase}`;
@@ -963,7 +955,9 @@ export default function POSPage() {
                 ? { facts: { display_code: failure.displayCode } }
                 : failure.failureClass
                   ? { facts: { failure_class: failure.failureClass } }
-                  : {}),
+                  : failure.stockRefusal
+                    ? { facts: failure.stockRefusal }
+                    : {}),
             }
           : undefined;
     const reasonMessages: Record<string, string> = {

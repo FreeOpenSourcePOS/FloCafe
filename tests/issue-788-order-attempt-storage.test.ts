@@ -379,6 +379,41 @@ function main() {
     classification: 'expected_rejection',
     correlation_id: operationReference,
   });
+  const stockWithFacts = classifyOrder({
+    error: 'Insufficient stock for secret product',
+    reason_code: 'order.stock_insufficient',
+    operation: 'order.create',
+    stage: 'validation',
+    outcome: 'not_applied',
+    classification: 'expected_rejection',
+    correlation_id: operationReference,
+    facts: { stock_scope: 'variant', stock_shortfall: 'partial' },
+  });
+  assert.deepEqual(stockWithFacts.stockRefusal, {
+    stock_scope: 'variant',
+    stock_shortfall: 'partial',
+  });
+  assert.equal(stockWithFacts.trusted, true);
+  for (const facts of [
+    { stock_scope: 'variant', stock_shortfall: 'partial', item_id: 'p1' },
+    { stock_scope: 'secret', stock_shortfall: 'partial' },
+    { stock_scope: 'variant' },
+  ]) {
+    assert.equal(
+      classifyOrder({
+        error: 'Insufficient stock for secret product',
+        reason_code: 'order.stock_insufficient',
+        operation: 'order.create',
+        stage: 'validation',
+        outcome: 'not_applied',
+        classification: 'expected_rejection',
+        correlation_id: operationReference,
+        facts,
+      }).trusted,
+      false,
+      `unapproved stock facts are not trusted: ${JSON.stringify(facts)}`,
+    );
+  }
   assert.equal(quantityRejected.reasonCode, 'order.quantity_invalid');
   assert.equal(stockRejected.reasonCode, 'order.stock_insufficient');
   assert.equal(quantityRejected.outcome, 'not_applied');

@@ -36,9 +36,16 @@ import {
 import { renderMerchantReceiptViaDocument } from './document-merchant';
 import { correlationId, type FloErrorCode } from '../errors';
 import { cloudSync } from '../services/cloud-sync';
-import { capturePostHogPrintFailure } from '../services/posthog';
+import { capturePostHogPrintFailure, capturePostHogPrintRecovered } from '../services/posthog';
 import { printLabel } from '../print/print-labels.generated';
 import { withWindowsQueueBypass } from './windows-queue-bypass';
+import {
+  cupsQueuePort,
+  printFailureFacts,
+  recoveredFacts,
+  windowsQueuePort,
+  type QueuePort,
+} from './print-failure-facts';
 import { receiptChargeLines } from '../../shared/charges';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import type { PrintConceptId } from '../../shared/print/concepts';
@@ -171,6 +178,8 @@ export type PrintResult = {
   correlationId: string;
   stage: 'prepare' | 'dispatch';
   detail?: string;
+  transport?: 'direct_tcp_fallback';
+  queuePort?: QueuePort;
   failureClass?: PrintFailureClass;
   platformErrorCode?: number;
   jobId?: number;
@@ -193,6 +202,7 @@ export type DispatchResult = {
   preview?: boolean;
   connection_type?: string;
   transport?: 'direct_tcp_fallback';
+  queuePort?: QueuePort;
 };
 
 export type PrintFailureClass =
@@ -1407,7 +1417,13 @@ export async function printDeliverySlipDetailed(
   try {
     const dispatch = await printDeliverySlip(...args);
     const result: PrintResult = dispatch.ok
-      ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
+      ? {
+          ok: true,
+          correlationId: id,
+          stage: 'dispatch',
+          warnings: dispatch.warnings,
+          ...recoveredFacts(dispatch),
+        }
       : {
           ok: false,
           code: 'print.delivery_slip.failed',
@@ -1419,10 +1435,12 @@ export async function printDeliverySlipDetailed(
             dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
           jobId: dispatch.jobId,
           driverName: dispatch.driverName,
+          queuePort: dispatch.queuePort,
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
     if (!result.ok) reportPrintFailure('delivery_slip', result, args[4]);
+    else capturePostHogPrintRecovered({ kind: 'delivery_slip', ...result });
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -1796,6 +1814,7 @@ export async function printPaymentTicketDetailed(
           bytes: dispatch.bytes,
           preview: dispatch.preview,
           connection_type: dispatch.connection_type,
+          ...recoveredFacts(dispatch),
         }
       : {
           ok: false,
@@ -1808,10 +1827,12 @@ export async function printPaymentTicketDetailed(
             dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
           jobId: dispatch.jobId,
           driverName: dispatch.driverName,
+          queuePort: dispatch.queuePort,
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
     if (!result.ok) reportPrintFailure('payment_ticket', result, args[2]?.targetPrinter);
+    else capturePostHogPrintRecovered({ kind: 'payment_ticket', ...result });
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -1852,17 +1873,25 @@ function reportPrintFailure(
 
   const failureClass = result.failureClass || classifyPrintFailure(result.detail);
   const pointStage = failureClass === 'timeout' ? 'timeout' : 'queue';
+  const diagnostics = printFailureFacts({
+    detail: result.detail,
+    connectionType,
+    platformErrorCode: result.platformErrorCode,
+    driverName: result.driverName,
+    queuePort: result.queuePort,
+  });
   cloudSync.captureOperationFailure({
     capture_point: `fc.backend.printer.${kind}.${pointStage}`,
     outcome: result.stage === 'prepare' ? 'not_applied' : 'unknown',
     correlation_id: result.correlationId,
-    facts: { connection_type: connectionType, failure_class: failureClass, kind },
+    facts: { connection_type: connectionType, failure_class: failureClass, kind, ...diagnostics },
   });
   capturePostHogPrintFailure({
     kind,
     connection_type: connectionType,
     failure_class: failureClass,
     correlation_id: result.correlationId,
+    diagnostics,
     detail:
       result.warnings && hasFinancialPrintWarning(result.warnings)
         ? makeFinancialPrintRefusalMessage(result.warnings, false)
@@ -1881,7 +1910,13 @@ export async function printReceiptDetailed(
     const stage =
       !dispatch.ok && hasFinancialPrintWarning(dispatch.warnings || []) ? 'prepare' : 'dispatch';
     const result: PrintResult = dispatch.ok
-      ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
+      ? {
+          ok: true,
+          correlationId: id,
+          stage: 'dispatch',
+          warnings: dispatch.warnings,
+          ...recoveredFacts(dispatch),
+        }
       : {
           ok: false,
           code: 'print.receipt.failed',
@@ -1893,10 +1928,12 @@ export async function printReceiptDetailed(
             dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
           jobId: dispatch.jobId,
           driverName: dispatch.driverName,
+          queuePort: dispatch.queuePort,
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
     if (!result.ok) reportPrintFailure('receipt', result);
+    else capturePostHogPrintRecovered({ kind: 'receipt', ...result });
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -1919,7 +1956,13 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
   try {
     const dispatch = await printKOT(...args);
     const result: PrintResult = dispatch.ok
-      ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
+      ? {
+          ok: true,
+          correlationId: id,
+          stage: 'dispatch',
+          warnings: dispatch.warnings,
+          ...recoveredFacts(dispatch),
+        }
       : {
           ok: false,
           code: 'print.kot.failed',
@@ -1931,10 +1974,12 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
             dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
           jobId: dispatch.jobId,
           driverName: dispatch.driverName,
+          queuePort: dispatch.queuePort,
           printerStatus: dispatch.printerStatus,
           warnings: dispatch.warnings,
         };
     if (!result.ok) reportPrintFailure('kot', result, args[4]);
+    else capturePostHogPrintRecovered({ kind: 'kot', ...result });
     return result;
   } catch (error) {
     const detail = (error as Error).message;
@@ -5274,7 +5319,9 @@ export async function printViaUSB(
   }
 
   if (process.platform === 'darwin' || process.platform === 'linux') {
-    return await printViaCups(data, printerName, signal);
+    const result = await printViaCups(data, printerName, signal);
+    if (result.ok) return result;
+    return { ...result, queuePort: await cupsQueuePort(printerName, { signal }) };
   }
 
   if (process.platform === 'win32') {
@@ -5756,7 +5803,7 @@ async function printViaUSBWindows(
     console.log(
       `[Printer] Windows raw print accepted for "${printerName}" (${String(stdout).trim()})`,
     );
-    return { ok: true, ...metadata };
+    return { ok: true, ...metadata, queuePort: windowsQueuePort(stdout) };
   } catch (err: any) {
     const detail = describeWindowsRawPrintFailure(err, { payloadPath: tmpFile, printerName });
     console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
@@ -5767,6 +5814,7 @@ async function printViaUSBWindows(
         failureClass: classifyPrintFailure(detail),
         platformErrorCode: extractPlatformErrorCode(detail),
         ...parseWindowsPrintOutput(err.stdout),
+        queuePort: windowsQueuePort(err.stdout),
       },
       err.stdout,
       data,

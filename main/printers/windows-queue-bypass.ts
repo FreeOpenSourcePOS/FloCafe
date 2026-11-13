@@ -112,7 +112,12 @@ export async function withWindowsQueueBypass(
     console.log(
       `[Printer] Windows queue "${options.printerName || 'printer'}" refused (${failure.detail}); printed directly to its TCP/IP port`,
     );
-    return { ok: true, transport: 'direct_tcp_fallback' };
+    return {
+      ok: true,
+      transport: 'direct_tcp_fallback',
+      detail: failure.detail,
+      queuePort: failure.queuePort,
+    };
   }
   return withSnmpNote(failure);
 }

@@ -4,6 +4,15 @@
  */
 
 import { scrubPrinterErrorText } from './printer-error-text';
+import {
+  BYPASS_OUTCOMES,
+  DRIVER_KINDS,
+  FAILURE_STEPS,
+  PORT_KINDS,
+  QUEUE_REFUSALS,
+  SNMP_STATES,
+  WIN32_ERROR_MAX,
+} from './print/printer-facts';
 
 export const POSTHOG_CAPTURE_POINTS = [
   'uncaughtException',
@@ -17,7 +26,7 @@ export const POSTHOG_CAPTURE_POINTS = [
 export type PostHogCapturePoint = (typeof POSTHOG_CAPTURE_POINTS)[number];
 
 /** Diagnostics events that follow error-sending consent, not the usage level. */
-export const POSTHOG_DIAGNOSTIC_EVENTS = ['printer_failed'] as const;
+export const POSTHOG_DIAGNOSTIC_EVENTS = ['printer_failed', 'printer_recovered'] as const;
 
 export type PostHogDiagnosticEvent = (typeof POSTHOG_DIAGNOSTIC_EVENTS)[number];
 
@@ -165,7 +174,17 @@ const PRINT_ENUM_KEYS: Record<string, Set<string>> = {
     'unsupported',
     'unknown',
   ]),
+  port_kind: new Set(PORT_KINDS),
+  queue_refusal: new Set(QUEUE_REFUSALS),
+  failure_step: new Set(FAILURE_STEPS),
+  snmp_enabled: new Set(SNMP_STATES),
+  driver_kind: new Set(DRIVER_KINDS),
+  bypass: new Set(BYPASS_OUTCOMES),
+  via: new Set(['direct_tcp']),
 };
+
+/** Bounded integers a print failure may carry, keyed to their largest allowed value. */
+const PRINT_INTEGER_KEYS: Record<string, number> = { win32_error: WIN32_ERROR_MAX };
 const DIAGNOSTIC_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const PROJECT_MARKERS = [
@@ -613,6 +632,12 @@ function scrubDiagnosticEvent(event: ScrubbableEvent): ScrubbableEvent | null {
   }
   if (typeof source.correlation_id === 'string' && DIAGNOSTIC_ID.test(source.correlation_id)) {
     properties.correlation_id = source.correlation_id;
+  }
+  for (const [key, max] of Object.entries(PRINT_INTEGER_KEYS)) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= max) {
+      properties[key] = value;
+    }
   }
   const errorText = scrubPrinterErrorText(source.error_text);
   if (errorText) properties.error_text = errorText;

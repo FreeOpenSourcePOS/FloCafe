@@ -717,6 +717,28 @@ async function main() {
       await settle(() => latestLocalDiagnostic(db, 'order.stock_insufficient') !== null),
       'the stock reason is recorded locally',
     );
+    assertEqual(
+      JSON.stringify(stockBody.facts),
+      JSON.stringify({ stock_scope: 'product', stock_shortfall: 'out_of_stock' }),
+      'an empty product reports an out_of_stock refusal without item identity or amounts',
+    );
+    db.prepare("UPDATE products SET stock_quantity = 2 WHERE id = 'p1'").run();
+    const partialStock = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: { ...owner.authHeader, 'x-operation-id': crypto.randomUUID() },
+      body: {
+        table_id: 'diag-table-1',
+        type: 'dine_in',
+        items: [{ product_id: 'p1', quantity: 5 }],
+      },
+    });
+    assertEqual(partialStock.status, 400, 'a partly available item is still refused');
+    assertEqual(
+      JSON.stringify(partialStock.data.facts),
+      JSON.stringify({ stock_scope: 'product', stock_shortfall: 'partial' }),
+      'a partly available product reports a partial shortfall',
+    );
+    db.prepare("UPDATE products SET stock_quantity = 0 WHERE id = 'p1'").run();
 
     const missingBillOperationId = crypto.randomUUID();
     const missingBillResponse = await api(baseUrl, '/api/bills/generate', {

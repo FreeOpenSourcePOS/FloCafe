@@ -340,9 +340,11 @@ Order creation, item append, and order discount accept an optional version-4 UUI
 correlation header. An error response with a registered failure point in
 [`main/lib/operation-failure.ts`](../../main/lib/operation-failure.ts) includes `reason_code`,
 `operation`, `stage`, `classification`, `outcome`, and `correlation_id` alongside `error`;
-validation rejections may include `display_code`, and order-creation persistence failures
+validation rejections may include `display_code`, order-creation persistence failures
 (`persistence.failed`) include `facts: { failure_class }` (`PERSISTENCE_FAILURE_CLASSES` in
-`main/lib/operation-failure.ts`). A valid supplied UUID is returned as the correlation id,
+`main/lib/operation-failure.ts`), and order-creation stock refusals (`order.stock_insufficient`)
+include `facts: { stock_scope, stock_shortfall }` (product, variant or add-on; out of stock or
+partly available). Facts never carry item identity or quantities. A valid supplied UUID is returned as the correlation id,
 otherwise the server generates one. Failures without a registered tuple may retain the `{ error }`
 response.
 

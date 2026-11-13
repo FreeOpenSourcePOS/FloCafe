@@ -60,6 +60,7 @@ import {
 import {
   adjustProductStock,
   InventoryServiceError,
+  describeStockRefusal,
   resolveInventoryDeduction,
 } from '../services/inventory';
 import {
@@ -248,6 +249,7 @@ export function structuredOperationFailure(
     ...(Object.keys(mergedFacts).length > 0 ? { facts: mergedFacts } : {}),
   });
   if (!failure) return { error };
+  const { display_code: _displayCode, ...responseFacts } = failure.facts;
   if (options.capture !== false) {
     (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
     try {
@@ -265,9 +267,7 @@ export function structuredOperationFailure(
     outcome: failure.outcome,
     correlation_id: failure.correlation_id,
     ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
-    ...(failure.facts.failure_class
-      ? { facts: { failure_class: failure.facts.failure_class } }
-      : {}),
+    ...(Object.keys(responseFacts).length > 0 ? { facts: responseFacts } : {}),
   };
 }
 
@@ -504,6 +504,7 @@ function moveOrderItemAddonStock(
       throw new InventoryServiceError(
         400,
         `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
+        describeStockRefusal('addon', Number(pool?.stock_quantity ?? 0)),
       );
     }
   }
@@ -2854,7 +2855,9 @@ router.post(
           undefined,
           point === 'fc.backend.order.create.persistence'
             ? { failure_class: classifySqlitePersistenceFailure(error) }
-            : undefined,
+            : point === 'fc.backend.order.create.stock_validation' && error.refusal
+              ? { ...error.refusal }
+              : undefined,
         ),
         ...(error.code === 'MULTI_COUNTER_DISABLED' || error.code === 'SCHEDULED_ORDERS_DISABLED'
           ? { code: error.code }

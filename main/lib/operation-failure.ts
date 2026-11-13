@@ -27,6 +27,8 @@ export type OperationFailure = {
 };
 
 const NO_FACTS = {} as const;
+export const STOCK_SCOPES = ['product', 'variant', 'addon'] as const;
+export const STOCK_SHORTFALLS = ['out_of_stock', 'partial'] as const;
 export const PERSISTENCE_FAILURE_CLASSES = [
   'busy_or_locked',
   'constraint',
@@ -301,7 +303,10 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     stage: 'validation',
     classification: 'expected_rejection',
     outcomes: ['not_applied'],
-    facts: NO_FACTS,
+    facts: {
+      stock_scope: { type: 'enum', values: STOCK_SCOPES },
+      stock_shortfall: { type: 'enum', values: STOCK_SHORTFALLS },
+    },
   },
   {
     capture_point: 'fc.backend.order.create.other_validation',

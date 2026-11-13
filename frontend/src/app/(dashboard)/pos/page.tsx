@@ -167,6 +167,8 @@ type SupportOperationFailure = {
     failure_class?: string;
     kind?: string;
     connection_type?: string;
+    stock_scope?: string;
+    stock_shortfall?: string;
   };
 };
 
@@ -953,7 +955,9 @@ export default function POSPage() {
                 ? { facts: { display_code: failure.displayCode } }
                 : failure.failureClass
                   ? { facts: { failure_class: failure.failureClass } }
-                  : {}),
+                  : failure.stockRefusal
+                    ? { facts: failure.stockRefusal }
+                    : {}),
             }
           : undefined;
     const reasonMessages: Record<string, string> = {

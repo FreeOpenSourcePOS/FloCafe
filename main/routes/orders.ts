@@ -274,7 +274,7 @@ export function structuredOperationFailure(
 /** Answers an unparseable order-write body in the shape the client reads. Not captured: the request is unauthenticated. */
 export function malformedOrderBodyPayload(req: Request): Record<string, unknown> | null {
   if (req.method !== 'POST') return null;
-  const pathname = req.originalUrl.split('?')[0].replace(/\/+$/, '');
+  const pathname = req.originalUrl.split('?')[0].replace(/\/+$/, '').toLowerCase();
   let capturePoint: string;
   if (pathname === '/api/orders') capturePoint = 'fc.backend.order.create.other_validation';
   else if (/^\/api\/orders\/[^/]+\/items$/.test(pathname))

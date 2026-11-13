@@ -346,7 +346,7 @@
     "sales": "Shitjet",
     "selectDate": "Zgjidhni datën",
     "selectMonth": "Zgjidhni muajin",
-    "shiftCloseOwnerRequired": "Vetëm arkëtari që e ka hapur këtë turn, ose një menaxher, mund ta mbyllë.",
+    "shiftCloseOwnerRequired": "Vetëm arkëtari që e ka hapur këtë turn, një menaxher ose pronari mund ta mbyllë.",
     "staffOrderCount": "{orders} porosi",
     "tablesOccupied": "Tavolinat e zëna",
     "title": "Paneli",

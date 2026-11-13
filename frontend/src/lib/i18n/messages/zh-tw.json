@@ -346,7 +346,7 @@
     "sales": "銷售",
     "selectDate": "選擇日期",
     "selectMonth": "選擇月份",
-    "shiftCloseOwnerRequired": "只有開啟此班次的收銀員或經理可以關閉。",
+    "shiftCloseOwnerRequired": "只有開啟此班次的收銀員、經理或擁有者可以關閉。",
     "staffOrderCount": "{orders} 筆訂單",
     "tablesOccupied": "已佔用桌台",
     "title": "儀表盤",

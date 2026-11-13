@@ -346,7 +346,7 @@
     "sales": "ਵਿਕਰੀ",
     "selectDate": "ਮਿਤੀ ਚੁਣੋ",
     "selectMonth": "ਮਹੀਨਾ ਚੁਣੋ",
-    "shiftCloseOwnerRequired": "ਇਸ ਸ਼ਿਫਟ ਨੂੰ ਸਿਰਫ਼ ਉਹ ਕੈਸ਼ੀਅਰ ਜਿਸ ਨੇ ਇਹ ਖੋਲ੍ਹੀ ਹੈ, ਜਾਂ ਮੈਨੇਜਰ ਹੀ ਬੰਦ ਕਰ ਸਕਦਾ ਹੈ।",
+    "shiftCloseOwnerRequired": "ਇਸ ਸ਼ਿਫਟ ਨੂੰ ਸਿਰਫ਼ ਉਹ ਕੈਸ਼ੀਅਰ ਜਿਸ ਨੇ ਇਹ ਖੋਲ੍ਹੀ ਹੈ, ਕੋਈ ਮੈਨੇਜਰ ਜਾਂ ਮਾਲਕ ਹੀ ਬੰਦ ਕਰ ਸਕਦਾ ਹੈ।",
     "staffOrderCount": "{orders} ਆਰਡਰ",
     "tablesOccupied": "ਵਰਤੋਂ ਵਿੱਚ ਟੇਬਲ",
     "title": "ਡੈਸ਼ਬੋਰਡ",

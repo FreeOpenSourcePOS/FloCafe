@@ -346,7 +346,7 @@
     "sales": "Продажі",
     "selectDate": "Вибрати дату",
     "selectMonth": "Вибрати місяць",
-    "shiftCloseOwnerRequired": "Закрити цю зміну може лише касир, який її відкрив, або менеджер.",
+    "shiftCloseOwnerRequired": "Закрити цю зміну може лише касир, який її відкрив, менеджер або власник.",
     "staffOrderCount": "Замовлень: {orders}",
     "tablesOccupied": "Зайняті столи",
     "title": "Панель керування",

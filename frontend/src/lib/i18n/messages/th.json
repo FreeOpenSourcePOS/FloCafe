@@ -346,7 +346,7 @@
     "sales": "ยอดขาย",
     "selectDate": "เลือกวันที่",
     "selectMonth": "เลือกเดือน",
-    "shiftCloseOwnerRequired": "เฉพาะแคชเชียร์ที่เปิดกะนี้หรือผู้จัดการเท่านั้นที่ปิดกะได้",
+    "shiftCloseOwnerRequired": "เฉพาะแคชเชียร์ที่เปิดกะนี้ ผู้จัดการ หรือเจ้าของเท่านั้นที่ปิดกะได้",
     "staffOrderCount": "{orders} คำสั่งซื้อ",
     "tablesOccupied": "โต๊ะที่มีผู้ใช้งาน",
     "title": "แดชบอร์ด",

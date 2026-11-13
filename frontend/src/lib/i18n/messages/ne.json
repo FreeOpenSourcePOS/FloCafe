@@ -346,7 +346,7 @@
     "sales": "बिक्री",
     "selectDate": "मिति चयन गर्नुहोस्",
     "selectMonth": "महिना छान्नुहोस्",
-    "shiftCloseOwnerRequired": "यो शिफ्ट खोल्ने क्यासियर वा प्रबन्धकले मात्र बन्द गर्न सक्छन्।",
+    "shiftCloseOwnerRequired": "यो शिफ्ट खोल्ने क्यासियर, कुनै पनि प्रबन्धक वा मालिकले मात्र बन्द गर्न सक्छन्।",
     "staffOrderCount": "{orders} आदेश",
     "tablesOccupied": "टेबलहरू कब्जा गरियो",
     "title": "ड्यासबोर्ड",

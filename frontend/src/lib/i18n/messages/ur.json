@@ -346,7 +346,7 @@
     "sales": "فروخت",
     "selectDate": "تاریخ منتخب کریں",
     "selectMonth": "ماہ منتخب کریں",
-    "shiftCloseOwnerRequired": "اس شفٹ کو صرف وہ کیشیئر جس نے اسے کھولا، یا مینیجر ہی بند کر سکتا ہے۔",
+    "shiftCloseOwnerRequired": "اس شفٹ کو صرف وہ کیشیئر جس نے اسے کھولا، کوئی مینیجر یا مالک ہی بند کر سکتا ہے۔",
     "staffOrderCount": "{orders} آرڈرز",
     "tablesOccupied": "قبولہ میزیں",
     "title": "ڈیش بورڈ",

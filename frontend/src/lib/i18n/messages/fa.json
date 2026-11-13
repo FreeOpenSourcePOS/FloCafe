@@ -346,7 +346,7 @@
     "sales": "فروش‌ها",
     "selectDate": "تاریخ را برگزینید",
     "selectMonth": "ماه را برگزینید",
-    "shiftCloseOwnerRequired": "فقط صندوقداری که این شیفت را باز کرده یا یک مدیر می‌تواند آن را ببندد.",
+    "shiftCloseOwnerRequired": "فقط صندوقداری که این شیفت را باز کرده، یک مدیر یا مالک می‌تواند آن را ببندد.",
     "staffOrderCount": "{orders} سفارش",
     "tablesOccupied": "میزهای اشغال‌شده",
     "title": "پیشخوان",

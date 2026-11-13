@@ -346,7 +346,7 @@
     "sales": "Umsatz",
     "selectDate": "Datum auswählen",
     "selectMonth": "Monat auswählen",
-    "shiftCloseOwnerRequired": "Nur der Kassierer, der diese Schicht geöffnet hat, oder ein Manager kann sie schließen.",
+    "shiftCloseOwnerRequired": "Nur der Kassierer, der diese Schicht geöffnet hat, ein Manager oder der Inhaber kann sie schließen.",
     "staffOrderCount": "{orders} Bestellungen",
     "tablesOccupied": "Besetzte Tische",
     "title": "Dashboard",

@@ -346,7 +346,7 @@
     "sales": "売上",
     "selectDate": "日付を選択",
     "selectMonth": "月を選択",
-    "shiftCloseOwnerRequired": "このシフトを閉じられるのは、開いたレジ担当者またはマネージャーのみです。",
+    "shiftCloseOwnerRequired": "このシフトを閉じられるのは、開いたレジ担当者、マネージャー、またはオーナーのみです。",
     "staffOrderCount": "{orders}件の注文",
     "tablesOccupied": "利用中のテーブル",
     "title": "ダッシュボード",

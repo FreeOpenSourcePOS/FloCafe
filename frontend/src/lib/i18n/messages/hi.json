@@ -346,7 +346,7 @@
     "sales": "बिक्री",
     "selectDate": "दिनांक चुनें",
     "selectMonth": "महीना चुनें",
-    "shiftCloseOwnerRequired": "इस शिफ्ट को केवल वही कैशियर जिसने इसे खोला है, या कोई मैनेजर बंद कर सकता है।",
+    "shiftCloseOwnerRequired": "इस शिफ्ट को केवल इसे खोलने वाला कैशियर, कोई मैनेजर या मालिक ही बंद कर सकता है।",
     "staffOrderCount": "{orders} ऑर्डर",
     "tablesOccupied": "व्यस्त टेबल",
     "title": "डैशबोर्ड",

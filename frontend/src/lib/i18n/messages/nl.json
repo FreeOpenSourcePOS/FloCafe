@@ -346,7 +346,7 @@
     "sales": "Verkoop",
     "selectDate": "Datum selecteren",
     "selectMonth": "Selecteer maand",
-    "shiftCloseOwnerRequired": "Alleen de kassier die deze dienst heeft geopend, of een manager, kan deze afsluiten.",
+    "shiftCloseOwnerRequired": "Alleen de kassier die deze dienst heeft geopend, een manager of de eigenaar kan deze afsluiten.",
     "staffOrderCount": "{orders} bestellingen",
     "tablesOccupied": "Bezette tafels",
     "title": "Dashboard",

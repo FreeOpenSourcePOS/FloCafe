@@ -346,7 +346,7 @@
     "sales": "销售",
     "selectDate": "选择日期",
     "selectMonth": "选择月份",
-    "shiftCloseOwnerRequired": "只有开启此班次的收银员或经理可以关闭。",
+    "shiftCloseOwnerRequired": "只有开启此班次的收银员、经理或所有者可以关闭。",
     "staffOrderCount": "{orders} 笔订单",
     "tablesOccupied": "已占用桌台",
     "title": "仪表盘",

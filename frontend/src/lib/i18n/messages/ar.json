@@ -346,7 +346,7 @@
     "sales": "المبيعات",
     "selectDate": "اختر التاريخ",
     "selectMonth": "اختر الشهر",
-    "shiftCloseOwnerRequired": "يمكن فقط للكاشير الذي فتح هذه الوردية أو للمدير إغلاقها.",
+    "shiftCloseOwnerRequired": "يمكن فقط للكاشير الذي فتح هذه الوردية أو المدير أو المالك إغلاقها.",
     "staffOrderCount": "طلبات {orders}",
     "tablesOccupied": "الطاولات المشغولة",
     "title": "لوحة التحكم",

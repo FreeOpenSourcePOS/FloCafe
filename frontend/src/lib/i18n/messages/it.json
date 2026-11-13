@@ -346,7 +346,7 @@
     "sales": "Vendite",
     "selectDate": "Seleziona data",
     "selectMonth": "Seleziona mese",
-    "shiftCloseOwnerRequired": "Solo il cassiere che ha aperto questo turno, o un responsabile, può chiuderlo.",
+    "shiftCloseOwnerRequired": "Solo il cassiere che ha aperto questo turno, un responsabile o il titolare può chiuderlo.",
     "staffOrderCount": "{orders} ordini",
     "tablesOccupied": "Tavoli occupati",
     "title": "Dashboard",

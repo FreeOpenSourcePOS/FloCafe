@@ -346,7 +346,7 @@
     "sales": "Ventas",
     "selectDate": "Seleccionar fecha",
     "selectMonth": "Seleccionar mes",
-    "shiftCloseOwnerRequired": "Solo el cajero que abrió este turno, o un gerente, puede cerrarlo.",
+    "shiftCloseOwnerRequired": "Solo el cajero que abrió este turno, un gerente o el propietario puede cerrarlo.",
     "staffOrderCount": "{orders} pedidos",
     "tablesOccupied": "Mesas Ocupadas",
     "title": "Panel",

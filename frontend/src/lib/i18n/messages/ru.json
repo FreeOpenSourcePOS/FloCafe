@@ -346,7 +346,7 @@
     "sales": "Продажи",
     "selectDate": "Выбрать дату",
     "selectMonth": "Выбрать месяц",
-    "shiftCloseOwnerRequired": "Закрыть эту смену может только кассир, который её открыл, или менеджер.",
+    "shiftCloseOwnerRequired": "Закрыть эту смену может только кассир, который её открыл, менеджер или владелец.",
     "staffOrderCount": "Заказов: {orders}",
     "tablesOccupied": "Столы заняты",
     "title": "Обзор",

@@ -52,6 +52,14 @@ async function main() {
     assert.equal(append.body.reason_code, 'validation.rejected');
     assert.equal(append.body.operation, 'order.append');
 
+    const mixedCreate = await postRaw(baseUrl, '/API/ORDERS', '{nope', operationId);
+    assert.equal(mixedCreate.body.reason_code, 'validation.rejected');
+    assert.equal(mixedCreate.body.operation, 'order.create');
+
+    const mixedAppend = await postRaw(baseUrl, '/api/orders/123/ITEMS', '{nope', operationId);
+    assert.equal(mixedAppend.body.reason_code, 'validation.rejected');
+    assert.equal(mixedAppend.body.operation, 'order.append');
+
     const other = await postRaw(baseUrl, '/api/auth/login', '{nope');
     assert.equal(other.status, 400);
     assert.equal(other.body.error, 'Malformed JSON request body');

@@ -346,7 +346,7 @@
     "sales": "Sales",
     "selectDate": "Select date",
     "selectMonth": "Select month",
-    "shiftCloseOwnerRequired": "Only the cashier who opened this shift, or a manager, can close it.",
+    "shiftCloseOwnerRequired": "Only the cashier who opened this shift, a manager, or an owner can close it.",
     "staffOrderCount": "{orders} orders",
     "tablesOccupied": "Tables Occupied",
     "title": "Dashboard",

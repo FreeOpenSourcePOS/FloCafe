@@ -346,7 +346,7 @@
     "sales": "Ventes",
     "selectDate": "Sélectionner une date",
     "selectMonth": "Sélectionner un mois",
-    "shiftCloseOwnerRequired": "Seul le caissier qui a ouvert ce poste, ou un gérant, peut le fermer.",
+    "shiftCloseOwnerRequired": "Seul le caissier qui a ouvert ce poste, un gérant ou le propriétaire peut le fermer.",
     "staffOrderCount": "{orders} commandes",
     "tablesOccupied": "Tables occupées",
     "title": "Tableau de bord",

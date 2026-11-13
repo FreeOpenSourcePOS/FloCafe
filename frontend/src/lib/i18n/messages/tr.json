@@ -346,7 +346,7 @@
     "sales": "Satışlar",
     "selectDate": "Tarih Seçin",
     "selectMonth": "Ay Seçin",
-    "shiftCloseOwnerRequired": "Bu vardiyayı yalnızca açan kasiyer veya bir yönetici kapatabilir.",
+    "shiftCloseOwnerRequired": "Bu vardiyayı yalnızca açan kasiyer, bir yönetici veya işletme sahibi kapatabilir.",
     "staffOrderCount": "{orders} sipariş",
     "tablesOccupied": "Dolu Masalar",
     "title": "Genel Bakış",

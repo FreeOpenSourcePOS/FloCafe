@@ -346,7 +346,7 @@
     "sales": "Benta",
     "selectDate": "Pumili ng Petsa",
     "selectMonth": "Pumili ng Buwan",
-    "shiftCloseOwnerRequired": "Ang cashier lang na nagbukas ng shift na ito, o isang manager, ang makakapagsara nito.",
+    "shiftCloseOwnerRequired": "Ang cashier lang na nagbukas ng shift na ito, isang manager, o ang may-ari ang makakapagsara nito.",
     "staffOrderCount": "{orders} mga order",
     "tablesOccupied": "Mga Lamesa Occupied",
     "title": "Dashboard",

@@ -346,7 +346,7 @@
     "sales": "Vendas",
     "selectDate": "Selecionar data",
     "selectMonth": "Selecionar mês",
-    "shiftCloseOwnerRequired": "Somente o caixa que abriu este turno, ou um gerente, pode fechá-lo.",
+    "shiftCloseOwnerRequired": "Somente o caixa que abriu este turno, um gerente ou o proprietário pode fechá-lo.",
     "staffOrderCount": "{orders} pedidos",
     "tablesOccupied": "Mesas Ocupadas",
     "title": "Painel",

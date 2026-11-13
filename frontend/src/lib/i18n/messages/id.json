@@ -346,7 +346,7 @@
     "sales": "Penjualan",
     "selectDate": "Pilih tanggal",
     "selectMonth": "Pilih bulan",
-    "shiftCloseOwnerRequired": "Hanya kasir yang membuka shift ini, atau seorang manajer, yang dapat menutupnya.",
+    "shiftCloseOwnerRequired": "Hanya kasir yang membuka shift ini, seorang manajer, atau pemilik yang dapat menutupnya.",
     "staffOrderCount": "{orders} pesanan",
     "tablesOccupied": "Meja Terisi",
     "title": "Dasbor",

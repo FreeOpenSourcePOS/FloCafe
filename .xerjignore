@@ -1,0 +1,8 @@
+# Historical or generated material that adds noise to code search.
+CHANGELOG.md
+README.*.md
+package-lock.json
+Gemfile.lock
+docs/assets/
+frontend/public/
+tests/fixtures/

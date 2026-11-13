@@ -83,6 +83,13 @@ npm run build:frontend   # Export static Next.js frontend
 npm test                 # Run default test suite
 ```
 
+### Code search
+
+FloCafe includes an optional local XERJ workflow for retrieving focused passages from unfamiliar or
+cross-cutting parts of the repository. It does not replace `rg`, source inspection, or tests. See the
+[indexed code-search guide](docs/guides/code-search.md) for installation, indexing, Codex MCP setup,
+and the local security boundary.
+
 ### Formatting
 
 Oxfmt owns formatting, pinned to an exact version in both `package.json` files. The backend scope is

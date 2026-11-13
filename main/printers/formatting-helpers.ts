@@ -539,10 +539,15 @@ export function resolveCurrencyPrefix(
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
     : normalizedSymbol;
   const fallbackCurrency = currencyCode || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs';
-  const mappedFallback =
-    normalizedSymbol === '¥' && currencyCode && currencyCode !== 'JPY'
+  const candidateFallback =
+    (normalizedSymbol === '¥' || normalizedSymbol === '\uFFE5') &&
+    currencyCode &&
+    currencyCode !== 'JPY'
       ? fallbackCurrency
       : CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency;
+  const mappedFallback = /^[\x00-\x7F]*$/.test(candidateFallback)
+    ? candidateFallback
+    : currencyCode || '';
   const rawPrefix = capabilities
     ? normalizedSymbol.trim().length > 0 &&
       selectThermalCodePage(normalizedForCapabilities, capabilities) !== null

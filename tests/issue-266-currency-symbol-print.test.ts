@@ -33,6 +33,9 @@ const {
 
 const { settingsRoutes } = require('../main/routes/settings');
 const { printerRoutes } = require('../main/routes/printers');
+const { listSupportedCurrencyCodes } = require('../shared/currencies');
+const { getCurrencySymbol } = require('../main/countries');
+const { normalizeCurrencyToAscii } = require('../shared/print/currency');
 
 function upsertSetting(db: any, key: string, value: string) {
   db.prepare(`
@@ -47,22 +50,26 @@ function seedPrintableBill(db: any) {
     VALUES ('printer-266', 'Preview Printer', 'network', '127.0.0.1', 9100, 1, '80mm', ?, ?)
   `).run(now(), now());
 
-  const order = db.prepare(`
+  const order = db
+    .prepare(`
     INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
     VALUES ('ORD-266', 'takeaway', 'completed', 100, 100, ?, ?)
     RETURNING id
-  `).get(now(), now()) as { id: number };
+  `)
+    .get(now(), now()) as { id: number };
 
   db.prepare(`
     INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, created_at, updated_at)
     VALUES (?, 'prod-266', 'Mint Tea', 100, 1, 100, 100, ?, ?)
   `).run(order.id, now(), now());
 
-  const bill = db.prepare(`
+  const bill = db
+    .prepare(`
     INSERT INTO bills (bill_number, order_id, subtotal, total, balance, payment_status, created_at, updated_at)
     VALUES ('BILL-266', ?, 100, 100, 100, 'unpaid', ?, ?)
     RETURNING id
-  `).get(order.id, now(), now()) as { id: number };
+  `)
+    .get(order.id, now(), now()) as { id: number };
 
   return { orderId: order.id, billId: bill.id };
 }
@@ -106,10 +113,14 @@ async function main() {
     assertEqual(settingsRes.status, 200, 'business settings update succeeds');
     assertEqual(settingsRes.data.country, 'MA', 'settings response uses Morocco country');
     assertEqual(settingsRes.data.currency, 'MAD', 'settings response uses MAD currency');
-    const savedSymbol = db.prepare("SELECT value FROM settings WHERE key = 'currency_symbol'").get() as { value: string };
+    const savedSymbol = db
+      .prepare("SELECT value FROM settings WHERE key = 'currency_symbol'")
+      .get() as { value: string };
     assertEqual(savedSymbol.value, 'MAD', 'settings.currency_symbol is derived from MAD');
 
-    console.log('\n2. Electron preview derives from current currency even if stored symbol is stale');
+    console.log(
+      '\n2. Electron preview derives from current currency even if stored symbol is stale',
+    );
     upsertSetting(db, 'currency_symbol', '₹');
     const madPreview = await api(baseUrl, '/api/printers/print-bill', {
       method: 'POST',
@@ -131,11 +142,52 @@ async function main() {
     });
     assertEqual(inrPreview.status, 200, 'INR print preview succeeds');
     assertIncludes(inrPreview.data.text, 'Rs', 'INR ASCII fallback still uses Rs');
+
+    console.log('\n4. Azerbaijani manat prints as AZN instead of being refused');
+    upsertSetting(db, 'country', 'AZ');
+    upsertSetting(db, 'currency', 'AZN');
+    upsertSetting(db, 'currency_symbol', '₼');
+    const aznPreview = await api(baseUrl, '/api/printers/print-bill', {
+      method: 'POST',
+      headers: authHeader,
+      body: { billId, preview: true, useUnicode: false },
+    });
+    assertEqual(aznPreview.status, 200, 'AZN print preview succeeds');
+    assertIncludes(aznPreview.data.text, 'AZN', 'AZN preview uses AZN prefix');
+
+    console.log('\n4b. Japanese yen (fullwidth symbol) prints as JPY');
+    upsertSetting(db, 'country', 'JP');
+    upsertSetting(db, 'currency', 'JPY');
+    upsertSetting(db, 'currency_symbol', '\uFFE5');
+    const jpyPreview = await api(baseUrl, '/api/printers/print-bill', {
+      method: 'POST',
+      headers: authHeader,
+      body: { billId, preview: true, useUnicode: false },
+    });
+    assertEqual(jpyPreview.status, 200, 'JPY print preview succeeds');
+    assertIncludes(jpyPreview.data.text, 'JPY', 'JPY preview uses JPY prefix');
+
+    console.log('\n5. Every non-ASCII narrow currency symbol has an ASCII fallback');
+    const missing = listSupportedCurrencyCodes().filter((code: string) => {
+      const symbol = getCurrencySymbol(code, 'en-US');
+      return /[^\x00-\x7F]/.test(symbol) && /[^\x00-\x7F]/.test(normalizeCurrencyToAscii(symbol));
+    });
+    // CZK (Kč) and PLN (zł) are Latin-script and printable through legacy code pages.
+    const unexpected = missing.filter((code: string) => !['CZK', 'PLN'].includes(code));
+    assertEqual(
+      unexpected.join(','),
+      '',
+      'no supported currency symbol is left without an ASCII fallback',
+    );
   } finally {
     if (server) server.close();
     closeDatabase();
     Module._load = originalLoad;
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
 
   const { passed, failed, total } = getResults();
@@ -146,8 +198,16 @@ async function main() {
 
 main().catch((error: unknown) => {
   console.error(error);
-  try { closeDatabase(); } catch { /* ignore */ }
-  try { fs.rmSync(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    closeDatabase();
+  } catch {
+    /* ignore */
+  }
+  try {
+    fs.rmSync(testDir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
   Module._load = originalLoad;
   process.exit(1);
 });

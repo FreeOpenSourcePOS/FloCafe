@@ -416,6 +416,10 @@ npm run dev
 
 `npm run dev` builds the frontend and backend, then launches Electron.
 
+Contributors and coding agents can optionally use the repository's
+[local indexed code-search workflow](docs/guides/code-search.md) to retrieve focused passages from
+unfamiliar subsystems without loading large files into an agent context.
+
 ### Architecture
 
 ```text

@@ -256,9 +256,16 @@ export function useCashSession() {
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
     } catch (err: unknown) {
-      setSubmitError(
-        axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Close failed',
-      );
+      if (
+        axios.isAxiosError(err) &&
+        err.response?.data?.display_code === 'session_owner_required'
+      ) {
+        setSubmitError(t('shiftCloseOwnerRequired'));
+      } else {
+        setSubmitError(
+          axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Close failed',
+        );
+      }
     } finally {
       setSubmitting(false);
     }

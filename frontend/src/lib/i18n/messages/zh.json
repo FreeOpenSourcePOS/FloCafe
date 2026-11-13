@@ -1372,6 +1372,31 @@
     "genericHint": "以下行包含此热敏打印机无法渲染的字符。",
     "moreLines": "…以及另外 {count} 行",
     "languageLoadError": "无法加载打印语言包 \"{languages}\"。请检查语言包并重新加载应用后重试。",
+    "fix": {
+      "cause": {
+        "paper_out": "在打印机中装好纸张，然后重新打印。",
+        "cover_open": "关好打印机盖，然后重新打印。",
+        "printer_error": "关闭打印机再打开，然后重新打印。",
+        "offline": "打印机报告处于脱机状态。请检查纸张、机盖和电源开关。",
+        "unreachable": "请确认打印机已开机并插好数据线。如果地址发生变化，请从网络中找到的打印机里重新选择。",
+        "queue_offline": "这台电脑上的打印队列处于脱机状态。请恢复队列，然后重新打印。",
+        "queue_missing": "这台打印机已被重命名或删除。请从这台电脑上找到的打印机里重新选择。",
+        "queue_offline_snmp": "这台打印机不响应 SNMP，因此 Windows 把它标为脱机。请打开打印机属性 > 端口 > 配置端口，清除“启用 SNMP 状态”，然后点按确定。"
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows 已把这台打印机设为脱机工作。请打开打印机队列，关闭“使用脱机打印机”。",
+          "darwin": "打印队列可能已暂停。请打开“系统设置 > 打印机与扫描仪”，打开这台打印机的队列，然后点按“继续”。",
+          "linux": "CUPS 队列可能已被禁用。请在终端运行“cupsenable printer_name”，或在打印机设置中启用。"
+        },
+        "queue_unavailable": "打印队列不接受任务。请在这台电脑上启用或恢复队列，然后重新打印。",
+        "driver_error": "打印驱动程序拒绝了原始数据。在 Windows 中，把这台打印机的驱动程序设为“Generic / Text Only”。",
+        "spooler_error": "Windows 打印后台处理程序已停止。请重启打印后台处理程序服务，然后重新打印。",
+        "permission_denied": "这台电脑没有在此打印的权限。请检查打印机权限，或询问管理员。",
+        "timeout": "打印机没有及时响应。请确认它已开机并在同一网络上，然后重新打印。",
+        "needs_attention": "打印机需要处理。请检查纸张、机盖以及打印机上的提示信息。"
+      }
+    },
     "printerOfflineHint": "打印机无响应。请确认已开机并连接，然后在 Windows 中打开打印机队列并关闭“使用脱机打印机”。",
     "templateFallback": "所选账单模板不支持此打印路径，已使用内置小票版式。"
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "关于 FloCafe",
     "aboutGithub": "GitHub 仓库",
     "aboutWebsite": "应用官网",
+    "printerProfileCredit": "打印机配置数据来自 escpos-printer-db（CC BY 4.0）",
     "account": "账户",
     "accountAndApp": "账户与应用",
     "actionFailed": "失败",
@@ -2177,6 +2203,7 @@
     "instagramHint": "如已设置，将显示在打印账单上",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "安装在此电脑上",
+    "foundOnNetwork": "在网络上找到的打印机",
     "invalidExportFile": "无效的 FloCafe 导出文件",
     "invalidPhoneFormat": "电话号码格式无效",
     "invoiceNumberIncludePeriod": "发票号包含周期",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "还没有启用中的厨师账户。请先在员工中添加厨师。",
     "noCloudContactEmail": "无云端联系邮箱",
     "noInstalledPrinters": "未找到已安装的打印机。请通过系统设置安装打印机，然后点击刷新——网络打印机请使用手动添加。",
+    "noNetworkPrinters": "网络上没有找到打印机。",
     "noPairedDevices": "尚未配对任何设备。",
     "noPrintersConfigured": "尚未配置打印机。",
     "noStaffYet": "尚无员工登录。",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "打印机已配置",
     "printerOnline": "在线",
     "printerPrinting": "打印中",
+    "printerStatusReady": "就绪",
+    "printerStatusPaperLow": "纸张不足",
+    "printerStatusUnknown": "状态未知",
     "printerQuickAdded": "已添加 {name}",
     "printerSaveFailed": "保存打印机失败",
     "printerSaved": "打印机已添加",
@@ -2435,6 +2466,7 @@
     "saving": "保存中…",
     "savingCloud": "保存中…",
     "scanningForPrinters": "正在扫描已安装的打印机…",
+    "scanAgain": "重新扫描",
     "secondLanguageNone": "无",
     "secondReceiptLanguage": "第二小票语言",
     "zReportLanguage": "Z 报表语言",

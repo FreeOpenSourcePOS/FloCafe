@@ -1372,6 +1372,31 @@
     "genericHint": "Aşağıdaki satırlar bu termal yazıcının basamadığı karakterler içeriyor.",
     "moreLines": "…ve {count} satır daha",
     "languageLoadError": "Yazdırma dili paketleri (\"{languages}\") yüklenemedi. Dil paketini kontrol edip uygulamayı yeniden yükleyin.",
+    "fix": {
+      "cause": {
+        "paper_out": "Yazıcıya kağıt takın ve yeniden yazdırın.",
+        "cover_open": "Yazıcının kapağını kapatın ve yeniden yazdırın.",
+        "printer_error": "Yazıcıyı kapatıp yeniden açın, ardından yeniden yazdırın.",
+        "offline": "Yazıcı çevrimdışı olduğunu bildiriyor. Kağıdı, kapağı ve güç düğmesini kontrol edin.",
+        "unreachable": "Yazıcının açık ve kablosunun bağlı olduğunu kontrol edin. Adresi değiştiyse ağda bulunan yazıcılar arasından yeniden seçin.",
+        "queue_offline": "Bu bilgisayardaki yazdırma kuyruğu çevrimdışı. Kuyruğu sürdürün ve yeniden yazdırın.",
+        "queue_missing": "Bu yazıcının adı değiştirildi veya kaldırıldı. Bu bilgisayarda bulunan yazıcılar arasından yeniden seçin.",
+        "queue_offline_snmp": "Windows bu yazıcıyı SNMP'ye yanıt vermediği için çevrimdışı gösteriyor. Yazıcı özellikleri > Bağlantı Noktaları > Bağlantı Noktasını Yapılandır bölümünü açın, \"SNMP Durumu Etkin\" seçeneğini temizleyin ve Tamam'a tıklayın."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows bu yazıcıyı çevrimdışı çalışacak şekilde ayarlamış. Yazıcının kuyruğunu açın ve \"Yazıcıyı Çevrimdışı Kullan\" seçeneğini kapatın.",
+          "darwin": "Yazdırma kuyruğu duraklatılmış olabilir. Sistem Ayarları > Yazıcılar ve Tarayıcılar bölümünü açın, bu yazıcının kuyruğunu açın ve Sürdür'e tıklayın.",
+          "linux": "CUPS kuyruğu devre dışı olabilir. Terminalde \"cupsenable printer_name\" komutunu çalıştırın veya yazıcı ayarlarından etkinleştirin."
+        },
+        "queue_unavailable": "Yazdırma kuyruğu iş kabul etmiyor. Bu bilgisayardaki kuyruğu etkinleştirin veya sürdürün, ardından yeniden yazdırın.",
+        "driver_error": "Yazdırma sürücüsü ham veriyi reddetti. Windows'ta bu yazıcının sürücüsünü \"Generic / Text Only\" olarak ayarlayın.",
+        "spooler_error": "Windows Yazdırma Biriktiricisi durdu. Yazdırma Biriktiricisi hizmetini yeniden başlatın ve yeniden yazdırın.",
+        "permission_denied": "Bu bilgisayarın burada yazdırma izni yok. Yazıcının izinlerini kontrol edin veya bir yöneticiye sorun.",
+        "timeout": "Yazıcı zamanında yanıt vermedi. Açık mı ve aynı ağda mı kontrol edin, ardından yeniden yazdırın.",
+        "needs_attention": "Yazıcı ilgi bekliyor. Kağıdı, kapağı ve yazıcıdaki mesajları kontrol edin."
+      }
+    },
     "printerOfflineHint": "Yazıcı yanıt vermiyor. Yazıcının açık ve bağlı olduğundan emin olun, ardından Windows'ta \"Yazıcıyı Çevrimdışı Kullan\" seçeneğinin kapalı olduğunu kontrol edin.",
     "templateFallback": "Seçilen fiş şablonu bu yazdırma yolunda desteklenmediği için dahili fiş düzeni kullanıldı."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "FloCafe Hakkında",
     "aboutGithub": "GitHub Deposu",
     "aboutWebsite": "Uygulama Web Sitesi",
+    "printerProfileCredit": "Yazıcı profilleri escpos-printer-db projesinden (CC BY 4.0)",
     "account": "Hesap",
     "accountAndApp": "Hesap ve Uygulama",
     "actionFailed": "Başarısız",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Fiş üzerinde görünecek Instagram hesabı",
     "instagramPlaceholder": "@restoran_hesabi",
     "installedOnThisComputer": "Bu bilgisayarda kurulu",
+    "foundOnNetwork": "Ağda bulunan yazıcılar",
     "invalidExportFile": "Geçersiz FloCafe dışa aktarma dosyası",
     "invalidPhoneFormat": "Geçersiz telefon numarası formatı",
     "invoiceNumberIncludePeriod": "Fatura numarasına dönem bilgisini dahil et",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Henüz etkin şef hesabı yok. Önce Personel altında bir şef ekleyin.",
     "noCloudContactEmail": "Kayıtlı e-posta adresi bulunamadı",
     "noInstalledPrinters": "Sistemde kurulu yazıcı bulunamadı",
+    "noNetworkPrinters": "Ağda yazıcı bulunamadı.",
     "noPairedDevices": "Eşleştirilmiş cihaz bulunmuyor",
     "noPrintersConfigured": "Henüz yapılandırılmış yazıcı yok",
     "noStaffYet": "Henüz personel eklenmedi",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Yazıcı yapılandırıldı",
     "printerOnline": "Çevrimiçi",
     "printerPrinting": "Yazdırılıyor...",
+    "printerStatusReady": "Hazır",
+    "printerStatusPaperLow": "Kağıt azaldı",
+    "printerStatusUnknown": "Durum bilinmiyor",
     "printerQuickAdded": "Yazıcı eklendi: {name}",
     "printerSaveFailed": "Yazıcı kaydedilemedi",
     "printerSaved": "Yazıcı ayarları kaydedildi",
@@ -2446,6 +2477,7 @@
     "saving": "Kaydediliyor...",
     "savingCloud": "Bulut ayarları kaydediliyor...",
     "scanningForPrinters": "Yazıcılar taranıyor...",
+    "scanAgain": "Yeniden tara",
     "secondLanguageNone": "Yok (Tek Dilli)",
     "secondReceiptLanguage": "İkincil Fiş Dili (Çift Dilli)",
     "zReportLanguage": "Z Raporu Dili",

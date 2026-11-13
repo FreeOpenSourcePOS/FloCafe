@@ -23,7 +23,14 @@ import {
   escPosToText,
   printMenuDocument,
   validateNetworkPrinterTarget,
+  classifyPrintFailure,
 } from '../printers/thermal';
+import {
+  discoverHandler,
+  printerStatusHandler,
+  testPrintCause,
+  isPhysicalFault,
+} from './printer-diagnostics';
 import {
   buildDeliverySlipPrintData,
   type DeliverySlipOrderRow,
@@ -289,6 +296,12 @@ router.get(
 router.get('/supported', requirePermission('printers.manage'), (_req: Request, res: Response) => {
   res.json({ printers: getSupportedPrinterProfiles() });
 });
+
+// GET /api/printers/discover — LAN scan; must stay above /:id
+router.get('/discover', requirePermission('printers.manage'), asyncHandler(discoverHandler));
+
+// GET /api/printers/:id/status
+router.get('/:id/status', requirePermission('printers.manage'), asyncHandler(printerStatusHandler));
 
 // GET /api/printers/:id
 router.get('/:id', requirePermission('printers.manage'), (req: Request, res: Response) => {
@@ -557,7 +570,7 @@ router.post(
         capabilities,
         { rasterProbe: req.body?.rasterProbe === true },
       );
-      let result: { ok: boolean; detail?: string } = { ok: false };
+      let result: { ok: boolean; detail?: string; failureClass?: string } = { ok: false };
 
       switch (printer.connection_type) {
         case 'network':
@@ -578,13 +591,18 @@ router.post(
           return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
       }
 
-      if (result.ok) {
+      // A network printer that answers with a fault that drops bytes did not print.
+      const cause = await testPrintCause(printer, getHttpRequestSignal(req));
+
+      if (result.ok && !isPhysicalFault(cause)) {
         res.json({ success: true });
       } else {
         // Surface the specific printer failure reason rather than a generic message.
         res.status(502).json({
           error: result.detail || 'Printer did not respond or print failed',
           detail: result.detail,
+          failure_class: result.failureClass ?? classifyPrintFailure(result.detail),
+          cause,
         });
       }
     } catch (error: any) {

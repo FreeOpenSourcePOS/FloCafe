@@ -1372,6 +1372,31 @@
     "genericHint": "Les lignes ci-dessous contiennent des caractères que cette imprimante thermique ne peut pas restituer.",
     "moreLines": "…et {count} de plus",
     "languageLoadError": "Les modules de langue d’impression \"{languages}\" n’ont pas pu être chargés. Vérifiez le module de langue et rechargez l’application pour réessayer.",
+    "fix": {
+      "cause": {
+        "paper_out": "Chargez du papier dans l’imprimante, puis imprimez à nouveau.",
+        "cover_open": "Fermez le capot de l’imprimante, puis imprimez à nouveau.",
+        "printer_error": "Éteignez puis rallumez l’imprimante, puis imprimez à nouveau.",
+        "offline": "L’imprimante indique qu’elle est hors connexion. Vérifiez le papier, le capot et l’interrupteur d’alimentation.",
+        "unreachable": "Vérifiez que l’imprimante est allumée et que son câble est branché. Si son adresse a changé, sélectionnez-la à nouveau parmi les imprimantes trouvées sur le réseau.",
+        "queue_offline": "La file d’attente de cette imprimante sur cet ordinateur est hors connexion. Relancez-la, puis imprimez à nouveau.",
+        "queue_missing": "Cette imprimante a été renommée ou supprimée. Sélectionnez-la à nouveau parmi les imprimantes trouvées sur cet ordinateur.",
+        "queue_offline_snmp": "Windows marque cette imprimante comme hors connexion parce qu’elle ne répond pas au SNMP. Ouvrez Propriétés de l’imprimante > Ports > Configurer le port, décochez « Statut SNMP activé » et cliquez sur OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows a configuré cette imprimante en mode hors connexion. Ouvrez la file de l’imprimante et désactivez « Utiliser l’imprimante hors connexion ».",
+          "darwin": "La file d’attente est peut-être en pause. Ouvrez Réglages Système > Imprimantes et scanners, ouvrez la file de cette imprimante et cliquez sur Reprendre.",
+          "linux": "La file CUPS est peut-être désactivée. Lancez « cupsenable printer_name » dans un terminal ou activez-la dans les réglages de l’imprimante."
+        },
+        "queue_unavailable": "La file d’attente n’accepte pas de travaux. Activez ou relancez la file sur cet ordinateur, puis imprimez à nouveau.",
+        "driver_error": "Le pilote d’impression a refusé les données brutes. Sous Windows, réglez le pilote de cette imprimante sur « Generic / Text Only ».",
+        "spooler_error": "Le service Spouleur d’impression Windows s’est arrêté. Redémarrez le service Spouleur d’impression, puis imprimez à nouveau.",
+        "permission_denied": "Cet ordinateur n’est pas autorisé à imprimer ici. Vérifiez les autorisations de l’imprimante ou demandez à un administrateur.",
+        "timeout": "L’imprimante n’a pas répondu à temps. Vérifiez qu’elle est allumée et sur le même réseau, puis imprimez à nouveau.",
+        "needs_attention": "L’imprimante demande une intervention. Vérifiez le papier, le capot et tout message affiché sur l’imprimante."
+      }
+    },
     "printerOfflineHint": "L’imprimante ne répond pas. Vérifiez qu’elle est allumée et connectée, puis dans Windows assurez-vous que l’option « Utiliser l’imprimante hors connexion » est désactivée.",
     "templateFallback": "Le modèle de facture sélectionné n’est pas pris en charge par ce mode d’impression. La mise en page de reçu intégrée a donc été utilisée."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "À propos de FloCafe",
     "aboutGithub": "Dépôt GitHub",
     "aboutWebsite": "Site web de l’application",
+    "printerProfileCredit": "Profils d’imprimante de escpos-printer-db (CC BY 4.0)",
     "account": "Compte",
     "accountAndApp": "Compte et application",
     "actionFailed": "Échec",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Affiché sur les factures imprimées, s’il est défini",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "Installé sur cet ordinateur",
+    "foundOnNetwork": "Imprimantes trouvées sur le réseau",
     "invalidExportFile": "Fichier d’exportation FloCafe non valide",
     "invalidPhoneFormat": "Format de numéro de téléphone non valide",
     "invoiceNumberIncludePeriod": "Inclure la période dans le numéro de facture",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Aucun compte chef actif. Ajoutez d’abord un chef dans Personnel.",
     "noCloudContactEmail": "Aucune adresse e-mail de contact infonuagique",
     "noInstalledPrinters": "Aucune imprimante installée n’a été trouvée. Installez votre imprimante dans les paramètres système, puis cliquez sur Actualiser, ou utilisez Ajouter manuellement pour une imprimante réseau.",
+    "noNetworkPrinters": "Aucune imprimante trouvée sur le réseau.",
     "noPairedDevices": "Aucun appareil associé pour le moment.",
     "noPrintersConfigured": "Aucune imprimante configurée pour le moment.",
     "noStaffYet": "Aucun compte du personnel pour le moment.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Imprimante configurée",
     "printerOnline": "En ligne",
     "printerPrinting": "Impression",
+    "printerStatusReady": "Prête",
+    "printerStatusPaperLow": "Papier bientôt épuisé",
+    "printerStatusUnknown": "État inconnu",
     "printerQuickAdded": "{name} ajoutée",
     "printerSaveFailed": "Impossible d’enregistrer l’imprimante",
     "printerSaved": "Imprimante ajoutée",
@@ -2435,6 +2466,7 @@
     "saving": "Enregistrement...",
     "savingCloud": "Enregistrement…",
     "scanningForPrinters": "Recherche des imprimantes installées…",
+    "scanAgain": "Relancer la recherche",
     "secondLanguageNone": "Aucune",
     "secondReceiptLanguage": "Deuxième langue du reçu",
     "zReportLanguage": "Langue du rapport Z",

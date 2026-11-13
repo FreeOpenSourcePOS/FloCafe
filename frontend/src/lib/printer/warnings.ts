@@ -21,6 +21,16 @@ import { displayCellWidth, wrapToDisplayCells } from '@print/width';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES } from '@/lib/i18n/languages';
 import { sanitizePrinterErrorDetail } from '../operation-failure';
+import { currentHintPlatform, printFailureHint } from './print-failure-help';
+
+export interface PrintErrorToastOptions {
+  /** `failure_class` from the printer error. */
+  failureClass?: string | null;
+  /** Live cause read from the printer; wins over `failureClass`. */
+  cause?: string | null;
+  /** `connection_type` from the printer error. */
+  connectionType?: string | null;
+}
 import { usePosSettingsStore } from '@/store/pos-settings';
 
 export type { PrintWarning } from '@print/warnings';
@@ -351,30 +361,63 @@ export function extractPrinterErrorMessage(err: unknown): string {
   return typeof err === 'string' ? sanitizePrinterErrorDetail(err.trim()) : '';
 }
 
+type PrintErrorFields = { failure_class?: unknown; cause?: unknown; connection_type?: unknown };
+
+/**
+ * Reads `failure_class` and `cause` from a printer API error (`response.data`) or a
+ * `PrinterOperationError` (own fields), so the toast can name the fix.
+ */
+export function extractPrintErrorToastOptions(err: unknown): PrintErrorToastOptions {
+  const error = err as (PrintErrorFields & { response?: { data?: PrintErrorFields } }) | null;
+  const data = error?.response?.data ?? error;
+  return {
+    failureClass: typeof data?.failure_class === 'string' ? data.failure_class : null,
+    cause: typeof data?.cause === 'string' ? data.cause : null,
+    connectionType: typeof data?.connection_type === 'string' ? data.connection_type : null,
+  };
+}
+
 /** Matches only the Windows PRINTER_ATTRIBUTE_WORK_OFFLINE message (main/printers/thermal.ts), not generic offline/disconnected statuses. */
 const PRINTER_OFFLINE_DETAIL_RE = /\buse printer offline\b/i;
 
 /** Translator bootstrap outside React, matching the pattern in warnings-toast.ts / kot-web-print.ts. */
-function printerOfflineFixHint(): string {
+function bootstrapPrinterTranslator(): ((key: string) => string) | null {
   try {
     const lang = usePosSettingsStore.getState().language ?? 'en';
     const locale = LANGUAGES[lang]?.locale ?? 'en';
     const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
-    const t = createTranslator({ locale, messages }) as unknown as (key: string) => string;
-    return t('printWarnings.printerOfflineHint');
+    return createTranslator({ locale, messages }) as unknown as (key: string) => string;
   } catch {
-    return "Printer isn't responding. Make sure it's powered on and connected, then check Windows: open the printer's queue and turn off \"Use Printer Offline\" if it's checked.";
+    return null;
   }
+}
+
+function printerOfflineFixHint(): string {
+  return (
+    bootstrapPrinterTranslator()?.('printWarnings.printerOfflineHint') ??
+    "Printer isn't responding. Make sure it's powered on and connected, then check Windows: open the printer's queue and turn off \"Use Printer Offline\" if it's checked."
+  );
+}
+
+/** The fix step for the reported cause or failure class, or null when the detail alone reads fine. */
+function failureFixHint(detail?: string, options?: PrintErrorToastOptions): string | null {
+  if (!detail && !options?.failureClass && !options?.cause) return null;
+  const t = bootstrapPrinterTranslator();
+  if (!t) return null;
+  return printFailureHint({ ...options, detail, platform: currentHintPlatform() }, t);
 }
 
 /** Formats a user-facing receipt print error message with operational detail when available. */
 export function formatReceiptErrorToast(
   detail?: string,
   fallbackTranslation = 'Receipt print failed',
+  options?: PrintErrorToastOptions,
 ): string {
   const msg = sanitizePrinterErrorDetail(detail);
-  if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg.startsWith('Receipt not printed:')) return msg;
+  const fixHint = failureFixHint(msg, options);
+  if (fixHint) return fixHint;
+  if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg && msg !== 'print failed' && msg !== 'Print failed') {
     return `${fallbackTranslation} (${msg})`;
   }
@@ -385,8 +428,11 @@ export function formatReceiptErrorToast(
 export function formatKotErrorToast(
   detail?: string,
   fallbackTranslation = 'KOT print failed',
+  options?: PrintErrorToastOptions,
 ): string {
   const msg = sanitizePrinterErrorDetail(detail);
+  const fixHint = failureFixHint(msg, options);
+  if (fixHint) return fixHint;
   if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg && msg !== 'print failed' && msg !== 'KOT print failed') {
     return `${fallbackTranslation}: ${msg}`;

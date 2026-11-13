@@ -35,6 +35,8 @@ export interface PrintFailureHintInput {
   failureClass?: string | null;
   /** Live cause from the printer itself; wins over `failureClass` when set. */
   cause?: string | null;
+  /** `network` means a direct TCP printer, which has no OS queue to resume. */
+  connectionType?: string | null;
   /** `window.electronAPI?.platform`; anything else gets the CUPS text. */
   platform?: string | null;
   /** Raw printer detail; a queue refusal from an SNMP-checked port carries its own fix. */
@@ -80,6 +82,8 @@ export function printFailureHint(
   if (!failureClass) return null;
   // The queue-offline class and the printer-offline class need the same step on
   // each OS, so both read the same three messages.
+  if (failureClass === 'offline' && input.connectionType === 'network')
+    return t('printWarnings.fix.cause.unreachable');
   if (failureClass === 'offline' || failureClass === 'queue_offline') {
     return t(`printWarnings.fix.class.offline.${hintPlatform(input.platform)}` as PrintHintKey);
   }

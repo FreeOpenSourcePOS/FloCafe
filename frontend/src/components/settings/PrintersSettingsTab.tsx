@@ -25,6 +25,7 @@ import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { LanPrinterDiscovery } from '@/components/settings/LanPrinterDiscovery';
 import { PrinterStatusBadge } from '@/components/settings/PrinterStatusBadge';
 import { printFailureHint } from '@/lib/printer/print-failure-help';
+import { extractPrintErrorToastOptions } from '@/lib/printer/warnings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import {
   isTemplateCardSelected,
@@ -39,8 +40,6 @@ import type { PrinterTextSize } from '@print/text-size';
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
   (lang) => LANGUAGES[lang].selectable,
 );
-
-type PrinterErrorBody = { error?: unknown; failure_class?: string; cause?: string };
 
 export type HwPrinter = {
   id: string;
@@ -225,14 +224,10 @@ export function PrintersSettingsTab({
   };
 
   const printerErrorMessage = (err: unknown, fallback: string): string => {
+    const hint = printFailureHint(extractPrintErrorToastOptions(err), tAll);
+    if (hint) return hint;
     if (axios.isAxiosError(err)) {
-      const body = err.response?.data as PrinterErrorBody;
-      const hint = printFailureHint(
-        { failureClass: body?.failure_class, cause: body?.cause },
-        tAll,
-      );
-      if (hint) return hint;
-      const apiError = body?.error;
+      const apiError = err.response?.data?.error;
       if (typeof apiError === 'string' && apiError.trim()) return `${fallback}: ${apiError}`;
     }
     return fallback;

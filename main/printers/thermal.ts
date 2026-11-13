@@ -38,6 +38,7 @@ import { correlationId, type FloErrorCode } from '../errors';
 import { cloudSync } from '../services/cloud-sync';
 import { capturePostHogPrintFailure } from '../services/posthog';
 import { printLabel } from '../print/print-labels.generated';
+import { withWindowsQueueBypass } from './windows-queue-bypass';
 import { receiptChargeLines } from '../../shared/charges';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import type { PrintConceptId } from '../../shared/print/concepts';
@@ -191,6 +192,7 @@ export type DispatchResult = {
   bytes?: number[] | Buffer;
   preview?: boolean;
   connection_type?: string;
+  transport?: 'direct_tcp_fallback';
 };
 
 export type PrintFailureClass =
@@ -5576,11 +5578,21 @@ try {
   # Best-effort metadata for Tier-2 diagnostics. This is never included in the
   # anonymous telemetry payload and must not prevent the raw print attempt.
   try {
-    $printerInfo = Get-CimInstance -ClassName Win32_Printer -Property Name,PrinterStatus,DriverName |
+    $printerInfo = Get-CimInstance -ClassName Win32_Printer -Property Name,PrinterStatus,DriverName,PortName |
       Where-Object { $_.Name -eq $name } |
-      Select-Object -First 1 Name,PrinterStatus,DriverName
+      Select-Object -First 1 Name,PrinterStatus,DriverName,PortName
     if ($printerInfo) {
       Write-Output ('FLO_PRINTER_INFO=' + ($printerInfo | ConvertTo-Json -Compress))
+      # Lets a pre-spool refusal print straight to the queue's TCP/IP port.
+      try {
+        $portName = $printerInfo.PortName
+        $tcpPort = Get-CimInstance -ClassName Win32_TCPIPPrinterPort -Property Name,HostAddress,PortNumber,Protocol,SNMPEnabled |
+          Where-Object { $_.Name -eq $portName } |
+          Select-Object -First 1 HostAddress,PortNumber,Protocol,SNMPEnabled
+        if ($tcpPort) {
+          Write-Output ('FLO_PRINTER_PORT=' + ($tcpPort | ConvertTo-Json -Compress))
+        }
+      } catch { }
     }
   } catch { }
 
@@ -5748,13 +5760,18 @@ async function printViaUSBWindows(
   } catch (err: any) {
     const detail = describeWindowsRawPrintFailure(err, { payloadPath: tmpFile, printerName });
     console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
-    return {
-      ok: false,
-      detail,
-      failureClass: classifyPrintFailure(detail),
-      platformErrorCode: extractPlatformErrorCode(detail),
-      ...parseWindowsPrintOutput(err.stdout),
-    };
+    return withWindowsQueueBypass(
+      {
+        ok: false,
+        detail,
+        failureClass: classifyPrintFailure(detail),
+        platformErrorCode: extractPlatformErrorCode(detail),
+        ...parseWindowsPrintOutput(err.stdout),
+      },
+      err.stdout,
+      data,
+      { printerName, signal, printViaNetwork },
+    );
   } finally {
     if (tmpFileCreated) {
       try {

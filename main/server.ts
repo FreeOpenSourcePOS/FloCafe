@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
+import { malformedOrderBodyPayload } from './routes/orders';
 import { getJWTSecret } from './security/jwt-secret';
 import {
   databaseMaintenanceMiddleware,
@@ -310,12 +311,14 @@ export function startServer(): Promise<void> {
     app.use(
       (
         err: Error & { status?: number; type?: string },
-        _req: Request,
+        req: Request,
         res: Response,
         _next: NextFunction,
       ) => {
         if (err.type === 'entity.parse.failed') {
-          return res.status(400).json({ error: 'Malformed JSON request body' });
+          return res
+            .status(400)
+            .json(malformedOrderBodyPayload(req) ?? { error: 'Malformed JSON request body' });
         }
         const status =
           typeof err.status === 'number' && err.status >= 400 && err.status < 500

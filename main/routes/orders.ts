@@ -226,13 +226,14 @@ const orderItemCancelRateLimit = expressRateLimit({
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_ORDER_ITEMS = 200;
 
-function structuredOperationFailure(
+export function structuredOperationFailure(
   req: Request,
   capturePoint: string,
   outcome: 'not_applied' | 'applied',
   error: string,
   displayCode?: string,
   facts?: Record<string, string | number>,
+  options: { capture?: boolean } = {},
 ): Record<string, unknown> {
   const header = req.get('x-operation-id');
   const correlationId = isOperationReference(header) ? header : randomUUID();
@@ -247,11 +248,13 @@ function structuredOperationFailure(
     ...(Object.keys(mergedFacts).length > 0 ? { facts: mergedFacts } : {}),
   });
   if (!failure) return { error };
-  (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
-  try {
-    cloudSync.captureOperationFailure(failure);
-  } catch {
-    /* Diagnostics must not affect order handling. */
+  if (options.capture !== false) {
+    (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
+    try {
+      cloudSync.captureOperationFailure(failure);
+    } catch {
+      /* Diagnostics must not affect order handling. */
+    }
   }
   return {
     error,
@@ -266,6 +269,26 @@ function structuredOperationFailure(
       ? { facts: { failure_class: failure.facts.failure_class } }
       : {}),
   };
+}
+
+/** Answers an unparseable order-write body in the shape the client reads. Not captured: the request is unauthenticated. */
+export function malformedOrderBodyPayload(req: Request): Record<string, unknown> | null {
+  if (req.method !== 'POST') return null;
+  const pathname = req.originalUrl.split('?')[0].replace(/\/+$/, '').toLowerCase();
+  let capturePoint: string;
+  if (pathname === '/api/orders') capturePoint = 'fc.backend.order.create.other_validation';
+  else if (/^\/api\/orders\/[^/]+\/items$/.test(pathname))
+    capturePoint = 'fc.backend.order.append.validation';
+  else return null;
+  return structuredOperationFailure(
+    req,
+    capturePoint,
+    'not_applied',
+    'Malformed JSON request body',
+    undefined,
+    undefined,
+    { capture: false },
+  );
 }
 
 /**

@@ -1086,14 +1086,30 @@ export function TaxConfigurationPanel({
           {taxMode === 'manual' && t('modeManualHint', { country: storeCountry })}
           {manualBuilderOpen && taxMode !== 'manual' && t('modeManualUnsavedHint')}
         </p>
-        {countryPackUnavailable && (
-          <p
+        {(countryPackUnavailable || officialPackAvailableResolved === false) && (
+          <div
             role="status"
             className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
           >
-            {t('supportUnavailable', { country: storeCountry })}
-            {pluginRequested && t('requestQueued')}
-          </p>
+            <p>
+              {countryPackUnavailable && taxMode !== 'manual'
+                ? t('supportUnavailable', { country: storeCountry })
+                : t('noOfficialPack', { country: storeCountry })}
+              {countryPackUnavailable && pluginRequested && t('requestQueued')}
+            </p>
+            {isOwner && taxMode !== 'manual' && (
+              <p className="mt-2">
+                {t('manualSetupHint')}{' '}
+                <button
+                  type="button"
+                  onClick={() => setManualBuilderOpen(true)}
+                  className="font-medium underline hover:text-amber-900"
+                >
+                  {t('modeManual')}
+                </button>
+              </p>
+            )}
+          </div>
         )}
         {taxMode === 'official' && detail?.active_version && detail.pack.publisher !== 'local' && (
           <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-muted px-3 py-2 text-sm text-foreground">

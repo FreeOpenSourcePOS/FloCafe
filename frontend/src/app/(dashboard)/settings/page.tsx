@@ -7280,6 +7280,14 @@ export default function SettingsPage() {
                     </svg>
                     {t('aboutWebsite')}
                   </a>
+                  <a
+                    href="https://github.com/receipt-print-hq/escpos-printer-db"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:underline"
+                  >
+                    {t('printerProfileCredit')}
+                  </a>
                 </div>
               </div>
 

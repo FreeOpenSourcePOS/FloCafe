@@ -1,0 +1,917 @@
+{
+ "source": "https://raw.githubusercontent.com/receipt-print-hq/escpos-printer-db/master/dist/capabilities.json",
+ "license": "CC-BY-4.0",
+ "attribution": "Printer capability data derived from escpos-printer-db by Michael Billington and contributors (https://github.com/receipt-print-hq/escpos-printer-db), licensed CC-BY-4.0.",
+ "snapshotDate": "2026-11-13",
+ "profiles": {
+  "CT-S651": {
+   "name": "CT-S651",
+   "vendor": "Citizen",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 203,
+    "widthPixels": 640
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "ITPP047": {
+   "name": "ITPP047",
+   "vendor": "Munbyn",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 80,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "KR-306": {
+   "name": "KR-306",
+   "vendor": "Kefar",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 72,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "NT-5890K": {
+   "name": "NT-5890K",
+   "vendor": "Netum",
+   "columns": {
+    "fontA": 32,
+    "fontB": 42
+   },
+   "media": {
+    "widthMm": 57.5,
+    "dpi": 203,
+    "widthPixels": 384
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": false,
+    "paperFullCut": false,
+    "paperPartCut": false
+   }
+  },
+  "P822D": {
+   "name": "P822D",
+   "vendor": "PBM",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 79.5,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "POS-5890": {
+   "name": "POS5890 Series",
+   "vendor": "Zjiang",
+   "columns": {
+    "fontA": 32,
+    "fontB": 42
+   },
+   "media": {
+    "widthMm": 57.5,
+    "dpi": 203,
+    "widthPixels": 384
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": false,
+    "paperFullCut": false,
+    "paperPartCut": false
+   }
+  },
+  "RP-F10-58mm": {
+   "name": "RP-F10",
+   "vendor": "Seiko",
+   "columns": {
+    "fontA": 36,
+    "fontB": 54
+   },
+   "media": {
+    "widthMm": 54,
+    "dpi": 203,
+    "widthPixels": 432
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "RP-F10-80mm": {
+   "name": "RP-F10",
+   "vendor": "Seiko",
+   "columns": {
+    "fontA": 48,
+    "fontB": 72
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "RP326": {
+   "name": "RP326",
+   "vendor": "Rongta",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "dpi": 203
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "RP332": {
+   "name": "RP332",
+   "vendor": "Rongta",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 203
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": false
+   }
+  },
+  "SRP-S300": {
+   "name": "SRP-S300",
+   "vendor": "Bixolon",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 203,
+    "widthPixels": 640
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "Sunmi-V2": {
+   "name": "Sunmi V2",
+   "vendor": "Sunmi",
+   "columns": {
+    "fontA": 32,
+    "fontB": 42
+   },
+   "media": {
+    "widthMm": 57.5,
+    "widthPixels": 384
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": false
+   }
+  },
+  "T-1": {
+   "name": "T-1",
+   "vendor": "Metapace",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 180,
+    "widthPixels": 504
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TEP-200M": {
+   "name": "TEP200M Series",
+   "vendor": "EPOS",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "dpi": 203
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TH230": {
+   "name": "TH230",
+   "vendor": "Wincor Nixdorf",
+   "columns": {
+    "fontA": 44,
+    "fontB": 57
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437"
+   },
+   "features": {
+    "bitImageRaster": false,
+    "qrCode": false,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TH230Plus": {
+   "name": "TH230+",
+   "vendor": "Wincor Nixdorf",
+   "columns": {
+    "fontA": 44,
+    "fontB": 57
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437"
+   },
+   "features": {
+    "bitImageRaster": false,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-L90": {
+   "name": "TM-L90",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-P80": {
+   "name": "TM-P80",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-P80-42col": {
+   "name": "TM-P80 (42 column mode)",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 60
+   },
+   "media": {
+    "widthMm": 63.6,
+    "widthPixels": 546
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T20II": {
+   "name": "TM-T20II",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T20II-42col": {
+   "name": "TM-T20II (42 column mode)",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 60
+   },
+   "media": {
+    "widthMm": 68.3,
+    "widthPixels": 546
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T20III": {
+   "name": "TM-T20III",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T70": {
+   "name": "TM-T70",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 79.5,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-T70-SA": {
+   "name": "TM-T70 South Asia",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 79.5,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-T70II": {
+   "name": "TM-T70II",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 79.5,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-T70II-CH": {
+   "name": "TM-T70II Chinese",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 79.5,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-T70II-CH-58mm": {
+   "name": "TM-T70II Traditional Chinese",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 34,
+    "fontB": 46
+   },
+   "media": {
+    "widthMm": 57.5,
+    "dpi": 203,
+    "widthPixels": 416
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-T70II-SA": {
+   "name": "TM-T70II South Asia",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 79.5,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-T88II": {
+   "name": "TM-T88II",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 72,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T88III": {
+   "name": "TM-T88III",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T88IV": {
+   "name": "TM-T88IV",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T88IV-SA": {
+   "name": "TM-T88IV South Asia",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-T88V": {
+   "name": "TM-T88V",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 180,
+    "widthPixels": 512
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252",
+    "19": "cp858"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "TM-U220": {
+   "name": "TM-U220",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 63.4,
+    "widthPixels": 400
+   },
+   "codePages": {
+    "0": "cp437"
+   },
+   "features": {
+    "bitImageRaster": false,
+    "qrCode": false,
+    "paperFullCut": false,
+    "paperPartCut": false
+   }
+  },
+  "TM-U220B": {
+   "name": "TM-U220B",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 42,
+    "fontB": 56
+   },
+   "media": {
+    "widthMm": 63.4,
+    "widthPixels": 400
+   },
+   "codePages": {
+    "0": "cp437"
+   },
+   "features": {
+    "bitImageRaster": false,
+    "qrCode": false,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "TM-m30III": {
+   "name": "TM-m30III",
+   "vendor": "Epson",
+   "columns": {
+    "fontA": 48,
+    "fontB": 57
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 203,
+    "widthPixels": 576
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": true,
+    "paperPartCut": true
+   }
+  },
+  "YHD-8390": {
+   "name": "YHD-8390",
+   "vendor": "YHDAA Shenzhen Yuhengda Technology Co., Ltd.",
+   "columns": {
+    "fontA": 48,
+    "fontB": 64
+   },
+   "media": {
+    "widthMm": 80,
+    "dpi": 203,
+    "widthPixels": 640
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": true,
+    "paperFullCut": false,
+    "paperPartCut": true
+   }
+  },
+  "ZJ-5870": {
+   "name": "ZJ-5870 Thermal Receipt Printer",
+   "vendor": "ZiJiang",
+   "columns": {
+    "fontA": 32
+   },
+   "media": {
+    "widthMm": 48,
+    "dpi": 203,
+    "widthPixels": 384
+   },
+   "codePages": {
+    "0": "cp437",
+    "2": "cp850",
+    "16": "windows1252"
+   },
+   "features": {
+    "bitImageRaster": true,
+    "qrCode": false,
+    "paperFullCut": false,
+    "paperPartCut": false
+   }
+  }
+ }
+}

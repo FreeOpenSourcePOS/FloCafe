@@ -189,7 +189,8 @@ export function browseMdns(options: BrowseOptions = {}): Promise<MdnsPrinter[]> 
           bonjour.find({ type }, (service) => {
             const address = serviceAddress(service);
             if (!address) return;
-            const port = service.port || SOCKET_PORT;
+            // Only pdl-datastream names a raw socket port; IPP (631) and LPD (515) cannot take ESC/POS bytes.
+            const port = type === 'pdl-datastream' && service.port ? service.port : SOCKET_PORT;
             found.set(`${address}:${port}`, {
               name: service.name || `Network printer (${address})`,
               host: service.host || address,
@@ -248,7 +249,7 @@ function mergePrinters(
   for (const host of openHosts) {
     const existing = merged.get(host);
     if (existing) {
-      merged.set(host, { ...existing, source: 'both' });
+      merged.set(host, { ...existing, port, source: 'both' });
     } else {
       merged.set(host, {
         address: host,

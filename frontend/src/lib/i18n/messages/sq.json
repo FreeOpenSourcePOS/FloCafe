@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows e ka vendosur këtë printer të punojë jashtë linje. Hapni radhën e printerit dhe çaktivizoni \"Përdorni printerin jashtë linje\".",
           "darwin": "Radha e shtypjes mund të jetë ndalur. Hapni System Settings > Printers & Scanners, hapni radhën e këtij printeri dhe klikoni Resume.",
-          "linux": "Radha CUPS mund të jetë çaktivizuar. Ekzekutoni \"cupsenable printer_name\" në terminal ose aktivizojeni në cilësimet e printerit."
+          "linux": "Radha CUPS mund të jetë çaktivizuar. Ekzekutoni \"cupsenable [emri i printerit]\" në terminal ose aktivizojeni në cilësimet e printerit."
         },
         "queue_unavailable": "Radha e shtypjes nuk pranon punë. Aktivizoni ose riktheni radhën në këtë kompjuter dhe shtypni përsëri.",
         "driver_error": "Drejtuesi i shtypjes refuzoi të dhënat e papërpunuara. Në Windows, vendosni drejtuesin e këtij printeri në \"Generic / Text Only\".",

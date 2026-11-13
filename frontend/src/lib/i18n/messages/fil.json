@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Itinakda ng Windows ang printer na ito na gumana offline. Buksan ang queue ng printer at i-off ang \"Use Printer Offline\".",
           "darwin": "Maaaring naka-pause ang print queue. Buksan ang System Settings > Printers & Scanners, buksan ang queue ng printer na ito, at i-click ang Resume.",
-          "linux": "Maaaring naka-disable ang CUPS queue. Patakbuhin ang \"cupsenable printer_name\" sa terminal, o paganahin ito sa mga setting ng printer."
+          "linux": "Maaaring naka-disable ang CUPS queue. Patakbuhin ang \"cupsenable [pangalan ng printer]\" sa terminal, o paganahin ito sa mga setting ng printer."
         },
         "queue_unavailable": "Hindi tumatanggap ng trabaho ang print queue. Paganahin o i-resume ang queue sa computer na ito, tapos i-print muli.",
         "driver_error": "Tinanggihan ng print driver ang raw data. Sa Windows, itakda ang driver ng printer na ito sa \"Generic / Text Only\".",

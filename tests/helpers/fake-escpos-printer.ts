@@ -75,6 +75,9 @@ export function start(options: FakeEscposPrinterOptions = {}): Promise<FakeEscpo
           }
           continue;
         }
+        // A DLE or DLE EOT split across TCP reads waits for the rest of the command.
+        if (buffer[0] === DLE && buffer.length < 3 && (buffer.length === 1 || buffer[1] === EOT))
+          break;
         const byte = buffer[0];
         buffer = buffer.subarray(1);
         if (!options.silent && ready) printed.push(byte);

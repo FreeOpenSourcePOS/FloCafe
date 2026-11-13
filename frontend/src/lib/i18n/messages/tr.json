@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows bu yazıcıyı çevrimdışı çalışacak şekilde ayarlamış. Yazıcının kuyruğunu açın ve \"Yazıcıyı Çevrimdışı Kullan\" seçeneğini kapatın.",
           "darwin": "Yazdırma kuyruğu duraklatılmış olabilir. Sistem Ayarları > Yazıcılar ve Tarayıcılar bölümünü açın, bu yazıcının kuyruğunu açın ve Sürdür'e tıklayın.",
-          "linux": "CUPS kuyruğu devre dışı olabilir. Terminalde \"cupsenable printer_name\" komutunu çalıştırın veya yazıcı ayarlarından etkinleştirin."
+          "linux": "CUPS kuyruğu devre dışı olabilir. Terminalde \"cupsenable [yazıcı adı]\" komutunu çalıştırın veya yazıcı ayarlarından etkinleştirin."
         },
         "queue_unavailable": "Yazdırma kuyruğu iş kabul etmiyor. Bu bilgisayardaki kuyruğu etkinleştirin veya sürdürün, ardından yeniden yazdırın.",
         "driver_error": "Yazdırma sürücüsü ham veriyi reddetti. Windows'ta bu yazıcının sürücüsünü \"Generic / Text Only\" olarak ayarlayın.",

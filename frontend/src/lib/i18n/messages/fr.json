@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows a configuré cette imprimante en mode hors connexion. Ouvrez la file de l’imprimante et désactivez « Utiliser l’imprimante hors connexion ».",
           "darwin": "La file d’attente est peut-être en pause. Ouvrez Réglages Système > Imprimantes et scanners, ouvrez la file de cette imprimante et cliquez sur Reprendre.",
-          "linux": "La file CUPS est peut-être désactivée. Lancez « cupsenable printer_name » dans un terminal ou activez-la dans les réglages de l’imprimante."
+          "linux": "La file CUPS est peut-être désactivée. Lancez « cupsenable [nom de l’imprimante] » dans un terminal ou activez-la dans les réglages de l’imprimante."
         },
         "queue_unavailable": "La file d’attente n’accepte pas de travaux. Activez ou relancez la file sur cet ordinateur, puis imprimez à nouveau.",
         "driver_error": "Le pilote d’impression a refusé les données brutes. Sous Windows, réglez le pilote de cette imprimante sur « Generic / Text Only ».",

@@ -112,6 +112,12 @@ export function findDbProfile(text: string | null | undefined): SupportedPrinter
   return hit ? toSupportedProfile(hit.id, DB_PROFILES[hit.id]) : null;
 }
 
+/** Resolves an `escpos-db-*` id from `printerShape`, as raster paths pass back only the id. */
+export function findDbProfileById(profileId: string): SupportedPrinterProfile | null {
+  const id = Object.keys(DB_PROFILES).find((key) => `escpos-db-${key.toLowerCase()}` === profileId);
+  return id ? toSupportedProfile(id, DB_PROFILES[id]) : null;
+}
+
 /** Snapshot code pages for the sync test; every entry must be encoder-supported. */
 export function listDbCodePages(): string[] {
   return [

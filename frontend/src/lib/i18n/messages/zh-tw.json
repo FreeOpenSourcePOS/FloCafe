@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows 已將這台印表機設為離線工作。請開啟印表機佇列，關閉“使用離線印表機”。",
           "darwin": "列印佇列可能已暫停。請開啟「系統設定 > 印表機與掃描器」，開啟這台印表機的佇列，然後按一下「繼續」。",
-          "linux": "CUPS 佇列可能已停用。請在終端機執行「cupsenable printer_name」，或在印表機設定中啟用。"
+          "linux": "CUPS 佇列可能已停用。請在終端機執行「cupsenable [印表機名稱]」，或在印表機設定中啟用。"
         },
         "queue_unavailable": "列印佇列不接受工作。請在這台電腦上啟用或恢復佇列，然後重新列印。",
         "driver_error": "列印驅動程式拒絕了原始資料。在 Windows 中，把這台印表機的驅動程式設為「Generic / Text Only」。",

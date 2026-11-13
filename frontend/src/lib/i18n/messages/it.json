@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows ha impostato questa stampante per funzionare offline. Apri la coda della stampante e disattiva \"Utilizza stampante non disponibile\".",
           "darwin": "La coda di stampa potrebbe essere in pausa. Apri Impostazioni di Sistema > Stampanti e scanner, apri la coda di questa stampante e fai clic su Riprendi.",
-          "linux": "La coda CUPS potrebbe essere disattivata. Esegui \"cupsenable printer_name\" in un terminale oppure attivala nelle impostazioni della stampante."
+          "linux": "La coda CUPS potrebbe essere disattivata. Esegui \"cupsenable [nome stampante]\" in un terminale oppure attivala nelle impostazioni della stampante."
         },
         "queue_unavailable": "La coda di stampa non accetta lavori. Attiva o riprendi la coda su questo computer, poi stampa di nuovo.",
         "driver_error": "Il driver di stampa ha rifiutato i dati grezzi. Su Windows, imposta il driver di questa stampante su \"Generic / Text Only\".",

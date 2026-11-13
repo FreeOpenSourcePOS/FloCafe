@@ -20,9 +20,12 @@ type PrinterStatus = {
 export function PrinterStatusBadge({
   printerId,
   connectionType,
+  refreshKey = 0,
 }: {
   printerId: string;
   connectionType: 'network' | 'usb' | 'webusb';
+  /** Bumped after a reload or a test print, so the badge reads the printer again. */
+  refreshKey?: number;
 }) {
   const t = useTranslations('settings');
   const tAll = useTranslations();
@@ -41,7 +44,7 @@ export function PrinterStatusBadge({
           setStatus({ connection_type: connectionType, answered: false });
       });
     return () => controller.abort();
-  }, [printerId, connectionType]);
+  }, [printerId, connectionType, refreshKey]);
 
   if (!status) return null;
 

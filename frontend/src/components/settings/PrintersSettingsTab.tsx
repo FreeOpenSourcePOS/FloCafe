@@ -203,6 +203,7 @@ export function PrintersSettingsTab({
   const [editingPrinterId, setEditingPrinterId] = useState<string | null>(null);
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
+  const [statusVersion, setStatusVersion] = useState(0);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
   const [detectingPrinters, setDetectingPrinters] = useState(false);
   const [detectionSucceeded, setDetectionSucceeded] = useState(false);
@@ -224,7 +225,10 @@ export function PrintersSettingsTab({
   };
 
   const printerErrorMessage = (err: unknown, fallback: string): string => {
-    const hint = printFailureHint(extractPrintErrorToastOptions(err), tAll);
+    const hint = printFailureHint(
+      { ...extractPrintErrorToastOptions(err), platform: window.electronAPI?.platform },
+      tAll,
+    );
     if (hint) return hint;
     if (axios.isAxiosError(err)) {
       const apiError = err.response?.data?.error;
@@ -236,7 +240,9 @@ export function PrintersSettingsTab({
   const fetchPrinters = async (signal?: AbortSignal) => {
     try {
       const res = await api.get('/printers', signal ? { signal } : undefined);
-      if (!signal?.aborted) setHwPrinters(res.data.printers || []);
+      if (signal?.aborted) return;
+      setHwPrinters(res.data.printers || []);
+      setStatusVersion((version) => version + 1);
     } catch {
       // ignore
     }
@@ -412,6 +418,7 @@ export function PrintersSettingsTab({
       toast.error(printerErrorMessage(err, t('testPrintFailed')));
     } finally {
       setTestingPrinterId(null);
+      setStatusVersion((version) => version + 1);
     }
   };
 
@@ -432,6 +439,7 @@ export function PrintersSettingsTab({
                 <button
                   onClick={() => {
                     void fetchDetectedPrinters();
+                    setStatusVersion((version) => version + 1);
                   }}
                   disabled={detectingPrinters}
                   title={t('refreshList')}
@@ -641,7 +649,11 @@ export function PrintersSettingsTab({
                         {t('defaultPrinter')}
                       </span>
                     )}
-                    <PrinterStatusBadge printerId={p.id} connectionType={p.connection_type} />
+                    <PrinterStatusBadge
+                      printerId={p.id}
+                      connectionType={p.connection_type}
+                      refreshKey={statusVersion}
+                    />
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {p.connection_type === 'network' ? (

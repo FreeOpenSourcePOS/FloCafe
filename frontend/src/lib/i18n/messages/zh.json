@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows 已把这台打印机设为脱机工作。请打开打印机队列，关闭“使用脱机打印机”。",
           "darwin": "打印队列可能已暂停。请打开“系统设置 > 打印机与扫描仪”，打开这台打印机的队列，然后点按“继续”。",
-          "linux": "CUPS 队列可能已被禁用。请在终端运行“cupsenable printer_name”，或在打印机设置中启用。"
+          "linux": "CUPS 队列可能已被禁用。请在终端运行“cupsenable [打印机名称]”，或在打印机设置中启用。"
         },
         "queue_unavailable": "打印队列不接受任务。请在这台电脑上启用或恢复队列，然后重新打印。",
         "driver_error": "打印驱动程序拒绝了原始数据。在 Windows 中，把这台打印机的驱动程序设为“Generic / Text Only”。",

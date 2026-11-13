@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "O Windows definiu esta impressora para funcionar offline. Abra a fila da impressora e desative \"Usar impressora offline\".",
           "darwin": "A fila de impressão pode estar pausada. Abra Ajustes do Sistema > Impressoras e scanners, abra a fila desta impressora e clique em Retomar.",
-          "linux": "A fila do CUPS pode estar desativada. Execute \"cupsenable printer_name\" no terminal ou ative-a nas configurações da impressora."
+          "linux": "A fila do CUPS pode estar desativada. Execute \"cupsenable [nome da impressora]\" no terminal ou ative-a nas configurações da impressora."
         },
         "queue_unavailable": "A fila de impressão não está aceitando trabalhos. Ative ou retome a fila neste computador e imprima novamente.",
         "driver_error": "O driver de impressão recusou os dados brutos. No Windows, defina o driver desta impressora como \"Generic / Text Only\".",

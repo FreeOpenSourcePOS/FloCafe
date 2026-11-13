@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows tiene esta impresora configurada para trabajar sin conexión. Abrí la cola de la impresora y desactivá \"Usar impresora sin conexión\".",
           "darwin": "Puede que la cola de impresión esté en pausa. Abrí Ajustes del Sistema > Impresoras y escáneres, abrí la cola de esta impresora y hacé clic en Reanudar.",
-          "linux": "Puede que la cola de CUPS esté deshabilitada. Ejecutá \"cupsenable printer_name\" en una terminal o habilitala en la configuración de la impresora."
+          "linux": "Puede que la cola de CUPS esté deshabilitada. Ejecutá \"cupsenable [nombre de la impresora]\" en una terminal o habilitala en la configuración de la impresora."
         },
         "queue_unavailable": "La cola de impresión no acepta trabajos. Habilitá o reanudá la cola en esta computadora e imprimí de nuevo.",
         "driver_error": "El controlador de impresión rechazó los datos sin procesar. En Windows, configurá el controlador de esta impresora como \"Generic / Text Only\".",

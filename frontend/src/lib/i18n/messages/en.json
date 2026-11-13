@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows has this printer set to work offline. Open the printer's queue and turn off \"Use Printer Offline\".",
           "darwin": "The print queue may be paused. Open System Settings > Printers & Scanners, open this printer's queue, and click Resume.",
-          "linux": "The CUPS queue may be disabled. Run \"cupsenable printer_name\" in a terminal, or enable it in the printer settings."
+          "linux": "The CUPS queue may be disabled. Run \"cupsenable [printer name]\" in a terminal, or enable it in the printer settings."
         },
         "queue_unavailable": "The printer queue is not accepting jobs. Enable or resume the queue on this computer, then print again.",
         "driver_error": "The print driver refused the raw data. On Windows, set this printer's driver to \"Generic / Text Only\".",

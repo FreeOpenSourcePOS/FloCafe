@@ -142,6 +142,17 @@ async function runTests() {
       assertEqualOrThrow(closedRes.body.reachable, false, 'a closed port is not reachable');
       assertEqualOrThrow(closedRes.body.cause, 'unreachable', 'a closed port is unreachable');
 
+      const padded = await getPrinterStatus({
+        connection_type: 'network',
+        ip_address: ' 127.0.0.1 ',
+        port: online.port,
+      });
+      assertEqualOrThrow(
+        padded.reachable,
+        true,
+        'a stored address with spaces is probed like print',
+      );
+
       const missingRes = await request(app).get('/api/printers/does-not-exist/status');
       assertEqualOrThrow(missingRes.status, 404, 'an unknown printer id answers 404');
     }

@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows hat diesen Drucker auf offline gesetzt. Öffnen Sie die Warteschlange des Druckers und deaktivieren Sie „Drucker offline verwenden“.",
           "darwin": "Die Druckwarteschlange ist möglicherweise angehalten. Öffnen Sie Systemeinstellungen > Drucker & Scanner, öffnen Sie die Warteschlange dieses Druckers und klicken Sie auf Fortsetzen.",
-          "linux": "Die CUPS-Warteschlange ist möglicherweise deaktiviert. Führen Sie „cupsenable printer_name“ in einem Terminal aus oder aktivieren Sie sie in den Druckereinstellungen."
+          "linux": "Die CUPS-Warteschlange ist möglicherweise deaktiviert. Führen Sie „cupsenable [Druckername]“ in einem Terminal aus oder aktivieren Sie sie in den Druckereinstellungen."
         },
         "queue_unavailable": "Die Druckerwarteschlange nimmt keine Aufträge an. Aktivieren oder setzen Sie die Warteschlange auf diesem Computer fort und drucken Sie erneut.",
         "driver_error": "Der Druckertreiber hat die Rohdaten abgelehnt. Stellen Sie unter Windows den Treiber dieses Druckers auf „Generic / Text Only“ ein.",

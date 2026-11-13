@@ -120,7 +120,7 @@ function resolveEncoderCurrency(
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
   const asciiFallback = normalizeCurrencyToAscii(normalizedCurrency);
   const fallbackCurrency =
-    normalizedCurrency === '¥' && currencyCode !== 'JPY'
+    (normalizedCurrency === '¥' || normalizedCurrency === '\uFFE5') && currencyCode !== 'JPY'
       ? currencyCode
       : /^[\x00-\x7F]+$/.test(asciiFallback)
         ? asciiFallback

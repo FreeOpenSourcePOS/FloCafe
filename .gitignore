@@ -39,6 +39,7 @@ build/flo.provisionprofile
 
 .next/
 brain/
+.xerj/
 
 # Private code-review reports and remediation notes — never commit
 code-review/

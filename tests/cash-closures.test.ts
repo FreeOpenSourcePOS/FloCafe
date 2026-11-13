@@ -1774,6 +1774,25 @@ async function main() {
           const inrWant = [49, 46, 53, 48];
           const has150 = kwdBytes.some((_, i) => inrWant.every((b, j) => kwdBytes[i + j] === b));
           assert(!has150, `print (KWD factor 1000): bytes must not include the INR-rendered 1.50`);
+
+          db.prepare(
+            `INSERT INTO settings (key, value, updated_at) VALUES ('currency', 'AZN', ?) ON CONFLICT(key) DO UPDATE SET value='AZN', updated_at=excluded.updated_at`,
+          ).run(now());
+          const aznWarnings: any[] = [];
+          const aznBody = thermalModule.buildZReportBody(
+            {
+              ...zBefore.body.zReport,
+              payment_methods: [{ method: 'cash', count: 1, total_cents: 150 }],
+            },
+            undefined,
+            { columns: 42 },
+            aznWarnings,
+          );
+          assertEqual(aznWarnings.length, 0, 'print (AZN): Z body carries no print warnings');
+          assert(
+            Buffer.from(aznBody).toString('latin1').includes('AZN'),
+            'print (AZN): Z body uses the AZN ASCII prefix',
+          );
         } finally {
           db.prepare(
             `INSERT INTO settings (key, value, updated_at) VALUES ('currency', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,

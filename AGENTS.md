@@ -60,6 +60,7 @@ implementation must not violate.
 - **Private specs boundary:** Never add the private `specs` repository as a submodule, build dependency, CI dependency, or runtime dependency.
 - **Security checks:** Do not bypass platform or OS security checks merely to make a local development binary run.
 - **Legacy code check:** Before modifying legacy-looking files, verify they are part of the active build, import, or packaging path (search imports, routes, and `package.json`).
+- **Indexed search:** XERJ is optional discovery tooling. When it is available, use it for unfamiliar or cross-cutting code and scope queries to the `flocafe` prefix; continue to use `rg` for exact filenames, literals, and symbols. Verify retrieved passages against current source and tests before editing. Never invoke XERJ feedback or other external-write tools without explicit authorization. See `docs/guides/code-search.md`.
 - **Discovered issues:** Note adjacent bugs or potential improvements in your report rather than expanding implementation scope.
 - **Changelog & commit governance:** Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:`). Release notes and `CHANGELOG.md` are automated via `git-cliff` (`npm run changelog`) and CI; do not manually draft changelogs.
 - **Code comments:** Code should be self-explanatory; write comments only when strictly necessary to explain non-obvious intent or rationale. Keep comments concise (1-2 lines maximum), and avoid historical tags (PR/issue numbers, phases) or redundant descriptions of what the code is doing.
@@ -82,6 +83,10 @@ npm run test:url-allowlist
 npm run audit:db
 npm run i18n:check
 npm run docs:check      # Markdown lint, relative links, index completeness, doc policy
+npm run search:doctor   # Check optional local XERJ and Codex MCP setup
+npm run search:serve    # Run the optional loopback-only XERJ server
+npm run search:index    # Refresh the local flocafe code/documentation index
+npm run search:query -- "query" # Search the local flocafe index
 npm run test:e2e:browser # E2E tests (runs Playwright from frontend/)
 npm run i18n:add -- de   # scaffold an approved new language locally
 ```

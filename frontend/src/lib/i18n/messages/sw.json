@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows imeweka printa hii ifanye kazi nje ya mtandao. Fungua foleni ya printa na uzime \"Tumia Printa Nje ya Mtandao\".",
           "darwin": "Foleni ya uchapishaji inaweza kuwa imesitishwa. Fungua System Settings > Printers & Scanners, fungua foleni ya printa hii, na bofya Resume.",
-          "linux": "Foleni ya CUPS inaweza kuwa imezimwa. Endesha \"cupsenable printer_name\" kwenye terminal, au iwashe kwenye mipangilio ya printa."
+          "linux": "Foleni ya CUPS inaweza kuwa imezimwa. Endesha \"cupsenable [jina la printa]\" kwenye terminal, au iwashe kwenye mipangilio ya printa."
         },
         "queue_unavailable": "Foleni ya uchapishaji haipokei kazi. Iwashe au iendelee foleni kwenye kompyuta hii, kisha chapisha tena.",
         "driver_error": "Dereva wa uchapishaji alikataa data ghafi. Kwenye Windows, weka dereva wa printa hii kuwa \"Generic / Text Only\".",

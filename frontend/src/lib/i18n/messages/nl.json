@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows heeft deze printer op offline gezet. Open de wachtrij van de printer en schakel \"Gebruik printer offline\" uit.",
           "darwin": "De printerwachtrij staat mogelijk gepauzeerd. Open Systeeminstellingen > Printers en scanners, open de wachtrij van deze printer en klik op Hervatten.",
-          "linux": "De CUPS-wachtrij is mogelijk uitgeschakeld. Voer \"cupsenable printer_name\" uit in een terminal of schakel de wachtrij in bij de printerinstellingen."
+          "linux": "De CUPS-wachtrij is mogelijk uitgeschakeld. Voer \"cupsenable [printernaam]\" uit in een terminal of schakel de wachtrij in bij de printerinstellingen."
         },
         "queue_unavailable": "De printerwachtrij accepteert geen opdrachten. Schakel de wachtrij op deze computer in of hervat hem en print opnieuw.",
         "driver_error": "Het printerstuurprogramma weigerde de onbewerkte gegevens. Stel in Windows het stuurprogramma van deze printer in op \"Generic / Text Only\".",

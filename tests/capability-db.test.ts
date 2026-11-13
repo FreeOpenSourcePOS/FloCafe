@@ -60,6 +60,19 @@ assertEqualOrThrow(getSupportedPrinterProfiles().length, 5, 'five shipped profil
 assertOrThrow(isValidPrinterProfileId('escpos-impact-76'), 'shipped ids stay valid');
 assertEqualOrThrow(isValidPrinterProfileId('escpos-db-tm-t88v'), false, 'DB ids are not settable');
 
+const dbMatch = findDbProfile('POS-5890');
+assertOrThrow(dbMatch, 'POS-5890 matches a snapshot profile');
+assertEqualOrThrow(
+  JSON.stringify(resolvePrinterProfile({ profile_id: dbMatch.id })),
+  JSON.stringify(dbMatch),
+  'a DB profile id from printerShape resolves to the same profile on the raster path',
+);
+assertEqualOrThrow(
+  resolvePrinterProfile({ profile_id: 'escpos-db-no-such-model', paper_width: '58mm' }).id,
+  'generic-escpos-58',
+  'an unknown DB id still falls through to the width default',
+);
+
 // 3. Unknown names fall through to the paper width generic.
 assertEqualOrThrow(findDbProfile('Acme FooBar 9000'), null, 'unknown name resolves to null');
 assertEqualOrThrow(findDbProfile(''), null, 'empty name resolves to null');

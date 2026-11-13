@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows đang đặt máy in này ở chế độ ngoại tuyến. Mở hàng đợi của máy in và tắt \"Dùng máy in ngoại tuyến\".",
           "darwin": "Hàng đợi in có thể đang tạm dừng. Mở System Settings > Printers & Scanners, mở hàng đợi của máy in này và bấm Resume.",
-          "linux": "Hàng đợi CUPS có thể đang bị tắt. Chạy \"cupsenable printer_name\" trong terminal, hoặc bật lại trong phần cài đặt máy in."
+          "linux": "Hàng đợi CUPS có thể đang bị tắt. Chạy \"cupsenable [tên máy in]\" trong terminal, hoặc bật lại trong phần cài đặt máy in."
         },
         "queue_unavailable": "Hàng đợi in không nhận việc. Hãy bật hoặc tiếp tục hàng đợi trên máy tính này rồi in lại.",
         "driver_error": "Trình điều khiển in từ chối dữ liệu thô. Trên Windows, đặt trình điều khiển của máy in này thành \"Generic / Text Only\".",

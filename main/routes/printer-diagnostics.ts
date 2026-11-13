@@ -75,7 +75,12 @@ export async function getPrinterStatus(
         cause: 'unreachable',
       };
     }
-    const result = await probeNetworkPrinterStatus(printer.ip_address, printer.port || 9100, {
+    // Same host normalization as printViaNetwork: trim, then drop IPv6 brackets.
+    const host = printer.ip_address
+      .trim()
+      .replace(/^\[(.*)\]$/, '$1')
+      .trim();
+    const result = await probeNetworkPrinterStatus(host, printer.port || 9100, {
       timeoutMs: 600,
       signal,
     });
@@ -107,7 +112,7 @@ export async function getPrinterStatus(
 export type DiscoverScan = (options: DiscoverOptions) => Promise<LanPrinter[]>;
 export type LanPrinterWithSaved = LanPrinter & { saved: boolean };
 
-type Database = { prepare: (sql: string) => any };
+type Database = { prepare: (sql: string) => { get: (address: string) => unknown } };
 
 let scan: DiscoverScan = discoverLanPrinters;
 let detectCache: { at: number; printers: Promise<PrinterInfo[]> } | null = null;
@@ -155,7 +160,7 @@ export function discoverPrinters(db: Database): Promise<LanPrinterWithSaved[]> {
   );
 }
 
-function sendError(req: Request, res: Response, error: any, label: string): void {
+function sendError(req: Request, res: Response, error: unknown, label: string): void {
   res.locals.postHogError = error;
   if (getHttpRequestSignal(req)?.aborted) {
     if (!res.headersSent) res.status(503).end();
@@ -170,7 +175,7 @@ export async function discoverHandler(req: Request, res: Response): Promise<void
   try {
     const printers = await discoverPrinters(getDatabase());
     res.json({ printers });
-  } catch (error: any) {
+  } catch (error) {
     sendError(req, res, error, 'Discovery');
   }
 }
@@ -185,7 +190,7 @@ export async function printerStatusHandler(req: Request, res: Response): Promise
       return;
     }
     res.json(await getPrinterStatus(printer, getHttpRequestSignal(req), detectShared));
-  } catch (error: any) {
+  } catch (error) {
     sendError(req, res, error, 'Status');
   }
 }

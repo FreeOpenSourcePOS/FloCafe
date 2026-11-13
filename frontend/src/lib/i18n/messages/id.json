@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows menyetel printer ini untuk bekerja offline. Buka antrean printer dan matikan \"Use Printer Offline\".",
           "darwin": "Antrean cetak mungkin dijeda. Buka System Settings > Printers & Scanners, buka antrean printer ini, lalu klik Resume.",
-          "linux": "Antrean CUPS mungkin nonaktif. Jalankan \"cupsenable printer_name\" di terminal, atau aktifkan di pengaturan printer."
+          "linux": "Antrean CUPS mungkin nonaktif. Jalankan \"cupsenable [nama printer]\" di terminal, atau aktifkan di pengaturan printer."
         },
         "queue_unavailable": "Antrean cetak tidak menerima pekerjaan. Aktifkan atau lanjutkan antrean di komputer ini, lalu cetak lagi.",
         "driver_error": "Driver cetak menolak data mentah. Di Windows, setel driver printer ini ke \"Generic / Text Only\".",

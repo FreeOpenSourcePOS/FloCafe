@@ -8,7 +8,7 @@ import {
   withWindowsQueueBypass,
   PRE_SPOOL_REFUSALS,
 } from '../main/printers/windows-queue-bypass';
-import { printViaNetwork } from '../main/printers/thermal';
+import { printViaNetwork, WINSPOOL_HELPER_SOURCE } from '../main/printers/thermal';
 import { assertEqualOrThrow, assertOrThrow } from './helpers/test-setup';
 import { start, type FakeEscposPrinter } from './helpers/fake-escpos-printer';
 
@@ -197,7 +197,39 @@ async function main(): Promise<void> {
     await fake.close();
   }
 
+  blockingStateOrder();
   console.log('windows queue bypass tests passed');
+}
+
+// Runs the shipped C# DescribeBlockingState as JS: its body is plain bit tests and returns.
+function blockingStateOrder(): void {
+  const body = WINSPOOL_HELPER_SOURCE.match(
+    /string DescribeBlockingState\(uint status, uint attributes\) \{([\s\S]*?)\n {4}\}/,
+  )?.[1];
+  assertOrThrow(body, 'DescribeBlockingState is found in the helper source');
+  const describe = new Function('status', 'attributes', 'PRINTER_ATTRIBUTE_WORK_OFFLINE', body) as (
+    status: number,
+    attributes: number,
+    workOffline: number,
+  ) => string | null;
+  const state = (status: number, attributes = 0) => describe(status, attributes, 0x400);
+  const refusable = (text: string | null) => PRE_SPOOL_REFUSALS.some((r) => text === r);
+
+  assertEqualOrThrow(state(0x80), 'printer is offline', 'offline alone is a refusal');
+  assertOrThrow(refusable(state(0x80)), 'offline alone may use the bypass');
+  for (const [status, attributes, text] of [
+    [0x90, 0, 'printer is out of paper'],
+    [0x1008, 0, 'printer has a paper jam'],
+    [0x400080, 0, 'printer cover is open'],
+    [0x10, 0x400, 'printer is out of paper'],
+  ] as const) {
+    assertEqualOrThrow(
+      state(status, attributes),
+      text,
+      `status ${status} names the physical fault`,
+    );
+    assertOrThrow(!refusable(state(status, attributes)), `status ${status} never uses the bypass`);
+  }
 }
 
 main().catch((error) => {

@@ -5479,7 +5479,7 @@ async function printViaCups(
 
 // Write raw ESC/POS directly to Windows spooler via runtime-compiled C# (Add-Type).
 // NOTE: no backslash escapes, backticks, or template expressions allowed in source.
-const WINSPOOL_HELPER_SOURCE = `
+export const WINSPOOL_HELPER_SOURCE = `
 using System;
 using System.Runtime.InteropServices;
 
@@ -5543,12 +5543,13 @@ public static class FloRawPrinter {
     private const uint PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x00000400;
 
     private static string DescribeBlockingState(uint status, uint attributes) {
-        if ((attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) != 0) return "printer is set to 'Use Printer Offline' in Windows";
-        if ((status & 0x00000080) != 0) return "printer is offline";
-        if ((status & 0x00001000) != 0) return "printer is not available";
+        // Physical faults first: an offline flag set with them must not let the TCP bypass print to a printer that cannot.
         if ((status & 0x00000010) != 0) return "printer is out of paper";
         if ((status & 0x00000008) != 0) return "printer has a paper jam";
         if ((status & 0x00400000) != 0) return "printer cover is open";
+        if ((attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) != 0) return "printer is set to 'Use Printer Offline' in Windows";
+        if ((status & 0x00000080) != 0) return "printer is offline";
+        if ((status & 0x00001000) != 0) return "printer is not available";
         if ((status & 0x00100000) != 0) return "printer needs attention";
         if ((status & 0x00000002) != 0) return "printer reported an error";
         return null;

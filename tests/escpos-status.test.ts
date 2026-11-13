@@ -182,6 +182,33 @@ async function testPrintBytesKeptOnlyWhenReady() {
   }
 }
 
+async function testSplitStatusCommand() {
+  const printer = await start({ state: {} });
+  try {
+    const reply = await new Promise<number[]>((resolve, reject) => {
+      const socket = net.connect(printer.port, '127.0.0.1', async () => {
+        for (const part of [[0x10], [0x04], [0x01]]) {
+          socket.write(Buffer.from(part));
+          await new Promise((wait) => setTimeout(wait, 20));
+        }
+      });
+      socket.once('data', (data) => {
+        socket.destroy();
+        resolve([...data]);
+      });
+      socket.on('error', reject);
+      setTimeout(() => {
+        socket.destroy();
+        resolve([]);
+      }, 500);
+    });
+    assertEqualOrThrow(reply.length, 1, 'DLE EOT n split across 3 reads still gets one reply');
+    assertEqualOrThrow(printer.printed.length, 0, 'the split command is not printed');
+  } finally {
+    await printer.close();
+  }
+}
+
 async function testProbeSilentPrinter() {
   const printer = await start({ silent: true });
   try {
@@ -253,6 +280,7 @@ async function main() {
   await testProbeOffline();
   await testPrintBytesKeptOnlyWhenReady();
   await testProbeSilentPrinter();
+  await testSplitStatusCommand();
   await testProbeGarbageReply();
   await testProbeConnectionRefused();
   await testSocketClosedAfterProbe();

@@ -140,14 +140,14 @@ async function browseMdnsTest() {
   const withHit = await browseMdns({
     timeoutMs: 30,
     bonjourFactory: () => ({
-      find: (_options: { type: string }, onUp: (service: any) => void) => {
+      find: (options: { type: string }, onUp: (service: any) => void) => {
         setTimeout(
           () =>
             onUp({
               name: 'Back Office',
               host: 'printer.local',
               addresses: ['192.168.1.70'],
-              port: 631,
+              port: options.type === 'pdl-datastream' ? 9101 : 631,
               txt: { ty: ['Brother QL-820NWB'] },
             }),
           0,
@@ -157,9 +157,12 @@ async function browseMdnsTest() {
       destroy: () => undefined,
     }),
   });
-  assertEqualOrThrow(withHit.length, 1, 'the same printer seen on three types is listed once');
+  assertEqualOrThrow(
+    withHit.map((hit) => hit.port).join(','),
+    '9101,9100',
+    'a pdl-datastream port is kept; IPP and LPD records give the raw port 9100',
+  );
   assertEqualOrThrow(withHit[0].address, '192.168.1.70', 'the printer IPv4 address is read');
-  assertEqualOrThrow(withHit[0].port, 631, 'the advertised port is kept');
   assertEqualOrThrow(withHit[0].name, 'Back Office', 'the friendly name is kept');
 
   assertEqualOrThrow(printers.length, 0, 'no answer gives no printer');
@@ -176,7 +179,7 @@ async function discoverLanPrintersTest() {
         name: 'Front Desk XP-80',
         host: 'printer.local',
         address: '192.168.1.50',
-        port: 9100,
+        port: 9101,
         txt: { ty: ['XPrinter XP-80'] },
       },
       {
@@ -199,6 +202,7 @@ async function discoverLanPrintersTest() {
   assertEqualOrThrow(both.source, 'both', 'an address seen both ways is marked both');
   assertEqualOrThrow(both.name, 'Front Desk XP-80', 'the mDNS name wins over the generic name');
   assertEqualOrThrow(both.model, 'XPrinter XP-80', 'the model comes from the ty TXT record');
+  assertEqualOrThrow(both.port, 9100, 'a port that answered the scan wins over the mDNS port');
   assertEqualOrThrow(portOnly.source, 'port-scan', 'a port-only hit is marked port-scan');
   assertEqualOrThrow(
     portOnly.name,
@@ -207,7 +211,7 @@ async function discoverLanPrintersTest() {
   );
   assertEqualOrThrow(portOnly.port, 9100, 'a port-only hit reports the probed port');
   assertEqualOrThrow(mdnsOnly.source, 'mdns', 'an mDNS-only hit is marked mdns');
-  assertEqualOrThrow(mdnsOnly.port, 631, 'an mDNS-only hit keeps its advertised port');
+  assertEqualOrThrow(mdnsOnly.port, 631, 'an mDNS-only hit keeps the port that browse reports');
   assertEqualOrThrow(
     mdnsOnly.model,
     'Brother QL-820NWB',

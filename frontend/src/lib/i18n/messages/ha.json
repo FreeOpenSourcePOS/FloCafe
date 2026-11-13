@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows ya sa wannan firinta ta yi aiki ba tare da layi ba. Buɗe layin firinta ka kashe \"Use Printer Offline\".",
           "darwin": "Wataƙila an dakatar da layin bugawa. Buɗe System Settings > Printers & Scanners, buɗe layin wannan firinta, ka danna Resume.",
-          "linux": "Wataƙila an kashe layin CUPS. A terminal gudanar da \"cupsenable printer_name\", ko ka kunna shi a saitunan firinta."
+          "linux": "Wataƙila an kashe layin CUPS. A terminal gudanar da \"cupsenable [sunan firinta]\", ko ka kunna shi a saitunan firinta."
         },
         "queue_unavailable": "Layin bugawa ba ya karɓar ayyuka. Kunna ko sake ci gaba da layin a wannan kwamfuta, sannan sake bugawa.",
         "driver_error": "Direban bugawa ya ƙi bayanan danyen. A Windows, saita direban wannan firinta zuwa \"Generic / Text Only\".",

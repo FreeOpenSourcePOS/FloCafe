@@ -1387,7 +1387,7 @@
         "offline": {
           "win32": "Windows nyetel printer iki supaya bisa offline. Bukak antrian printer lan pateni \"Use Printer Offline\".",
           "darwin": "Antrian cetak bisa uga mandheg. Bukak System Settings > Printers & Scanners, bukak antrian printer iki, banjur klik Resume.",
-          "linux": "Antrian CUPS bisa uga dipateni. Lakokake \"cupsenable printer_name\" ing terminal, utawa uripake ing setelan printer."
+          "linux": "Antrian CUPS bisa uga dipateni. Lakokake \"cupsenable [jeneng printer]\" ing terminal, utawa uripake ing setelan printer."
         },
         "queue_unavailable": "Antrian cetak ora nampa tugas. Uripake utawa lanjutake antrian ing komputer iki, banjur cetak maneh.",
         "driver_error": "Driver cetak nolak data mentah. Ing Windows, setel driver printer iki dadi \"Generic / Text Only\".",

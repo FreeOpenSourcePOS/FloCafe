@@ -1,7 +1,7 @@
 const { existsSync } = require('node:fs');
 const { homedir } = require('node:os');
 const { delimiter, join, resolve } = require('node:path');
-const { spawnSync } = require('node:child_process');
+const childProcess = require('node:child_process');
 
 const rootDir = resolve(__dirname, '../..');
 const localDir = join(rootDir, '.xerj');
@@ -50,6 +50,21 @@ function requireXerj() {
   throw new Error(
     'XERJ is not installed. Follow https://xerj.org/docs/install, then rerun this command.',
   );
+}
+
+function quoteForCmd(value) {
+  return /[\s"&|<>^()]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+// Node cannot launch Windows .cmd/.bat shims without a shell.
+function spawnSync(command, args, options) {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    return childProcess.spawnSync([command, ...args].map(quoteForCmd).join(' '), {
+      ...options,
+      shell: true,
+    });
+  }
+  return childProcess.spawnSync(command, args, options);
 }
 
 function run(command, args, acceptedExitCodes = [0]) {

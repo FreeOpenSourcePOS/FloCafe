@@ -1372,6 +1372,31 @@
     "genericHint": "以下の行には、この感熱プリンターで表示できない文字が含まれています。",
     "moreLines": "…他{count}行",
     "languageLoadError": "印刷言語バンドル「{languages}」を読み込めませんでした。言語バンドルを確認してアプリを再読み込みし、もう一度お試しください。",
+    "fix": {
+      "cause": {
+        "paper_out": "プリンターに用紙をセットして、もう一度印刷してください。",
+        "cover_open": "プリンターのカバーを閉じて、もう一度印刷してください。",
+        "printer_error": "プリンターの電源を入れ直して、もう一度印刷してください。",
+        "offline": "プリンターがオフラインだと報告しています。用紙、カバー、電源スイッチを確認してください。",
+        "unreachable": "プリンターの電源が入っていて、ケーブルが接続されているか確認してください。アドレスが変わった場合は、ネットワークで見つかったプリンターから選び直してください。",
+        "queue_offline": "このコンピューターの印刷キューはオフラインです。キューを再開して、もう一度印刷してください。",
+        "queue_missing": "このプリンターは名前が変更されたか削除されています。このコンピューターで見つかったプリンターから選び直してください。",
+        "queue_offline_snmp": "このプリンターは SNMP に応答しないため、Windows がオフラインとして表示しています。プリンターのプロパティ > ポート > ポートの構成を開き、「SNMP ステータスを有効にする」をオフにして OK をクリックしてください。"
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows でこのプリンターがオフライン使用に設定されています。プリンターのキューを開き、「プリンターをオフラインで使用する」をオフにしてください。",
+          "darwin": "印刷キューが一時停止している可能性があります。システム設定 > プリンタとスキャナを開き、このプリンターのキューを開いて「再開」をクリックしてください。",
+          "linux": "CUPS のキューが無効になっている可能性があります。ターミナルで「cupsenable printer_name」を実行するか、プリンター設定で有効にしてください。"
+        },
+        "queue_unavailable": "印刷キューがジョブを受け付けていません。このコンピューターのキューを有効または再開して、もう一度印刷してください。",
+        "driver_error": "印刷ドライバーが生データを拒否しました。Windows では、このプリンターのドライバーを「Generic / Text Only」に設定してください。",
+        "spooler_error": "Windows のプリントスプーラーが停止しました。プリントスプーラーサービスを再起動して、もう一度印刷してください。",
+        "permission_denied": "このコンピューターにはここで印刷する権限がありません。プリンターのアクセス許可を確認するか、管理者に問い合わせてください。",
+        "timeout": "プリンターが時間内に応答しませんでした。電源が入っていて同じネットワークにあるか確認して、もう一度印刷してください。",
+        "needs_attention": "プリンターの対応が必要です。用紙、カバー、プリンターの表示メッセージを確認してください。"
+      }
+    },
     "printerOfflineHint": "プリンターが応答していません。電源と接続を確認し、Windowsでプリンターキューを開いて「プリンターをオフラインで使用する」をオフにしてください。",
     "templateFallback": "選択した請求書テンプレートはこの印刷経路に対応していないため、内蔵レシートレイアウトを使用しました。"
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "FloCafeについて",
     "aboutGithub": "GitHubリポジトリ",
     "aboutWebsite": "アプリのウェブサイト",
+    "printerProfileCredit": "escpos-printer-db のプリンタープロファイル (CC BY 4.0)",
     "account": "アカウント",
     "accountAndApp": "アカウントとアプリ",
     "actionFailed": "失敗しました",
@@ -2177,6 +2203,7 @@
     "instagramHint": "設定すると印刷された請求書に表示されます",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "このコンピューターにインストール済み",
+    "foundOnNetwork": "ネットワークで見つかったプリンター",
     "invalidExportFile": "無効なFloCafeエクスポートファイル",
     "invalidPhoneFormat": "無効な電話番号形式",
     "invoiceNumberIncludePeriod": "請求書番号に期間を含める",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "有効なシェフアカウントはまだありません。先にスタッフでシェフを追加してください。",
     "noCloudContactEmail": "クラウド連絡先メールなし",
     "noInstalledPrinters": "インストール済みプリンターが見つかりません。システム設定からプリンターをインストールして更新をクリックするか、手動追加でネットワークプリンターを追加してください。",
+    "noNetworkPrinters": "ネットワークにプリンターが見つかりません。",
     "noPairedDevices": "ペアリング済み端末はまだありません。",
     "noPrintersConfigured": "設定済みプリンターはまだありません。",
     "noStaffYet": "スタッフログインはまだありません。",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "プリンターを設定済み",
     "printerOnline": "オンライン",
     "printerPrinting": "印刷中",
+    "printerStatusReady": "準備完了",
+    "printerStatusPaperLow": "用紙残量少",
+    "printerStatusUnknown": "状態不明",
     "printerQuickAdded": "{name}を追加しました",
     "printerSaveFailed": "プリンターを保存できませんでした",
     "printerSaved": "プリンターを追加しました",
@@ -2435,6 +2466,7 @@
     "saving": "保存中…",
     "savingCloud": "保存中…",
     "scanningForPrinters": "インストール済みプリンターをスキャン中…",
+    "scanAgain": "再スキャン",
     "secondLanguageNone": "なし",
     "secondReceiptLanguage": "第2レシート言語",
     "zReportLanguage": "Zレポートの言語",

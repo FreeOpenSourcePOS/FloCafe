@@ -1372,6 +1372,31 @@
     "genericHint": "Naglalaman ang mga linya sa ibaba ng mga character na hindi mai-render ng thermal printer na ito.",
     "moreLines": "…at {count} pa",
     "languageLoadError": "Hindi ma-load ang print language bundle(s) na \"{languages}\". Suriin ang locale bundle at i-reload ang app para subukan muli.",
+    "fix": {
+      "cause": {
+        "paper_out": "Maglagay ng papel sa printer, tapos i-print muli.",
+        "cover_open": "Isara ang takip ng printer, tapos i-print muli.",
+        "printer_error": "Patayin at buhayin muli ang printer, tapos i-print muli.",
+        "offline": "Sinasabi ng printer na offline ito. Tingnan ang papel, ang takip, at ang power switch.",
+        "unreachable": "Tiyaking nakabukas ang printer at nakakonekta ang cable. Kung nagbago ang address nito, piliin itong muli mula sa mga printer na nakita sa network.",
+        "queue_offline": "Offline ang print queue sa computer na ito. I-resume ito, tapos i-print muli.",
+        "queue_missing": "Pinalitan ng pangalan o tinanggal ang printer na ito. Piliin itong muli mula sa mga printer na nakita sa computer na ito.",
+        "queue_offline_snmp": "Itinakda ng Windows ang printer na ito na offline dahil hindi ito sumasagot sa SNMP. Buksan ang Printer properties > Ports > Configure Port, i-clear ang \"SNMP Status Enabled\", at i-click ang OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Itinakda ng Windows ang printer na ito na gumana offline. Buksan ang queue ng printer at i-off ang \"Use Printer Offline\".",
+          "darwin": "Maaaring naka-pause ang print queue. Buksan ang System Settings > Printers & Scanners, buksan ang queue ng printer na ito, at i-click ang Resume.",
+          "linux": "Maaaring naka-disable ang CUPS queue. Patakbuhin ang \"cupsenable printer_name\" sa terminal, o paganahin ito sa mga setting ng printer."
+        },
+        "queue_unavailable": "Hindi tumatanggap ng trabaho ang print queue. Paganahin o i-resume ang queue sa computer na ito, tapos i-print muli.",
+        "driver_error": "Tinanggihan ng print driver ang raw data. Sa Windows, itakda ang driver ng printer na ito sa \"Generic / Text Only\".",
+        "spooler_error": "Huminto ang Windows Print Spooler. I-restart ang Print Spooler service, tapos i-print muli.",
+        "permission_denied": "Walang pahintulot ang computer na ito na mag-print dito. Tingnan ang mga permiso ng printer, o magtanong sa administrator.",
+        "timeout": "Hindi sumagot ang printer sa oras. Tiyaking nakabukas ito at nasa parehong network, tapos i-print muli.",
+        "needs_attention": "Kailangan ng atensyon ang printer. Tingnan ang papel, ang takip, at anumang mensahe sa printer."
+      }
+    },
     "printerOfflineHint": "Hindi tumutugon ang printer. Tiyaking naka-on at nakakonekta ito, tapos sa Windows, i-off ang \"Use Printer Offline\" kung naka-check ito.",
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Tungkol sa FloCafe",
     "aboutGithub": "GitHub Repository",
     "aboutWebsite": "Website ng App",
+    "printerProfileCredit": "Mga profile ng printer mula sa escpos-printer-db (CC BY 4.0)",
     "account": "Account",
     "accountAndApp": "Account at App",
     "actionFailed": "Nabigo",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Ipinapakita sa mga naka-print na bill kapag naitakda",
     "instagramPlaceholder": "@iyongcafe",
     "installedOnThisComputer": "Naka-install sa computer na ito",
+    "foundOnNetwork": "Mga printer na nakita sa network",
     "invalidExportFile": "Hindi wastong FloCafe export file",
     "invalidPhoneFormat": "Hindi wastong format ng numero ng telepono",
     "invoiceNumberIncludePeriod": "Isama ang panahon sa numero ng invoice",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Wala pang aktibong chef account. Magdagdag muna ng chef sa Staff.",
     "noCloudContactEmail": "Hindi cloud contact email",
     "noInstalledPrinters": "Walang nahanap na installed printers. Install your printer via system settings, then click I-refresh — or use Magdagdag Manually for a network printer.",
+    "noNetworkPrinters": "Walang printer na nakita sa network.",
     "noPairedDevices": "Wala pang mga devices paired.",
     "noPrintersConfigured": "Wala pang mga printers configured.",
     "noStaffYet": "Wala pang mga staff logins.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Naka-configure ang printer",
     "printerOnline": "Online",
     "printerPrinting": "Pag-print",
+    "printerStatusReady": "Handa",
+    "printerStatusPaperLow": "Kulang na ang papel",
+    "printerStatusUnknown": "Hindi alam ang status",
     "printerQuickAdded": "Naidagdag ang printer: {name}",
     "printerSaveFailed": "Nabigong save printer",
     "printerSaved": "Naidagdag ang printer",
@@ -2446,6 +2477,7 @@
     "saving": "Nagse-save...",
     "savingCloud": "Nagse-save…",
     "scanningForPrinters": "Naghahanap ng mga naka-install na printer…",
+    "scanAgain": "I-scan muli",
     "secondLanguageNone": "Wala",
     "secondReceiptLanguage": "Pangalawang wika ng resibo",
     "zReportLanguage": "Wika ng Z-report",

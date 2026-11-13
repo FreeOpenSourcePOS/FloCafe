@@ -1372,6 +1372,31 @@
     "genericHint": "As linhas abaixo contêm caracteres que esta impressora térmica não consegue renderizar.",
     "moreLines": "…e mais {count}",
     "languageLoadError": "Não foi possível carregar os pacotes de idioma de impressão \"{languages}\". Verifique o pacote de idioma e recarregue o aplicativo para tentar novamente.",
+    "fix": {
+      "cause": {
+        "paper_out": "Coloque papel na impressora e imprima novamente.",
+        "cover_open": "Feche a tampa da impressora e imprima novamente.",
+        "printer_error": "Desligue e ligue a impressora e imprima novamente.",
+        "offline": "A impressora informa que está offline. Verifique o papel, a tampa e o interruptor de energia.",
+        "unreachable": "Verifique se a impressora está ligada e se o cabo está conectado. Se o endereço mudou, escolha-a novamente entre as impressoras encontradas na rede.",
+        "queue_offline": "A fila de impressão neste computador está offline. Retome-a e imprima novamente.",
+        "queue_missing": "Esta impressora foi renomeada ou removida. Escolha-a novamente entre as impressoras encontradas neste computador.",
+        "queue_offline_snmp": "O Windows marca esta impressora como offline porque ela não responde ao SNMP. Abra Propriedades da impressora > Portas > Configurar porta, desmarque \"Status SNMP habilitado\" e clique em OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "O Windows definiu esta impressora para funcionar offline. Abra a fila da impressora e desative \"Usar impressora offline\".",
+          "darwin": "A fila de impressão pode estar pausada. Abra Ajustes do Sistema > Impressoras e scanners, abra a fila desta impressora e clique em Retomar.",
+          "linux": "A fila do CUPS pode estar desativada. Execute \"cupsenable printer_name\" no terminal ou ative-a nas configurações da impressora."
+        },
+        "queue_unavailable": "A fila de impressão não está aceitando trabalhos. Ative ou retome a fila neste computador e imprima novamente.",
+        "driver_error": "O driver de impressão recusou os dados brutos. No Windows, defina o driver desta impressora como \"Generic / Text Only\".",
+        "spooler_error": "O Spooler de Impressão do Windows parou. Reinicie o serviço Spooler de Impressão e imprima novamente.",
+        "permission_denied": "Este computador não tem permissão para imprimir aqui. Verifique as permissões da impressora ou fale com um administrador.",
+        "timeout": "A impressora não respondeu a tempo. Verifique se está ligada e na mesma rede e imprima novamente.",
+        "needs_attention": "A impressora precisa de atenção. Verifique o papel, a tampa e qualquer mensagem na impressora."
+      }
+    },
     "printerOfflineHint": "A impressora não está respondendo. Verifique se ela está ligada e conectada e, no Windows, desative a opção \"Usar impressora offline\".",
     "templateFallback": "O modelo de recibo selecionado não é compatível com este caminho de impressão; o layout de recibo integrado foi usado."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Sobre o FloCafe",
     "aboutGithub": "Repositório GitHub",
     "aboutWebsite": "Site do aplicativo",
+    "printerProfileCredit": "Perfis de impressora do escpos-printer-db (CC BY 4.0)",
     "account": "Conta",
     "accountAndApp": "Conta e App",
     "actionFailed": "Falhou",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Mostrado nas contas impressas, se definido",
     "instagramPlaceholder": "@seucafe",
     "installedOnThisComputer": "Instalado neste computador",
+    "foundOnNetwork": "Impressoras encontradas na rede",
     "invalidExportFile": "Arquivo de exportação do Flo Cafe inválido",
     "invalidPhoneFormat": "Formato de número de telefone inválido",
     "invoiceNumberIncludePeriod": "Incluir período no número da fatura",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Ainda não há contas de chef ativas. Adicione primeiro um chef em Equipe.",
     "noCloudContactEmail": "Nenhum e-mail de contato na nuvem",
     "noInstalledPrinters": "Nenhuma impressora instalada encontrada. Instale sua impressora pelas configurações do sistema e clique em Atualizar — ou use Adicionar Manualmente para uma impressora de rede.",
+    "noNetworkPrinters": "Nenhuma impressora encontrada na rede.",
     "noPairedDevices": "Nenhum dispositivo pareado ainda.",
     "noPrintersConfigured": "Nenhuma impressora configurada ainda.",
     "noStaffYet": "Nenhum login de equipe ainda.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Impressora configurada",
     "printerOnline": "Online",
     "printerPrinting": "Imprimindo",
+    "printerStatusReady": "Pronta",
+    "printerStatusPaperLow": "Papel acabando",
+    "printerStatusUnknown": "Status desconhecido",
     "printerQuickAdded": "{name} adicionada",
     "printerSaveFailed": "Falha ao salvar a impressora",
     "printerSaved": "Impressora adicionada",
@@ -2435,6 +2466,7 @@
     "saving": "Salvando...",
     "savingCloud": "Salvando…",
     "scanningForPrinters": "Procurando por impressoras instaladas…",
+    "scanAgain": "Procurar novamente",
     "secondLanguageNone": "Nenhum",
     "secondReceiptLanguage": "Segundo idioma do recibo",
     "zReportLanguage": "Idioma do relatório Z",

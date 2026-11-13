@@ -1372,6 +1372,31 @@
     "genericHint": "Baris di bawah berisi karakter yang tidak dapat dirender printer termal ini.",
     "moreLines": "…dan {count} lagi",
     "languageLoadError": "Bundel bahasa cetak \"{languages}\" tidak dapat dimuat. Periksa bundel lokal dan muat ulang aplikasi untuk mencoba lagi.",
+    "fix": {
+      "cause": {
+        "paper_out": "Masukkan kertas ke printer, lalu cetak lagi.",
+        "cover_open": "Tutup penutup printer, lalu cetak lagi.",
+        "printer_error": "Matikan dan nyalakan lagi printer, lalu cetak lagi.",
+        "offline": "Printer melaporkan offline. Periksa kertas, penutup, dan sakelar daya.",
+        "unreachable": "Pastikan printer menyala dan kabelnya terhubung. Jika alamatnya berubah, pilih lagi dari printer yang ditemukan di jaringan.",
+        "queue_offline": "Antrean cetak di komputer ini offline. Lanjutkan antrean, lalu cetak lagi.",
+        "queue_missing": "Printer ini diganti nama atau dihapus. Pilih lagi dari printer yang ditemukan di komputer ini.",
+        "queue_offline_snmp": "Windows menandai printer ini offline karena tidak menjawab SNMP. Buka Printer properties > Ports > Configure Port, hapus centang \"SNMP Status Enabled\", lalu klik OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows menyetel printer ini untuk bekerja offline. Buka antrean printer dan matikan \"Use Printer Offline\".",
+          "darwin": "Antrean cetak mungkin dijeda. Buka System Settings > Printers & Scanners, buka antrean printer ini, lalu klik Resume.",
+          "linux": "Antrean CUPS mungkin nonaktif. Jalankan \"cupsenable printer_name\" di terminal, atau aktifkan di pengaturan printer."
+        },
+        "queue_unavailable": "Antrean cetak tidak menerima pekerjaan. Aktifkan atau lanjutkan antrean di komputer ini, lalu cetak lagi.",
+        "driver_error": "Driver cetak menolak data mentah. Di Windows, setel driver printer ini ke \"Generic / Text Only\".",
+        "spooler_error": "Layanan Print Spooler Windows berhenti. Mulai ulang layanan Print Spooler, lalu cetak lagi.",
+        "permission_denied": "Komputer ini tidak diizinkan mencetak di sini. Periksa izin printer, atau tanyakan ke administrator.",
+        "timeout": "Printer tidak menjawab tepat waktu. Pastikan printer menyala dan berada di jaringan yang sama, lalu cetak lagi.",
+        "needs_attention": "Printer perlu perhatian. Periksa kertas, penutup, dan pesan apa pun di printer."
+      }
+    },
     "printerOfflineHint": "Printer tidak merespons. Pastikan printer menyala dan terhubung, lalu di Windows buka antrean printer dan matikan \"Use Printer Offline\".",
     "templateFallback": "Templat tagihan yang dipilih tidak didukung pada jalur pencetakan ini, sehingga tata letak struk bawaan digunakan."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Tentang FloCafe",
     "aboutGithub": "Repositori GitHub",
     "aboutWebsite": "Situs Aplikasi",
+    "printerProfileCredit": "Profil printer dari escpos-printer-db (CC BY 4.0)",
     "account": "Akun",
     "accountAndApp": "Akun & Aplikasi",
     "actionFailed": "Gagal",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Ditampilkan pada tagihan cetak, jika diatur",
     "instagramPlaceholder": "@kopikita",
     "installedOnThisComputer": "Terpasang di komputer ini",
+    "foundOnNetwork": "Printer yang ditemukan di jaringan",
     "invalidExportFile": "Berkas ekspor FloCafe tidak valid",
     "invalidPhoneFormat": "Format nomor telepon tidak valid",
     "invoiceNumberIncludePeriod": "Sertakan periode di nomor faktur",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Belum ada akun koki aktif. Tambahkan koki di Staf terlebih dahulu.",
     "noCloudContactEmail": "Tidak ada email kontak cloud",
     "noInstalledPrinters": "Tidak ditemukan printer terpasang. Instal printer Anda melalui pengaturan sistem, lalu klik Muat Ulang — atau gunakan Tambah Manual untuk printer jaringan.",
+    "noNetworkPrinters": "Tidak ada printer yang ditemukan di jaringan.",
     "noPairedDevices": "Belum ada perangkat yang dipasangkan.",
     "noPrintersConfigured": "Belum ada printer yang dikonfigurasi.",
     "noStaffYet": "Belum ada login staf.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Printer dikonfigurasi",
     "printerOnline": "Daring",
     "printerPrinting": "Mencetak",
+    "printerStatusReady": "Siap",
+    "printerStatusPaperLow": "Kertas hampir habis",
+    "printerStatusUnknown": "Status tidak diketahui",
     "printerQuickAdded": "{name} ditambahkan",
     "printerSaveFailed": "Gagal menyimpan printer",
     "printerSaved": "Printer ditambahkan",
@@ -2446,6 +2477,7 @@
     "saving": "Menyimpan...",
     "savingCloud": "Menyimpan…",
     "scanningForPrinters": "Memindai printer terpasang…",
+    "scanAgain": "Pindai lagi",
     "secondLanguageNone": "Tidak ada",
     "secondReceiptLanguage": "Bahasa struk kedua",
     "zReportLanguage": "Bahasa laporan Z",

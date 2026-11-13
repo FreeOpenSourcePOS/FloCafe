@@ -1372,6 +1372,31 @@
     "genericHint": "Le righe seguenti contengono caratteri che questa stampante termica non può renderizzare.",
     "moreLines": "…e altre {count}",
     "languageLoadError": "Impossibile caricare i bundle di stampa \"{languages}\". Controlla il bundle locale e ricarica l'app per riprovare.",
+    "fix": {
+      "cause": {
+        "paper_out": "Inserisci la carta nella stampante, poi stampa di nuovo.",
+        "cover_open": "Chiudi il coperchio della stampante, poi stampa di nuovo.",
+        "printer_error": "Spegni e riaccendi la stampante, poi stampa di nuovo.",
+        "offline": "La stampante segnala che è offline. Controlla la carta, il coperchio e l'interruttore di alimentazione.",
+        "unreachable": "Controlla che la stampante sia accesa e che il cavo sia collegato. Se l'indirizzo è cambiato, sceglila di nuovo tra le stampanti trovate sulla rete.",
+        "queue_offline": "La coda di stampa su questo computer è offline. Riattivala, poi stampa di nuovo.",
+        "queue_missing": "Questa stampante è stata rinominata o rimossa. Sceglila di nuovo tra le stampanti trovate su questo computer.",
+        "queue_offline_snmp": "Windows segnala questa stampante come offline perché non risponde a SNMP. Apri Proprietà stampante > Porte > Configura porta, deseleziona \"Stato SNMP abilitato\" e fai clic su OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows ha impostato questa stampante per funzionare offline. Apri la coda della stampante e disattiva \"Utilizza stampante non disponibile\".",
+          "darwin": "La coda di stampa potrebbe essere in pausa. Apri Impostazioni di Sistema > Stampanti e scanner, apri la coda di questa stampante e fai clic su Riprendi.",
+          "linux": "La coda CUPS potrebbe essere disattivata. Esegui \"cupsenable printer_name\" in un terminale oppure attivala nelle impostazioni della stampante."
+        },
+        "queue_unavailable": "La coda di stampa non accetta lavori. Attiva o riprendi la coda su questo computer, poi stampa di nuovo.",
+        "driver_error": "Il driver di stampa ha rifiutato i dati grezzi. Su Windows, imposta il driver di questa stampante su \"Generic / Text Only\".",
+        "spooler_error": "Il servizio Spooler di stampa di Windows si è arrestato. Riavvia il servizio Spooler di stampa, poi stampa di nuovo.",
+        "permission_denied": "Questo computer non è autorizzato a stampare qui. Controlla i permessi della stampante o chiedi a un amministratore.",
+        "timeout": "La stampante non ha risposto in tempo. Controlla che sia accesa e sulla stessa rete, poi stampa di nuovo.",
+        "needs_attention": "La stampante richiede attenzione. Controlla la carta, il coperchio e i messaggi sulla stampante."
+      }
+    },
     "printerOfflineHint": "La stampante non risponde. Assicurati che sia accesa e connessa, poi in Windows apri la coda della stampante e disattiva \"Utilizza stampante non disponibile\".",
     "templateFallback": "Il modello di conto selezionato non è supportato su questo percorso di stampa, quindi è stato usato il layout ricevuta integrato."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Informazioni su FloCafe",
     "aboutGithub": "Repository GitHub",
     "aboutWebsite": "Sito dell'app",
+    "printerProfileCredit": "Profili stampante da escpos-printer-db (CC BY 4.0)",
     "account": "Account",
     "accountAndApp": "Account e app",
     "actionFailed": "Non riuscita",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Mostrato sui conti stampati, se impostato",
     "instagramPlaceholder": "@tuo-cafe",
     "installedOnThisComputer": "Installato su questo computer",
+    "foundOnNetwork": "Stampanti trovate sulla rete",
     "invalidExportFile": "File di esportazione FloCafe non valido",
     "invalidPhoneFormat": "Formato del numero di telefono non valido",
     "invoiceNumberIncludePeriod": "Includi il periodo nel numero di fattura",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Nessun account cuoco attivo ancora. Aggiungi prima un cuoco sotto Personale.",
     "noCloudContactEmail": "Nessuna email di contatto cloud",
     "noInstalledPrinters": "Nessuna stampante installata trovata. Installa la stampante tramite le impostazioni di sistema, poi fai clic su Aggiorna, oppure usa Aggiungi manualmente per una stampante di rete.",
+    "noNetworkPrinters": "Nessuna stampante trovata sulla rete.",
     "noPairedDevices": "Nessun dispositivo abbinato ancora.",
     "noPrintersConfigured": "Nessuna stampante configurata ancora.",
     "noStaffYet": "Nessun accesso del personale ancora.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Stampante configurata",
     "printerOnline": "Online",
     "printerPrinting": "Stampa in corso",
+    "printerStatusReady": "Pronta",
+    "printerStatusPaperLow": "Carta in esaurimento",
+    "printerStatusUnknown": "Stato sconosciuto",
     "printerQuickAdded": "{name} aggiunta",
     "printerSaveFailed": "Salvataggio della stampante non riuscito",
     "printerSaved": "Stampante aggiunta",
@@ -2435,6 +2466,7 @@
     "saving": "Salvataggio...",
     "savingCloud": "Salvataggio…",
     "scanningForPrinters": "Ricerca delle stampanti installate…",
+    "scanAgain": "Scansiona di nuovo",
     "secondLanguageNone": "Nessuna",
     "secondReceiptLanguage": "Seconda lingua ricevute",
     "zReportLanguage": "Lingua report Z",

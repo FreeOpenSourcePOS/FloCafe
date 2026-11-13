@@ -1372,6 +1372,31 @@
     "genericHint": "نیچے دیے گئے سطر میں ایسے حروف ہیں جو یہ تھرمل پرنٹر نہیں دکھا سکتا۔",
     "moreLines": "…اور {count} مزید",
     "languageLoadError": "پرنٹ زبان کا لنک {languages} لوڈ نہیں ہو سکا۔ لوکیل لنک چیک کر کے دوبارہ کوشش کے لیے ایپ دوبارہ لوڈ کریں۔",
+    "fix": {
+      "cause": {
+        "paper_out": "پرنٹر میں کاغذ ڈالیں، پھر دوبارہ پرنٹ کریں۔",
+        "cover_open": "پرنٹر کا ڈھکن بند کریں، پھر دوبارہ پرنٹ کریں۔",
+        "printer_error": "پرنٹر بند کر کے دوبارہ آن کریں، پھر دوبارہ پرنٹ کریں۔",
+        "offline": "پرنٹر بتا رہا ہے کہ یہ آف لائن ہے۔ کاغذ، ڈھکن اور پاور سوئچ چیک کریں۔",
+        "unreachable": "یقینی بنائیں کہ پرنٹر آن ہے اور کیبل لگی ہے۔ اگر پتہ بدل گیا ہے تو نیٹ ورک پر ملے پرنٹرز میں سے اسے دوبارہ منتخب کریں۔",
+        "queue_offline": "اس کمپیوٹر پر پرنٹ قطار آف لائن ہے۔ اسے دوبارہ شروع کریں، پھر دوبارہ پرنٹ کریں۔",
+        "queue_missing": "اس پرنٹر کا نام بدل دیا گیا یا اسے ہٹا دیا گیا۔ اس کمپیوٹر پر ملے پرنٹرز میں سے اسے دوبارہ منتخب کریں۔",
+        "queue_offline_snmp": "Windows اس پرنٹر کو آف لائن دکھاتا ہے کیونکہ یہ SNMP کا جواب نہیں دیتا۔ پرنٹر کی Properties > Ports > Configure Port کھولیں، «SNMP Status Enabled» ہٹائیں اور OK دبائیں۔"
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows نے یہ پرنٹر آف لائن چلانے پر سیٹ کیا ہے۔ پرنٹر کی قطار کھولیں اور «Use Printer Offline» بند کریں۔",
+          "darwin": "ہو سکتا ہے پرنٹ قطار روکی ہوئی ہو۔ System Settings > Printers & Scanners کھولیں، اس پرنٹر کی قطار کھولیں اور Resume پر کلک کریں۔",
+          "linux": "ہو سکتا ہے CUPS قطار بند ہو۔ ٹرمینل میں «cupsenable printer_name» چلائیں، یا پرنٹر کی ترتیبات میں اسے آن کریں۔"
+        },
+        "queue_unavailable": "پرنٹ قطار کام نہیں لے رہی۔ اس کمپیوٹر پر قطار آن کریں یا دوبارہ شروع کریں، پھر دوبارہ پرنٹ کریں۔",
+        "driver_error": "پرنٹ ڈرائیور نے خام ڈیٹا مسترد کر دیا۔ Windows میں اس پرنٹر کا ڈرائیور «Generic / Text Only» مقرر کریں۔",
+        "spooler_error": "Windows Print Spooler رک گیا۔ Print Spooler سروس دوبارہ شروع کریں، پھر دوبارہ پرنٹ کریں۔",
+        "permission_denied": "اس کمپیوٹر کو یہاں پرنٹ کرنے کی اجازت نہیں۔ پرنٹر کی اجازتیں چیک کریں، یا منتظم سے پوچھیں۔",
+        "timeout": "پرنٹر نے وقت پر جواب نہیں دیا۔ چیک کریں کہ یہ آن ہے اور اسی نیٹ ورک پر ہے، پھر دوبارہ پرنٹ کریں۔",
+        "needs_attention": "پرنٹر کو توجہ درکار ہے۔ کاغذ، ڈھکن اور پرنٹر پر کوئی بھی پیغام چیک کریں۔"
+      }
+    },
     "printerOfflineHint": "پرنٹر جواب نہیں دے رہا۔ اسے آن اور کنکیٹڈ رکھیں، پھر Windows میں پرنٹر کی قطار کھول کر «Use Printer Offline» بند کریں۔",
     "templateFallback": "منتخب بل ٹیمپلیٹ اس پرنٹ مسیر پر دستیاب نہیں، اس لیے بلٹ رسید کا بلٹ اِن ڈیزائن استعمال ہوا۔"
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "FloCafe کے بارے میں",
     "aboutGithub": "GitHub ریپازٹری",
     "aboutWebsite": "ایپ ویب سائٹ",
+    "printerProfileCredit": "escpos-printer-db سے پرنٹر پروفائلز (CC BY 4.0)",
     "account": "اکاؤنٹ",
     "accountAndApp": "اکاؤنٹ اور ایپ",
     "actionFailed": "ناکام",
@@ -2177,6 +2203,7 @@
     "instagramHint": "مقرر ہونے پر پرنٹ شدہ بل پر دکھایا جاتا ہے",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "اس کمپیوٹر پر انسٹال ہے",
+    "foundOnNetwork": "نیٹ ورک پر ملے پرنٹرز",
     "invalidExportFile": "غیر درست FloCafe برآمد فائل",
     "invalidPhoneFormat": "فون نمبر کا غیر درست فارمیٹ",
     "invoiceNumberIncludePeriod": "انوائس نمبر میں مدت شامل کریں",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "ابھی کوئی فعال شیف اکاؤنٹ نہیں۔ پہلے ملازمین کے تحت شیف شامل کریں۔",
     "noCloudContactEmail": "کلاؤڈ رابطہ ایمیل نہیں",
     "noInstalledPrinters": "کوئی انسٹال شدہ پرنٹر نہیں ملا۔ سسٹم ترتیبات سے پرنٹر انسٹال کریں، پھر تازہ کاری پر کلک کریں — یا نیٹ ورک پرنٹر کے لیے دستی شامل کریں۔",
+    "noNetworkPrinters": "نیٹ ورک پر کوئی پرنٹر نہیں ملا۔",
     "noPairedDevices": "ابھی کوئی ڈیوائس جوڑی نہیں گئی۔",
     "noPrintersConfigured": "ابھی کوئی پرنٹر ترتیب نہیں دیا گیا۔",
     "noStaffYet": "ابھی کوئی ملازم سائن ان نہیں۔",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "پرنٹر ترتیب دیا گیا ہے",
     "printerOnline": "آن لائن",
     "printerPrinting": "پرنٹ ہو رہا ہے",
+    "printerStatusReady": "تیار",
+    "printerStatusPaperLow": "کاغذ کم ہے",
+    "printerStatusUnknown": "حالت نامعلوم",
     "printerQuickAdded": "{name} شامل ہو گیا",
     "printerSaveFailed": "پرنٹر محفوظ نہیں ہو سکا",
     "printerSaved": "پرنٹر شامل ہو گیا",
@@ -2435,6 +2466,7 @@
     "saving": "محفوظ ہو رہا ہے...",
     "savingCloud": "محفوظ ہو رہا ہے…",
     "scanningForPrinters": "انسٹال شدہ پرنٹرز اسکین ہو رہے ہیں…",
+    "scanAgain": "دوبارہ اسکین کریں",
     "secondLanguageNone": "کوئی نہیں",
     "secondReceiptLanguage": "دوسری رسید زبان",
     "zReportLanguage": "Z رپورٹ کی زبان",

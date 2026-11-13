@@ -22,6 +22,9 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
+import { LanPrinterDiscovery } from '@/components/settings/LanPrinterDiscovery';
+import { PrinterStatusBadge } from '@/components/settings/PrinterStatusBadge';
+import { printFailureHint } from '@/lib/printer/print-failure-help';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import {
   isTemplateCardSelected,
@@ -36,6 +39,8 @@ import type { PrinterTextSize } from '@print/text-size';
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
   (lang) => LANGUAGES[lang].selectable,
 );
+
+type PrinterErrorBody = { error?: unknown; failure_class?: string; cause?: string };
 
 export type HwPrinter = {
   id: string;
@@ -189,6 +194,7 @@ export function PrintersSettingsTab({
 }: PrintersSettingsTabProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const tAll = useTranslations();
   const { refreshHardwarePrinter, setPrintMethod } = usePrinterStore();
   const canEditPrintingOptions = canManagePrinters && printingHydrated && !printingHydrationFailed;
 
@@ -220,7 +226,13 @@ export function PrintersSettingsTab({
 
   const printerErrorMessage = (err: unknown, fallback: string): string => {
     if (axios.isAxiosError(err)) {
-      const apiError = err.response?.data?.error;
+      const body = err.response?.data as PrinterErrorBody;
+      const hint = printFailureHint(
+        { failureClass: body?.failure_class, cause: body?.cause },
+        tAll,
+      );
+      if (hint) return hint;
+      const apiError = body?.error;
       if (typeof apiError === 'string' && apiError.trim()) return `${fallback}: ${apiError}`;
     }
     return fallback;
@@ -264,8 +276,10 @@ export function PrintersSettingsTab({
     return () => controller.abort();
   }, [canManagePrinters, fetchDetectedPrinters, isActive]);
 
-  const quickAddDetected = async (p: DetectedPrinter) => {
-    if (!canManagePrinters) return;
+  const quickAddDetected = async (
+    p: Partial<DetectedPrinter> & Pick<DetectedPrinter, 'name' | 'connectionType'>,
+  ): Promise<boolean> => {
+    if (!canManagePrinters) return false;
     setAddingDetectedName(p.name);
     try {
       const payload: {
@@ -291,8 +305,10 @@ export function PrintersSettingsTab({
       toast.success(t('printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
+      return true;
     } catch {
       toast.error(t('printerAddFailed'));
+      return false;
     } finally {
       setAddingDetectedName(null);
     }
@@ -438,6 +454,10 @@ export function PrintersSettingsTab({
               </div>
             )}
           </div>
+
+          {canManagePrinters && !showPrinterForm && (
+            <LanPrinterDiscovery onAdd={quickAddDetected} />
+          )}
 
           {/* Detected (OS-installed) printers - one-click add */}
           {canManagePrinters && !showPrinterForm && (
@@ -626,6 +646,7 @@ export function PrintersSettingsTab({
                         {t('defaultPrinter')}
                       </span>
                     )}
+                    <PrinterStatusBadge printerId={p.id} connectionType={p.connection_type} />
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {p.connection_type === 'network' ? (

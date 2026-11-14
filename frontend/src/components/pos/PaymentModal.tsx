@@ -1637,7 +1637,6 @@ export default function PaymentModal({
         setKitchenDeliveryError('');
         setRequestFailure(null);
         setPaymentOutcomeUnknown(false);
-        toast.error(t('kitchenDeliveryOverridePrompt'));
       } else if (payload?.error === 'Invalid manager PIN') {
         // A definitive challenge rejection: no payment was recorded.
         lockAttempt(null);
@@ -1648,7 +1647,6 @@ export default function PaymentModal({
         setKitchenDeliveryError(t('kitchenDeliveryOverrideInvalid'));
         setRequestFailure(null);
         setPaymentOutcomeUnknown(false);
-        toast.error(t('kitchenDeliveryOverrideInvalid'));
       } else if (knownNotApplied && payload?.error !== IDEMPOTENCY_CONFLICT_ERROR) {
         lockAttempt(null);
         setFailure('not_applied');

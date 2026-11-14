@@ -6054,7 +6054,7 @@ export function paymentMethodCorrectionEligibility(
   };
 }
 
-// PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift is open
+// PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift (if any) and business day are open
 router.patch(
   '/:id/payments/:index/method',
   requirePermission('payments.take'),

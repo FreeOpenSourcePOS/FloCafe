@@ -348,7 +348,7 @@ and change, the `cash_session_id`, and the timestamp. While a `paid` bill's cash
 day remain open, the tender method on a recorded non-wallet line can be corrected without changing
 its amount via `PATCH /api/bills/:id/payments/:index/method` (see [the Bills API reference](../reference/api.md#bills));
 legacy untagged lines missing `cash_session_id` remain closed, and shiftless (`cash_session_id = 0`)
-Non-cash lines switched to Cash attach to the actor's same-day open shift when one exists or require
+non-cash lines switched to cash attach to the actor's same-day open shift when one exists or require
 an open shift when `require_open_shift` is enabled.
 
 ## Settlement and completion

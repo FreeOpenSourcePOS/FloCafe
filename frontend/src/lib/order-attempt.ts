@@ -1,9 +1,12 @@
 import type { AppendAttemptStorage } from './append-attempt';
+import { ORDER_CREATE_DISPLAY_CODES } from '../../../shared/order-create-display-codes';
 import {
   cartItemToOrderItem,
   type OrderItemPayload,
   type OrderItemSource,
 } from './cart-order-item';
+
+export { ORDER_CREATE_DISPLAY_CODES };
 
 /** Global key used by builds before prepaid attempts became user scoped. */
 export const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
@@ -795,13 +798,17 @@ export function classifyOrderRequestFailure(
     payload.reason_code === 'payment.invalid' && expected.operation === 'payment.create';
   const isChargeRejection =
     payload.reason_code === 'bill.charge_rejected' && expected.operation === 'bill.charge.update';
+  const isOrderCreateRejection =
+    payload.reason_code === 'validation.rejected' && expected.operation === 'order.create';
   const allowedDisplayCodes: readonly string[] = isDiscountRejection
     ? DISCOUNT_DISPLAY_CODES
     : isPaymentRejection
       ? PAYMENT_DISPLAY_CODES
       : isChargeRejection
         ? CHARGE_DISPLAY_CODES
-        : [];
+        : isOrderCreateRejection
+          ? ORDER_CREATE_DISPLAY_CODES
+          : [];
   if (
     !definition ||
     payload.stage !== definition.stage ||

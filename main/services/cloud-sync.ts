@@ -2682,6 +2682,18 @@ export class CloudSyncService {
           if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;
           const currentCfg = this.loadSettings(false);
           if (!currentCfg || isCloudDeletionBlocking(currentCfg.cloud_deletion_status)) return;
+          // Before the transport checks: a skipped row stays pending, so a resend after a
+          // restart must not be the only way the report reaches PostHog.
+          try {
+            const report = JSON.parse(row.payload) as Record<string, unknown>;
+            if (report.schema_version === 2) {
+              const { capturePostHogOperationFailure } =
+                require('./posthog') as typeof import('./posthog');
+              capturePostHogOperationFailure(report);
+            }
+          } catch {
+            /* A payload we cannot read carries no report */
+          }
           const rowTransport: DiagnosticTransport =
             row.transport === 'anonymous' ? 'anonymous' : 'signed';
           if (rowTransport === 'signed' && (!currentCfg.sync_enabled || !currentCfg.api_key))

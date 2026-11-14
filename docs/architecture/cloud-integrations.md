@@ -294,6 +294,19 @@ exception stays on the machine. The client itself is disabled only at `off` with
 transmission also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
 both checks.
 
+**Failures follow the same check.** Two diagnostics events leave PostHog's exception stream and
+follow transmission. `printer_failed` carries the failure class, connection type, job kind, release,
+OS, install source, and correlation id, plus the scrubbed error text, and never the queue name.
+`operation_failed` reuses each sealed v2 report queued in `store_diagnostics_outbox` (grouped by
+capture point, outcome, validated facts, release, and hour window, and split across report-count
+bounds or subsequent flushes): one event per sealed report, carrying `reason_code`, `operation`,
+`stage`, `outcome`, `classification`, `count`, `capture_point`, the report's `app_version` and
+`platform`, and the report's validated `facts`. It carries no correlation id and no free text, and
+a printer capture point (`fc.backend.printer.*`) is left out because `printer_failed` already covers
+it. The event uses `report_id` as its PostHog `uuid`, so a resend after a restart deduplicates to
+the same event. The report flush runs only while a diagnostics transport is set up (anonymous
+telemetry or a cloud account), so with neither there is no `operation_failed`.
+
 | Capture point                             | Source                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

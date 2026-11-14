@@ -42,6 +42,7 @@ async function main() {
     const create = await postRaw(baseUrl, '/api/orders', '{"items": [', operationId);
     assert.equal(create.status, 400);
     assert.equal(create.body.reason_code, 'validation.rejected');
+    assert.equal(create.body.display_code, 'malformed_body');
     assert.equal(create.body.operation, 'order.create');
     assert.equal(create.body.classification, 'expected_rejection');
     assert.equal(create.body.outcome, 'not_applied');
@@ -50,6 +51,7 @@ async function main() {
     const append = await postRaw(baseUrl, '/api/orders/order-1/items?x=1', '{nope', operationId);
     assert.equal(append.status, 400);
     assert.equal(append.body.reason_code, 'validation.rejected');
+    assert.equal(append.body.display_code, undefined);
     assert.equal(append.body.operation, 'order.append');
 
     const mixedCreate = await postRaw(baseUrl, '/API/ORDERS', '{nope', operationId);

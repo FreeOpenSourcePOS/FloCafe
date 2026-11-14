@@ -175,6 +175,10 @@ type SupportOperationFailure = {
 const STRUCTURED_HELP_CAPTURE_POINTS: Record<string, string> = {
   'order.create:validation:order.quantity_invalid': 'fc.backend.order.create.quantity_validation',
   'order.create:validation:order.stock_insufficient': 'fc.backend.order.create.stock_validation',
+  'order.create:validation:order.addon_selection_required':
+    'fc.backend.order.create.addon_group_validation',
+  'order.create:validation:order.addon_unavailable':
+    'fc.backend.order.create.addon_item_validation',
   'order.create:validation:validation.rejected': 'fc.backend.order.create.other_validation',
   'order.create:persistence:persistence.failed': 'fc.backend.order.create.persistence',
   'order.create:persistence:server.internal_error': 'fc.backend.order.create.server_error',
@@ -1046,7 +1050,7 @@ export default function POSPage() {
           ? paymentMessages[failure.displayCode] || t('paymentValidationRejected')
           : t('paymentValidationRejected')
         : expectedRejection && failure.reasonCode
-          ? failure.displayCode
+          ? failure.reasonCode === 'discount.rejected' && failure.displayCode
             ? discountMessages[failure.displayCode] || t('operationOutcomeUnknown')
             : rejectionMessage
           : confirmedNotSaved

@@ -335,14 +335,17 @@ test('PrepaidCheckoutModal maintains 3-column geometry across viewports and stat
       return {
         ctaBottom: ctaRect ? ctaRect.bottom : Infinity,
         shellBottom: shellRect.bottom,
-        minKeyHeight: btns.length > 0 ? Math.min(...btns.map((b) => b.getBoundingClientRect().height)) : 0,
+        minKeyHeight:
+          btns.length > 0 ? Math.min(...btns.map((b) => b.getBoundingClientRect().height)) : 0,
       };
     });
     expect(
       prepaidCompactFit.ctaBottom,
       '1024x600 PrepaidCheckoutModal primary CTA must not clip below modal shell',
     ).toBeLessThanOrEqual(prepaidCompactFit.shellBottom + 1);
-    expect(prepaidCompactFit.minKeyHeight, '1024x600 keypad height >= 44').toBeGreaterThanOrEqual(44);
+    expect(prepaidCompactFit.minKeyHeight, '1024x600 keypad height >= 44').toBeGreaterThanOrEqual(
+      44,
+    );
 
     await modal.getByRole('button', { name: 'Close' }).first().click();
     await expect(modal).toBeHidden();

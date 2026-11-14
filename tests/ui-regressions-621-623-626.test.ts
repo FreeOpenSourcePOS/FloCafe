@@ -298,7 +298,9 @@ try {
     'rendered DrawerContent top direction offsets below the desktop titlebar',
   );
 
-  const { CheckoutPaymentStation } = require('../frontend/src/components/pos/CheckoutPaymentStation');
+  const {
+    CheckoutPaymentStation,
+  } = require('../frontend/src/components/pos/CheckoutPaymentStation');
   const stationMarkup = renderWithIntl(
     React.createElement(
       CheckoutPaymentStation,
@@ -329,7 +331,9 @@ try {
   );
 
   // 3. Parsed CSS AST check on globals.css for Electron no-drag rules
-  const cssAst = postcss.parse(readFileSync(resolve(process.cwd(), 'frontend/src/app/globals.css'), 'utf8'));
+  const cssAst = postcss.parse(
+    readFileSync(resolve(process.cwd(), 'frontend/src/app/globals.css'), 'utf8'),
+  );
   const requiredNoDragSelectors = [
     "[data-testid='scheduled-orders-drawer']",
     "[data-testid='payment-queue-drawer']",

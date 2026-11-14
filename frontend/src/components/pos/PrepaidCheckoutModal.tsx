@@ -212,7 +212,11 @@ export default function PrepaidCheckoutModal({
   const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>({ kind: 'payment', index: 0 });
   const setCol1Panel = (
-    next: 'items' | 'discount' | 'tax' | ((prev: 'items' | 'discount' | 'tax') => 'items' | 'discount' | 'tax'),
+    next:
+      | 'items'
+      | 'discount'
+      | 'tax'
+      | ((prev: 'items' | 'discount' | 'tax') => 'items' | 'discount' | 'tax'),
   ) => {
     const resolved = typeof next === 'function' ? next(activeCol1Panel) : next;
     if (resolved !== activeCol1Panel) {
@@ -1209,11 +1213,7 @@ export default function PrepaidCheckoutModal({
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      className="flex-1"
-                      onClick={() => setCol1Panel('items')}
-                    >
+                    <Button type="button" className="flex-1" onClick={() => setCol1Panel('items')}>
                       {tCommon('done')}
                     </Button>
                     {discountValue ? (

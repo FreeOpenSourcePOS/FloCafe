@@ -277,8 +277,16 @@ async function run() {
       walLegacyDb.pragma('wal_checkpoint(TRUNCATE)');
       walLegacyDb.close();
     }
-    assert.equal(fs.existsSync(`${walLegacyPath}-wal`), false, 'WAL legacy fixture has no WAL file');
-    assert.equal(fs.existsSync(`${walLegacyPath}-shm`), false, 'WAL legacy fixture has no SHM file');
+    assert.equal(
+      fs.existsSync(`${walLegacyPath}-wal`),
+      false,
+      'WAL legacy fixture has no WAL file',
+    );
+    assert.equal(
+      fs.existsSync(`${walLegacyPath}-shm`),
+      false,
+      'WAL legacy fixture has no SHM file',
+    );
     const walLegacyBytes = fs.readFileSync(walLegacyPath);
     fs.chmodSync(walLegacyDir, 0o500);
     try {

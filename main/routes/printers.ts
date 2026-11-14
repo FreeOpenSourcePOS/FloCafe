@@ -23,14 +23,13 @@ import {
   escPosToText,
   printMenuDocument,
   validateNetworkPrinterTarget,
-  classifyPrintFailure,
 } from '../printers/thermal';
 import {
   discoverHandler,
-  failureClassForStatusCause,
   invalidatePrinterDetectCache,
   printerStatusHandler,
   testPrintCause,
+  testPrintFailureClass,
   isPhysicalFault,
 } from './printer-diagnostics';
 import {
@@ -639,10 +638,7 @@ router.post(
         res.status(502).json({
           error: result.detail || 'Printer did not respond or print failed',
           detail: result.detail,
-          failure_class:
-            result.failureClass ??
-            failureClassForStatusCause(cause) ??
-            classifyPrintFailure(result.detail),
+          failure_class: testPrintFailureClass(result, cause),
           cause,
         });
       }
@@ -787,10 +783,7 @@ router.post(
         );
         res.status(502).json({
           error: 'Test print failed',
-          failure_class:
-            result.failureClass ??
-            failureClassForStatusCause(cause) ??
-            classifyPrintFailure(result.detail),
+          failure_class: testPrintFailureClass(result, cause),
           cause,
         });
       }

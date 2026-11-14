@@ -14,6 +14,7 @@ import {
   type LanPrinter,
 } from '../printers/lan-discovery';
 import {
+  classifyPrintFailure,
   detectConnectedPrinters,
   validateNetworkPrinterTarget,
   type PrinterInfo,
@@ -60,6 +61,18 @@ export function failureClassForStatusCause(
   if (cause === 'offline' || cause === 'unreachable' || cause === 'queue_offline') return 'offline';
   if (cause === 'queue_missing') return 'not_configured';
   return 'needs_attention';
+}
+
+export function testPrintFailureClass(
+  result: { ok: boolean; detail?: string; failureClass?: string },
+  cause: PrinterStatusBody['cause'],
+): string {
+  if (result.failureClass) return result.failureClass;
+  if (!result.ok) {
+    const detailClass = classifyPrintFailure(result.detail);
+    if (detailClass !== 'unknown') return detailClass;
+  }
+  return failureClassForStatusCause(cause) ?? 'unknown';
 }
 
 /** A network printer that answers with a physical fault dropped the bytes it was sent. */

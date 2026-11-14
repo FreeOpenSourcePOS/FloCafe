@@ -309,7 +309,7 @@ export default function PaymentModal({
     const resolved = typeof next === 'function' ? next(activeCol1Panel === 'discount') : next;
     setCol1Panel(resolved ? 'discount' : 'items');
   };
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(Boolean(initialOverridePin));
   const [billDetails, setBillDetails] = useState<{
     id: number;
     order: Order | null;
@@ -693,11 +693,13 @@ export default function PaymentModal({
       if (bill.id !== syncedBill.id) {
         setShowDiscount(false);
       }
-    } else {
+    } else if (billIdChanged || Number(syncedBill.discount_amount) > 0) {
       setDiscountType('percentage');
       setDiscountValue('');
       setDiscountReason('');
-      setShowDiscount(false);
+      if (!billIdChanged && activeCol1Panel === 'discount') {
+        setShowDiscount(false);
+      }
     }
   }
 
@@ -1626,6 +1628,7 @@ export default function PaymentModal({
         lockAttempt(null);
         setKitchenOverrideRequired(true);
         setCol1Panel('kitchen-override');
+        setShowDetails(true);
         setKitchenOverridePin('');
         setKitchenUndeliveredCount(Number(payload.undeliveredCount) || 0);
         setKitchenUndeliveredItems(
@@ -1634,15 +1637,18 @@ export default function PaymentModal({
         setKitchenDeliveryError('');
         setRequestFailure(null);
         setPaymentOutcomeUnknown(false);
+        toast.error(t('kitchenDeliveryOverridePrompt'));
       } else if (payload?.error === 'Invalid manager PIN') {
         // A definitive challenge rejection: no payment was recorded.
         lockAttempt(null);
         setKitchenOverrideRequired(true);
         setCol1Panel('kitchen-override');
+        setShowDetails(true);
         setKitchenOverridePin('');
         setKitchenDeliveryError(t('kitchenDeliveryOverrideInvalid'));
         setRequestFailure(null);
         setPaymentOutcomeUnknown(false);
+        toast.error(t('kitchenDeliveryOverrideInvalid'));
       } else if (knownNotApplied && payload?.error !== IDEMPOTENCY_CONFLICT_ERROR) {
         lockAttempt(null);
         setFailure('not_applied');
@@ -2077,9 +2083,13 @@ export default function PaymentModal({
                 }
               }}
               aria-expanded={showDetails}
-              className="touch-target rounded-lg border border-border px-3 text-sm font-medium lg:hidden"
+              className={`touch-target rounded-lg border px-3 text-sm font-medium lg:hidden ${
+                !showDetails && kitchenOverrideRequired
+                  ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
+                  : 'border-border'
+              }`}
             >
-              {showDetails ? t('close') : t('items')}
+              {showDetails ? t('close') : kitchenOverrideRequired ? t('managerPin') : t('items')}
             </button>
             <button
               onClick={justPaid ? onPaid : onClose}

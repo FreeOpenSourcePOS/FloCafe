@@ -937,6 +937,39 @@ async function testPaymentModalSettledDismissAndRestoredAttempt() {
         `Replayed restored attempt displays settled $25.00 (got ${receiptText})`,
       );
 
+      // Column 1 and Column 2 mutation controls must all be disabled once justPaid === true
+      const settledDiscountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.equal(
+        settledDiscountTab?.props?.disabled,
+        true,
+        'col1-tab-discount is disabled once justPaid is true',
+      );
+      const settledCashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      const settledCashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      const settledCardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      assert.equal(
+        settledCashBtn?.props?.disabled,
+        true,
+        'Built-in tender buttons are disabled once justPaid is true',
+      );
+      assert.equal(
+        settledCashInput?.props?.disabled && settledCardInput?.props?.disabled,
+        true,
+        'Built-in tender inputs are disabled once justPaid is true',
+      );
+
       // Escape dismiss handler and header close button must both invoke onPaid() when justPaid === true
       assert.equal(typeof registeredDismiss, 'function');
       registeredDismiss!();

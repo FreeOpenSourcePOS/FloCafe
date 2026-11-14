@@ -315,6 +315,33 @@ async function testTouchNumberPadAndStationStructure() {
       'Default TouchNumberPad omits grid-rows-4',
     );
 
+    const pressPadKey = (currentValue: string, label: string, max?: number) => {
+      let nextValue = currentValue;
+      const tree = TouchNumberPad({
+        value: currentValue,
+        onChange: (val: string) => {
+          nextValue = val;
+        },
+        ariaLabel: 'Keypad',
+        clearLabel: 'Clear amount',
+        backspaceLabel: 'Backspace',
+        max,
+      });
+      const buttons = collectElements(tree, (el) => el.type === 'button');
+      const button = buttons.find((el) => el.props?.children === label);
+      assert.ok(button, `TouchNumberPad should render "${label}" button`);
+      button.props.onClick();
+      return nextValue;
+    };
+
+    const afterDoubleZeroFromEmpty = pressPadKey('', '00');
+    assert.equal(afterDoubleZeroFromEmpty, '0', '00 from empty yields single 0');
+    assert.equal(pressPadKey(afterDoubleZeroFromEmpty, '5'), '5', '5 after 00 yields 5, not 005');
+    assert.equal(pressPadKey('0', '00'), '0', '00 from 0 stays 0');
+    assert.equal(pressPadKey('5', '00'), '500', '00 after non-zero appends 00');
+    assert.equal(pressPadKey('5.', '00'), '5.00', '00 after decimal point appends 00');
+    assert.equal(pressPadKey('5', '00', 250), '250', '00 clamps against max');
+
     const stationMarkup = renderToStaticMarkup(
       React.createElement(
         CheckoutPaymentStation,

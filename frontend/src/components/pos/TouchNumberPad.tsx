@@ -38,6 +38,9 @@ function appendDigit(value: string, digit: string, allowDecimal: boolean, max?: 
     if (!allowDecimal || value.includes('.')) return value;
     return value === '' ? '0.' : `${value}.`;
   }
+  if (digit === '00' && (value === '' || value === '0')) {
+    return clampValue('0', max);
+  }
   const next = value === '0' ? digit : `${value}${digit}`;
   return clampValue(next, max);
 }

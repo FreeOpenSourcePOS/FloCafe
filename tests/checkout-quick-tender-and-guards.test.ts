@@ -404,6 +404,8 @@ function installCheckoutComponentMocks(
     confirmFn?: () => Promise<boolean>;
     splitSavingRef?: { current: boolean };
     discount?: { type: 'amount' | 'percentage'; value: number; reason?: string } | null;
+    apiGet?: (url: string) => Promise<any>;
+    apiPost?: (url: string, body: any) => Promise<any>;
   } = {},
 ) {
   const Icon = () => null;
@@ -594,6 +596,7 @@ function installCheckoutComponentMocks(
     if (request === '@/lib/api') {
       const apiObj = {
         get: async (url: string) => {
+          if (overrides.apiGet) return overrides.apiGet(url);
           if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
           if (String(url).includes('payment-methods')) return { data: { methods: [] } };
           if (String(url).includes('printers')) return { data: { printers: [] } };
@@ -601,7 +604,8 @@ function installCheckoutComponentMocks(
           if (String(url).includes('/bills/')) return { data: { bill: makeBill('bill-1', 20) } };
           return { data: {} };
         },
-        post: async () => ({ data: {} }),
+        post: async (url: string, body: any) =>
+          overrides.apiPost ? overrides.apiPost(url, body) : { data: {} },
         defaults: { headers: { common: {} } },
       };
       return {
@@ -788,11 +792,171 @@ async function testPaymentModalLockDismissAndBillReset() {
         0,
         'Switching bill.id resets active Card selection / card terminal reference state',
       );
+
+      // Auto-filling Cash on bill-2 then switching bill.id to bill-3 with a different balance
+      // must NOT overwrite the empty reset with bill-2's rescaled auto-fill amount.
+      const bill2CashBtn = collectElements(
+        bill2Tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      assert.ok(bill2CashBtn, 'bill-2 Cash tender button rendered');
+      bill2CashBtn.props.onClick();
+      const bill2FilledTree = harness.renderAndSettle(PaymentModal, bill2Props);
+      const bill2FilledInput = collectElements(
+        bill2FilledTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(bill2FilledInput?.props?.value, '35', 'Auto-filled Cash matches bill-2 balance');
+
+      const bill3Props = { ...baseProps, bill: makeBill('bill-3', 50) };
+      const bill3Tree = harness.renderAndSettle(PaymentModal, bill3Props);
+      const bill3CashInput = collectElements(
+        bill3Tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(
+        bill3CashInput ? bill3CashInput.props.value : '',
+        '',
+        'Switching bill.id with a new balance does not rescale auto-filled tender from prior bill',
+      );
     } finally {
       harness.cleanupAll();
     }
   });
   console.log('  ✓ PaymentModal pre-confirm lock, dismiss handler, and bill.id reset verified');
+}
+
+async function testPaymentModalSettledDismissAndRestoredAttempt() {
+  console.log('\n--- 3b. PaymentModal justPaid Dismiss & Restored Attempt Settled Amount ---');
+  await withAliases(async () => {
+    const orderAttempt = require('../frontend/src/lib/order-attempt.ts');
+    const storageMap = new Map<string, string>();
+    const prevWindow = (globalThis as any).window;
+    const hadWindow = 'window' in globalThis;
+    (globalThis as any).window = {
+      ...(prevWindow || {}),
+      sessionStorage: {
+        getItem: (k: string) => storageMap.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          storageMap.set(k, v);
+        },
+        removeItem: (k: string) => {
+          storageMap.delete(k);
+        },
+      },
+    };
+
+    const harness = createStatefulHarness();
+    try {
+      const storageKey = orderAttempt.getPostpaidPaymentAttemptStorageKey('u-1', 1, 'bill-restored');
+      orderAttempt.savePostpaidPaymentAttempt((globalThis as any).window.sessionStorage, storageKey, {
+        userId: 'u-1',
+        storeId: 1,
+        billId: 'bill-restored',
+        idempotencyKey: '33333333-3333-4333-8333-333333333333',
+        key: '33333333-3333-4333-8333-333333333333',
+        operationId: '44444444-4444-4444-8444-444444444444',
+        zeroBalance: false,
+        lines: [{ method: 'cash', amount: 30 }],
+        customerId: null,
+        paymentFingerprint: '[{"method":"cash","amount":30}]',
+      });
+
+      const restoredBill = makeBill('bill-restored', 25);
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/bill-restored')) {
+            return {
+              data: {
+                bill: { ...restoredBill, payment_status: 'paid', balance: 0, paid_amount: 25 },
+              },
+            };
+          }
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
+          if (String(url).includes('settings')) return { data: { split_checks_enabled: true } };
+          return { data: {} };
+        },
+        apiPost: async () => ({
+          data: {
+            bill: { ...restoredBill, payment_status: 'paid', balance: 0, paid_amount: 25 },
+            loyaltyPointsEarned: 0,
+          },
+        }),
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let registeredDismiss: (() => boolean) | undefined;
+      let closeCount = 0;
+      let paidCount = 0;
+      let activeBill: any = restoredBill;
+      const makeProps = () => ({
+        bill: activeBill,
+        currency: 'USD',
+        onClose: () => {
+          closeCount++;
+        },
+        onPaid: () => {
+          paidCount++;
+        },
+        onBillUpdate: (updated: any) => {
+          activeBill = updated;
+        },
+        onRegisterDismissHandler: (fn: (() => boolean) | undefined) => {
+          registeredDismiss = fn;
+        },
+      });
+
+      let tree = harness.renderAndSettle(PaymentModal, makeProps());
+
+      // 1. Check payment status (updates bill.balance to 0) then replay the restored attempt
+      const ctaCheck = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.ok(ctaCheck, 'Check payment status CTA rendered');
+      await ctaCheck.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, makeProps());
+
+      const ctaRetry = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.ok(ctaRetry, 'Retry same payment CTA rendered');
+      await ctaRetry.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, makeProps());
+
+      // Settled receipt view must show $25.00, NOT $0.00
+      const receiptText = renderToStaticMarkup(tree);
+      assert.ok(
+        receiptText.includes('$25.00') && !receiptText.includes('$0.00'),
+        `Replayed restored attempt displays settled $25.00 (got ${receiptText})`,
+      );
+
+      // Escape dismiss handler and header close button must both invoke onPaid() when justPaid === true
+      assert.equal(typeof registeredDismiss, 'function');
+      registeredDismiss!();
+      assert.equal(paidCount, 1, 'Escape dismiss after justPaid invokes onPaid');
+      assert.equal(closeCount, 0, 'Escape dismiss after justPaid does not call onClose');
+
+      const headerCloseBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['aria-label'] === 'close',
+      )[0];
+      assert.ok(headerCloseBtn, 'Header close button rendered');
+      headerCloseBtn.props.onClick();
+      assert.equal(paidCount, 2, 'Header close after justPaid invokes onPaid');
+      assert.equal(closeCount, 0, 'Header close after justPaid does not call onClose');
+    } finally {
+      harness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+  console.log('  ✓ PaymentModal settled dismiss and restored attempt amount verified');
 }
 
 async function testPrepaidAutoFillTracksDiscountUpdates() {
@@ -977,6 +1141,7 @@ async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
   await testPaymentModalLockDismissAndBillReset();
+  await testPaymentModalSettledDismissAndRestoredAttempt();
   await testPrepaidAutoFillTracksDiscountUpdates();
   await testPosPageEscapeAndSessionGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');

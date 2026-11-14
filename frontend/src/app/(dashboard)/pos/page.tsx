@@ -513,7 +513,7 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!supportError) return;
-    if (!isSupportErrorContextCurrent(supportError.context, readLiveSupportContext())) {
+    if (!checkSessionCurrent(supportError.context)) {
       clearSupportErrorState();
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -4195,9 +4195,7 @@ export default function POSPage() {
                   onClick={async () => {
                     if (supportSubmitTokenRef.current !== null) return;
                     const targetError = supportError;
-                    if (
-                      !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
-                    ) {
+                    if (!checkSessionCurrent(targetError.context)) {
                       clearSupportErrorState();
                       return;
                     }
@@ -4220,8 +4218,7 @@ export default function POSPage() {
                               ? window.electronAPI?.getLogTail
                               : undefined,
                           );
-                          const liveAfterLog = readLiveSupportContext();
-                          if (!isSupportErrorContextCurrent(targetError.context, liveAfterLog)) {
+                          if (!checkSessionCurrent(targetError.context)) {
                             clearSupportErrorState();
                             return;
                           }
@@ -4234,12 +4231,7 @@ export default function POSPage() {
                             logTail: fetchedLogTail,
                           };
                         }
-                        if (
-                          !isSupportErrorContextCurrent(
-                            targetError.context,
-                            readLiveSupportContext(),
-                          )
-                        ) {
+                        if (!checkSessionCurrent(targetError.context)) {
                           clearSupportErrorState();
                           return;
                         }
@@ -4253,11 +4245,9 @@ export default function POSPage() {
                         logTail,
                       });
                       await api.post('/support-ticket', requestBody, {
-                        headers: pinnedAuthHeaders(targetError.context.token),
+                        headers: liveAuthHeadersFor(targetError.context),
                       });
-                      if (
-                        !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
-                      ) {
+                      if (!checkSessionCurrent(targetError.context)) {
                         clearSupportErrorState();
                         return;
                       }
@@ -4267,9 +4257,7 @@ export default function POSPage() {
                       toast.success(tSupport('queued'));
                       setSentTicketId(targetError.clientTicketId);
                     } catch {
-                      if (
-                        !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
-                      ) {
+                      if (!checkSessionCurrent(targetError.context)) {
                         clearSupportErrorState();
                         return;
                       }

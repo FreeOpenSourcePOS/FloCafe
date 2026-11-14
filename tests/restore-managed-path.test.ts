@@ -224,6 +224,23 @@ async function run(): Promise<void> {
     'schema mismatch dialog explains forward schema migration',
   );
 
+  const legacyManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-legacy123.db');
+  fs.copyFileSync(validManaged, legacyManaged);
+  {
+    const legacyDb = new Database(legacyManaged);
+    legacyDb.exec('DROP TABLE _flo_meta');
+    legacyDb.pragma(`user_version = ${olderVersion}`);
+    legacyDb.close();
+  }
+  messageBoxCalls.length = 0;
+  const legacyRestore = await restoreHandler(trustedSender, '1234', legacyManaged);
+  assert.equal(legacyRestore.success, true, 'IPC restores an older backup without Flo metadata');
+  assert.equal(
+    messageBoxCalls.length,
+    1,
+    'IPC confirms the detected older version before migration',
+  );
+
   const restoreIntentPath = path.join(testDir, 'google-drive-restore.pending');
   const tokenPath = path.join(testDir, 'google-drive-token.enc');
   fs.writeFileSync(

@@ -193,8 +193,10 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
 Backup, restore, and wipe are serialised by one lock. Two of them running at once is the failure
 mode that corrupts a database, so any new entry point in this area must take the same lock.
 
-`restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup. A
-supported backup replaces the live database as the authoritative store state; an older backup is
+`restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup. When the
+stamp is absent, a positive SQLite `user_version` identifies the schema; malformed or conflicting
+stamps and files without a usable version are rejected. A supported backup replaces the live
+database as the authoritative store state; an older backup is
 migrated forward through the normal migration registry after replacement. Restore does not merge
 staff, kitchen stations, assignments, settings, inventory history, or other operational state from
 the database being replaced. An unreadable or newer source returns a structured failure with both

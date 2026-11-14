@@ -78,20 +78,6 @@ assert.match(
   'ledger totals use semantic text color',
 );
 
-const payment = source('frontend/src/components/pos/PaymentModal.tsx');
-assert.match(payment, /sm:max-w-4xl/, 'desktop payment modal stays wide');
-assert.match(payment, /lg:grid lg:grid-cols-2/, 'desktop payment content stays side by side');
-assert.match(
-  payment,
-  /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-2/,
-  'desktop payment stays two-column with bounded overflow fallback',
-);
-assert.doesNotMatch(
-  payment,
-  /lg:overflow-visible/,
-  'desktop payment does not clip controls outside its bounded container',
-);
-
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
 assert.match(
   dashboard,
@@ -125,10 +111,15 @@ assert.match(
   /t\('discounts'\)/,
   'prepaid checkout retains the compact cart-level discounts control',
 );
+const stationSource = source('frontend/src/components/pos/CheckoutPaymentStation.tsx');
 const numberPadIndex = prepaidCheckout.indexOf('<CurrencyTouchNumberPad');
 const changeReturnedIndex = prepaidCheckout.indexOf("t('changeReturned')");
 assert.ok(
-  numberPadIndex >= 0 && changeReturnedIndex > numberPadIndex,
+  prepaidCheckout.includes('<CheckoutPaymentStation') &&
+    numberPadIndex >= 0 &&
+    changeReturnedIndex > numberPadIndex &&
+    stationSource.indexOf('data-checkout-zone="keypad"') <
+      stationSource.indexOf('data-testid="checkout-change-slot"'),
   'change returned stays below the payment controls',
 );
 

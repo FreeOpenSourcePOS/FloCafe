@@ -336,6 +336,20 @@ export default function POSPage() {
   const customerModalOpen = topbarCustomerModalOpen || promptCustomerModalOpen;
   const [cartPanelModalOpen, setCartPanelModalOpen] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [prepaidRecovery, setPrepaidRecovery] = useState<{
+    message: string;
+    statusChecked: boolean;
+    nextStep?: string;
+    details: {
+      operation: string;
+      stage: string;
+      outcome: string;
+      reasonCode?: string | null;
+      correlationId?: string | null;
+      httpStatus: number | null;
+    };
+  } | null>(null);
+  const [prepaidFailure, setPrepaidFailure] = useState<typeof prepaidRecovery>(null);
   const [prepaidModalAttempt, setPrepaidModalAttempt] = useState<PrepaidAttempt | null>(null);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
   const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
@@ -415,6 +429,9 @@ export default function POSPage() {
     token: activeToken,
   });
   const activeSubmissionTokenRef = useRef<symbol | null>(null);
+  const prepaidSubmissionTokenRef = useRef<symbol | null>(null);
+  const prepaidRecoveryRef = useRef<typeof prepaidRecovery>(null);
+  const prepaidFailureRef = useRef<typeof prepaidFailure>(null);
 
   const readStoredAuthToken = (): string | null => {
     try {
@@ -457,9 +474,22 @@ export default function POSPage() {
     ) {
       return;
     }
+    const sameAuthenticatedUser =
+      Boolean(activeUserId) &&
+      lastActiveSessionRef.current.userId === activeUserId &&
+      Boolean(lastActiveSessionRef.current.token) &&
+      Boolean(activeToken);
     lastActiveSessionRef.current = { userId: activeUserId, token: activeToken };
+    if (sameAuthenticatedUser) {
+      return;
+    }
     sessionEpochRef.current += 1;
     activeSubmissionTokenRef.current = null;
+    prepaidSubmissionTokenRef.current = null;
+    prepaidRecoveryRef.current = null;
+    prepaidFailureRef.current = null;
+    setPrepaidRecovery(null);
+    setPrepaidFailure(null);
     isSendingToPaymentRef.current = false;
     setSubmitting(false);
     supportSubmitTokenRef.current = null;
@@ -491,9 +521,26 @@ export default function POSPage() {
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
     authToken ? { Authorization: `Bearer ${authToken}` } : {};
+  const liveAuthHeadersFor = (
+    originContext: SupportErrorContextSnapshot,
+  ): Record<string, string> => {
+    const liveContext = readLiveSupportContext();
+    const tokenToUse =
+      liveContext.userId === originContext.userId &&
+      liveContext.storeId === originContext.storeId &&
+      liveContext.sessionEpoch === originContext.sessionEpoch &&
+      liveContext.token
+        ? liveContext.token
+        : originContext.token;
+    return pinnedAuthHeaders(tokenToUse);
+  };
   const checkSessionCurrent = (originContext: SupportErrorContextSnapshot): boolean => {
     return isSupportErrorContextCurrent(originContext, readLiveSupportContext());
   };
+  const paymentModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerPaymentModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    paymentModalDismissRef.current = handler;
+  }, []);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -729,6 +776,7 @@ export default function POSPage() {
     if (effectiveUserId === activeUserId) {
       prepaidAttemptRef.current = safeAttempt;
       prepaidAttemptKeyRef.current = storageKey;
+      setPrepaidModalAttempt(safeAttempt);
     }
     return true;
   };
@@ -749,6 +797,7 @@ export default function POSPage() {
       if (effectiveUserId === activeUserId) {
         prepaidAttemptRef.current = null;
         prepaidAttemptKeyRef.current = null;
+        setPrepaidModalAttempt(null);
       }
       return true;
     }
@@ -761,6 +810,7 @@ export default function POSPage() {
     if (effectiveUserId === activeUserId) {
       prepaidAttemptRef.current = null;
       prepaidAttemptKeyRef.current = null;
+      setPrepaidModalAttempt(null);
     }
     return true;
   };
@@ -791,6 +841,50 @@ export default function POSPage() {
     const originContext = entry.originContext || liveContext;
     if (!isSupportErrorContextCurrent(originContext, liveContext)) {
       return;
+    }
+    if (
+      entry.outcome === 'unknown' &&
+      prepaidSubmissionTokenRef.current &&
+      prepaidSubmissionTokenRef.current === activeSubmissionTokenRef.current
+    ) {
+      const recovery = {
+        message: entry.message,
+        statusChecked: false,
+        details: {
+          operation: entry.operation,
+          stage: entry.stage,
+          outcome: entry.outcome,
+          reasonCode: entry.reasonCode,
+          correlationId: entry.correlationId,
+          httpStatus: entry.status,
+        },
+      };
+      prepaidRecoveryRef.current = recovery;
+      setPrepaidRecovery(recovery);
+    }
+    if (
+      entry.outcome === 'not_applied' &&
+      prepaidSubmissionTokenRef.current &&
+      prepaidSubmissionTokenRef.current === activeSubmissionTokenRef.current &&
+      !['bill_refunded', 'bill_already_paid', 'idempotency_conflict'].includes(
+        entry.displayCode || '',
+      )
+    ) {
+      const failure = {
+        message: entry.message,
+        statusChecked: false,
+        nextStep: entry.nextStep,
+        details: {
+          operation: entry.operation,
+          stage: entry.stage,
+          outcome: entry.outcome,
+          reasonCode: entry.reasonCode,
+          correlationId: entry.correlationId,
+          httpStatus: entry.status,
+        },
+      };
+      prepaidFailureRef.current = failure;
+      setPrepaidFailure(failure);
     }
     const correlationId = isOperationReference(entry.correlationId)
       ? entry.correlationId
@@ -2017,7 +2111,6 @@ export default function POSPage() {
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
     const originStoreId = originContext.storeId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-place-order');
     activeSubmissionTokenRef.current = submissionToken;
 
@@ -2077,7 +2170,7 @@ export default function POSPage() {
           { items: newItems, special_instructions: specialInstructions },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               'Idempotency-Key': itemAttempt.idempotencyKey,
               ...operationHeaders(itemAttempt.operationId),
             },
@@ -2252,7 +2345,7 @@ export default function POSPage() {
           ? { data: { order: attemptWithOperationId.order } }
           : await api.post('/orders', orderPayload, {
               headers: {
-                ...pinnedAuthHeaders(originToken),
+                ...liveAuthHeadersFor(originContext),
                 'Idempotency-Key': attemptWithOperationId.idempotencyKey,
                 ...operationHeaders(operationId),
               },
@@ -2437,7 +2530,6 @@ export default function POSPage() {
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-send-to-payment');
     activeSubmissionTokenRef.current = submissionToken;
     const isOriginSessionCurrent = () => checkSessionCurrent(originContext);
@@ -2518,7 +2610,7 @@ export default function POSPage() {
 
       const { data } = await api.post('/orders', orderPayload, {
         headers: {
-          ...pinnedAuthHeaders(originToken),
+          ...liveAuthHeadersFor(originContext),
           'Idempotency-Key': attempt.idempotencyKey,
           ...operationHeaders(attempt.operationId),
         },
@@ -2657,13 +2749,12 @@ export default function POSPage() {
     discount: PrepaidDiscount | null,
   ) => {
     const isPrepaidCheckout = shouldTakePaymentNow;
-    setShowPrepaidCheckout(false);
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-prepaid-checkout');
     activeSubmissionTokenRef.current = submissionToken;
+    prepaidSubmissionTokenRef.current = submissionToken;
 
     const isSessionCurrent = () => checkSessionCurrent(originContext);
 
@@ -2678,6 +2769,9 @@ export default function POSPage() {
       }));
     if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
     const paymentCustomerId: string | number | null = cart.customerId ?? null;
+    const receiptCustomer = cart.customer
+      ? { phone: cart.customer.phone, country_code: cart.customer.country_code }
+      : null;
     let paymentFingerprint = JSON.stringify({
       payments: paymentLines,
       customer_id: paymentCustomerId,
@@ -2741,7 +2835,7 @@ export default function POSPage() {
       try {
         const { data } = await api.get(`/bills/${existingAttempt.bill.id}`, {
           headers: {
-            ...pinnedAuthHeaders(originToken),
+            ...liveAuthHeadersFor(originContext),
             ...operationHeaders(recoveryOperationId),
           },
         });
@@ -2879,7 +2973,7 @@ export default function POSPage() {
           },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               'Idempotency-Key': attempt.orderIdempotencyKey,
               ...operationHeaders(operationId),
             },
@@ -2922,7 +3016,7 @@ export default function POSPage() {
         try {
           const { data: currentOrderData } = await api.get(`/orders/${orderId}`, {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               ...operationHeaders(operationId),
             },
           });
@@ -2962,7 +3056,7 @@ export default function POSPage() {
           },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               ...operationHeaders(operationId),
             },
           },
@@ -2980,7 +3074,7 @@ export default function POSPage() {
           { order_id: orderId },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               ...operationHeaders(operationId),
             },
           },
@@ -3020,7 +3114,7 @@ export default function POSPage() {
       failureStage = 'payment_submission';
       const paymentResponse = await api.post(`/bills/${bill.id}/payments`, paymentRequest, {
         headers: {
-          ...pinnedAuthHeaders(originToken),
+          ...liveAuthHeadersFor(originContext),
           'Idempotency-Key': attempt.paymentIdempotencyKey,
           ...operationHeaders(operationId),
         },
@@ -3197,6 +3291,16 @@ export default function POSPage() {
         undefined,
         originContext,
       );
+      if (!isSessionCurrent()) return;
+      return {
+        bill: { ...paidBill, order: paidBill.order ?? bill.order ?? order },
+        customer:
+          paymentCustomerId != null &&
+          String(paidBill.customer_id ?? order.customer_id) === String(paymentCustomerId)
+            ? receiptCustomer
+            : null,
+        pointsEarned,
+      };
     } catch (error) {
       if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError && committedOrder) {
@@ -3446,7 +3550,6 @@ export default function POSPage() {
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-add-cart-to-order');
     activeSubmissionTokenRef.current = submissionToken;
 
@@ -3480,7 +3583,7 @@ export default function POSPage() {
         },
         {
           headers: {
-            ...pinnedAuthHeaders(originToken),
+            ...liveAuthHeadersFor(originContext),
             'Idempotency-Key': itemAttempt.idempotencyKey,
             ...operationHeaders(itemAttempt.operationId),
           },
@@ -3814,7 +3917,12 @@ export default function POSPage() {
           return true;
         }
         if (showPrepaidCheckout) {
-          setShowPrepaidCheckout(false);
+          if (!submitting && !prepaidRecovery) {
+            prepaidFailureRef.current = null;
+            setPrepaidFailure(null);
+            setPrepaidModalAttempt(null);
+            setShowPrepaidCheckout(false);
+          }
           return true;
         }
         if (checkoutTable) {
@@ -3822,6 +3930,9 @@ export default function POSPage() {
           return true;
         }
         if (paymentBill) {
+          if (paymentModalDismissRef.current) {
+            return paymentModalDismissRef.current();
+          }
           setPaymentBill(null);
           return true;
         }
@@ -3901,7 +4012,7 @@ export default function POSPage() {
 
   return (
     <>
-      {supportError && (
+      {supportError && !(showPrepaidCheckout && (prepaidRecovery || prepaidFailure)) && (
         <div
           data-testid="pos-support-error-panel"
           data-classification={supportError.classification || 'unexpected_failure'}
@@ -4465,6 +4576,7 @@ export default function POSPage() {
           bill={paymentBill}
           currency={currency}
           initialOverridePin={checkoutOverridePin}
+          onRegisterDismissHandler={registerPaymentModalDismiss}
           onClose={() => {
             setPaymentBill(null);
             setCheckoutOverridePin(undefined);
@@ -4546,8 +4658,96 @@ export default function POSPage() {
           initialCardTransactionIdRequired={cardTransactionIdRequired}
           initialDiscount={prepaidModalAttempt?.discount ?? null}
           discountCommitted={Boolean(prepaidModalAttempt?.bill)}
-          onClose={() => setShowPrepaidCheckout(false)}
-          onConfirm={handlePrepaidCheckout}
+          recovery={prepaidRecovery}
+          failure={prepaidFailure}
+          onCheckRecovery={async () => {
+            const originContext = readLiveSupportContext();
+            try {
+              const attempt = readPrepaidAttempt(originContext.userId);
+              if (!attempt?.orderIdempotencyKey || !attempt.paymentIdempotencyKey) {
+                throw new Error('Saved checkout attempt unavailable');
+              }
+              if (attempt.bill) {
+                const { data } = await api.get(`/bills/${attempt.bill.id}`, {
+                  headers: {
+                    ...liveAuthHeadersFor(originContext),
+                    ...operationHeaders(attempt.operationId),
+                  },
+                });
+                if (
+                  !data?.bill ||
+                  !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)
+                ) {
+                  throw new Error('Bill status unavailable');
+                }
+              }
+              if (!checkSessionCurrent(originContext) || !prepaidRecoveryRef.current) return;
+              const recovery = {
+                ...prepaidRecoveryRef.current,
+                message: t('paymentStatusUnconfirmed'),
+                statusChecked: true,
+              };
+              prepaidRecoveryRef.current = recovery;
+              setPrepaidRecovery(recovery);
+            } catch {
+              if (!checkSessionCurrent(originContext) || !prepaidRecoveryRef.current) return;
+              const recovery = {
+                ...prepaidRecoveryRef.current,
+                message: t('operationOutcomeUnknown'),
+                statusChecked: false,
+              };
+              prepaidRecoveryRef.current = recovery;
+              setPrepaidRecovery(recovery);
+            }
+          }}
+          onClose={() => {
+            prepaidFailureRef.current = null;
+            setPrepaidFailure(null);
+            setPrepaidModalAttempt(null);
+            setShowPrepaidCheckout(false);
+          }}
+          onConfirm={(...args) => {
+            const originContext = readLiveSupportContext();
+            if (prepaidRecovery || prepaidFailure) clearSupportErrorState();
+            prepaidRecoveryRef.current = null;
+            prepaidFailureRef.current = null;
+            setPrepaidFailure(null);
+            const submission = handlePrepaidCheckout(...args);
+            const submissionToken = prepaidSubmissionTokenRef.current;
+            let completed = false;
+            return submission
+              .then((result) => {
+                completed = Boolean(result);
+                return result;
+              })
+              .catch(() => {
+                if (!checkSessionCurrent(originContext)) return;
+                const recovery = prepaidRecovery || {
+                  message: t('operationOutcomeUnknown'),
+                  statusChecked: false,
+                  details: {
+                    operation: 'checkout',
+                    stage: 'unexpected',
+                    outcome: 'unknown',
+                    httpStatus: null,
+                  },
+                };
+                prepaidRecoveryRef.current = recovery;
+                setPrepaidRecovery(recovery);
+              })
+              .finally(() => {
+                if (prepaidSubmissionTokenRef.current === submissionToken) {
+                  prepaidSubmissionTokenRef.current = null;
+                }
+                if (!checkSessionCurrent(originContext)) return;
+                if (prepaidFailureRef.current) {
+                  setPrepaidRecovery(null);
+                } else if (!prepaidRecoveryRef.current && !completed) {
+                  setPrepaidRecovery(null);
+                  setShowPrepaidCheckout(false);
+                }
+              });
+          }}
         />
       )}
 

@@ -678,21 +678,347 @@ async function run(): Promise<void> {
         authModule.useAuthStore.getState().clearLocalSession();
       }
 
-      // Scenario 8: print-test page rechecks active tenant after bootstrap waits.
-      const fs = require('node:fs') as typeof import('node:fs');
-      const printTestSrc = fs.readFileSync(
-        path.join(process.cwd(), 'frontend/src/app/(dashboard)/print-test/page.tsx'),
-        'utf8',
-      );
-      check(
-        'print-test KOT and HTML download recheck tenant after language bootstrap waits',
-        printTestSrc.includes(
-          'const kotLanguage = await resolveReadyKotTicketLanguage();\n              assertSameTenant(tenantIdAtStart, reservedWindow);',
-        ) &&
-          printTestSrc.includes(
-            'languages = await resolveReadyBillPrintLanguages();\n      assertSameTenant(tenantIdAtStart);',
-          ),
-      );
+      // Scenario 8: print-test handlers (KOT browser print, receipt browser print,
+      // and HTML download) cancel cleanly and close reserved popups when the
+      // active tenant changes while waiting on language bootstrap.
+      {
+        const Module = require('node:module') as {
+          _load: (request: string, parent: any, isMain: boolean) => any;
+        };
+        const originalModuleLoad = Module._load;
+        const printTestPagePath = require.resolve('../frontend/src/app/(dashboard)/print-test/page');
+        const originalReserve = printerService.reserveBrowserPrintWindow.bind(printerService);
+        const savedWindow = (globalThis as any).window;
+        const savedDocument = (globalThis as any).document;
+        const savedCreateObjectURL = URL.createObjectURL;
+        const savedRevokeObjectURL = URL.revokeObjectURL;
+
+        const successToasts: string[] = [];
+        const errorToasts: string[] = [];
+        const states: any[] = [];
+        let stateCursor = 0;
+
+        const reactStub = {
+          useState: <T>(initial: T | (() => T)) => {
+            const idx = stateCursor++;
+            if (!(idx in states)) {
+              states[idx] = typeof initial === 'function' ? (initial as () => T)() : initial;
+            }
+            const setter = (next: T | ((prev: T) => T)) => {
+              states[idx] =
+                typeof next === 'function' ? (next as (prev: T) => T)(states[idx]) : next;
+            };
+            return [states[idx], setter] as const;
+          },
+          useMemo: <T>(factory: () => T) => factory(),
+        };
+        const jsxElement = (type: unknown, props: Record<string, any>, key?: unknown) => ({
+          type,
+          props: props ?? {},
+          key,
+        });
+        const IconStub = () => null;
+        const ButtonStub = (props: Record<string, any>) => ({ type: 'Button', props });
+        const toastSpy = Object.assign(() => {}, {
+          success: (msg: string) => {
+            successToasts.push(String(msg));
+          },
+          error: (msg: string) => {
+            errorToasts.push(String(msg));
+          },
+        });
+        const hookableStore = <T extends { getState: () => any }>(store: T) =>
+          Object.assign(
+            (selector?: (state: any) => any) =>
+              selector ? selector(store.getState()) : store.getState(),
+            store,
+          );
+
+        const hasText = (node: unknown, target: string): boolean => {
+          if (typeof node === 'string') return node === target;
+          if (Array.isArray(node)) return node.some((child) => hasText(child, target));
+          if (node && typeof node === 'object') {
+            return hasText((node as { props?: { children?: unknown } }).props?.children, target);
+          }
+          return false;
+        };
+        const findElement = (
+          node: unknown,
+          predicate: (el: { type?: unknown; props?: Record<string, any> }) => boolean,
+        ): { type?: unknown; props?: Record<string, any> } | undefined => {
+          if (Array.isArray(node)) {
+            for (const child of node) {
+              const hit = findElement(child, predicate);
+              if (hit) return hit;
+            }
+            return undefined;
+          }
+          if (!node || typeof node !== 'object') return undefined;
+          const el = node as { type?: unknown; props?: Record<string, any> };
+          if (predicate(el)) return el;
+          return findElement(el.props?.children, predicate);
+        };
+
+        let releasePtLoad = () => {};
+        let releaseTrLoad = () => {};
+        let releaseDeReceiptLoad = () => {};
+
+        try {
+          delete require.cache[printTestPagePath];
+          Module._load = function (request: string, parent: unknown, isMain: boolean) {
+            if (request === 'react') return reactStub;
+            if (request === 'react/jsx-runtime') {
+              return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+            }
+            if (request === 'use-intl') {
+              return { useTranslations: (ns: string) => (key: string) => `${ns}.${key}` };
+            }
+            if (request === 'lucide-react') {
+              return new Proxy({}, { get: () => IconStub });
+            }
+            if (request === 'react-hot-toast') {
+              return { __esModule: true, default: toastSpy };
+            }
+            if (request === '@/components/ui/button') return { Button: ButtonStub };
+            if (request === '@/store/auth') {
+              return { ...authModule, useAuthStore: hookableStore(authModule.useAuthStore) };
+            }
+            if (request === '@/store/pos-settings') {
+              return {
+                ...posSettings,
+                usePosSettingsStore: hookableStore(posSettings.usePosSettingsStore),
+              };
+            }
+            if (request === '@/hooks/usePrinter') {
+              return { ...usePrinter, usePrinterStore: hookableStore(usePrinter.usePrinterStore) };
+            }
+            return originalModuleLoad.apply(this, arguments as any);
+          };
+
+          const PrintTestPage = require(printTestPagePath).default as () => any;
+          const renderPrintTestPage = () => {
+            stateCursor = 0;
+            return PrintTestPage();
+          };
+
+          // 8a: KOT browser test print closes reserved popup and cancels after bootstrap wait.
+          const ptLoadGate = new Promise<void>((resolve) => {
+            releasePtLoad = resolve;
+          });
+          const trLoadGate = new Promise<void>((resolve) => {
+            releaseTrLoad = resolve;
+          });
+          const deReceiptLoadGate = new Promise<void>((resolve) => {
+            releaseDeReceiptLoad = resolve;
+          });
+          loaderModule.loadLocaleMessages = async (lang: string) => {
+            if (lang === 'pt') await ptLoadGate;
+            if (lang === 'tr') await trLoadGate;
+            if (lang === 'de') await deReceiptLoadGate;
+            return originalLoad(lang);
+          };
+
+          const ptTenant = {
+            ...frTenant,
+            id: 83,
+            country: 'PT',
+            bill_language_policy: JSON.stringify({
+              primary: { mode: 'fixed', language: 'pt' },
+              additional: [],
+            }),
+            kot_language_policy: JSON.stringify({
+              primary: { mode: 'fixed', language: 'pt' },
+              additional: [],
+            }),
+          };
+          const kotPopup = makePopupWindow(kotHtmls) as any;
+          kotHtmls.length = 0;
+          (printerService as any).reserveBrowserPrintWindow = () => kotPopup;
+          printerStore.getState().setPrintMethod('browser');
+          settings.setKotPrintingEnabled(true);
+
+          authModule.useAuthStore.getState().syncAuthenticatedSession({
+            token: 'kds-token-pt',
+            user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+            currentTenant: ptTenant,
+            tenants: [ptTenant],
+          });
+
+          let tree = renderPrintTestPage();
+          const kotModeBtn = findElement(
+            tree,
+            (el) => el.type === 'button' && hasText(el, 'printTest.optionKot'),
+          );
+          check('print-test renders KOT option button', Boolean(kotModeBtn));
+          kotModeBtn!.props.onClick();
+          tree = renderPrintTestPage();
+          const kotRunBtn = findElement(
+            tree,
+            (el) => el.type === 'Button' && hasText(el, 'printTest.runTest'),
+          );
+          const kotRunPromise = kotRunBtn!.props.onClick() as Promise<void>;
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          authModule.useAuthStore.getState().syncAuthenticatedSession({
+            token: 'kds-token-fr-switch-1',
+            user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+            currentTenant: frTenant,
+            tenants: [frTenant],
+          });
+          releasePtLoad();
+          await kotRunPromise;
+          tree = renderPrintTestPage();
+          const kotRunBtnAfter = findElement(
+            tree,
+            (el) => el.type === 'Button' && hasText(el, 'printTest.runTest'),
+          );
+          check(
+            'print-test KOT browser print cancels and closes popup on tenant change after bootstrap wait',
+            kotPopup.closed === true &&
+              kotHtmls.length === 0 &&
+              successToasts.length === 0 &&
+              errorToasts.length === 0 &&
+              kotRunBtnAfter?.props.disabled === false,
+            `closed=${kotPopup.closed} htmls=${kotHtmls.length} success=${successToasts.length} error=${errorToasts.length}`,
+          );
+
+          // 8b: Web-print HTML download cancels without creating blob/anchor on tenant change.
+          let objectUrlCount = 0;
+          let downloadAnchorClicks = 0;
+          URL.createObjectURL = () => {
+            objectUrlCount += 1;
+            return 'blob:print-test';
+          };
+          URL.revokeObjectURL = () => {};
+          (globalThis as any).document = {
+            createElement: () => ({
+              href: '',
+              download: '',
+              click: () => {
+                downloadAnchorClicks += 1;
+              },
+            }),
+          };
+
+          const trTenant = {
+            ...frTenant,
+            id: 84,
+            country: 'TR',
+            bill_language_policy: JSON.stringify({
+              primary: { mode: 'fixed', language: 'tr' },
+              additional: [],
+            }),
+            kot_language_policy: JSON.stringify({
+              primary: { mode: 'fixed', language: 'tr' },
+              additional: [],
+            }),
+          };
+          authModule.useAuthStore.getState().syncAuthenticatedSession({
+            token: 'kds-token-tr',
+            user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+            currentTenant: trTenant,
+            tenants: [trTenant],
+          });
+
+          const webPrintModeBtn = findElement(
+            tree,
+            (el) => el.type === 'button' && hasText(el, 'printTest.optionWebPrint'),
+          );
+          webPrintModeBtn!.props.onClick();
+          tree = renderPrintTestPage();
+          const downloadBtn = findElement(
+            tree,
+            (el) => el.type === 'Button' && hasText(el, 'printTest.downloadHtml'),
+          );
+          check('print-test renders Download HTML button in web-print mode', Boolean(downloadBtn));
+          const downloadPromise = downloadBtn!.props.onClick() as Promise<void>;
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          authModule.useAuthStore.getState().syncAuthenticatedSession({
+            token: 'kds-token-fr-switch-2',
+            user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+            currentTenant: frTenant,
+            tenants: [frTenant],
+          });
+          releaseTrLoad();
+          await downloadPromise;
+          check(
+            'print-test HTML download cancels without download or toast on tenant change after bootstrap wait',
+            objectUrlCount === 0 &&
+              downloadAnchorClicks === 0 &&
+              successToasts.length === 0 &&
+              errorToasts.length === 0,
+            `urls=${objectUrlCount} clicks=${downloadAnchorClicks} success=${successToasts.length} error=${errorToasts.length}`,
+          );
+
+          // 8c: Browser receipt print cancels and closes window.open popup on tenant change.
+          const receiptPopupHtmls: string[] = [];
+          const receiptPopup = makePopupWindow(receiptPopupHtmls) as any;
+          (globalThis as any).window = {
+            ...savedWindow,
+            open: () => receiptPopup,
+          };
+          const deReceiptTenant = {
+            ...frTenant,
+            id: 85,
+            country: 'DE',
+            bill_language_policy: JSON.stringify({
+              primary: { mode: 'fixed', language: 'de' },
+              additional: [],
+            }),
+            kot_language_policy: JSON.stringify({
+              primary: { mode: 'fixed', language: 'de' },
+              additional: [],
+            }),
+          };
+          authModule.useAuthStore.getState().syncAuthenticatedSession({
+            token: 'kds-token-de-receipt',
+            user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+            currentTenant: deReceiptTenant,
+            tenants: [deReceiptTenant],
+          });
+          const receiptModeBtn = findElement(
+            tree,
+            (el) => el.type === 'button' && hasText(el, 'printTest.optionBasicReceipt'),
+          );
+          receiptModeBtn!.props.onClick();
+          tree = renderPrintTestPage();
+          const receiptRunBtn = findElement(
+            tree,
+            (el) => el.type === 'Button' && hasText(el, 'printTest.runTest'),
+          );
+          const receiptRunPromise = receiptRunBtn!.props.onClick() as Promise<void>;
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          authModule.useAuthStore.getState().syncAuthenticatedSession({
+            token: 'kds-token-fr-switch-3',
+            user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+            currentTenant: frTenant,
+            tenants: [frTenant],
+          });
+          releaseDeReceiptLoad();
+          await receiptRunPromise;
+          check(
+            'print-test browser receipt cancels and closes popup on tenant change after bootstrap wait',
+            receiptPopup.closed === true &&
+              receiptPopupHtmls.length === 0 &&
+              successToasts.length === 0 &&
+              errorToasts.length === 0,
+            `closed=${receiptPopup.closed} htmls=${receiptPopupHtmls.length} success=${successToasts.length} error=${errorToasts.length}`,
+          );
+        } finally {
+          releasePtLoad();
+          releaseTrLoad();
+          releaseDeReceiptLoad();
+          Module._load = originalModuleLoad;
+          delete require.cache[printTestPagePath];
+          (printerService as any).reserveBrowserPrintWindow = originalReserve;
+          if (savedWindow === undefined) delete (globalThis as any).window;
+          else (globalThis as any).window = savedWindow;
+          if (savedDocument === undefined) delete (globalThis as any).document;
+          else (globalThis as any).document = savedDocument;
+          URL.createObjectURL = savedCreateObjectURL;
+          URL.revokeObjectURL = savedRevokeObjectURL;
+          authModule.useAuthStore.getState().clearLocalSession();
+        }
+      }
     } finally {
       loaderModule.loadLocaleMessages = originalLoad;
       (printerService as any).printViaBrowser = originalPrintViaBrowser;

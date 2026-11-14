@@ -1661,22 +1661,29 @@ async function runTests() {
       if (existing.endsWith('.db')) fs.unlinkSync(path.join(backupsDir, existing));
     }
 
+    const seedRes = await request(app)
+      .post('/api/db/backup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ master_pin: '1234' });
+    assertEqual(seedRes.status, 200, 'seed backup for pagination test succeeds');
+    const seedBackupPath = seedRes.body.path as string;
+
     const baseTimeMs = Date.parse('2026-03-01T12:00:00.000Z');
     const createdFiles: string[] = [];
-    const liveDbPath = path.join(testDir, 'flo.db');
-    for (let i = 1; i <= 16; i += 1) {
-      const padded = String(i).padStart(2, '0');
-      const kind = i % 2 === 0 ? 'manual' : 'auto';
-      const name = `flo-backup-${kind}-2026-03-01T12-00-${padded}-000Z.db`;
-      const fullPath = path.join(backupsDir, name);
-      fs.copyFileSync(liveDbPath, fullPath);
-      const mtimeSeconds =
-        i === 11 || i === 12 ? new Date(baseTimeMs + 11 * 1000) : new Date(baseTimeMs + i * 1000);
-      fs.utimesSync(fullPath, mtimeSeconds, mtimeSeconds);
-      createdFiles.push(fullPath);
-    }
-
     try {
+      for (let i = 1; i <= 16; i += 1) {
+        const padded = String(i).padStart(2, '0');
+        const kind = i % 2 === 0 ? 'manual' : 'auto';
+        const name = `flo-backup-${kind}-2026-03-01T12-00-${padded}-000Z.db`;
+        const fullPath = path.join(backupsDir, name);
+        fs.copyFileSync(seedBackupPath, fullPath);
+        const mtimeSeconds =
+          i === 11 || i === 12 ? new Date(baseTimeMs + 11 * 1000) : new Date(baseTimeMs + i * 1000);
+        fs.utimesSync(fullPath, mtimeSeconds, mtimeSeconds);
+        createdFiles.push(fullPath);
+      }
+      if (fs.existsSync(seedBackupPath)) fs.unlinkSync(seedBackupPath);
+
       readonlyBackupProbes = 0;
       const page1 = await request(app)
         .get('/api/db-tools/backups?limit=5')
@@ -1778,6 +1785,7 @@ async function runTests() {
         assertEqual(badRes.status, 400, `invalid query "${badQuery}" returns 400`);
       }
     } finally {
+      if (seedBackupPath && fs.existsSync(seedBackupPath)) fs.unlinkSync(seedBackupPath);
       for (const filePath of createdFiles) {
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       }

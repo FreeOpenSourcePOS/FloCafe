@@ -224,6 +224,47 @@ async function run(): Promise<void> {
     'schema mismatch dialog explains forward schema migration',
   );
 
+  const legacyManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-legacy123.db');
+  fs.copyFileSync(validManaged, legacyManaged);
+  {
+    const legacyDb = new Database(legacyManaged);
+    legacyDb.exec('DROP TABLE _flo_meta');
+    legacyDb.pragma(`user_version = ${olderVersion}`);
+    legacyDb.close();
+  }
+  messageBoxCalls.length = 0;
+  const legacyRestore = await restoreHandler(trustedSender, '1234', legacyManaged);
+  assert.equal(legacyRestore.success, true, 'IPC restores an older backup without Flo metadata');
+  assert.equal(
+    messageBoxCalls.length,
+    1,
+    'IPC confirms the detected older version before migration',
+  );
+
+  const zeroMetaManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-zero123.db');
+  fs.copyFileSync(validManaged, zeroMetaManaged);
+  {
+    const zeroMetaDb = new Database(zeroMetaManaged);
+    zeroMetaDb.prepare("UPDATE _flo_meta SET value = '0' WHERE key = 'schema_version'").run();
+    zeroMetaDb.close();
+  }
+  messageBoxCalls.length = 0;
+  const zeroMetaRestore = await restoreHandler(trustedSender, '1234', zeroMetaManaged);
+  assert.deepEqual(
+    zeroMetaRestore,
+    {
+      success: false,
+      error:
+        'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.',
+    },
+    'IPC rejects zero metadata schema_version at preflight',
+  );
+  assert.equal(
+    messageBoxCalls.length,
+    0,
+    'IPC does not show a schema migration confirmation dialog for zero metadata schema_version',
+  );
+
   const restoreIntentPath = path.join(testDir, 'google-drive-restore.pending');
   const tokenPath = path.join(testDir, 'google-drive-token.enc');
   fs.writeFileSync(

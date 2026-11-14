@@ -36,6 +36,7 @@ const express = require('express');
 const expressRateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
+const Database = require('better-sqlite3');
 const { API_JSON_BODY_LIMIT } = require('../main/http-limits');
 const {
   initDatabase,
@@ -273,7 +274,67 @@ async function run() {
     getDatabase().pragma('foreign_keys = OFF');
     getDatabase().prepare('DELETE FROM users').run();
     getDatabase().pragma('foreign_keys = ON');
-    const freshSelection = rememberRestoreFileSelection(backupSource);
+    const unversionedBackup = path.join(testDir, 'unversioned.db');
+    fs.copyFileSync(
+      path.join(__dirname, 'fixtures/upgrade-snapshots/pre-migration-scheme-v1.5.0.db'),
+      unversionedBackup,
+    );
+    const unversionedSelection = rememberRestoreFileSelection(unversionedBackup);
+    const unversioned = await request(app)
+      .post('/api/auth/setup/restore')
+      .send({ confirmation: RESTORE_CONFIRMATION, selection_token: unversionedSelection.token });
+    assert.equal(unversioned.status, 400, 'a backup without a usable version is not guessed');
+    assert.equal(
+      consumeRestoreFileSelection(unversionedSelection.token),
+      unversionedBackup,
+      'unversioned preflight does not consume the selection',
+    );
+
+    const zeroMetaBackup = path.join(testDir, 'zero-meta.db');
+    fs.copyFileSync(backupSource, zeroMetaBackup);
+    {
+      const zeroMetaDb = new Database(zeroMetaBackup);
+      zeroMetaDb.prepare("UPDATE _flo_meta SET value = '0' WHERE key = 'schema_version'").run();
+      zeroMetaDb.close();
+    }
+    const zeroMetaSelection = rememberRestoreFileSelection(zeroMetaBackup);
+    const zeroMeta = await request(app)
+      .post('/api/auth/setup/restore')
+      .send({ confirmation: RESTORE_CONFIRMATION, selection_token: zeroMetaSelection.token });
+    assert.equal(zeroMeta.status, 400, 'zero metadata schema_version fails preflight with 400');
+    assert.equal(
+      consumeRestoreFileSelection(zeroMetaSelection.token),
+      zeroMetaBackup,
+      'zero metadata preflight does not consume the selection',
+    );
+
+    const legacyBackup = path.join(testDir, 'legacy-v56.db');
+    fs.copyFileSync(
+      path.join(__dirname, 'fixtures/upgrade-snapshots/schema-v56-pre-tax-registration-rename.db'),
+      legacyBackup,
+    );
+    const legacyDb = new Database(legacyBackup);
+    legacyDb
+      .prepare(
+        "INSERT INTO users (id, name, email, password, role) VALUES ('legacy-owner', 'Legacy Owner', 'legacy@test.local', 'test-hash', 'owner')",
+      )
+      .run();
+    legacyDb
+      .prepare("INSERT INTO categories (id, name) VALUES ('legacy-category', 'Legacy Category')")
+      .run();
+    legacyDb.close();
+    assert.equal(
+      fs.existsSync(`${legacyBackup}-wal`),
+      false,
+      'the historical fixture is self-contained before selection',
+    );
+    assert.equal(
+      fs.existsSync(`${legacyBackup}-shm`),
+      false,
+      'the historical fixture has no shared-memory sidecar',
+    );
+    const legacyBytes = fs.readFileSync(legacyBackup);
+    const freshSelection = rememberRestoreFileSelection(legacyBackup);
     const fresh = await request(app)
       .post('/api/auth/setup/restore')
       .send({ confirmation: RESTORE_CONFIRMATION, selection_token: freshSelection.token });
@@ -290,6 +351,41 @@ async function run() {
       ).n > 0,
       true,
       'an active owner can sign in after the fresh-install restore',
+    );
+    assert.equal(fresh.body.backupVersion, 56, 'the SQLite header identifies the legacy version');
+    assert.ok(
+      getDatabase().prepare("SELECT id FROM categories WHERE id = 'legacy-category'").get(),
+      'legacy data survives migration',
+    );
+    assert.ok(
+      getDatabase()
+        .prepare('PRAGMA table_info(printers)')
+        .all()
+        .some((column: { name: string }) => column.name === 'profile_id'),
+      'the restored database runs forward migrations',
+    );
+    assert.equal(
+      Number(
+        getDatabase().prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get()
+          .value,
+      ),
+      fresh.body.currentVersion,
+      'the migrated database is stamped with its current version',
+    );
+    assert.deepEqual(
+      fs.readFileSync(legacyBackup),
+      legacyBytes,
+      'restoring does not modify the selected file',
+    );
+    assert.equal(
+      fs.existsSync(`${legacyBackup}-wal`),
+      false,
+      'restore leaves no WAL beside the selected file',
+    );
+    assert.equal(
+      fs.existsSync(`${legacyBackup}-shm`),
+      false,
+      'restore leaves no shared-memory sidecar beside the selected file',
     );
 
     console.log('✅ Restore-from-file API and authorisation tests passed');

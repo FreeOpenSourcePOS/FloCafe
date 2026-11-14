@@ -236,20 +236,84 @@ export default function PaymentModal({
   const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 
+  const buildAttemptPaymentRows = (
+    attempt: PendingPaymentAttempt | null,
+    methods: CustomPaymentMethod[],
+  ): Payment[] => [
+    ...PAYMENT_METHODS.map((method) => {
+      const matched = attempt?.lines.find(
+        (line) => line.method === method.key && line.payment_method_id === undefined,
+      );
+      return {
+        method: method.key,
+        amount:
+          matched && Number(matched.amount) > 0
+            ? formatInput(toDisplayUnit(Number(matched.amount)))
+            : '',
+        ...(matched?.transaction_id ? { transaction_id: matched.transaction_id } : {}),
+      };
+    }),
+    ...methods.map((method) => {
+      const matched = attempt?.lines.find(
+        (line) => line.method === 'custom' && line.payment_method_id === method.id,
+      );
+      return {
+        method: 'custom' as const,
+        payment_method_id: method.id,
+        amount:
+          matched && Number(matched.amount) > 0
+            ? formatInput(toDisplayUnit(Number(matched.amount)))
+            : '',
+      };
+    }),
+  ];
+  const walletInputFromAttempt = (attempt: PendingPaymentAttempt | null): string => {
+    const walletLine = attempt?.lines.find((line) => line.method === 'wallet');
+    return walletLine && Number(walletLine.amount) > 0
+      ? formatInput(toDisplayUnit(Number(walletLine.amount)))
+      : '';
+  };
+  const targetFromAttempt = (
+    attempt: PendingPaymentAttempt | null,
+    rows: Payment[],
+  ): AmountTarget => {
+    if (!attempt) return { kind: 'payment', index: 0 };
+    const firstRowIndex = rows.findIndex((row) => (parseFloat(row.amount) || 0) > 0);
+    if (firstRowIndex >= 0) return { kind: 'payment', index: firstRowIndex };
+    if (attempt.lines.some((line) => line.method === 'wallet' && Number(line.amount) > 0)) {
+      return { kind: 'wallet' };
+    }
+    return { kind: 'payment', index: 0 };
+  };
+
+  // An attempt whose outcome is unknown keeps its key and its exact request:
+  // its retry must replay the same bill, lines and customer, so the draft that
+  // produced it stays frozen until the outcome is known.
+  const postpaidAttemptKey = getPostpaidPaymentAttemptStorageKey(
+    String(user?.id ?? 'anonymous'),
+    currentTenant?.id ?? 'default',
+    String(bill.id),
+  );
+  const [pendingAttempt, setPendingAttempt] = useState<PendingPaymentAttempt | null>(() =>
+    readRestoredPostpaidAttempt(bill, postpaidAttemptKey),
+  );
+  const pendingAttemptRef = useRef<PendingPaymentAttempt | null>(null);
+  const [paymentOutcomeUnknown, setPaymentOutcomeUnknown] = useState(() =>
+    Boolean(readRestoredPostpaidAttempt(bill, postpaidAttemptKey)),
+  );
+
   const [justPaid, setJustPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
-  const [payments, setPayments] = useState<Payment[]>(
-    PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
-  );
+  const [payments, setPayments] = useState<Payment[]>(buildAttemptPaymentRows(pendingAttempt, []));
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
-  const [paymentsTouched, setPaymentsTouched] = useState(false);
+  const [paymentsTouched, setPaymentsTouched] = useState(Boolean(pendingAttempt));
   const [autoFilledSingleIndex, setAutoFilledSingleIndex] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
-  const [walletAmount, setWalletAmount] = useState('');
+  const [walletAmount, setWalletAmount] = useState(walletInputFromAttempt(pendingAttempt));
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
   const managerApprovers = useManagerApprovers();
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
@@ -286,7 +350,9 @@ export default function PaymentModal({
   const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
-  const [amountTarget, setAmountTarget] = useState<AmountTarget>({ kind: 'payment', index: 0 });
+  const [amountTarget, setAmountTarget] = useState<AmountTarget>(
+    targetFromAttempt(pendingAttempt, payments),
+  );
   const setCol1Panel = (
     next:
       | 'items'
@@ -341,21 +407,6 @@ export default function PaymentModal({
         : null
     : (orderCustomer ?? selectedCustomer);
 
-  // An attempt whose outcome is unknown keeps its key and its exact request:
-  // its retry must replay the same bill, lines and customer, so the draft that
-  // produced it stays frozen until the outcome is known.
-  const postpaidAttemptKey = getPostpaidPaymentAttemptStorageKey(
-    String(user?.id ?? 'anonymous'),
-    currentTenant?.id ?? 'default',
-    String(bill.id),
-  );
-  const [pendingAttempt, setPendingAttempt] = useState<PendingPaymentAttempt | null>(() =>
-    readRestoredPostpaidAttempt(bill, postpaidAttemptKey),
-  );
-  const pendingAttemptRef = useRef<PendingPaymentAttempt | null>(null);
-  const [paymentOutcomeUnknown, setPaymentOutcomeUnknown] = useState(() =>
-    Boolean(readRestoredPostpaidAttempt(bill, postpaidAttemptKey)),
-  );
   // An attempt only locks the bill it was made for; another check inherits
   // nothing from it.
   const attemptLocked = pendingAttempt !== null && pendingAttempt.billId === bill.id;
@@ -618,20 +669,14 @@ export default function PaymentModal({
     setSyncedBill(bill);
     if (billIdChanged) {
       const restored = readRestoredPostpaidAttempt(bill, postpaidAttemptKey);
+      const restoredRows = buildAttemptPaymentRows(restored, customMethods);
       setPendingAttempt(restored);
       setSyncedRemaining(remaining);
-      setPayments([
-        ...PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
-        ...customMethods.map((method) => ({
-          method: 'custom',
-          payment_method_id: method.id,
-          amount: '',
-        })),
-      ]);
-      setPaymentsTouched(false);
+      setPayments(restoredRows);
+      setPaymentsTouched(Boolean(restored));
       setAutoFilledSingleIndex(null);
-      setWalletAmount('');
-      setAmountTarget({ kind: 'payment', index: 0 });
+      setWalletAmount(walletInputFromAttempt(restored));
+      setAmountTarget(targetFromAttempt(restored, restoredRows));
       setAppliedEqualShare(null);
       setShowEqualShare(false);
       setEqualShareNotice(null);
@@ -734,17 +779,16 @@ export default function PaymentModal({
   // unless cashier has already edited inputs manually.
   if (!billIdChanged && !attemptLocked && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
-    const remainingTargetMinor = toMinorUnits(remaining);
+    const remainingTargetMinor = Math.max(
+      0,
+      toMinorUnits(remaining) - toMinorUnits(toStoredUnit(parseFloat(walletAmount) || 0)),
+    );
     if (autoFilledSingleIndex !== null && payments[autoFilledSingleIndex]) {
-      const nextDueMinor = Math.max(
-        0,
-        remainingTargetMinor - toMinorUnits(toStoredUnit(parseFloat(walletAmount) || 0)),
-      );
-      const nextDisplay = toDisplayUnit(nextDueMinor / minorFactor);
+      const nextDisplay = toDisplayUnit(remainingTargetMinor / minorFactor);
       setPayments(
         payments.map((p, idx) =>
           idx === autoFilledSingleIndex
-            ? { ...p, amount: nextDueMinor > 0 ? formatInput(nextDisplay) : '' }
+            ? { ...p, amount: remainingTargetMinor > 0 ? formatInput(nextDisplay) : '' }
             : p,
         ),
       );
@@ -822,6 +866,10 @@ export default function PaymentModal({
       .then((res) => {
         const methods: CustomPaymentMethod[] = res.data.payment_methods || [];
         setCustomMethods(methods);
+        const lockedAttempt =
+          pendingAttemptRef.current && pendingAttemptRef.current.billId === bill.id
+            ? pendingAttemptRef.current
+            : null;
         setPayments((current) => [
           ...PAYMENT_METHODS.map(
             (method) =>
@@ -829,23 +877,50 @@ export default function PaymentModal({
                 (row) => row.method === method.key && row.payment_method_id === undefined,
               ) || { method: method.key, amount: '' },
           ),
-          ...methods.map(
-            (method) =>
-              current.find((row) => row.payment_method_id === method.id) || {
-                method: 'custom',
-                payment_method_id: method.id,
-                amount: '',
-              },
-          ),
+          ...methods.map((method) => {
+            const existing = current.find((row) => row.payment_method_id === method.id);
+            if (existing) return existing;
+            const matched = lockedAttempt?.lines.find(
+              (line) => line.method === 'custom' && line.payment_method_id === method.id,
+            );
+            return {
+              method: 'custom',
+              payment_method_id: method.id,
+              amount:
+                matched && Number(matched.amount) > 0
+                  ? formatInput(toDisplayUnit(Number(matched.amount)))
+                  : '',
+            };
+          }),
         ]);
+        if (lockedAttempt) {
+          const firstCustomLine = lockedAttempt.lines.find(
+            (line) => line.method === 'custom' && Number(line.amount) > 0,
+          );
+          const matchedCustomIdx = firstCustomLine
+            ? methods.findIndex((m) => m.id === firstCustomLine.payment_method_id)
+            : -1;
+          if (matchedCustomIdx >= 0) {
+            setAmountTarget((prev) =>
+              prev?.kind === 'payment' && prev.index === 0
+                ? { kind: 'payment', index: PAYMENT_METHODS.length + matchedCustomIdx }
+                : prev,
+            );
+          }
+        }
       })
       .catch(() => setCustomMethods([]));
   }, [bill.customer_id, cartCustomerId]);
 
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
+  const attemptTotalMinor = (attempt: PendingPaymentAttempt) =>
+    attempt.lines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
+  const lockedAttemptTotalMinor =
+    attemptLocked && pendingAttempt ? attemptTotalMinor(pendingAttempt) : null;
   const totalPaymentMinor =
+    lockedAttemptTotalMinor ??
     payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) +
-    toMinorUnits(walletAmt);
+      toMinorUnits(walletAmt);
   const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
@@ -1008,9 +1083,6 @@ export default function PaymentModal({
     }
   };
 
-  const attemptTotalMinor = (attempt: PendingPaymentAttempt) =>
-    attempt.lines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
-
   // A share sized for a balance or payer count that has since moved on is
   // withdrawn so the cashier reviews the new preview; an amount the cashier
   // typed themselves is left alone. Reconciled during render, like the balance
@@ -1099,7 +1171,7 @@ export default function PaymentModal({
           ? tenderLabel(payments[amountTarget.index])
           : t('payment');
 
-  const activeAmountValue =
+  const rawActiveAmountValue =
     amountTarget?.kind === 'payment'
       ? payments[amountTarget.index]?.amount || ''
       : amountTarget?.kind === 'wallet'
@@ -1107,6 +1179,10 @@ export default function PaymentModal({
         : amountTarget?.kind === 'discount'
           ? discountValue
           : '';
+  const activeAmountValue =
+    attemptLocked && pendingAttempt && !(parseFloat(rawActiveAmountValue) > 0) && totalPayment > 0
+      ? formatInput(toDisplayUnit(totalPayment))
+      : rawActiveAmountValue;
 
   const updateActiveAmount = (value: string) => {
     if (!amountTarget || attemptLocked || justPaid) return;
@@ -1173,7 +1249,12 @@ export default function PaymentModal({
     return [];
   })();
 
-  const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
+  const hasCash =
+    attemptLocked && pendingAttempt
+      ? pendingAttempt.lines.some(
+          (line) => line.method === 'cash' && (Number(line.amount) || 0) > 0,
+        )
+      : payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 
   const change =
     hasCash && totalPaymentMinor > remainingMinor

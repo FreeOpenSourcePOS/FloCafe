@@ -336,10 +336,6 @@ export default function PrepaidCheckoutModal({
     );
   }
 
-  if (discountCommitted && amountTarget?.kind === 'discount') {
-    setAmountTarget({ kind: 'payment', index: 0 });
-  }
-
   useEffect(() => {
     api
       .get('/settings/loyalty')
@@ -390,10 +386,6 @@ export default function PrepaidCheckoutModal({
     setWalletLoadFailed(false);
     setWalletBalance(null);
     setWalletAmount('');
-    setAmountTarget({ kind: 'payment', index: 0 });
-  }
-
-  if (discountCommitted && amountTarget?.kind === 'discount') {
     setAmountTarget({ kind: 'payment', index: 0 });
   }
 
@@ -756,10 +748,6 @@ export default function PrepaidCheckoutModal({
 
   const modalRef = useRef<HTMLDivElement>(null);
 
-  if (discountCommitted && amountTarget?.kind === 'discount') {
-    setAmountTarget({ kind: 'payment', index: 0 });
-  }
-
   useEffect(() => {
     if (
       typeof document !== 'undefined' &&
@@ -771,10 +759,6 @@ export default function PrepaidCheckoutModal({
       (document.activeElement as HTMLElement).blur();
     }
   }, []);
-
-  if (discountCommitted && amountTarget?.kind === 'discount') {
-    setAmountTarget({ kind: 'payment', index: 0 });
-  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

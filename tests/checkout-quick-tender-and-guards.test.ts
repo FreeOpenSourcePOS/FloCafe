@@ -2164,6 +2164,120 @@ async function testReviewFixRegressions() {
       else (globalThis as any).window = prevWindow;
     }
   });
+
+  // 6d: Restoring pendingAttempt populates tender inputs, Zone 3A readout, and Zone 3D change
+  await withAliases(async () => {
+    const restoreHarness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    const hadSessionStorage = 'sessionStorage' in globalThis;
+    const prevSessionStorage = (globalThis as any).sessionStorage;
+    const store = new Map<string, string>();
+    const storageMock = {
+      getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+      setItem: (key: string, val: string) => {
+        store.set(key, String(val));
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      clear: () => store.clear(),
+    };
+    (globalThis as any).sessionStorage = storageMock;
+    (globalThis as any).window = { ...(prevWindow || {}), sessionStorage: storageMock };
+    try {
+      installCheckoutComponentMocks(restoreHarness);
+      const orderAttempt = require(path.resolve(ROOT, 'frontend/src/lib/order-attempt.ts'));
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const unpaidBill = {
+        ...makeBill('88', 25),
+        total: 25,
+        paid_amount: 0,
+        payment_status: 'unpaid',
+      };
+      const storageKey = orderAttempt.getPostpaidPaymentAttemptStorageKey('u-1', '1', '88');
+      orderAttempt.savePostpaidPaymentAttempt(storageMock, storageKey, {
+        billId: '88',
+        key: 'idem-restore-88',
+        operationId: 'op-restore-88',
+        zeroBalance: false,
+        lines: [{ method: 'cash', amount: 30 }],
+        customerId: null,
+        userId: 'u-1',
+        storeId: '1',
+        idempotencyKey: 'idem-restore-88',
+        paymentFingerprint: JSON.stringify([{ method: 'cash', amount: 30 }]),
+      });
+
+      let tree = restoreHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      tree = restoreHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+
+      const cashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(
+        cashInput?.props?.value,
+        '30',
+        'Restored pendingAttempt populates Cash tender input with 30',
+      );
+      const readoutEl = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-readout-amount',
+      )[0];
+      assert.ok(
+        JSON.stringify(readoutEl).includes('30.00'),
+        'Restored pendingAttempt Zone 3A readout displays $30.00 instead of $0.00',
+      );
+      const changeSlotEl = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-change-slot',
+      )[0];
+      assert.ok(
+        JSON.stringify(changeSlotEl).includes('5.00'),
+        'Restored pendingAttempt Zone 3D change slot displays $5.00 change',
+      );
+
+      // Switching bill.id clears restored cash readout and change
+      const freshBill = {
+        ...makeBill('89', 25),
+        total: 25,
+        paid_amount: 0,
+        payment_status: 'unpaid',
+      };
+      const freshTree = restoreHarness.renderAndSettle(PaymentModal, {
+        bill: freshBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const freshCashInput = collectElements(
+        freshTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(freshCashInput?.props?.value, '', 'Switching bill clears restored Cash amount');
+    } finally {
+      restoreHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+      if (!hadSessionStorage) delete (globalThis as any).sessionStorage;
+      else (globalThis as any).sessionStorage = prevSessionStorage;
+    }
+  });
   console.log(
     '  ✓ Equal Share auto-fill clear, header dismiss guard, and terminal recovery verified',
   );

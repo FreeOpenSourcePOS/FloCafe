@@ -1,22 +1,16 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  X,
-  Sparkles,
-  ArrowLeftRight,
-  CheckCircle2,
-  Percent,
-  Wallet,
-  ChevronDown,
-} from 'lucide-react';
+import { X, CheckCircle2, Percent, Wallet, ChevronDown, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
+import { cartLineUnitPrice, cartVariantUnitPrice } from '@/lib/cart-price';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { useAuthStore } from '@/store/auth';
 import { useTaxPreview } from '@/hooks/use-tax-preview';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations, useLocale, type AppConfig } from 'use-intl';
+import type { Bill } from '@/lib/types';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
@@ -25,6 +19,16 @@ import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
+import {
+  allocateRemainingMinor,
+  computeQuickCashDisplayAmounts,
+  rescalePaymentAmountsMinor,
+} from '@/lib/checkout-quick-tender';
+import {
+  CheckoutPaymentStation,
+  type CheckoutQuickTenderOption,
+  type CheckoutStatusBanner,
+} from '@/components/pos/CheckoutPaymentStation';
 import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
@@ -55,17 +59,48 @@ export interface PrepaidDiscount {
   approver_id?: string;
 }
 
+interface PrepaidSuccess {
+  bill: Bill;
+  customer: { phone: string | null; country_code: string | null } | null;
+  pointsEarned: number;
+}
+
 interface Props {
   currency: string;
   initialCardTransactionIdRequired?: boolean;
   initialDiscount?: PrepaidDiscount | null;
   discountCommitted?: boolean;
+  recovery?: {
+    message: string;
+    statusChecked: boolean;
+    details: {
+      operation: string;
+      stage: string;
+      outcome: string;
+      reasonCode?: string | null;
+      correlationId?: string | null;
+      httpStatus: number | null;
+    };
+  } | null;
+  failure?: {
+    message: string;
+    nextStep?: string;
+    details: {
+      operation: string;
+      stage: string;
+      outcome: string;
+      reasonCode?: string | null;
+      correlationId?: string | null;
+      httpStatus: number | null;
+    };
+  } | null;
+  onCheckRecovery?: () => Promise<void>;
   onClose: () => void;
   onConfirm: (
     payments: PrepaidPayment[],
     walletAmount: number,
     discount: PrepaidDiscount | null,
-  ) => void;
+  ) => Promise<PrepaidSuccess | void> | void;
 }
 
 // Loyalty points are 1:1 with currency units. Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
@@ -106,6 +141,9 @@ export default function PrepaidCheckoutModal({
   initialCardTransactionIdRequired,
   initialDiscount = null,
   discountCommitted = false,
+  recovery = null,
+  failure = null,
+  onCheckRecovery,
   onClose,
   onConfirm,
 }: Props) {
@@ -113,6 +151,8 @@ export default function PrepaidCheckoutModal({
   const customer = cart.customer;
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
+  const locale = useLocale();
   const currencyFmt = useFormatCurrency();
   const fmtNum = useFormatNumber();
   const unitAdapter = useCurrencyUnitAdapter();
@@ -138,6 +178,10 @@ export default function PrepaidCheckoutModal({
   const [walletLoadFailed, setWalletLoadFailed] = useState(false);
   const [walletAmount, setWalletAmount] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [success, setSuccess] = useState<PrepaidSuccess | null>(null);
+  const inFlightRef = useRef(false);
+  const lastSubmissionRef = useRef<[PrepaidPayment[], number, PrepaidDiscount | null] | null>(null);
+  const locked = processing || Boolean(recovery);
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(
     Boolean(initialCardTransactionIdRequired),
@@ -145,7 +189,16 @@ export default function PrepaidCheckoutModal({
 
   // Discount state (applied to the order once checkout is confirmed)
   const hasInitialDiscount = Boolean(initialDiscount && initialDiscount.value > 0);
-  const [discountOpen, setDiscountOpen] = useState(hasInitialDiscount);
+  const [activeCol1Panel, setActiveCol1Panel] = useState<'items' | 'discount' | 'tax'>(
+    hasInitialDiscount ? 'discount' : 'items',
+  );
+  const discountOpen = activeCol1Panel === 'discount';
+  const setDiscountOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    setActiveCol1Panel((prev) => {
+      const resolved = typeof next === 'function' ? next(prev === 'discount') : next;
+      return resolved ? 'discount' : 'items';
+    });
+  };
   const [discountType, setDiscountType] = useState<DiscountType>(
     hasInitialDiscount && initialDiscount ? initialDiscount.type : 'percentage',
   );
@@ -164,7 +217,8 @@ export default function PrepaidCheckoutModal({
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
   const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
-  const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
+  const [amountTarget, setAmountTarget] = useState<AmountTarget>({ kind: 'payment', index: 0 });
+  const [showDetails, setShowDetails] = useState(false);
 
   const previewDiscount = useMemo(() => {
     const rawValue = Number.parseFloat(discountValue);
@@ -226,6 +280,9 @@ export default function PrepaidCheckoutModal({
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
   const [paymentsTouched, setPaymentsTouched] = useState(false);
+  // When a single tender row was auto-filled for the full remaining due (without manual typing),
+  // subsequent discount edits keep that row synced with the updated balance.
+  const [autoFilledSingleIndex, setAutoFilledSingleIndex] = useState<number | null>(null);
 
   // Same one-shot reconciliation as PaymentModal: `none` forbids every type, so
   // its cleanup runs once on entry instead of rescheduling every render.
@@ -238,7 +295,9 @@ export default function PrepaidCheckoutModal({
       setDiscountReason('');
       setDiscountPin('');
       setPaymentsTouched(false);
-      setAmountTarget((target) => (target?.kind === 'discount' ? null : target));
+      setAmountTarget((target) =>
+        target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
+      );
     }
   }
 
@@ -253,7 +312,9 @@ export default function PrepaidCheckoutModal({
     setDiscountReason('');
     setDiscountPin('');
     setPaymentsTouched(false);
-    setAmountTarget((target) => (target?.kind === 'discount' ? null : target));
+    setAmountTarget((target) =>
+      target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
+    );
   }
 
   useEffect(() => {
@@ -306,7 +367,7 @@ export default function PrepaidCheckoutModal({
     setWalletLoadFailed(false);
     setWalletBalance(null);
     setWalletAmount('');
-    setAmountTarget(null);
+    setAmountTarget({ kind: 'payment', index: 0 });
   }
 
   useEffect(() => {
@@ -342,19 +403,38 @@ export default function PrepaidCheckoutModal({
   // Auto-fill splits to match net total during render when total changes,
   // unless cashier has already edited inputs manually.
   const [syncedRemaining, setSyncedRemaining] = useState(remaining);
-  if (preview && !paymentsTouched && remaining !== syncedRemaining) {
+  if (preview && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
-    const walletUsed = toStoredUnit(parseFloat(walletAmount) || 0);
-    const cashRemaining = Math.max(0, remaining - walletUsed);
-    const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-    if (totalAllocated > 0) {
-      const displayRemaining = toDisplayUnit(cashRemaining);
+    const remainingTargetMinor = Math.max(
+      0,
+      toMinorUnits(remaining) - toMinorUnits(toStoredUnit(parseFloat(walletAmount) || 0)),
+    );
+    if (autoFilledSingleIndex !== null && payments[autoFilledSingleIndex]) {
+      const nextDisplay = toDisplayUnit(remainingTargetMinor / minorFactor);
       setPayments(
-        payments.map((p) => {
-          const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
-          return { ...p, amount: formatInput(displayRemaining * ratio) };
-        }),
+        payments.map((p, idx) =>
+          idx === autoFilledSingleIndex
+            ? { ...p, amount: remainingTargetMinor > 0 ? formatInput(nextDisplay) : '' }
+            : p,
+        ),
       );
+    } else if (!paymentsTouched) {
+      const currentMinor = payments.map((p) =>
+        toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)),
+      );
+      const totalMinor = currentMinor.reduce((s, v) => s + v, 0);
+      if (totalMinor > 0) {
+        const rescaledMinor = rescalePaymentAmountsMinor(currentMinor, remainingTargetMinor);
+        setPayments(
+          payments.map((p, idx) => ({
+            ...p,
+            amount:
+              rescaledMinor[idx] > 0
+                ? formatInput(toDisplayUnit(rescaledMinor[idx] / minorFactor))
+                : '',
+          })),
+        );
+      }
     }
   }
 
@@ -373,38 +453,71 @@ export default function PrepaidCheckoutModal({
   };
 
   const needsTransactionId = (payment: Payment) =>
-    cardTransactionIdRequired &&
+    (cardTransactionIdRequired || initialCardTransactionIdRequired) &&
     payment.method === 'card' &&
     payment.payment_method_id === undefined;
 
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
+    setAutoFilledSingleIndex(null);
     setPayments((current) =>
       current.map((payment, index) => (index === idx ? { ...payment, amount: value } : payment)),
     );
   };
 
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce(
-      (sum, payment, index) =>
-        index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0),
-      walletAmt,
+    const rowMinor = payments.map((payment) =>
+      toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
     );
-    const dueStored = Math.max(0, remaining - allocatedElsewhere);
-    const dueDisplay = toDisplayUnit(dueStored);
-    setPaymentsTouched(true);
+    const dueMinor = allocateRemainingMinor(
+      Math.max(0, remainingMinor - toMinorUnits(walletAmt)),
+      rowMinor,
+      idx,
+    );
+    const hasOtherActive = walletAmt > 0 || rowMinor.some((amt, index) => index !== idx && amt > 0);
+    if (!hasOtherActive && dueMinor > 0) {
+      setAutoFilledSingleIndex(idx);
+      setPaymentsTouched(false);
+    } else {
+      setAutoFilledSingleIndex(null);
+      setPaymentsTouched(true);
+    }
+    const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
     setPayments(
       payments.map((payment, index) =>
-        index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment,
+        index === idx
+          ? { ...payment, amount: dueMinor > 0 ? formatInput(dueDisplay) : '' }
+          : payment,
       ),
     );
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
   const change =
-    hasCash && totalPaymentMinor > remainingMinor
+    !taxLoading && preview && hasCash && totalPaymentMinor > remainingMinor
       ? (totalPaymentMinor - remainingMinor) / minorFactor
       : 0;
+
+  const activeAmountLabel =
+    amountTarget?.kind === 'discount'
+      ? t('discount')
+      : amountTarget?.kind === 'wallet'
+        ? t('loyaltyWallet')
+        : amountTarget?.kind === 'payment' && payments[amountTarget.index]
+          ? (() => {
+              const payment = payments[amountTarget.index];
+              const builtIn = PAYMENT_METHODS.find(
+                (method) =>
+                  method.key === payment.method && payment.payment_method_id === undefined,
+              );
+              const custom = customMethods.find(
+                (method) => method.id === payment.payment_method_id,
+              );
+              return builtIn
+                ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key])
+                : custom?.name || tCommon('unknown');
+            })()
+          : t('payment');
 
   const activeAmountValue =
     amountTarget?.kind === 'payment'
@@ -426,6 +539,7 @@ export default function PrepaidCheckoutModal({
       const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
       const clamped = parseFloat(value) > maxDisplay ? String(maxDisplay) : value;
       setWalletAmount(clamped);
+      setAutoFilledSingleIndex(null);
       setPaymentsTouched(true);
       return;
     }
@@ -470,6 +584,7 @@ export default function PrepaidCheckoutModal({
   })();
 
   const handleConfirm = (paymentRows = payments) => {
+    if (inFlightRef.current || locked) return;
     if (hasInvalidFixedDiscount) {
       toast.error(unitAdapter.maxDecimals === 0 ? t('fixedDiscountMinimum') : t('discountInvalid'));
       return;
@@ -556,6 +671,7 @@ export default function PrepaidCheckoutModal({
       return;
     }
 
+    inFlightRef.current = true;
     setProcessing(true);
     const splitLines: PrepaidPayment[] = paymentRows
       .map((p) => ({
@@ -582,14 +698,23 @@ export default function PrepaidCheckoutModal({
           }
         : null;
 
-    onConfirm(splitLines, walletAmt, finalDiscount);
+    const submission: [PrepaidPayment[], number, PrepaidDiscount | null] = [
+      splitLines,
+      walletAmt,
+      finalDiscount,
+    ];
+    lastSubmissionRef.current = submission;
+    Promise.resolve(onConfirm(...submission))
+      .then((result) => {
+        if (result) setSuccess(result);
+      })
+      .finally(() => {
+        inFlightRef.current = false;
+        setProcessing(false);
+      });
   };
 
   const modalRef = useRef<HTMLDivElement>(null);
-  const handleConfirmRef = useRef(handleConfirm);
-  useEffect(() => {
-    handleConfirmRef.current = handleConfirm;
-  });
 
   useEffect(() => {
     if (
@@ -627,7 +752,7 @@ export default function PrepaidCheckoutModal({
 
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        if (!locked) onClose();
         return;
       }
 
@@ -640,538 +765,915 @@ export default function PrepaidCheckoutModal({
         }
         if (isInteractive) return;
         e.preventDefault();
-        if (processing || taxLoading || !preview || hasInvalidFixedDiscount) return;
-
-        if (totalPaymentMinor < remainingMinor) {
-          const cashIdx = payments.findIndex((p) => p.method === 'cash');
-          if (cashIdx !== -1) {
-            const allocatedElsewhere = payments.reduce(
-              (sum, payment, index) =>
-                index === cashIdx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0),
-              walletAmt,
-            );
-            const dueStored = Math.max(0, remaining - allocatedElsewhere);
-            const dueDisplay = toDisplayUnit(dueStored);
-            const updated = payments.map((p, i) =>
-              i === cashIdx ? { ...p, amount: String(dueDisplay) } : p,
-            );
-            setPayments(updated);
-            handleConfirmRef.current(updated);
-            return;
-          }
-        }
-
-        handleConfirmRef.current();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    onClose,
-    processing,
-    taxLoading,
-    preview,
-    hasInvalidFixedDiscount,
-    totalPaymentMinor,
-    remainingMinor,
-    payments,
-    walletAmt,
-    remaining,
-    toDisplayUnit,
-    toStoredUnit,
-  ]);
+  }, [onClose, locked]);
+
+  if (success) {
+    const shareReceipt = async () => {
+      if (!success.customer?.phone) return;
+      try {
+        const { shareBillViaWhatsApp } = await import('@/lib/whatsapp-share');
+        const opened = await shareBillViaWhatsApp(
+          success.bill,
+          { phone: success.customer.phone, country_code: success.customer.country_code || '' },
+          {
+            business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
+            currency: currentTenant?.currency || '',
+            country: currentTenant?.country || '',
+          },
+          { pointsEarned: success.pointsEarned },
+          locale,
+        );
+        if (!opened) toast.error(tOrders('whatsappFailed'));
+      } catch {
+        toast.error(tOrders('whatsappFailed'));
+      }
+    };
+    return (
+      <div
+        ref={modalRef}
+        data-testid="prepaid-checkout-modal"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      >
+        <div
+          role="status"
+          className="w-full max-w-md space-y-4 rounded-2xl bg-card p-6 text-center shadow-2xl"
+        >
+          <CheckCircle2 className="mx-auto text-emerald-600" size={40} />
+          <p className="text-lg font-semibold text-foreground">
+            {success.pointsEarned > 0
+              ? t('paymentRecordedWithPoints', { points: success.pointsEarned })
+              : t('paymentRecorded')}
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-foreground">
+            {currencyFmt(Number(success.bill.total) || 0)}
+          </p>
+          <p className="text-sm text-muted-foreground">{t('paid')}</p>
+          {success.customer?.phone && (
+            <Button
+              onClick={() => void shareReceipt()}
+              variant="outline"
+              className="min-h-11 w-full"
+            >
+              <Send size={16} className="me-2" />
+              {tCommon('shareViaWhatsApp')}
+            </Button>
+          )}
+          <Button onClick={onClose} className="min-h-11 w-full">
+            {tCommon('done')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const quickTenderOptions: CheckoutQuickTenderOption[] = (() => {
+    if (locked) return [];
+    if (amountTarget?.kind === 'discount' && discountType === 'percentage') {
+      return [5, 10, 15, 20].map((pct) => ({
+        label: `${pct}%`,
+        active: Number(discountValue) === pct,
+        onClick: () => setDiscountValue(String(pct)),
+      }));
+    }
+    if (taxLoading || !preview) return [];
+    if (amountTarget?.kind === 'payment' && payments[amountTarget.index]) {
+      const targetIndex = amountTarget.index;
+      const allocatedElsewhereMinor =
+        payments.reduce(
+          (sum, payment, index) =>
+            index === targetIndex
+              ? sum
+              : sum + toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
+          0,
+        ) + toMinorUnits(walletAmt);
+      const dueMinor = Math.max(0, remainingMinor - allocatedElsewhereMinor);
+      const displayAmounts = computeQuickCashDisplayAmounts({
+        remainingMinor: dueMinor,
+        minorFactor,
+        unitAdapter,
+      });
+      const currentVal = payments[targetIndex]?.amount || '';
+      return displayAmounts.map((displayVal, pillIndex) => {
+        const formattedInput = formatInput(displayVal);
+        return {
+          label: currencyFmt(toStoredUnit(displayVal)),
+          subLabel: pillIndex === 0 ? t('exactAmount') : undefined,
+          active: currentVal !== '' && formattedInput === currentVal,
+          onClick: () => {
+            if (pillIndex === 0) {
+              allocateRemainingTo(targetIndex);
+            } else {
+              updatePaymentAmount(targetIndex, formattedInput);
+            }
+          },
+        };
+      });
+    }
+    if (amountTarget?.kind === 'wallet' && walletBalance && walletBalance > 0) {
+      const allocatedPaymentsMinor = payments.reduce(
+        (sum, payment) => sum + toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
+        0,
+      );
+      const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+      const dueMinor = Math.min(
+        toMinorUnits(maxWalletStored),
+        Math.max(0, remainingMinor - allocatedPaymentsMinor),
+      );
+      if (dueMinor <= 0) return [];
+      const exactDisplay = toDisplayUnit(dueMinor / minorFactor);
+      const formattedInput = formatInput(exactDisplay);
+      return [
+        {
+          label: currencyFmt(dueMinor / minorFactor),
+          subLabel: t('exactAmount'),
+          active: walletAmount !== '' && walletAmount === formattedInput,
+          onClick: () => {
+            setWalletAmount(formattedInput);
+            setAutoFilledSingleIndex(null);
+            setPaymentsTouched(true);
+          },
+        },
+      ];
+    }
+    return [];
+  })();
+
+  const stationStatusBanner: CheckoutStatusBanner | null = (() => {
+    if (recovery) {
+      return {
+        tone: 'warning',
+        message: recovery.message,
+        nextStep: recovery.statusChecked
+          ? t('paymentRetrySameRequest')
+          : t('operationCheckBeforeRetry'),
+        technicalDetails: JSON.stringify(recovery.details, null, 2),
+        technicalDetailsLabel: t('operationTechnicalDetails'),
+        closeLabel: t('close'),
+      };
+    }
+    if (failure) {
+      return {
+        tone: 'error',
+        message: failure.message,
+        nextStep: failure.nextStep || null,
+        technicalDetails: JSON.stringify(failure.details, null, 2),
+        technicalDetailsLabel: t('operationTechnicalDetails'),
+        closeLabel: t('close'),
+      };
+    }
+    if (!taxLoading && preview && totalPaymentMinor < remainingMinor) {
+      return {
+        tone: 'idle-due',
+        message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
+      };
+    }
+    if (!taxLoading && preview && totalPaymentMinor >= remainingMinor) {
+      return {
+        tone: 'idle-settled',
+        message: t('paid'),
+      };
+    }
+    return null;
+  })();
+
+  const cardTenderIndex = payments.findIndex(
+    (p) => p.method === 'card' && p.payment_method_id === undefined,
+  );
+  const cardPayment = cardTenderIndex >= 0 ? payments[cardTenderIndex] : null;
+  const cardTenderActive = Boolean(
+    cardPayment &&
+    ((parseFloat(cardPayment.amount) || 0) > 0 ||
+      (amountTarget?.kind === 'payment' && amountTarget.index === cardTenderIndex)),
+  );
+  const showPrepaidCardRefInput = Boolean(
+    cardPayment && needsTransactionId(cardPayment) && cardTenderActive,
+  );
+
+  const readoutFormattedAmount =
+    amountTarget?.kind === 'discount'
+      ? discountType === 'percentage'
+        ? `${discountValue || '0'}%`
+        : currencyFmt(toStoredUnit(parseFloat(discountValue) || 0))
+      : currencyFmt(toStoredUnit(parseFloat(activeAmountValue) || 0));
+
+  const readoutStatusTone: 'settled' | 'due' | 'change' =
+    change > 0 ? 'change' : totalPaymentMinor >= remainingMinor && preview ? 'settled' : 'due';
+
+  const confirmDisabled =
+    processing ||
+    (!recovery &&
+      (taxLoading ||
+        !preview ||
+        hasInvalidFixedDiscount ||
+        totalPaymentMinor < remainingMinor ||
+        Boolean(
+          preview.discountAmount > 0 &&
+          discountNeedsApprovalPin &&
+          (!discountPin ||
+            managerApprovers.loading ||
+            managerApprovers.loadFailed ||
+            managerApprovers.approvers.length === 0 ||
+            !(discountApproverId ?? managerApprovers.selectedApproverId)),
+        )));
+
+  const confirmLabel = processing
+    ? t('processingPayment')
+    : recovery
+      ? t(recovery.statusChecked ? 'retrySamePayment' : 'checkPaymentStatus')
+      : taxLoading
+        ? t('calculatingTax')
+        : t('confirmPaymentAmount', { amount: currencyFmt(remaining) });
+
+  const handlePrimarySubmit = () => {
+    if (inFlightRef.current) return;
+    if (recovery && !recovery.statusChecked && onCheckRecovery) {
+      inFlightRef.current = true;
+      setProcessing(true);
+      void onCheckRecovery().finally(() => {
+        inFlightRef.current = false;
+        setProcessing(false);
+      });
+    } else if (recovery && lastSubmissionRef.current) {
+      inFlightRef.current = true;
+      setProcessing(true);
+      Promise.resolve(onConfirm(...lastSubmissionRef.current))
+        .then((result) => {
+          if (result) setSuccess(result);
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+          setProcessing(false);
+        });
+    } else {
+      handleConfirm();
+    }
+  };
 
   return (
     <div
       ref={modalRef}
       data-testid="prepaid-checkout-modal"
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3"
     >
-      <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl">
-        {/* Compact header and bill summary share one block to preserve vertical space. */}
-        <div className="shrink-0 border-b border-border px-5 pb-3 pt-4">
-          <div className="flex items-start justify-between gap-3">
+      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden bg-card shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl">
+        {/* Compact modal header */}
+        <div className="shrink-0 border-b border-border px-4 py-2.5 sm:px-5">
+          <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-lg font-bold text-foreground">{t('checkout')}</h2>
-              <p className="mt-0.5 truncate text-xs capitalize text-muted-foreground">
+              <h2 className="text-base font-bold text-foreground sm:text-lg">{t('checkout')}</h2>
+              <p className="truncate text-xs capitalize text-muted-foreground">
                 {t(ORDER_TYPE_SUFFIX_KEYS[cart.orderType])}
                 {customer ? ` · ${customer.name}` : ''}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
-              aria-label={t('close')}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {taxLoading || !preview ? (
-            <div className="mt-3 h-24 animate-pulse rounded-xl bg-muted" />
-          ) : (
-            <div
-              className="mt-3 space-y-1 text-sm tabular-nums"
-              data-testid="prepaid-checkout-summary"
-            >
-              <div className="flex justify-between text-foreground">
-                <span>{t('itemCount', { count: cart.itemCount() })}</span>
-                <span>{currencyFmt(preview.subtotal)}</span>
-              </div>
-              {preview.discountAmount > 0 && (
-                <div className="flex justify-between font-medium text-emerald-600">
-                  <span>{t('discount')}</span>
-                  <span>− {currencyFmt(preview.discountAmount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('subtotal')}</span>
-                <span>{currencyFmt(preview.discountedSubtotal)}</span>
-              </div>
-              <TaxBreakdown
-                taxAmount={preview.taxAmount}
-                taxBreakdown={preview.taxBreakdown}
-                theme="light"
-              />
-              {preview.charges.map((charge) => {
-                const definition = applicableCharges.find(
-                  (candidate) => candidate.id === charge.id,
-                );
-                const optedIn = cart.optedInChargeIds.has(charge.id);
-                return (
-                  <div
-                    key={charge.id}
-                    data-testid={`prepaid-charge-${charge.id}`}
-                    className="flex justify-between items-center gap-2 text-muted-foreground"
-                  >
-                    <span className={charge.waived ? 'line-through' : undefined}>
-                      {charge.name}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className={charge.waived ? 'line-through' : undefined}>
-                        {currencyFmt(charge.amount)}
-                      </span>
-                      {definition?.is_optional && (
-                        <button
-                          type="button"
-                          onClick={() => cart.toggleWaiveCharge(charge.id)}
-                          aria-pressed={charge.waived}
-                          className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
-                        >
-                          {charge.waived ? t('applyCharge') : t('waiveCharge')}
-                        </button>
-                      )}
-                      {definition && !definition.is_default_active && optedIn && (
-                        <button
-                          type="button"
-                          onClick={() => cart.toggleOptedInCharge(charge.id)}
-                          aria-pressed={optedIn}
-                          className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
-                        >
-                          {t('removeCharge')}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                );
-              })}
-              {addableCharges.map((charge) => (
-                <div
-                  key={charge.id}
-                  data-testid={`prepaid-charge-${charge.id}`}
-                  className="flex justify-between items-center gap-2 text-muted-foreground"
-                >
-                  <span>{charge.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => cart.toggleOptedInCharge(charge.id)}
-                    className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
-                  >
-                    {t('addCharge')}
-                  </button>
-                </div>
-              ))}
-              {preview.packagingCharge > 0 &&
-                !preview.charges.some((charge) => charge.id === 'packaging_charge') && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>{t('packaging')}</span>
-                    <span>{currencyFmt(preview.packagingCharge)}</span>
-                  </div>
-                )}
-              {preview.roundOff !== 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{t('roundOff')}</span>
-                  <span>
-                    {preview.roundOff > 0 ? '+' : ''}
-                    {currencyFmt(preview.roundOff)}
-                  </span>
-                </div>
-              )}
-              <div className="mt-2 flex items-end justify-between border-t border-border pt-2 font-bold text-foreground">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {t('totalDue')}
-                </span>
-                <span className="text-xl leading-none">{currencyFmt(remaining)}</span>
-              </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDetails((open) => !open)}
+                disabled={locked}
+                aria-expanded={showDetails}
+                className="touch-target rounded-lg border border-border px-3 text-sm font-medium lg:hidden"
+              >
+                {showDetails ? t('close') : t('items')}
+              </button>
+              <button
+                onClick={onClose}
+                disabled={locked}
+                className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                aria-label={t('close')}
+              >
+                <X size={16} />
+              </button>
             </div>
-          )}
-
-          {discountModeLoaded && discountMode !== 'none' && (
-            <button
-              type="button"
-              onClick={() => setDiscountOpen((open) => !open)}
-              className="mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-border bg-muted px-2 text-xs font-medium text-foreground transition-colors hover:border-brand hover:text-brand"
-              aria-expanded={discountOpen}
-            >
-              {preview?.discountAmount
-                ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}`
-                : t('discounts')}
-              <ChevronDown
-                size={12}
-                className={`transition-transform ${discountOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-          )}
+          </div>
         </div>
 
-        <div className="min-h-0 space-y-3 overflow-y-auto px-5 py-3">
-          {/* Cart-level discount editor. */}
-          {discountOpen && discountModeLoaded && discountMode !== 'none' && (
-            <div className="overflow-hidden rounded-xl border border-purple-200 dark:border-purple-800/40 bg-purple-50 dark:bg-purple-950/40 p-3 space-y-2">
-              <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
-                {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                  <button
-                    onClick={() => setDiscountType('percentage')}
-                    className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                  >
-                    <Percent size={14} />
-                    {t('percentage')}
-                  </button>
-                )}
-                {isDiscountTypeAllowed(discountMode, 'amount') && (
-                  <button
-                    onClick={() => setDiscountType('amount')}
-                    className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                  >
-                    {t('flatAmount')}
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <span className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                  {discountType === 'percentage' ? '%' : inputCurrencyLabel}
-                </span>
-                <input
-                  type="number"
-                  value={discountValue}
-                  onFocus={() => setAmountTarget({ kind: 'discount' })}
-                  onChange={(e) => setDiscountValue(e.target.value)}
-                  placeholder={discountType === 'percentage' ? '0' : '0.00'}
-                  min="0"
-                  max={
-                    discountType === 'percentage'
-                      ? 100
-                      : preview
-                        ? toDisplayUnit(preview.subtotal)
-                        : undefined
-                  }
-                  step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
-                  inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                  className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                />
-              </div>
-              <input
-                type="text"
-                value={discountReason}
-                onChange={(e) => setDiscountReason(e.target.value)}
-                placeholder={t('discountReasonPlaceholder')}
-                className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-              />
-              {discountNeedsApprovalPin && parseFloat(discountValue) > 0 && (
-                <div className="space-y-2">
-                  <ApproverSelect
-                    id="prepaidDiscountApprover"
-                    approvers={managerApprovers.approvers}
-                    selectedApproverId={discountApproverId ?? managerApprovers.selectedApproverId}
-                    onSelectApprover={(id) => {
-                      setDiscountApproverId(id);
-                      setDiscountPin('');
-                    }}
-                    loading={managerApprovers.loading}
-                    loadFailed={managerApprovers.loadFailed}
-                    disabled={processing}
-                  />
-                  <input
-                    type="password"
-                    value={discountPin}
-                    onChange={(e) => setDiscountPin(e.target.value)}
-                    placeholder={t('managerPin')}
-                    maxLength={6}
-                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                  />
-                </div>
-              )}
-              {discountValue && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => {
-                    setDiscountValue('');
-                    setDiscountReason('');
-                    setDiscountPin('');
-                    setDiscountApproverId(null);
-                    setPaymentsTouched(false);
-                  }}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[minmax(280px,1fr)_minmax(310px,1.08fr)_minmax(320px,0.96fr)]">
+          {/* Column 1: Contained Panel Swap (Items / Discount / Tax Details) + Pinned Totals Footer */}
+          <fieldset
+            disabled={locked}
+            className={`${showDetails ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-2">
+              {activeCol1Panel === 'items' ? (
+                <h3 className="text-sm font-semibold text-foreground">{t('items')}</h3>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setActiveCol1Panel('items')}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-muted/60 px-2.5 text-xs font-semibold text-foreground hover:bg-muted"
                 >
-                  {t('remove')}
-                </Button>
+                  <span>&larr;</span>
+                  <span>{tCommon('back')}</span>
+                  <span className="text-muted-foreground">
+                    · {activeCol1Panel === 'discount' ? t('discount') : t('tax')}
+                  </span>
+                </button>
+              )}
+              {discountModeLoaded && discountMode !== 'none' && (
+                <button
+                  type="button"
+                  onClick={() => setDiscountOpen((open) => !open)}
+                  className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+                    discountOpen
+                      ? 'border-brand bg-brand/10 text-brand'
+                      : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'
+                  }`}
+                  aria-expanded={discountOpen}
+                >
+                  {preview?.discountAmount
+                    ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}`
+                    : t('discounts')}
+                  <ChevronDown
+                    size={12}
+                    className={`transition-transform ${discountOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
               )}
             </div>
-          )}
 
-          {/* Every method has one compact amount row; clicking its label fills the unallocated balance. */}
-          <div className="space-y-2">
-            {payments.map((payment, idx) => {
-              const builtIn = PAYMENT_METHODS.find(
-                (method) =>
-                  method.key === payment.method && payment.payment_method_id === undefined,
-              );
-              const custom = customMethods.find(
-                (method) => method.id === payment.payment_method_id,
-              );
-              const label = builtIn
-                ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key])
-                : custom?.name || tCommon('unknown');
-              const Icon = builtIn?.icon;
-              const active = (parseFloat(payment.amount) || 0) > 0;
-              return (
-                <div
-                  key={
-                    payment.payment_method_id === undefined
-                      ? payment.method
-                      : `custom:${payment.payment_method_id}`
-                  }
-                  className="space-y-1"
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3">
+              {activeCol1Panel === 'discount' && discountModeLoaded && discountMode !== 'none' ? (
+                <div className="space-y-2.5">
+                  <div className="flex overflow-hidden rounded-lg border border-border">
+                    {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('percentage')}
+                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                      >
+                        <Percent size={14} />
+                        {t('percentage')}
+                      </button>
+                    )}
+                    {isDiscountTypeAllowed(discountMode, 'amount') && (
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('amount')}
+                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                      >
+                        {t('flatAmount')}
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      {discountType === 'percentage' ? '%' : inputCurrencyLabel}
+                    </span>
+                    <input
+                      type="number"
+                      value={discountValue}
+                      onFocus={() => setAmountTarget({ kind: 'discount' })}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      placeholder={discountType === 'percentage' ? '0' : '0.00'}
+                      min="0"
+                      max={
+                        discountType === 'percentage'
+                          ? 100
+                          : preview
+                            ? toDisplayUnit(preview.subtotal)
+                            : undefined
+                      }
+                      step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
+                      inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
+                      className="min-h-11 w-full rounded-lg border border-border bg-card pe-3 ps-8 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={discountReason}
+                    onChange={(e) => setDiscountReason(e.target.value)}
+                    placeholder={t('discountReasonPlaceholder')}
+                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                  />
+                  {discountNeedsApprovalPin && parseFloat(discountValue) > 0 && (
+                    <div className="space-y-2">
+                      <ApproverSelect
+                        id="prepaidDiscountApprover"
+                        approvers={managerApprovers.approvers}
+                        selectedApproverId={
+                          discountApproverId ?? managerApprovers.selectedApproverId
+                        }
+                        onSelectApprover={(id) => {
+                          setDiscountApproverId(id);
+                          setDiscountPin('');
+                        }}
+                        loading={managerApprovers.loading}
+                        loadFailed={managerApprovers.loadFailed}
+                        disabled={locked}
+                      />
+                      <input
+                        type="password"
+                        value={discountPin}
+                        onChange={(e) => setDiscountPin(e.target.value)}
+                        placeholder={t('managerPin')}
+                        maxLength={6}
+                        className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                      />
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      className="flex-1"
+                      onClick={() => setActiveCol1Panel('items')}
+                    >
+                      {tCommon('done')}
+                    </Button>
+                    {discountValue ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setDiscountValue('');
+                          setDiscountReason('');
+                          setDiscountPin('');
+                          setDiscountApproverId(null);
+                          setPaymentsTouched(false);
+                          if (autoFilledSingleIndex === null) {
+                            setPayments((rows) => rows.map((r) => ({ ...r, amount: '' })));
+                          }
+                        }}
+                      >
+                        {t('remove')}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : activeCol1Panel === 'tax' && preview ? (
+                <div className="space-y-2">
+                  <TaxBreakdown
+                    taxAmount={preview.taxAmount}
+                    taxBreakdown={preview.taxBreakdown}
+                    theme="light"
+                  />
+                  {preview.taxBreakdown.length > 0 ? (
+                    <div className="space-y-1.5 border-t border-border pt-2 text-xs">
+                      {preview.taxBreakdown.map((item, idx) => (
+                        <div key={`${item.title}-${idx}`} className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">
+                            {item.title} ({item.rate}%)
+                          </span>
+                          <span className="font-medium tabular-nums">
+                            {currencyFmt(item.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {cart.items.map((item) => {
+                    const online =
+                      cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0;
+                    const unitPrice =
+                      cartLineUnitPrice(item, online) +
+                      item.addons.reduce(
+                        (sum, addon) => sum + Number(addon.price) * (addon.quantity || 1),
+                        0,
+                      );
+                    return (
+                      <div
+                        key={item.id}
+                        className="border-b border-border pb-2 text-sm last:border-b-0 last:pb-0"
+                      >
+                        <div className="flex justify-between gap-3 font-medium">
+                          <span>
+                            {item.quantity} × {item.product.name}
+                            {item.variant ? ` (${item.variant.name})` : ''}
+                          </span>
+                          <span className="shrink-0 tabular-nums">
+                            {currencyFmt(unitPrice * item.quantity)}
+                          </span>
+                        </div>
+                        {item.quantity > 1 && (
+                          <p className="text-xs text-muted-foreground">
+                            {item.quantity} × {currencyFmt(unitPrice)}
+                          </p>
+                        )}
+                        {item.addons.map((addon) => (
+                          <p key={addon.id} className="text-xs text-muted-foreground">
+                            + {addon.name}
+                            {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
+                          </p>
+                        ))}
+                        {item.special_instructions && (
+                          <p className="text-xs text-muted-foreground">
+                            {item.special_instructions}
+                          </p>
+                        )}
+                        {item.price_override && (
+                          <p className="text-xs text-muted-foreground">
+                            {tOrders('priceOverriddenMenu', {
+                              price: currencyFmt(cartVariantUnitPrice(item, online)),
+                            })}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {preview && (preview.charges.length > 0 || addableCharges.length > 0) && (
+                    <div className="space-y-1.5 border-t border-border pt-2 text-xs">
+                      {preview.charges.map((charge) => {
+                        const definition = applicableCharges.find(
+                          (candidate) => candidate.id === charge.id,
+                        );
+                        const optedIn = cart.optedInChargeIds.has(charge.id);
+                        return (
+                          <div
+                            key={charge.id}
+                            data-testid={`prepaid-charge-${charge.id}`}
+                            className="flex items-center justify-between gap-2 text-muted-foreground"
+                          >
+                            <span className={charge.waived ? 'line-through' : undefined}>
+                              {charge.name}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <span className={charge.waived ? 'line-through' : undefined}>
+                                {currencyFmt(charge.amount)}
+                              </span>
+                              {definition?.is_optional && (
+                                <button
+                                  type="button"
+                                  onClick={() => cart.toggleWaiveCharge(charge.id)}
+                                  aria-pressed={charge.waived}
+                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground"
+                                >
+                                  {charge.waived ? t('applyCharge') : t('waiveCharge')}
+                                </button>
+                              )}
+                              {definition && !definition.is_default_active && optedIn && (
+                                <button
+                                  type="button"
+                                  onClick={() => cart.toggleOptedInCharge(charge.id)}
+                                  aria-pressed={optedIn}
+                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground"
+                                >
+                                  {t('removeCharge')}
+                                </button>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {addableCharges.map((charge) => (
+                        <div
+                          key={charge.id}
+                          data-testid={`prepaid-charge-${charge.id}`}
+                          className="flex items-center justify-between gap-2 text-muted-foreground"
+                        >
+                          <span>{charge.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => cart.toggleOptedInCharge(charge.id)}
+                            className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground"
+                          >
+                            {t('addCharge')}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Pinned Totals Footer */}
+            {taxLoading || !preview ? (
+              <div className="h-24 shrink-0 animate-pulse rounded-xl bg-muted" />
+            ) : (
+              <div
+                className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/20 p-2.5 text-xs tabular-nums"
+                data-testid="prepaid-checkout-summary"
+              >
+                <div className="flex justify-between text-foreground">
+                  <span>{t('itemCount', { count: cart.itemCount() })}</span>
+                  <span>{currencyFmt(preview.subtotal)}</span>
+                </div>
+                {preview.discountAmount > 0 && (
+                  <div className="flex justify-between font-medium text-emerald-600">
+                    <span className="truncate">
+                      {t('discount')}
+                      {discountReason ? ` · ${discountReason}` : ''}
+                    </span>
+                    <span className="shrink-0">− {currencyFmt(preview.discountAmount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{t('subtotal')}</span>
+                  <span>{currencyFmt(preview.discountedSubtotal)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
+                  aria-expanded={activeCol1Panel === 'tax'}
+                  className="flex w-full items-center justify-between text-muted-foreground hover:text-foreground"
                 >
-                  <div className="flex min-h-12">
+                  <span className="inline-flex items-center gap-1">
+                    <span>{t('tax')}</span>
+                    {preview.taxBreakdown.length > 0 && (
+                      <ChevronDown
+                        size={12}
+                        className={`transition-transform ${activeCol1Panel === 'tax' ? 'rotate-180' : ''}`}
+                      />
+                    )}
+                  </span>
+                  <span>{currencyFmt(preview.taxAmount)}</span>
+                </button>
+                {preview.packagingCharge > 0 &&
+                  !preview.charges.some((charge) => charge.id === 'packaging_charge') && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('packaging')}</span>
+                      <span>{currencyFmt(preview.packagingCharge)}</span>
+                    </div>
+                  )}
+                {preview.roundOff !== 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{t('roundOff')}</span>
+                    <span>
+                      {preview.roundOff > 0 ? '+' : ''}
+                      {currencyFmt(preview.roundOff)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-end justify-between border-t border-border pt-1.5 font-bold text-foreground">
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t('total')}
+                  </span>
+                  <span className="text-lg leading-none">{currencyFmt(remaining)}</span>
+                </div>
+              </div>
+            )}
+          </fieldset>
+
+          {/* Column 2: Core Tenders, Constant Card Ref Slot, Custom Tenders & Loyalty Wallet */}
+          <fieldset
+            disabled={locked}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+          >
+            {/* [2A] Hero Balance Header */}
+            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                {taxLoading || !preview ? t('calculatingTax') : t('totalDue')}
+              </span>
+              <span className="text-xl font-bold tabular-nums text-foreground sm:text-2xl">
+                {taxLoading || !preview ? '…' : currencyFmt(remaining)}
+              </span>
+            </div>
+
+            {/* [2B] Core Built-in Tenders (Cash & Card) + Fixed-Height Terminal Ref Slot */}
+            <div className="shrink-0 space-y-2">
+              {payments.map((payment, idx) => {
+                if (payment.payment_method_id !== undefined) return null;
+                const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method);
+                const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : tCommon('unknown');
+                const Icon = builtIn?.icon;
+                const active = (parseFloat(payment.amount) || 0) > 0;
+                return (
+                  <div key={payment.method} className="flex min-h-12">
                     <button
                       type="button"
                       title={label}
                       onClick={() => {
                         setAmountTarget({ kind: 'payment', index: idx });
-                        allocateRemainingTo(idx);
+                        if (!payment.amount) allocateRemainingTo(idx);
                       }}
-                      className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}
+                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
                     >
                       {Icon && <Icon size={15} />}
                       <span className="truncate">{label}</span>
                     </button>
-                    <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                      <span className="ps-3 text-muted-foreground text-xs">
+                    <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
+                      <span className="ps-3 text-xs text-muted-foreground">
                         {inputCurrencyLabel}
                       </span>
                       <input
                         type="number"
+                        aria-label={`${label} amount`}
                         value={payment.amount}
                         onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                         onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                         placeholder="0.00"
                         inputMode="decimal"
-                        className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
+                        className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
                         step={inputCurrencyStep}
                         min="0"
                       />
                     </div>
                   </div>
-                  {needsTransactionId(payment) && active && (
-                    <input
-                      type="text"
-                      value={payment.transaction_id ?? ''}
-                      onChange={(e) => updatePaymentTransactionId(idx, e.target.value)}
-                      placeholder={t('cardTransactionIdLabel')}
-                      aria-label={t('cardTransactionIdLabel')}
-                      maxLength={256}
-                      autoComplete="off"
-                      className="w-full min-h-11 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
 
-          {/* Loyalty Wallet Section */}
-          {loyaltySettings?.loyalty_enabled && customer && walletBalance !== null && (
-            <div className="space-y-1">
-              <div className="flex min-h-12">
-                <button
-                  type="button"
-                  disabled={walletBalance <= 0}
-                  onClick={() => {
-                    const allocatedElsewhere = payments.reduce(
-                      (sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0),
-                      0,
-                    );
-                    const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-                    const dueStored = Math.min(
-                      maxWalletStored,
-                      Math.max(0, remaining - allocatedElsewhere),
-                    );
-                    const dueDisplay = toDisplayUnit(dueStored);
-                    setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
-                    setAmountTarget({ kind: 'wallet' });
-                  }}
-                  className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40 disabled:bg-muted disabled:text-muted-foreground disabled:border-border'}`}
-                >
-                  <Wallet size={15} />
-                  <span className="truncate">{t('loyaltyWallet')}</span>
-                </button>
-                <div className="flex flex-1 items-center border border-s-0 border-purple-200 dark:border-purple-800/40 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
-                  <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
+              {/* Constant-height Terminal Reference Slot prevents shifts on Cash <-> Card switch */}
+              <div className="flex h-11 shrink-0 items-center">
+                {showPrepaidCardRefInput && cardPayment && cardTenderIndex >= 0 ? (
                   <input
-                    type="number"
-                    value={walletAmount}
-                    onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      const maxWalletCurrencyStored = Math.floor(
-                        walletBalance / LOYALTY_REDEMPTION_RATE,
-                      );
-                      const maxDisplay = toDisplayUnit(
-                        Math.min(maxWalletCurrencyStored, remaining),
-                      );
-                      const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
-                      setWalletAmount(clamped);
-                    }}
-                    placeholder="0.00"
-                    disabled={walletBalance <= 0}
-                    inputMode="decimal"
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
-                    step={inputCurrencyStep}
-                    min="0"
-                    max={toDisplayUnit(
-                      Math.min(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE), remaining),
-                    )}
+                    id="prepaid-card-transaction-id"
+                    type="text"
+                    value={cardPayment.transaction_id ?? ''}
+                    onChange={(e) => updatePaymentTransactionId(cardTenderIndex, e.target.value)}
+                    placeholder={t('cardTransactionIdLabel')}
+                    aria-label={t('cardTransactionIdLabel')}
+                    maxLength={256}
+                    autoComplete="off"
+                    className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
                   />
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="flex h-11 w-full items-center rounded-xl border border-dashed border-border/50 bg-muted/10 px-3 text-xs text-muted-foreground"
+                  >
+                    <span className="truncate opacity-60">{t('cardTransactionIdLabel')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* [2C] Contained Custom Tenders & Single Fixed-Height Loyalty Wallet Card */}
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+              {customMethods.length > 0 && (
+                <div className="max-h-[152px] shrink-0 space-y-2 overflow-y-auto pe-0.5">
+                  {payments.map((payment, idx) => {
+                    if (payment.payment_method_id === undefined) return null;
+                    const custom = customMethods.find(
+                      (method) => method.id === payment.payment_method_id,
+                    );
+                    const label = custom?.name || tCommon('unknown');
+                    const active = (parseFloat(payment.amount) || 0) > 0;
+                    return (
+                      <div key={`custom:${payment.payment_method_id}`} className="flex min-h-12">
+                        <button
+                          type="button"
+                          title={label}
+                          onClick={() => {
+                            setAmountTarget({ kind: 'payment', index: idx });
+                            if (!payment.amount) allocateRemainingTo(idx);
+                          }}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                        >
+                          <span className="truncate">{label}</span>
+                        </button>
+                        <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
+                          <span className="ps-3 text-xs text-muted-foreground">
+                            {inputCurrencyLabel}
+                          </span>
+                          <input
+                            type="number"
+                            aria-label={`${label} amount`}
+                            value={payment.amount}
+                            onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
+                            onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                            placeholder="0.00"
+                            inputMode="decimal"
+                            className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                            step={inputCurrencyStep}
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-              <p className="px-1 text-[11px] text-muted-foreground text-end">
-                {walletBalance > 0
-                  ? t('pointsApproxValue', {
-                      count: fmtNum(walletBalance),
-                      value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                    })
-                  : t('noBalance')}
-              </p>
-            </div>
-          )}
+              )}
 
-          {/* Loyalty Info Strip (staff reference) */}
-          {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (
-            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
-              <Sparkles size={13} className="text-muted-foreground shrink-0" />
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                <span className="text-foreground font-medium">{t('loyalty')}</span>
-                <span className="font-semibold text-foreground">
-                  {walletBalance !== null
-                    ? t('pointsApproxValue', {
-                        count: fmtNum(walletBalance),
-                        value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                      })
-                    : '…'}
-                </span>
-              </div>
+              {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (
+                <div className="flex h-[74px] shrink-0 flex-col justify-between">
+                  <div className="flex min-h-12">
+                    <button
+                      type="button"
+                      disabled={!walletBalance || walletBalance <= 0}
+                      onClick={() => {
+                        if (!walletBalance) return;
+                        const allocatedElsewhere = payments.reduce(
+                          (sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0),
+                          0,
+                        );
+                        const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+                        const dueStored = Math.min(
+                          maxWalletStored,
+                          Math.max(0, remaining - allocatedElsewhere),
+                        );
+                        const dueDisplay = toDisplayUnit(dueStored);
+                        setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
+                        setAutoFilledSingleIndex(null);
+                        setAmountTarget({ kind: 'wallet' });
+                      }}
+                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold sm:w-36 ${walletAmt > 0 ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground disabled:border-border disabled:bg-muted disabled:text-muted-foreground'}`}
+                    >
+                      <Wallet size={15} />
+                      <span className="truncate">{t('loyaltyWallet')}</span>
+                    </button>
+                    <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:ring-2 focus-within:ring-brand">
+                      <span className="ps-3 text-xs text-muted-foreground">
+                        {inputCurrencyLabel}
+                      </span>
+                      <input
+                        type="number"
+                        value={walletAmount}
+                        onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const maxWalletCurrencyStored = Math.floor(
+                            (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
+                          );
+                          const maxDisplay = toDisplayUnit(
+                            Math.min(maxWalletCurrencyStored, remaining),
+                          );
+                          const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
+                          setWalletAmount(clamped);
+                          setAutoFilledSingleIndex(null);
+                          setPaymentsTouched(true);
+                        }}
+                        placeholder="0.00"
+                        disabled={!walletBalance || walletBalance <= 0}
+                        inputMode="decimal"
+                        className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none disabled:bg-muted"
+                        step={inputCurrencyStep}
+                        min="0"
+                        max={toDisplayUnit(
+                          Math.min(
+                            Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
+                            remaining,
+                          ),
+                        )}
+                      />
+                    </div>
+                  </div>
+                  <p className="min-h-4 truncate px-1 text-end text-[11px] text-muted-foreground">
+                    {walletBalance === null
+                      ? '…'
+                      : walletBalance > 0
+                        ? t('pointsApproxValue', {
+                            count: fmtNum(walletBalance),
+                            value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
+                          })
+                        : t('noBalance')}
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-          {amountTarget && (
-            <CurrencyTouchNumberPad
-              value={activeAmountValue}
-              onChange={updateActiveAmount}
-              ariaLabel={t('numericKeypad')}
-              clearLabel={t('clearAmount')}
-              backspaceLabel={t('backspaceAmount')}
-              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
-              currencyMaxDecimals={unitAdapter.maxDecimals}
-              amountTarget={amountTarget.kind}
-              discountType={discountType}
-              max={activeAmountMax}
-              quickValues={activeAmountQuickValues}
-            />
-          )}
+          </fieldset>
 
-          {/* Change stays at the bottom of all payment controls. */}
-          {hasCash && (
-            <div
-              className={`rounded-xl px-4 py-2.5 flex items-center justify-between border transition-all duration-200 ${
-                change > 0
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/40'
-                  : 'bg-muted border-border'
-              }`}
+          {/* Column 3: Full-Height 4-Zone Checkout Payment Station (outer container must NOT be disabled so recovery actions stay clickable) */}
+          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 lg:overflow-hidden">
+            <CheckoutPaymentStation
+              readout={{
+                activeLabel: activeAmountLabel,
+                amountText: readoutFormattedAmount,
+                paidSummaryText:
+                  taxLoading || !preview
+                    ? t('calculatingTax')
+                    : `${t('paid')}: ${currencyFmt(totalPaymentMinor / minorFactor)}`,
+                dueSummaryText:
+                  taxLoading || !preview ? '…' : `${t('total')}: ${currencyFmt(remaining)}`,
+                statusPillText:
+                  totalPaymentMinor >= remainingMinor && preview ? t('paid') : undefined,
+                statusTone: readoutStatusTone,
+              }}
+              quickTenders={quickTenderOptions}
+              keypad={
+                <fieldset disabled={locked} className="h-full">
+                  {amountTarget ? (
+                    <CurrencyTouchNumberPad
+                      value={activeAmountValue}
+                      onChange={updateActiveAmount}
+                      ariaLabel={t('numericKeypad')}
+                      clearLabel={t('clearAmount')}
+                      backspaceLabel={t('backspaceAmount')}
+                      // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
+                      currencyMaxDecimals={unitAdapter.maxDecimals}
+                      amountTarget={amountTarget.kind}
+                      discountType={discountType}
+                      max={activeAmountMax}
+                      quickValues={activeAmountQuickValues}
+                      fillHeight
+                    />
+                  ) : null}
+                </fieldset>
+              }
+              changeDisplay={{
+                label: t('changeReturned'),
+                formattedAmount: currencyFmt(change),
+                visible: change > 0,
+              }}
+              statusBanner={stationStatusBanner}
             >
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                    change > 0
-                      ? 'bg-emerald-100 dark:bg-emerald-950/60'
-                      : 'bg-gray-200 dark:bg-muted'
-                  }`}
-                >
-                  {change > 0 ? (
-                    <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <ArrowLeftRight size={13} className="text-muted-foreground" />
-                  )}
-                </div>
-                <span
-                  className={`text-sm font-semibold ${
-                    change > 0 ? 'text-emerald-800 dark:text-emerald-300' : 'text-muted-foreground'
-                  }`}
-                >
-                  {t('changeReturned')}
-                </span>
-              </div>
-              <span
-                className={`text-lg font-bold tabular-nums ${
-                  change > 0 ? 'text-emerald-600' : 'text-gray-300'
-                }`}
+              <Button
+                onClick={handlePrimarySubmit}
+                disabled={confirmDisabled}
+                className="h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12"
+                size="lg"
               >
-                {currencyFmt(change)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Pay Button */}
-        <div className="shrink-0 border-t border-border px-5 pb-6 pt-3">
-          <Button
-            onClick={() => handleConfirm()}
-            disabled={
-              processing ||
-              taxLoading ||
-              !preview ||
-              hasInvalidFixedDiscount ||
-              totalPaymentMinor < remainingMinor ||
-              Boolean(
-                preview.discountAmount > 0 &&
-                discountNeedsApprovalPin &&
-                (!discountPin ||
-                  managerApprovers.loading ||
-                  managerApprovers.loadFailed ||
-                  managerApprovers.approvers.length === 0 ||
-                  !(discountApproverId ?? managerApprovers.selectedApproverId)),
-              )
-            }
-            className="w-full h-12 text-base font-semibold rounded-xl"
-            size="lg"
-          >
-            {taxLoading
-              ? t('calculatingTax')
-              : processing
-                ? t('processingPayment')
-                : t('confirmPaymentAmount', { amount: currencyFmt(remaining) })}
-          </Button>
+                {confirmLabel}
+              </Button>
+            </CheckoutPaymentStation>
+          </div>
         </div>
       </div>
     </div>

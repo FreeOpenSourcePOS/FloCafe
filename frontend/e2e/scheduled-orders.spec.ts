@@ -191,6 +191,10 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     const createdOrderPayload = await createOrderRes.json();
     const prepaidOrderId = Number(createdOrderPayload.order.id);
     createdOrderIds.push(prepaidOrderId);
+    await page
+      .getByTestId('prepaid-checkout-modal')
+      .getByRole('button', { name: 'Done', exact: true })
+      .click();
 
     // Verify backend state: paid bill, NOT released early, NOT completed, excluded from KDS
     await expect

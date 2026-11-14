@@ -1006,8 +1006,11 @@ test.describe('split-check availability and eligibility messaging', () => {
     await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toContainText(
       '1 remaining',
     );
+    await expect(page.getByTestId('split-unassigned-total')).toContainText('1 remaining');
+    await expect(page.getByTestId('split-create-checks')).toBeDisabled();
     await page.getByTestId('split-distribute-evenly').click();
     await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toHaveCount(0);
+    await expect(page.getByTestId('split-unassigned-total')).toHaveCount(0);
 
     // Transfer singleItem to Guest 2 again and submit the split cleanly.
     await page.getByTestId(`split-cell-inc-${singleItem.id}-1`).click();

@@ -452,7 +452,6 @@ async function runModalKeypadIntegrationTests() {
   };
 
   try {
-    let nullStateCount = 0;
     const PaymentModal = require('../frontend/src/components/pos/PaymentModal').default;
     const PrepaidCheckoutModal =
       require('../frontend/src/components/pos/PrepaidCheckoutModal').default;
@@ -476,43 +475,42 @@ async function runModalKeypadIntegrationTests() {
       Modal: any,
       props: Record<string, unknown>,
       target: 'payment' | 'discount',
-      targetStateIndex: number,
     ) => {
-      nullStateCount = 0;
       const amountTarget =
         target === 'payment'
           ? { kind: 'payment' as const, index: 0 }
           : { kind: 'discount' as const };
       React.useState = ((initial: unknown) => {
-        if (initial === null) {
-          nullStateCount += 1;
-          if (nullStateCount === targetStateIndex) return [amountTarget, () => undefined];
+        if (
+          initial &&
+          typeof initial === 'object' &&
+          (initial as { kind?: string }).kind === 'payment'
+        ) {
+          return [amountTarget, () => undefined];
         }
         return originalUseState(initial);
       }) as typeof React.useState;
       return ReactDOMServer.renderToStaticMarkup(React.createElement(Modal, props));
     };
-    for (const [Modal, props, label, targetStateIndex] of [
+    for (const [Modal, props, label] of [
       [
         PaymentModal,
         { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined },
         'PaymentModal',
-        6,
       ],
       [
         PrepaidCheckoutModal,
         { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined },
         'PrepaidCheckoutModal',
-        4,
       ],
     ] as const) {
-      const paymentMarkup = renderModal(Modal, props, 'payment', targetStateIndex);
+      const paymentMarkup = renderModal(Modal, props, 'payment');
       assert.equal(
         paymentMarkup.includes('>.<'),
         false,
         `${label} hides JPY payment decimal key in static markup`,
       );
-      const discountMarkup = renderModal(Modal, props, 'discount', targetStateIndex);
+      const discountMarkup = renderModal(Modal, props, 'discount');
       assert.equal(
         discountMarkup.includes('>.<'),
         true,
@@ -533,27 +531,25 @@ async function runModalKeypadIntegrationTests() {
     if (browser) {
       try {
         const page = await browser.newPage();
-        for (const [Modal, props, label, targetStateIndex] of [
+        for (const [Modal, props, label] of [
           [
             PaymentModal,
             { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined },
             'PaymentModal',
-            6,
           ],
           [
             PrepaidCheckoutModal,
             { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined },
             'PrepaidCheckoutModal',
-            4,
           ],
         ] as const) {
-          await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
+          await page.setContent(renderModal(Modal, props, 'payment'));
           assert.equal(
             await page.getByRole('button', { name: '.', exact: true }).count(),
             0,
             `${label} hides JPY payment decimal key`,
           );
-          await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
+          await page.setContent(renderModal(Modal, props, 'discount'));
           assert.equal(
             await page.getByRole('button', { name: '.', exact: true }).count(),
             1,
@@ -645,7 +641,10 @@ async function runCatalogSaveBoundaryTests() {
       __esModule: true,
       default: { success: () => undefined, error: () => undefined },
     },
-    'use-intl': { useTranslations: (namespace: string) => translate(namespace) },
+    'use-intl': {
+      useTranslations: (namespace: string) => translate(namespace),
+      useLocale: () => 'en-US',
+    },
     '@shared/role-permissions': {
       ROLE_ACCESS: { ownerManager: ['owner', 'manager'] },
       hasRole: () => true,

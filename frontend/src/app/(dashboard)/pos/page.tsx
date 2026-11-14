@@ -4670,6 +4670,7 @@ export default function POSPage() {
           initialCardTransactionIdRequired={cardTransactionIdRequired}
           initialDiscount={prepaidModalAttempt?.discount ?? null}
           discountCommitted={Boolean(prepaidModalAttempt?.bill)}
+          orderCommitted={Boolean(prepaidModalAttempt?.order || prepaidModalAttempt?.bill)}
           recovery={prepaidRecovery}
           failure={prepaidFailure}
           onCheckRecovery={async () => {

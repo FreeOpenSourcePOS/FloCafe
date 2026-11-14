@@ -69,6 +69,7 @@ interface Props {
   initialCardTransactionIdRequired?: boolean;
   initialDiscount?: PrepaidDiscount | null;
   discountCommitted?: boolean;
+  orderCommitted?: boolean;
   recovery?: {
     message: string;
     statusChecked: boolean;
@@ -140,6 +141,7 @@ export default function PrepaidCheckoutModal({
   initialCardTransactionIdRequired,
   initialDiscount = null,
   discountCommitted = false,
+  orderCommitted = false,
   recovery = null,
   failure = null,
   onCheckRecovery,
@@ -1331,9 +1333,14 @@ export default function PrepaidCheckoutModal({
                               {definition?.is_optional && (
                                 <button
                                   type="button"
-                                  onClick={() => cart.toggleWaiveCharge(charge.id)}
+                                  disabled={locked || orderCommitted}
+                                  onClick={() => {
+                                    if (!locked && !orderCommitted) {
+                                      cart.toggleWaiveCharge(charge.id);
+                                    }
+                                  }}
                                   aria-pressed={charge.waived}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground"
+                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   {charge.waived ? t('applyCharge') : t('waiveCharge')}
                                 </button>
@@ -1341,9 +1348,14 @@ export default function PrepaidCheckoutModal({
                               {definition && !definition.is_default_active && optedIn && (
                                 <button
                                   type="button"
-                                  onClick={() => cart.toggleOptedInCharge(charge.id)}
+                                  disabled={locked || orderCommitted}
+                                  onClick={() => {
+                                    if (!locked && !orderCommitted) {
+                                      cart.toggleOptedInCharge(charge.id);
+                                    }
+                                  }}
                                   aria-pressed={optedIn}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground"
+                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   {t('removeCharge')}
                                 </button>
@@ -1361,8 +1373,13 @@ export default function PrepaidCheckoutModal({
                           <span>{charge.name}</span>
                           <button
                             type="button"
-                            onClick={() => cart.toggleOptedInCharge(charge.id)}
-                            className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground"
+                            disabled={locked || orderCommitted}
+                            onClick={() => {
+                              if (!locked && !orderCommitted) {
+                                cart.toggleOptedInCharge(charge.id);
+                              }
+                            }}
+                            className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {t('addCharge')}
                           </button>

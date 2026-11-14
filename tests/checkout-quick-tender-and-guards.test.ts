@@ -431,6 +431,11 @@ function installCheckoutComponentMocks(
     discount?: { type: 'amount' | 'percentage'; value: number; reason?: string } | null;
     apiGet?: (url: string) => Promise<any>;
     apiPost?: (url: string, body: any) => Promise<any>;
+    charges?: any[];
+    chargesBreakdown?: any[];
+    optedInChargeIds?: Set<string>;
+    onToggleWaiveCharge?: (id: string) => void;
+    onToggleOptedInCharge?: (id: string) => void;
   } = {},
 ) {
   const Icon = () => null;
@@ -440,7 +445,7 @@ function installCheckoutComponentMocks(
     currentTenant: { id: 1, name: 'Test Cafe', country: 'US', currency: 'USD', role: 'cashier' },
     activeServerId: null,
   };
-  const chargesState = { charges: [], load: async () => {} };
+  const chargesState = { charges: overrides.charges || [], load: async () => {} };
 
   const cartState = {
     items: [
@@ -457,13 +462,15 @@ function installCheckoutComponentMocks(
     onlinePlatform: null,
     customerId: null,
     customer: null,
-    optedInChargeIds: new Set<string>(),
+    optedInChargeIds: overrides.optedInChargeIds || new Set<string>(),
     waivedChargeIds: new Set<string>(),
     specialInstructions: '',
     waiveCharge: () => {},
     unwaiveCharge: () => {},
     optInCharge: () => {},
     optOutCharge: () => {},
+    toggleWaiveCharge: overrides.onToggleWaiveCharge || (() => {}),
+    toggleOptedInCharge: overrides.onToggleOptedInCharge || (() => {}),
     getSubtotal: () => 20,
     getItemCount: () => 1,
     itemCount: () => 1,
@@ -520,7 +527,7 @@ function installCheckoutComponentMocks(
           (sel?: (s: any) => any) => (typeof sel === 'function' ? sel(chargesState) : chargesState),
           { getState: () => chargesState },
         ),
-        chargesForOrderType: () => [],
+        chargesForOrderType: () => overrides.charges || [],
       };
     }
     if (request === '@/hooks/use-tax-preview') {
@@ -543,7 +550,7 @@ function installCheckoutComponentMocks(
               total,
               tax_breakdown: [],
               packaging_charge: 0,
-              charges_breakdown: [],
+              charges_breakdown: overrides.chargesBreakdown || [],
               round_off: 0,
             },
             loading: false,
@@ -1444,6 +1451,81 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         'Done button in prepaid discount panel resets amountTarget away from discount',
       );
       prepaidHarness.cleanupAll();
+
+      // Order-committed lock prevents mutating cart charge toggles while modal remains open
+      const chargeHarness = createStatefulHarness();
+      const chargeMutations: string[] = [];
+      installCheckoutComponentMocks(chargeHarness, {
+        charges: [
+          {
+            id: 'service_charge',
+            name: 'Service Charge',
+            is_optional: true,
+            is_default_active: true,
+          },
+          {
+            id: 'opted_addon',
+            name: 'Opted Addon',
+            is_optional: false,
+            is_default_active: false,
+          },
+          {
+            id: 'available_addon',
+            name: 'Available Addon',
+            is_optional: false,
+            is_default_active: false,
+          },
+        ],
+        chargesBreakdown: [
+          { id: 'service_charge', name: 'Service Charge', amount: 2, waived: false },
+          { id: 'opted_addon', name: 'Opted Addon', amount: 1, waived: false },
+        ],
+        optedInChargeIds: new Set(['opted_addon']),
+        onToggleWaiveCharge: (id) => chargeMutations.push(`waive:${id}`),
+        onToggleOptedInCharge: (id) => chargeMutations.push(`opt:${id}`),
+      });
+      delete require.cache[prepaidPath];
+      const ChargePrepaidModal = require(prepaidPath).default;
+      const findChargeButtons = (tree: any) => {
+        const rows = collectElements(tree, (el) =>
+          String(el.props?.['data-testid'] || '').startsWith('prepaid-charge-'),
+        );
+        return collectElements(rows, (el) => el.type === 'button');
+      };
+
+      const uncommittedTree = chargeHarness.renderAndSettle(ChargePrepaidModal, {
+        ...prepaidProps,
+        orderCommitted: false,
+      });
+      const uncommittedButtons = findChargeButtons(uncommittedTree);
+      assert.equal(uncommittedButtons.length, 3, 'All three charge toggle buttons render');
+      for (const btn of uncommittedButtons) {
+        assert.equal(Boolean(btn.props.disabled), false, 'Charge toggle enabled before order commit');
+        btn.props.onClick();
+      }
+      assert.deepEqual(chargeMutations, [
+        'waive:service_charge',
+        'opt:opted_addon',
+        'opt:available_addon',
+      ]);
+
+      chargeMutations.length = 0;
+      const committedTree = chargeHarness.renderAndSettle(ChargePrepaidModal, {
+        ...prepaidProps,
+        orderCommitted: true,
+      });
+      const committedButtons = findChargeButtons(committedTree);
+      assert.equal(committedButtons.length, 3, 'All three charge toggle buttons remain rendered');
+      for (const btn of committedButtons) {
+        assert.equal(btn.props.disabled, true, 'Charge toggle disabled after order commit');
+        btn.props.onClick();
+      }
+      assert.deepEqual(
+        chargeMutations,
+        [],
+        'Order-committed lock blocks all cart charge mutations',
+      );
+      chargeHarness.cleanupAll();
     } finally {
       harness.cleanupAll();
       if (!hadWindow) delete (globalThis as any).window;

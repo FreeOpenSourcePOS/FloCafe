@@ -899,7 +899,13 @@
     "releaseScheduled": "Imepangwa",
     "releaseBlocked": "Utumaji umezuiwa",
     "refundOwnerOnlyNotice": "Uidhinishaji wa kurejesha pesa kwa meneja umezimwa — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu.",
-    "refundOutsideWindowNotice": "Oda hii iko nje ya muda wa uidhinishaji wa meneja — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu."
+    "refundOutsideWindowNotice": "Oda hii iko nje ya muda wa uidhinishaji wa meneja — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu.",
+    "clearFilters": "Futa vichujio",
+    "noMatchesInTab": "Hakuna oda zinazolingana katika {tab}.",
+    "showMatchesInAll": "Onyesha zinazolingana katika Zote",
+    "orderSettledBanner": "Malipo yamekamilika",
+    "nextActiveOrder": "Oda Inayofuata",
+    "viewInCompleted": "Tazama kwenye Zilizokamilika"
   },
   "pos": {
     "addCustomer": "Ongeza Mteja",

@@ -899,7 +899,13 @@
     "releaseScheduled": "已预约",
     "releaseBlocked": "送厨受阻",
     "refundOwnerOnlyNotice": "经理退款审批已禁用 — 需要店主 PIN 码才能批准此退款。",
-    "refundOutsideWindowNotice": "此订单已超出经理审批时限 — 需要店主 PIN 码才能批准此退款。"
+    "refundOutsideWindowNotice": "此订单已超出经理审批时限 — 需要店主 PIN 码才能批准此退款。",
+    "clearFilters": "清除筛选",
+    "noMatchesInTab": "“{tab}”中没有匹配的订单。",
+    "showMatchesInAll": "在“全部”中显示匹配的订单",
+    "orderSettledBanner": "付款完成",
+    "nextActiveOrder": "下一笔订单",
+    "viewInCompleted": "在“已完成”中查看"
   },
   "pos": {
     "addCustomer": "添加顾客",

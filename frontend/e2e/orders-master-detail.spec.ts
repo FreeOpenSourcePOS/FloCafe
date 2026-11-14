@@ -2111,3 +2111,108 @@ test('shiftless paid order allows payment correction and closed-shift order hide
     });
   }
 });
+
+test('post-checkout completion banner supports Print, Next Order, and View in Completed in split layout', async ({
+  page,
+}) => {
+  const auth = () => ({
+    Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+  });
+
+  // Create two takeaway orders that settle immediately upon full payment (no KDS hold).
+  const firstOrder = await createTakeaway(page, 'Post-pay transition primary');
+  const secondOrder = await createTakeaway(page, 'Post-pay transition next');
+
+  await login(page, 'owner@flo.local');
+  await page.goto(`${BASE}/orders`);
+
+  const firstRow = page.getByRole('button').filter({ hasText: `#${firstOrder.order_number}` });
+  const secondRow = page.getByRole('button').filter({ hasText: `#${secondOrder.order_number}` });
+  await expect(firstRow).toBeVisible();
+  await expect(secondRow).toBeVisible();
+
+  await firstRow.click();
+  const detailPanel = page.getByTestId('orders-detail-panel');
+  await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toBeVisible();
+
+  // Checkout and pay the first order in full via PaymentModal.
+  await detailPanel.getByRole('button', { name: /Checkout|Take Payment/ }).click();
+  const modal = page.locator('.fixed.inset-0').last();
+  await expect(modal).toBeVisible();
+  await modal.getByRole('button', { name: /^Cash/ }).click();
+  await modal.getByRole('button', { name: /^(Confirm Payment|Pay\s)/ }).click();
+  const modalDone = modal.getByRole('button', { name: 'Done', exact: true });
+  await expect(modalDone).toBeVisible({ timeout: 20_000 });
+  await modalDone.click();
+
+  // Emerald completion banner replaces the amber displacement banner and keeps receipt actions live.
+  const settledBanner = detailPanel.getByTestId('order-settled-banner');
+  await expect(settledBanner).toBeVisible({ timeout: 15_000 });
+  await expect(settledBanner).toContainText('Payment complete');
+  await expect(detailPanel.getByText('This order is no longer in the current list.')).toHaveCount(
+    0,
+  );
+
+  // Clicking Print -> Confirm Print on the just-paid snapshot resolves the bill instead of "Bill not found".
+  const printBtn = detailPanel.getByRole('button', { name: /^(Print|Reprint)$/ }).last();
+  await expect(printBtn).toBeVisible();
+  await printBtn.click();
+  const confirmPrintHeading = page.getByRole('heading', { name: /Print Receipt|Reprint Receipt/ });
+  await expect(confirmPrintHeading).toBeVisible();
+  const billReadPromise = page.waitForResponse(
+    (res) =>
+      res.request().method() === 'GET' &&
+      /^\/api\/bills\/\d+$/.test(new URL(res.url()).pathname),
+  );
+  await page.getByRole('button', { name: /Confirm Print|Confirm Reprint/ }).click();
+  expect((await billReadPromise).ok()).toBeTruthy();
+  await expect(page.getByText('Bill not found')).toHaveCount(0);
+
+  // 1-tap Next Order advances directly to an active order and clears the completion banner.
+  await detailPanel.getByTestId('next-active-order-button').click();
+  await expect(settledBanner).toHaveCount(0);
+  await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toHaveCount(0);
+
+  // Also verify View in Completed carries the settled order straight into the Completed tab.
+  await page.getByRole('button').filter({ hasText: `#${secondOrder.order_number}` }).click();
+  await expect(detailPanel.getByText(`#${secondOrder.order_number}`)).toBeVisible();
+  await detailPanel.getByRole('button', { name: /Checkout|Take Payment/ }).click();
+  const modal2 = page.locator('.fixed.inset-0').last();
+  await expect(modal2).toBeVisible();
+  await modal2.getByRole('button', { name: /^Cash/ }).click();
+  await modal2.getByRole('button', { name: /^(Confirm Payment|Pay\s)/ }).click();
+  const modal2Done = modal2.getByRole('button', { name: 'Done', exact: true });
+  await expect(modal2Done).toBeVisible({ timeout: 20_000 });
+  await modal2Done.click();
+
+  await expect(detailPanel.getByTestId('order-settled-banner')).toBeVisible({ timeout: 15_000 });
+  await detailPanel.getByTestId('view-in-completed-button').click();
+  await expect(page.getByRole('button', { name: 'Completed', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(detailPanel.getByText(`#${secondOrder.order_number}`)).toBeVisible();
+
+  // Cross-status search fallback: searching a paid order while on Unpaid offers "Show matching orders in All".
+  await page.getByRole('button', { name: 'Unpaid', exact: true }).click();
+  const searchInput = page.getByPlaceholder('Search by order number, name, or phone…');
+  await searchInput.fill(firstOrder.order_number);
+  const fallbackButton = page.getByTestId('orders-search-all-fallback');
+  await expect(fallbackButton).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('No matching orders in Unpaid.')).toBeVisible();
+  await fallbackButton.click();
+  await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(
+    page.getByRole('button').filter({ hasText: `#${firstOrder.order_number}` }).first(),
+  ).toBeVisible();
+  await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toBeVisible();
+
+  // Confirm orders remain settled on the backend.
+  const verifyRes = await page.request.get(`${BASE}/api/orders/${firstOrder.id}`, {
+    headers: auth(),
+  });
+  expect(verifyRes.ok()).toBeTruthy();
+});

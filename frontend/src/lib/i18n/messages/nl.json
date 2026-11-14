@@ -899,7 +899,13 @@
     "releaseScheduled": "Ingepland",
     "releaseBlocked": "Vrijgave geblokkeerd",
     "refundOwnerOnlyNotice": "Terugbetalingsgoedkeuringen door managers zijn uitgeschakeld — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren.",
-    "refundOutsideWindowNotice": "Deze bestelling valt buiten het goedkeuringsvenster voor managers — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren."
+    "refundOutsideWindowNotice": "Deze bestelling valt buiten het goedkeuringsvenster voor managers — een pincode van de eigenaar is vereist om deze terugbetaling goed te keuren.",
+    "clearFilters": "Filters wissen",
+    "noMatchesInTab": "Geen overeenkomende bestellingen in {tab}.",
+    "showMatchesInAll": "Overeenkomsten tonen in Alles",
+    "orderSettledBanner": "Betaling voltooid",
+    "nextActiveOrder": "Volgende bestelling",
+    "viewInCompleted": "Bekijken in Voltooid"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",

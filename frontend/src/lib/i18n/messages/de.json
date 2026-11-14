@@ -899,7 +899,13 @@
     "releaseScheduled": "Geplant",
     "releaseBlocked": "Freigabe blockiert",
     "refundOwnerOnlyNotice": "Rückerstattungsgenehmigungen durch Manager sind deaktiviert — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich.",
-    "refundOutsideWindowNotice": "Diese Bestellung liegt außerhalb des Genehmigungszeitfensters für Manager — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich."
+    "refundOutsideWindowNotice": "Diese Bestellung liegt außerhalb des Genehmigungszeitfensters für Manager — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich.",
+    "clearFilters": "Filter zurücksetzen",
+    "noMatchesInTab": "Keine passenden Bestellungen in {tab}.",
+    "showMatchesInAll": "Treffer in Alle anzeigen",
+    "orderSettledBanner": "Zahlung abgeschlossen",
+    "nextActiveOrder": "Nächste Bestellung",
+    "viewInCompleted": "In Abgeschlossen ansehen"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",

@@ -899,7 +899,13 @@
     "releaseScheduled": "Hẹn giờ",
     "releaseBlocked": "Chặn gửi bếp",
     "refundOwnerOnlyNotice": "Phê duyệt hoàn tiền của quản lý đã bị tắt — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này.",
-    "refundOutsideWindowNotice": "Đơn hàng này đã quá thời hạn phê duyệt của quản lý — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này."
+    "refundOutsideWindowNotice": "Đơn hàng này đã quá thời hạn phê duyệt của quản lý — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này.",
+    "clearFilters": "Xóa bộ lọc",
+    "noMatchesInTab": "Không có đơn hàng khớp trong {tab}.",
+    "showMatchesInAll": "Hiện đơn hàng khớp trong Tất cả",
+    "orderSettledBanner": "Đã hoàn tất thanh toán",
+    "nextActiveOrder": "Đơn tiếp theo",
+    "viewInCompleted": "Xem trong Hoàn thành"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",

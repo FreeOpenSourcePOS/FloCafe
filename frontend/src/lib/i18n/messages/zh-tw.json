@@ -899,7 +899,13 @@
     "releaseScheduled": "已預約",
     "releaseBlocked": "送廚受阻",
     "refundOwnerOnlyNotice": "經理退款核准已停用 — 需要店主 PIN 碼才能核准此退款。",
-    "refundOutsideWindowNotice": "此訂單已超出經理核准時限 — 需要店主 PIN 碼才能核准此退款。"
+    "refundOutsideWindowNotice": "此訂單已超出經理核准時限 — 需要店主 PIN 碼才能核准此退款。",
+    "clearFilters": "清除篩選",
+    "noMatchesInTab": "「{tab}」中沒有符合的訂單。",
+    "showMatchesInAll": "在「全部」中顯示符合的訂單",
+    "orderSettledBanner": "付款完成",
+    "nextActiveOrder": "下一筆訂單",
+    "viewInCompleted": "在「已完成」中檢視"
   },
   "pos": {
     "addCustomer": "新增顧客",

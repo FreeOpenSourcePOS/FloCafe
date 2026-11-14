@@ -899,7 +899,13 @@
     "releaseScheduled": "Planifiée",
     "releaseBlocked": "Envoi bloqué",
     "refundOwnerOnlyNotice": "Les approbations de remboursement par le responsable sont désactivées — le code PIN du propriétaire est requis pour approuver ce remboursement.",
-    "refundOutsideWindowNotice": "Cette commande dépasse la fenêtre d’approbation du responsable — le code PIN du propriétaire est requis pour approuver ce remboursement."
+    "refundOutsideWindowNotice": "Cette commande dépasse la fenêtre d’approbation du responsable — le code PIN du propriétaire est requis pour approuver ce remboursement.",
+    "clearFilters": "Effacer les filtres",
+    "noMatchesInTab": "Aucune commande correspondante dans {tab}.",
+    "showMatchesInAll": "Afficher les résultats dans Tout",
+    "orderSettledBanner": "Paiement terminé",
+    "nextActiveOrder": "Commande suivante",
+    "viewInCompleted": "Voir dans Terminées"
   },
   "pos": {
     "addCustomer": "Ajouter un client",

@@ -90,22 +90,63 @@ import { ApproverSelect } from '@/components/ApproverSelect';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
-type FilterType = 'all' | 'active' | 'unpaid' | 'held';
+type FilterType = 'active' | 'unpaid' | 'completed' | 'held' | 'cancelled' | 'all';
 const ORDERS_PAGE_SIZE = 15;
 
+const UNIFIED_ORDER_TABS: readonly FilterType[] = [
+  'active',
+  'unpaid',
+  'completed',
+  'held',
+  'cancelled',
+  'all',
+];
+
 const tabLabelKey: Record<FilterType, OrdersKey> = {
-  all: 'all',
   active: 'active',
   unpaid: 'unpaidBadge',
+  completed: 'completed',
   held: 'held',
+  cancelled: 'cancelled',
+  all: 'all',
 };
+
+function buildTabQueryParams(tab: Exclude<FilterType, 'held'>): {
+  view: 'active' | 'unpaid' | 'all';
+  status?: 'completed' | 'cancelled';
+} {
+  switch (tab) {
+    case 'active':
+      return { view: 'active' };
+    case 'unpaid':
+      return { view: 'unpaid' };
+    case 'completed':
+      return { view: 'all', status: 'completed' };
+    case 'cancelled':
+      return { view: 'all', status: 'cancelled' };
+    case 'all':
+      return { view: 'all' };
+  }
+}
+
+function computeNextListOrderId(list: Order[], currentOrderId: number): number | null {
+  const idx = list.findIndex((o) => o.id === currentOrderId);
+  if (idx === -1) {
+    return list.find((o) => o.id !== currentOrderId)?.id ?? null;
+  }
+  return (
+    list[idx + 1]?.id ??
+    list[idx - 1]?.id ??
+    list.find((o) => o.id !== currentOrderId)?.id ??
+    null
+  );
+}
 
 // Consolidated state types
 interface Filters {
   search: string;
   table: string;
   type: string;
-  status: string;
 }
 
 interface CancelModal {
@@ -219,7 +260,7 @@ export default function OrdersPage() {
   const isWhatsAppReady = useWhatsAppReady();
 
   // Consolidated filter state
-  const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
+  const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '' });
   const ordersFiltersRef = useRef(filters);
   ordersFiltersRef.current = filters;
   const tabFilterRef = useRef(tabFilter);
@@ -229,7 +270,6 @@ export default function OrdersPage() {
     filters.search,
     filters.table,
     filters.type,
-    filters.status,
   ]);
   const ordersFilterKeyRef = useRef(ordersFilterKey);
   ordersFilterKeyRef.current = ordersFilterKey;
@@ -461,6 +501,16 @@ export default function OrdersPage() {
   const [selectedOrderSnapshot, setSelectedOrderSnapshot] = useState<Order | null>(null);
   const [selectedOrderNotInCurrentList, setSelectedOrderNotInCurrentList] = useState(false);
   const [selectedOrderMissing, setSelectedOrderMissing] = useState(false);
+  const [settledTransition, setSettledTransition] = useState<{
+    orderId: number;
+    kind: 'completed' | 'cancelled';
+    nextOrderId: number | null;
+  } | null>(null);
+  const carrySelectionOnFilterChangeRef = useRef<{
+    orderId: number;
+    snapshot: Order | null;
+  } | null>(null);
+  const [crossTabFallbackOrders, setCrossTabFallbackOrders] = useState<Order[] | null>(null);
   const selectedOrderLookupIdRef = useRef(0);
   const selectedOrderLookupInProgressRef = useRef<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
@@ -523,10 +573,23 @@ export default function OrdersPage() {
           return false;
         selectedOrderLookupIdRef.current++;
         selectedOrderLookupInProgressRef.current = null;
-        setSelectedOrderSnapshot(data.order || null);
-        setSelectedOrderMissing(!data.order);
-        setSelectedOrderNotInCurrentList(!!data.order);
-        return Boolean(data.order);
+        const refreshedOrder = (data.order as Order | null | undefined) || null;
+        setSelectedOrderSnapshot(refreshedOrder);
+        setSelectedOrderMissing(!refreshedOrder);
+        setSelectedOrderNotInCurrentList(Boolean(refreshedOrder));
+        if (refreshedOrder?.bill?.id && !fetchedBillIdsRef.current.has(refreshedOrder.bill.id)) {
+          fetchedBillIdsRef.current.add(refreshedOrder.bill.id);
+          fetchPrintHistory(refreshedOrder.bill.id);
+        }
+        if (Array.isArray(refreshedOrder?.bills)) {
+          for (const bill of refreshedOrder.bills) {
+            if (bill?.id && !fetchedBillIdsRef.current.has(bill.id)) {
+              fetchedBillIdsRef.current.add(bill.id);
+              fetchPrintHistory(bill.id);
+            }
+          }
+        }
+        return Boolean(refreshedOrder);
       })
       .catch((error) => {
         if (
@@ -561,7 +624,8 @@ export default function OrdersPage() {
       refreshLoadedPages = false,
     }: { rateLimitedRefresh?: boolean; refreshLoadedPages?: boolean } = {},
   ): Promise<boolean> => {
-    if (tabFilterRef.current === 'held') return false;
+    const currentTab = tabFilterRef.current;
+    if (currentTab === 'held') return false;
     if (
       cursor === undefined &&
       (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)
@@ -608,11 +672,10 @@ export default function OrdersPage() {
       const search = currentFilters.search.trim();
       const requestParams = {
         per_page: ORDERS_PAGE_SIZE,
-        view: tabFilterRef.current,
+        ...buildTabQueryParams(currentTab),
         ...(search ? { search } : {}),
         ...(currentFilters.table ? { table_id: currentFilters.table } : {}),
         ...(currentFilters.type ? { type: currentFilters.type } : {}),
-        ...(currentFilters.status ? { status: currentFilters.status } : {}),
       };
       const orders: Order[] = [];
       let nextCursor: number | null = null;
@@ -747,11 +810,15 @@ export default function OrdersPage() {
     ordersRefreshLoadedPagesPendingRef.current = false;
     hasLoadedOlderOrdersRef.current = false;
     loadedOrdersPageCountRef.current = 1;
-    selectedOrderIdRef.current = null;
+    const carried = carrySelectionOnFilterChangeRef.current;
+    carrySelectionOnFilterChangeRef.current = null;
+    selectedOrderIdRef.current = carried ? carried.orderId : null;
     selectedOrderLookupIdRef.current++;
     selectedOrderLookupInProgressRef.current = null;
-    setSelectedOrderId(null);
-    setSelectedOrderSnapshot(null);
+    setSettledTransition(null);
+    setCrossTabFallbackOrders(null);
+    setSelectedOrderId(carried ? carried.orderId : null);
+    setSelectedOrderSnapshot(carried ? carried.snapshot : null);
     setSelectedOrderNotInCurrentList(false);
     setSelectedOrderMissing(false);
     setOrders([]);
@@ -763,6 +830,42 @@ export default function OrdersPage() {
     return () => clearTimeout(timeout);
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [ordersFilterKey]);
+
+  useEffect(() => {
+    const trimmedSearch = filters.search.trim();
+    if (
+      loading ||
+      tabFilter === 'all' ||
+      tabFilter === 'held' ||
+      orders.length > 0 ||
+      trimmedSearch === ''
+    ) {
+      setCrossTabFallbackOrders(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get('/orders', {
+        params: {
+          view: 'all',
+          per_page: 5,
+          search: trimmedSearch,
+        },
+      })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setCrossTabFallbackOrders(Array.isArray(data?.orders) ? data.orders : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCrossTabFallbackOrders(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, orders.length, tabFilter, filters.search, ordersFilterKey]);
 
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
@@ -1106,6 +1209,7 @@ export default function OrdersPage() {
     selectedOrderLookupIdRef.current++;
     selectedOrderLookupInProgressRef.current = null;
     selectedOrderIdRef.current = orderId;
+    setSettledTransition(null);
     setSelectedOrderId(orderId);
     setSelectedOrderSnapshot(orders.find((order) => order.id === orderId) ?? null);
     setSelectedOrderNotInCurrentList(false);
@@ -1116,10 +1220,47 @@ export default function OrdersPage() {
     selectedOrderLookupIdRef.current++;
     selectedOrderLookupInProgressRef.current = null;
     selectedOrderIdRef.current = null;
+    setSettledTransition(null);
     setSelectedOrderId(null);
     setSelectedOrderSnapshot(null);
     setSelectedOrderNotInCurrentList(false);
     setSelectedOrderMissing(false);
+  };
+
+  const handleAdvanceAfterSettle = () => {
+    const currentId = selectedOrderIdRef.current;
+    const targetId =
+      (settledTransition?.nextOrderId != null &&
+      orders.some((o) => o.id === settledTransition.nextOrderId)
+        ? settledTransition.nextOrderId
+        : undefined) ??
+      orders.find((o) => o.id !== currentId)?.id ??
+      null;
+    setSettledTransition(null);
+    if (targetId !== null) {
+      handleSelectOrder(targetId);
+    } else {
+      handleBackFromOrder();
+    }
+  };
+
+  const handleViewInCompleted = () => {
+    carrySelectionOnFilterChangeRef.current = selectedOrder
+      ? { orderId: selectedOrder.id, snapshot: selectedOrder }
+      : null;
+    setSettledTransition(null);
+    setTabFilter('completed');
+  };
+
+  const handleShowMatchesInAll = () => {
+    carrySelectionOnFilterChangeRef.current =
+      ordersLayout === 'split' && crossTabFallbackOrders?.length === 1
+        ? { orderId: crossTabFallbackOrders[0].id, snapshot: crossTabFallbackOrders[0] }
+        : null;
+    setFilters((prev) =>
+      prev.type === '' && prev.table === '' ? prev : { ...prev, type: '', table: '' },
+    );
+    setTabFilter('all');
   };
 
   const handleCheckout = async (orderId: number) => {
@@ -1165,13 +1306,33 @@ export default function OrdersPage() {
 
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
+    const paidOrderId = bill?.order_id != null ? Number(bill.order_id) : null;
     setPaymentBill(null);
-    fetchOrders(undefined, { refreshLoadedPages: true });
+    if (
+      ordersLayout === 'split' &&
+      paidOrderId !== null &&
+      Number.isFinite(paidOrderId) &&
+      selectedOrderIdRef.current === paidOrderId
+    ) {
+      const nextOrderId = computeNextListOrderId(orders, paidOrderId);
+      setSettledTransition({ orderId: paidOrderId, kind: 'completed', nextOrderId });
+    }
+    void fetchOrders(undefined, { refreshLoadedPages: true });
+    if (paidOrderId !== null && Number.isFinite(paidOrderId) && selectedOrderIdRef.current === paidOrderId) {
+      void refreshSelectedOrder(paidOrderId);
+    }
+    if (bill?.id) {
+      fetchedBillIdsRef.current.add(bill.id);
+      void fetchPrintHistory(bill.id);
+    }
 
     if (bill && autoPrintBill) {
       const tenantIdAtStart = currentTenant?.id ?? null;
       try {
-        const fallbackOrder = orders.find((o) => o.bill?.id === bill.id);
+        const candidateOrders = selectedOrderSnapshot ? [...orders, selectedOrderSnapshot] : orders;
+        const fallbackOrder = candidateOrders.find(
+          (o) => o.bill?.id === bill.id || o.bills?.some((b) => b.id === bill.id),
+        );
         const { data } = await api.get(`/bills/${bill.id}`);
         if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
           return;
@@ -1207,8 +1368,13 @@ export default function OrdersPage() {
   };
 
   const handlePrint = async (billId: number) => {
-    const order = orders.find((o) => o.bill?.id === billId);
-    if (!order?.bill) {
+    const candidateOrders = selectedOrderSnapshot ? [...orders, selectedOrderSnapshot] : orders;
+    const order = candidateOrders.find(
+      (o) => o.bill?.id === billId || o.bills?.some((b) => b.id === billId),
+    );
+    const matchedBill =
+      order?.bill?.id === billId ? order.bill : order?.bills?.find((b) => b.id === billId);
+    if (!order || !matchedBill) {
       toast.error(tOrders('billNotFound'));
       return;
     }
@@ -1275,6 +1441,11 @@ export default function OrdersPage() {
       );
       const bill = data.bill as Bill;
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
+      if (selectedOrderIdRef.current === order.id) {
+        setSelectedOrderSnapshot((prev) =>
+          prev && prev.id === order.id ? { ...prev, bill } : prev,
+        );
+      }
       await fetchOrders(undefined, { refreshLoadedPages: true });
       setConfirmPrintBillId(bill.id);
     } catch (error) {
@@ -1770,9 +1941,10 @@ export default function OrdersPage() {
       }
     }
 
-    setCancellingOrderId(cancelModal.order.id);
+    const cancelledOrderId = cancelModal.order.id;
+    setCancellingOrderId(cancelledOrderId);
     try {
-      await api.patch(`/orders/${cancelModal.order.id}/status`, {
+      await api.patch(`/orders/${cancelledOrderId}/status`, {
         status: 'cancelled',
         reason: cancelModal.reason || undefined,
         free_table: cancelModal.freeTable,
@@ -1784,6 +1956,11 @@ export default function OrdersPage() {
       });
       toast.success(tOrders('orderCancelled'));
       setCancelModal(null);
+      if (ordersLayout === 'split' && selectedOrderIdRef.current === cancelledOrderId) {
+        const nextOrderId = computeNextListOrderId(orders, cancelledOrderId);
+        setSettledTransition({ orderId: cancelledOrderId, kind: 'cancelled', nextOrderId });
+        void refreshSelectedOrder(cancelledOrderId);
+      }
       fetchOrders(undefined, { refreshLoadedPages: true });
     } catch (error) {
       const failureKind = getCancelOrderFailureKind(error);
@@ -1829,6 +2006,36 @@ export default function OrdersPage() {
     </div>
   );
 
+  const heldCount = Object.keys(heldOrdersStore.orders).length;
+  const hasActiveFilters =
+    filters.search !== '' || filters.type !== '' || filters.table !== '';
+
+  const renderEmptyOrdersState = () => {
+    if (
+      crossTabFallbackOrders &&
+      crossTabFallbackOrders.length > 0 &&
+      tabFilter !== 'all' &&
+      tabFilter !== 'held'
+    ) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center px-4">
+          <p className="text-sm text-muted-foreground">
+            {tOrders('noMatchesInTab', { tab: tOrders(tabLabelKey[tabFilter]) })}
+          </p>
+          <Button
+            type="button"
+            data-testid="orders-search-all-fallback"
+            onClick={handleShowMatchesInAll}
+            className="mt-3 min-h-[44px] bg-brand hover:bg-brand/90 text-white"
+          >
+            {tOrders('showMatchesInAll')}
+          </Button>
+        </div>
+      );
+    }
+    return <p>{tOrders('empty')}</p>;
+  };
+
   // Every layout anchors its content to the page height so the title, status
   // tabs and filters stay on screen while the order content scrolls below them.
   return (
@@ -1837,93 +2044,121 @@ export default function OrdersPage() {
         <OrdersTableQuerySync onFiltersChange={setFilters} />
       </Suspense>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
-        <div className="flex gap-2">
-          {(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => (
+        <div className="flex items-center gap-1 overflow-x-auto max-w-full rounded-xl border border-border bg-muted/50 p-1">
+          {UNIFIED_ORDER_TABS.map((f) => (
             <button
               key={f}
+              type="button"
+              aria-pressed={tabFilter === f}
               onClick={() => setTabFilter(f)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
+              className={cn(
+                'min-h-[40px] px-3.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors inline-flex items-center gap-1.5',
                 tabFilter === f
-                  ? 'bg-brand text-white'
-                  : 'bg-card text-muted-foreground border border-border hover:border-gray-400'
-              }`}
+                  ? 'bg-brand text-white shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/70',
+              )}
             >
-              {tOrders(tabLabelKey[f])}
+              <span>{tOrders(tabLabelKey[f])}</span>
+              {f === 'held' && heldCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'px-1.5 py-0.5 rounded-full text-xs font-semibold leading-none',
+                    tabFilter === 'held'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+                  )}
+                >
+                  {heldCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4 shrink-0">
-        {/* Search by order number, customer name, or phone */}
-        <div className="relative w-full sm:max-w-xs">
-          <Search
-            size={16}
-            className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            type="text"
-            placeholder={tOrders('search')}
-            value={filters.search}
-            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-            className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
-              filters.search !== '' ? 'pe-9' : 'pe-3'
-            } text-sm outline-none focus:ring-2 focus:ring-brand`}
-          />
-          {filters.search !== '' && (
+      {tabFilter !== 'held' && (
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {/* Search by order number, customer name, or phone */}
+          <div className="relative w-full sm:max-w-xs">
+            <Search
+              size={16}
+              className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              type="text"
+              placeholder={tOrders('search')}
+              value={filters.search}
+              onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+              className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+                filters.search !== '' ? 'pe-9' : 'pe-3'
+              } text-sm outline-none focus:ring-2 focus:ring-brand`}
+            />
+            {filters.search !== '' && (
+              <button
+                type="button"
+                onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+                aria-label={tCommon('clear')}
+                className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Type filter */}
+          <select
+            value={filters.type}
+            onChange={(e) => {
+              const nextType = e.target.value;
+              setFilters((prev) => ({
+                ...prev,
+                type: nextType,
+                table: nextType === '' || nextType === 'dine_in' ? prev.table : '',
+              }));
+            }}
+            className="min-h-[40px] px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+          >
+            <option value="">{tOrders('allTypes')}</option>
+            <option value="dine_in">{tOrders('dineIn')}</option>
+            <option value="takeaway">{tOrders('takeaway')}</option>
+            <option value="delivery">{tOrders('delivery')}</option>
+            <option value="online">{tOrders('online')}</option>
+          </select>
+
+          {/* Table filter (hidden when a non-dine-in type is selected) */}
+          {(tables.length > 0 || filters.table !== '') &&
+            (filters.type === '' || filters.type === 'dine_in') && (
+              <select
+                value={filters.table}
+                onChange={(e) => setFilters((prev) => ({ ...prev, table: e.target.value }))}
+                className="min-h-[40px] px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              >
+                <option value="">{tOrders('allTables')}</option>
+                {tables.map((table: Table) => (
+                  <option key={table.id} value={String(table.id)}>
+                    {table.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+          {hasActiveFilters && (
             <button
               type="button"
-              onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
-              aria-label={tCommon('clear')}
-              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+              data-testid="orders-clear-filters"
+              onClick={() => setFilters({ search: '', table: '', type: '' })}
+              className="min-h-[40px] px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-sm font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
             >
-              <X size={14} />
+              <X size={14} className="me-0.5" />
+              {tOrders('clearFilters')}
             </button>
           )}
         </div>
-
-        {/* Table filter */}
-        <select
-          value={filters.table}
-          onChange={(e) => setFilters((prev) => ({ ...prev, table: e.target.value }))}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="">{tOrders('allTables')}</option>
-          {tables.map((table: Table) => (
-            <option key={table.id} value={String(table.id)}>
-              {table.name}
-            </option>
-          ))}
-        </select>
-
-        {/* Type filter */}
-        <select
-          value={filters.type}
-          onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="">{tOrders('allTypes')}</option>
-          <option value="dine_in">{tOrders('dineIn')}</option>
-          <option value="takeaway">{tOrders('takeaway')}</option>
-          <option value="delivery">{tOrders('delivery')}</option>
-          <option value="online">{tOrders('online')}</option>
-        </select>
-
-        {/* Status filter */}
-        <select
-          value={filters.status}
-          onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="">{tOrders('allStatuses')}</option>
-          <option value="active">{tOrders('active')}</option>
-          <option value="completed">{tOrders('completed')}</option>
-          <option value="cancelled">{tOrders('cancelled')}</option>
-        </select>
-      </div>
+      )}
 
       {/* Orders List */}
       {tabFilter === 'held' ? (
@@ -2037,7 +2272,7 @@ export default function OrdersPage() {
         </div>
       ) : orders.length === 0 && !(ordersLayout === 'split' && selectedOrderId !== null) ? (
         <div className="flex items-center justify-center py-24 text-gray-400">
-          <p>{tOrders('empty')}</p>
+          {renderEmptyOrdersState()}
         </div>
       ) : ordersLayout === 'split' ? (
         <div className="flex-1 min-h-0 flex gap-4">
@@ -2058,7 +2293,7 @@ export default function OrdersPage() {
               />
             ) : (
               <div className="flex-1 flex items-center justify-center p-4 text-sm text-gray-400">
-                {tOrders('empty')}
+                {renderEmptyOrdersState()}
               </div>
             )}
             {!loading && nextOrdersCursor !== null && renderLoadMoreButton(nextOrdersCursor)}
@@ -2076,6 +2311,16 @@ export default function OrdersPage() {
               onBack={handleBackFromOrder}
               orderNotInCurrentList={selectedOrderNotInCurrentList}
               orderMissing={selectedOrderMissing}
+              settledTransition={
+                settledTransition &&
+                selectedOrder &&
+                settledTransition.orderId === selectedOrder.id
+                  ? settledTransition.kind
+                  : null
+              }
+              hasRemainingOrdersInTab={orders.some((o) => o.id !== selectedOrder?.id)}
+              onAdvanceAfterSettle={handleAdvanceAfterSettle}
+              onViewInCompleted={tabFilter !== 'completed' ? handleViewInCompleted : undefined}
               now={now}
               canCancelItems={canCancelItems}
               canEditItems={canEditItems}
@@ -2274,8 +2519,12 @@ export default function OrdersPage() {
           bills={refundModal.bills}
           onClose={() => setRefundModal(null)}
           onRefunded={() => {
+            const refundedOrderId = refundModal.order.id;
             setRefundModal(null);
-            fetchOrders(undefined, { refreshLoadedPages: true });
+            void fetchOrders(undefined, { refreshLoadedPages: true });
+            if (selectedOrderIdRef.current === refundedOrderId) {
+              void refreshSelectedOrder(refundedOrderId);
+            }
           }}
         />
       )}
@@ -2287,8 +2536,12 @@ export default function OrdersPage() {
           bills={correctPaymentModal.bills}
           onClose={() => setCorrectPaymentModal(null)}
           onCorrected={() => {
+            const correctedOrderId = correctPaymentModal.order.id;
             setCorrectPaymentModal(null);
-            fetchOrders(undefined, { refreshLoadedPages: true });
+            void fetchOrders(undefined, { refreshLoadedPages: true });
+            if (selectedOrderIdRef.current === correctedOrderId) {
+              void refreshSelectedOrder(correctedOrderId);
+            }
           }}
         />
       )}

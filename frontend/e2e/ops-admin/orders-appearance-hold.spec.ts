@@ -87,13 +87,23 @@ test.describe('@ci-tier2 operations admin - orders appearance and hold', () => {
     const group = page.getByRole('radiogroup', { name: 'Orders Screen Layout' });
     await expect(group).toBeVisible({ timeout: 20_000 });
 
-    await group.getByRole('radio', { name: /Cards Grid/i }).click();
+    const waitForLayoutPut = () =>
+      page.waitForResponse(
+        (res) =>
+          res.request().method() === 'PUT' &&
+          new URL(res.url()).pathname === '/api/settings/orders_layout',
+      );
+
+    await Promise.all([waitForLayoutPut(), group.getByRole('radio', { name: /Cards Grid/i }).click()]);
     await expect(group.getByRole('radio', { name: /Cards Grid/i })).toHaveAttribute(
       'aria-checked',
       'true',
     );
 
-    await group.getByRole('radio', { name: /Master \/ Detail/i }).click();
+    await Promise.all([
+      waitForLayoutPut(),
+      group.getByRole('radio', { name: /Master \/ Detail/i }).click(),
+    ]);
     await expect(group.getByRole('radio', { name: /Master \/ Detail/i })).toHaveAttribute(
       'aria-checked',
       'true',

@@ -725,7 +725,11 @@ async function runTests() {
             ...(failureClass ? { failureClass } : {}),
           });
           const unknownById = await request(app).post(`/api/printers/${timeoutId}/test`).send({});
-          assertEqualOrThrow(unknownById.status, 502, 'POST /:id/test returns 502 on unknown detail');
+          assertEqualOrThrow(
+            unknownById.status,
+            502,
+            'POST /:id/test returns 502 on unknown detail',
+          );
           assertEqualOrThrow(
             unknownById.body.failure_class,
             'offline',

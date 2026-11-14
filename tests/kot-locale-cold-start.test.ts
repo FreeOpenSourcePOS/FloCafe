@@ -686,7 +686,8 @@ async function run(): Promise<void> {
           _load: (request: string, parent: any, isMain: boolean) => any;
         };
         const originalModuleLoad = Module._load;
-        const printTestPagePath = require.resolve('../frontend/src/app/(dashboard)/print-test/page');
+        const printTestPagePath =
+          require.resolve('../frontend/src/app/(dashboard)/print-test/page');
         const originalReserve = printerService.reserveBrowserPrintWindow.bind(printerService);
         const savedWindow = (globalThis as any).window;
         const savedDocument = (globalThis as any).document;

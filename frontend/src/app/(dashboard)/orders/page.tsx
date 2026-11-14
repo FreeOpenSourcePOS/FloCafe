@@ -511,6 +511,7 @@ export default function OrdersPage() {
     snapshot: Order | null;
   } | null>(null);
   const [crossTabFallbackOrders, setCrossTabFallbackOrders] = useState<Order[] | null>(null);
+  const [settledOrdersFilterKey, setSettledOrdersFilterKey] = useState<string | null>(null);
   const selectedOrderLookupIdRef = useRef(0);
   const selectedOrderLookupInProgressRef = useRef<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
@@ -800,6 +801,9 @@ export default function OrdersPage() {
         }
         setNextOrdersCursor(nextCursor);
       }
+      if (cursor === undefined) {
+        setSettledOrdersFilterKey(requestFilterKey);
+      }
       // Fetch print history only for bills we haven't fetched yet
       orders.forEach((order: Order) => {
         if (order.bill?.id && !fetchedBillIdsRef.current.has(order.bill.id)) {
@@ -868,6 +872,7 @@ export default function OrdersPage() {
     selectedOrderLookupInProgressRef.current = null;
     setSettledTransition(null);
     setCrossTabFallbackOrders(null);
+    setSettledOrdersFilterKey(null);
     setSelectedOrderId(carried ? carried.orderId : null);
     setSelectedOrderSnapshot(carried ? carried.snapshot : null);
     setSelectedOrderNotInCurrentList(false);
@@ -886,6 +891,7 @@ export default function OrdersPage() {
     const trimmedSearch = filters.search.trim();
     if (
       loading ||
+      settledOrdersFilterKey !== ordersFilterKey ||
       tabFilter === 'all' ||
       tabFilter === 'held' ||
       orders.length > 0 ||
@@ -916,7 +922,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [loading, orders.length, tabFilter, filters.search, ordersFilterKey]);
+  }, [loading, settledOrdersFilterKey, orders.length, tabFilter, filters.search, ordersFilterKey]);
 
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;

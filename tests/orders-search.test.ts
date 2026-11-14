@@ -1785,13 +1785,53 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       );
       assert.equal(findTypeSelect(tree).props.value, '', 'Clear filters resets type');
 
-      // 4. Cross-status search fallback when searching ORD-201 on Active yields 0 in Active but 1 in All
+      // 4. Cross-status search fallback does not fire un-debounced reads on empty-tab keystrokes,
+      // and appears once the debounced tab query resolves with 0 matches while All has matches.
+      const unpaidTab = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-pressed'] !== undefined &&
+          collectElements(
+            el,
+            (c) => c.type === 'span' && c.props?.children === 'orders.unpaidBadge',
+          ).length > 0,
+      )[0];
+      assert.ok(unpaidTab, 'Unpaid tab present');
+      unpaidTab.props.onClick();
+      renderPage();
+      tree = await flushAll(400);
+      orderRequests.length = 0;
+
+      collectElements(tree, (el) => el.type === 'input')[0].props.onChange({
+        target: { value: 'O' },
+      });
+      tree = renderPage();
+      collectElements(tree, (el) => el.type === 'input')[0].props.onChange({
+        target: { value: 'OR' },
+      });
+      tree = renderPage();
       collectElements(tree, (el) => el.type === 'input')[0].props.onChange({
         target: { value: 'ORD-201' },
       });
       renderPage();
+      assert.equal(
+        orderRequests.length,
+        0,
+        'Empty-tab search keystrokes do not emit un-debounced cross-tab fallback requests before the debounced fetch',
+      );
       tree = await flushAll(400);
       tree = await flushAll(50);
+      assert.equal(
+        orderRequests.filter((r) => r.view === 'all' && r.per_page === 5).length,
+        1,
+        'Only one cross-tab fallback request fires after the debounced filtered-tab query settles',
+      );
+      assert.equal(
+        orderRequests.find((r) => r.view === 'all' && r.per_page === 5)?.search,
+        'ORD-201',
+        'Cross-tab fallback request uses the final debounced search query',
+      );
 
       const fallbackBtn = collectElements(
         tree,

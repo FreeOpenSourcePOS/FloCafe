@@ -1445,7 +1445,7 @@ export default function PrepaidCheckoutModal({
           {/* Column 2: Core Tenders, Constant Card Ref Slot, Custom Tenders & Loyalty Wallet */}
           <fieldset
             disabled={locked}
-            className={`${showDetails ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto lg:border-b-0 lg:border-e`}
           >
             {/* [2A] Hero Balance Header */}
             <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
@@ -1526,7 +1526,7 @@ export default function PrepaidCheckoutModal({
             </div>
 
             {/* [2C] Contained Custom Tenders & Single Fixed-Height Loyalty Wallet Card */}
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+            <div className="flex flex-col gap-2 max-lg:shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               {customMethods.length > 0 && (
                 <div className="max-h-[152px] shrink-0 space-y-2 overflow-y-auto pe-0.5">
                   {payments.map((payment, idx) => {

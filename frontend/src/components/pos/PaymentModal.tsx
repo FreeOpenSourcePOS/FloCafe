@@ -2107,7 +2107,7 @@ export default function PaymentModal({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(280px,1fr)_minmax(310px,1.08fr)_minmax(320px,0.96fr)] lg:overflow-hidden">
           {/* Column 1: Contained Panel Swap (Items / Discount / Tax / Kitchen Override) + Pinned Totals Footer */}
           <div
-            className={`${showDetails ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 sm:p-4 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'flex' : 'hidden lg:flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:overflow-hidden lg:border-b-0 lg:border-e`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
               {activeCol1Panel === 'items' ? (
@@ -2592,7 +2592,7 @@ export default function PaymentModal({
 
           {/* Column 2: Hero Balance, Core Tenders + Fixed Card Ref, Custom Tenders, Loyalty Wallet, Contained Split Card */}
           <div
-            className={`${showDetails ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 sm:p-4 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto lg:border-b-0 lg:border-e`}
           >
             {/* [2A] Hero Balance Header */}
             <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
@@ -2691,7 +2691,7 @@ export default function PaymentModal({
             </div>
 
             {/* [2C] Contained Custom Tenders, Single Fixed-Height Loyalty Wallet & Equal/Item Split */}
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+            <div className="flex flex-col gap-2 max-lg:shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               {customMethods.length > 0 && (
                 <div className="max-h-[152px] shrink-0 space-y-2 overflow-y-auto pe-0.5">
                   {payments.map((payment, idx) => {
@@ -2825,7 +2825,7 @@ export default function PaymentModal({
               {/* Unified Split section (contained internally so even 20 Equal Share rows never grow Column 2) */}
               {!justPaid && (remainingMinor > 0 || hasSplitChecksPanel) && (
                 <div
-                  className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border"
+                  className="flex flex-col rounded-xl border border-border max-lg:shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-hidden"
                   data-testid="unified-split-card"
                 >
                   {hasSplitChecksPanel ? (

@@ -284,6 +284,10 @@ export default function PrepaidCheckoutModal({
     chargeContext,
   );
 
+  if (discountCommitted && amountTarget?.kind === 'discount') {
+    setAmountTarget({ kind: 'payment', index: 0 });
+  }
+
   useEffect(() => {
     void loadCharges();
   }, [loadCharges]);
@@ -329,6 +333,10 @@ export default function PrepaidCheckoutModal({
     setAmountTarget((target) =>
       target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
     );
+  }
+
+  if (discountCommitted && amountTarget?.kind === 'discount') {
+    setAmountTarget({ kind: 'payment', index: 0 });
   }
 
   useEffect(() => {
@@ -381,6 +389,10 @@ export default function PrepaidCheckoutModal({
     setWalletLoadFailed(false);
     setWalletBalance(null);
     setWalletAmount('');
+    setAmountTarget({ kind: 'payment', index: 0 });
+  }
+
+  if (discountCommitted && amountTarget?.kind === 'discount') {
     setAmountTarget({ kind: 'payment', index: 0 });
   }
 
@@ -557,6 +569,7 @@ export default function PrepaidCheckoutModal({
       setPaymentsTouched(true);
       return;
     }
+    if (discountCommitted) return;
     setDiscountValue(value);
   };
 
@@ -742,6 +755,10 @@ export default function PrepaidCheckoutModal({
 
   const modalRef = useRef<HTMLDivElement>(null);
 
+  if (discountCommitted && amountTarget?.kind === 'discount') {
+    setAmountTarget({ kind: 'payment', index: 0 });
+  }
+
   useEffect(() => {
     if (
       typeof document !== 'undefined' &&
@@ -753,6 +770,10 @@ export default function PrepaidCheckoutModal({
       (document.activeElement as HTMLElement).blur();
     }
   }, []);
+
+  if (discountCommitted && amountTarget?.kind === 'discount') {
+    setAmountTarget({ kind: 'payment', index: 0 });
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -860,10 +881,13 @@ export default function PrepaidCheckoutModal({
   const quickTenderOptions: CheckoutQuickTenderOption[] = (() => {
     if (locked) return [];
     if (amountTarget?.kind === 'discount' && discountType === 'percentage') {
+      if (discountCommitted) return [];
       return [5, 10, 15, 20].map((pct) => ({
         label: `${pct}%`,
         active: Number(discountValue) === pct,
-        onClick: () => setDiscountValue(String(pct)),
+        onClick: () => {
+          if (!discountCommitted) setDiscountValue(String(pct));
+        },
       }));
     }
     if (taxLoading || !preview) return [];
@@ -1141,8 +1165,11 @@ export default function PrepaidCheckoutModal({
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
                       <button
                         type="button"
-                        onClick={() => setDiscountType('percentage')}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        disabled={locked || discountCommitted}
+                        onClick={() => {
+                          if (!locked && !discountCommitted) setDiscountType('percentage');
+                        }}
+                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${discountType === 'percentage' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                       >
                         <Percent size={14} />
                         {t('percentage')}
@@ -1151,8 +1178,11 @@ export default function PrepaidCheckoutModal({
                     {isDiscountTypeAllowed(discountMode, 'amount') && (
                       <button
                         type="button"
-                        onClick={() => setDiscountType('amount')}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        disabled={locked || discountCommitted}
+                        onClick={() => {
+                          if (!locked && !discountCommitted) setDiscountType('amount');
+                        }}
+                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${discountType === 'amount' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                       >
                         {t('flatAmount')}
                       </button>
@@ -1165,8 +1195,13 @@ export default function PrepaidCheckoutModal({
                     <input
                       type="number"
                       value={discountValue}
-                      onFocus={() => setAmountTarget({ kind: 'discount' })}
-                      onChange={(e) => setDiscountValue(e.target.value)}
+                      disabled={locked || discountCommitted}
+                      onFocus={() => {
+                        if (!locked && !discountCommitted) setAmountTarget({ kind: 'discount' });
+                      }}
+                      onChange={(e) => {
+                        if (!locked && !discountCommitted) setDiscountValue(e.target.value);
+                      }}
                       placeholder={discountType === 'percentage' ? '0' : '0.00'}
                       min="0"
                       max={
@@ -1178,15 +1213,18 @@ export default function PrepaidCheckoutModal({
                       }
                       step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                       inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                      className="min-h-11 w-full rounded-lg border border-border bg-card pe-3 ps-8 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                      className="min-h-11 w-full rounded-lg border border-border bg-card pe-3 ps-8 py-2 text-sm outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:bg-muted"
                     />
                   </div>
                   <input
                     type="text"
                     value={discountReason}
-                    onChange={(e) => setDiscountReason(e.target.value)}
+                    disabled={locked || discountCommitted}
+                    onChange={(e) => {
+                      if (!locked && !discountCommitted) setDiscountReason(e.target.value);
+                    }}
                     placeholder={t('discountReasonPlaceholder')}
-                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:bg-muted"
                   />
                   {discountNeedsApprovalPin && parseFloat(discountValue) > 0 && (
                     <div className="space-y-2">
@@ -1197,20 +1235,25 @@ export default function PrepaidCheckoutModal({
                           discountApproverId ?? managerApprovers.selectedApproverId
                         }
                         onSelectApprover={(id) => {
-                          setDiscountApproverId(id);
-                          setDiscountPin('');
+                          if (!locked && !discountCommitted) {
+                            setDiscountApproverId(id);
+                            setDiscountPin('');
+                          }
                         }}
                         loading={managerApprovers.loading}
                         loadFailed={managerApprovers.loadFailed}
-                        disabled={locked}
+                        disabled={locked || discountCommitted}
                       />
                       <input
                         type="password"
                         value={discountPin}
-                        onChange={(e) => setDiscountPin(e.target.value)}
+                        disabled={locked || discountCommitted}
+                        onChange={(e) => {
+                          if (!locked && !discountCommitted) setDiscountPin(e.target.value);
+                        }}
                         placeholder={t('managerPin')}
                         maxLength={6}
-                        className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                        className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:bg-muted"
                       />
                     </div>
                   )}
@@ -1222,7 +1265,9 @@ export default function PrepaidCheckoutModal({
                       <Button
                         type="button"
                         variant="outline"
+                        disabled={locked || discountCommitted}
                         onClick={() => {
+                          if (locked || discountCommitted) return;
                           setDiscountValue('');
                           setDiscountReason('');
                           setDiscountPin('');

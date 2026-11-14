@@ -1526,6 +1526,146 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         'Order-committed lock blocks all cart charge mutations',
       );
       chargeHarness.cleanupAll();
+
+      // Committed-discount lock prevents editing/clearing discount via panel, quick-tenders, or keypad
+      const discountLockHarness = createStatefulHarness();
+      installCheckoutComponentMocks(discountLockHarness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('discount')) {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
+          if (String(url).includes('settings')) return { data: { split_checks_enabled: true } };
+          return { data: {} };
+        },
+      });
+      delete require.cache[prepaidPath];
+      const DiscountLockPrepaidModal = require(prepaidPath).default;
+      const baseDiscountProps = {
+        ...prepaidProps,
+        discountCommitted: false,
+      };
+      let discountTree = discountLockHarness.renderAndSettle(
+        DiscountLockPrepaidModal,
+        baseDiscountProps,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      discountTree = discountLockHarness.renderAndSettle(
+        DiscountLockPrepaidModal,
+        baseDiscountProps,
+      );
+
+      const openDiscountBtn = collectElements(
+        discountTree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.['aria-expanded'] === 'boolean' &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      openDiscountBtn.props.onClick();
+      discountTree = discountLockHarness.renderAndSettle(
+        DiscountLockPrepaidModal,
+        baseDiscountProps,
+      );
+
+      const discValInput = collectElements(
+        discountTree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      const discReasonInput = collectElements(
+        discountTree,
+        (el) =>
+          el.type === 'input' &&
+          el.props?.type === 'text' &&
+          el.props?.placeholder === 'discountReasonPlaceholder',
+      )[0];
+      discValInput.props.onFocus();
+      discValInput.props.onChange({ target: { value: '10' } });
+      discReasonInput.props.onChange({ target: { value: 'VIP' } });
+      discountTree = discountLockHarness.renderAndSettle(
+        DiscountLockPrepaidModal,
+        baseDiscountProps,
+      );
+      assert.ok(
+        renderToStaticMarkup(discountTree).includes('5%'),
+        'Uncommitted discount focus activates percentage quick-tenders',
+      );
+
+      const committedDiscountProps = {
+        ...prepaidProps,
+        discountCommitted: true,
+        initialDiscount: { type: 'percentage' as const, value: 10, reason: 'VIP' },
+      };
+      discountTree = discountLockHarness.renderAndSettle(
+        DiscountLockPrepaidModal,
+        committedDiscountProps,
+      );
+      assert.ok(
+        !renderToStaticMarkup(discountTree).includes('5%'),
+        'Committing discount clears discount keypad target away from percentage quick-tenders',
+      );
+
+      const committedDiscValInput = collectElements(
+        discountTree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      const committedDiscReasonInput = collectElements(
+        discountTree,
+        (el) =>
+          el.type === 'input' &&
+          el.props?.type === 'text' &&
+          el.props?.placeholder === 'discountReasonPlaceholder',
+      )[0];
+      const committedFlatBtn = collectElements(
+        discountTree,
+        (el) => el.type === 'button' && renderToStaticMarkup(el).includes('flatAmount'),
+      )[0];
+      const committedRemoveBtn = collectElements(
+        discountTree,
+        (el) => el.type === 'button' && renderToStaticMarkup(el).includes('remove'),
+      )[0];
+      assert.equal(committedDiscValInput.props.disabled, true, 'Discount value disabled after commit');
+      assert.equal(
+        committedDiscReasonInput.props.disabled,
+        true,
+        'Discount reason disabled after commit',
+      );
+      assert.equal(committedFlatBtn.props.disabled, true, 'Discount type toggle disabled after commit');
+      assert.equal(committedRemoveBtn.props.disabled, true, 'Discount remove disabled after commit');
+
+      committedFlatBtn.props.onClick();
+      committedDiscValInput.props.onFocus();
+      committedDiscValInput.props.onChange({ target: { value: '25' } });
+      committedDiscReasonInput.props.onChange({ target: { value: 'Changed' } });
+      committedRemoveBtn.props.onClick();
+      discountTree = discountLockHarness.renderAndSettle(
+        DiscountLockPrepaidModal,
+        committedDiscountProps,
+      );
+
+      const afterValInput = collectElements(
+        discountTree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      const afterReasonInput = collectElements(
+        discountTree,
+        (el) =>
+          el.type === 'input' &&
+          el.props?.type === 'text' &&
+          el.props?.placeholder === 'discountReasonPlaceholder',
+      )[0];
+      assert.equal(afterValInput.props.value, '10', 'Committed discount value cannot be mutated');
+      assert.equal(
+        afterReasonInput.props.value,
+        'VIP',
+        'Committed discount reason cannot be mutated',
+      );
+      assert.ok(
+        !renderToStaticMarkup(discountTree).includes('5%'),
+        'Focusing committed discount input does not restore discount quick-tenders',
+      );
+      discountLockHarness.cleanupAll();
     } finally {
       harness.cleanupAll();
       if (!hadWindow) delete (globalThis as any).window;

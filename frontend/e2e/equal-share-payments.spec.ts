@@ -353,6 +353,9 @@ test.describe('equal share payments', () => {
 
     await login(page);
     await openOrderCheckout(page, order.order_number);
+    const item = page.getByTestId('payment-order-item').filter({ hasText: fixture.productName });
+    await expect(item).toBeVisible();
+    expect((await item.innerText()).split('\n')).not.toContain('0');
     const [bill] = await readBills(request, order.id);
     expect(minorAmount(bill.balance), 'the fixture check balances at exactly 100.00').toBe(100);
 
@@ -506,7 +509,10 @@ test.describe('equal share payments', () => {
       await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeDisabled();
       await expect(page.getByTitle('Cash', { exact: true })).toBeDisabled();
       await expect(page.getByRole('button', { name: 'Close' })).toBeDisabled();
-      await expect(page.locator('[aria-label="Numeric keypad"]')).toHaveCount(0);
+      await expect(page.locator('[aria-label="Numeric keypad"]')).toBeVisible();
+      await expect(page.locator('[aria-label="Numeric keypad"] button:not(:disabled)')).toHaveCount(
+        0,
+      );
     } finally {
       releaseRequest();
     }
@@ -605,7 +611,7 @@ test.describe('equal share payments', () => {
     await expect(page.getByRole('button', { name: 'Apply to Cash' })).toHaveCount(0);
   });
 
-  test('other tenders and a wallet amount block applying until they are cleared', async ({
+  test('replacing other tenders requires confirmation and preserves them on cancel', async ({
     page,
     request,
   }) => {
@@ -648,26 +654,32 @@ test.describe('equal share payments', () => {
     await setPayers(page, '2');
     await expect(page.getByText('Apply to Cash')).toBeVisible();
 
-    // A wallet amount is money for this bill: applying a share would silently drop it.
     await page.getByRole('button', { name: 'Loyalty Wallet' }).click();
-    expect(await walletRow(page).getByRole('spinbutton').inputValue()).not.toBe('');
-    await expect(page.getByText('Clear the other amounts before applying a share')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeDisabled();
+    const wallet = walletRow(page).getByRole('spinbutton');
+    const walletBefore = await wallet.inputValue();
+    expect(walletBefore).not.toBe('');
+    await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Apply to Cash' }).click();
+    let confirmation = page.getByRole('dialog');
+    await expect(confirmation).toContainText('Loyalty Wallet');
+    await expect(confirmation).toContainText(walletBefore);
+    await confirmation.getByRole('button', { name: 'Cancel' }).click();
+    expect(await wallet.inputValue()).toBe(walletBefore);
     expect(await tenderAmount(page, 'Cash')).toBe('');
 
-    // Clearing it unblocks applying, and a second tender row starts a new conflict.
-    await walletRow(page).getByRole('spinbutton').fill('');
-    await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeEnabled();
-    await applyShareTo(page, 'Cash');
-    expect(await tenderAmount(page, 'Cash'), 'two payers split 100.00 evenly').toBe('50');
+    await page.getByRole('button', { name: 'Apply to Cash' }).click();
+    confirmation = page.getByRole('dialog');
+    await confirmation.getByRole('button', { name: 'Clear' }).click();
+    await expect(wallet).toHaveValue('');
+    expect(await tenderAmount(page, 'Cash')).toBe('50');
     await tenderRow(page, 'Card').getByRole('spinbutton').fill('5');
-    await expect(page.getByText('Clear the other amounts before applying a share')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Apply to Card' })).toBeDisabled();
-    expect(
-      await tenderAmount(page, 'Cash'),
-      'the applied share is never discarded on its own',
-    ).toBe('50');
+    await page.getByRole('button', { name: 'Apply to Cash' }).click();
+    confirmation = page.getByRole('dialog');
+    await expect(confirmation).toContainText('Card');
+    await expect(confirmation).toContainText('5');
+    await confirmation.getByRole('button', { name: 'Cancel' }).click();
+    expect(await tenderAmount(page, 'Cash')).toBe('50');
+    expect(await tenderAmount(page, 'Card')).toBe('5');
 
     await page.unroute('**/api/settings/loyalty');
     await page.unroute('**/api/customers/*/wallet');
@@ -1047,7 +1059,10 @@ test.describe('equal share payments', () => {
     await expect(payerCount(page)).toBeDisabled();
     await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeDisabled();
-    await expect(page.locator('[aria-label="Numeric keypad"]')).toHaveCount(0);
+    await expect(page.locator('[aria-label="Numeric keypad"]')).toBeVisible();
+    await expect(page.locator('[aria-label="Numeric keypad"] button:not(:disabled)')).toHaveCount(
+      0,
+    );
 
     // An exact retry replays the same request with the same key instead of
     // submitting a changed one-and-only-amount against the committed record.

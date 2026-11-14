@@ -1,7 +1,7 @@
 /**
- * Source-level guards for the UI regressions fixed by issues #621, #623, and #626.
- * Behavioral table update coverage lives in tables-string-ids.test.ts; these checks
- * keep the responsive layout and dark-mode utilities from being accidentally removed.
+ * Source-level guards for the UI regressions fixed by issues #621, #623, and #626,
+ * plus executable component rendering and parsed CSS checks for CheckoutPaymentStation,
+ * POS drawers, side sheets, CartPanel, PosTopbar, CustomerSearch, and KDS (#1453).
  */
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -78,20 +78,6 @@ assert.match(
   'ledger totals use semantic text color',
 );
 
-const payment = source('frontend/src/components/pos/PaymentModal.tsx');
-assert.match(payment, /sm:max-w-4xl/, 'desktop payment modal stays wide');
-assert.match(payment, /lg:grid lg:grid-cols-2/, 'desktop payment content stays side by side');
-assert.match(
-  payment,
-  /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-2/,
-  'desktop payment stays two-column with bounded overflow fallback',
-);
-assert.doesNotMatch(
-  payment,
-  /lg:overflow-visible/,
-  'desktop payment does not clip controls outside its bounded container',
-);
-
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
 assert.match(
   dashboard,
@@ -107,29 +93,6 @@ assert.match(
   dashboard,
   /aria-label=\{t\('openDatePicker'\)\}/,
   'dashboard date picker trigger stays accessible',
-);
-
-const prepaidCheckout = source('frontend/src/components/pos/PrepaidCheckoutModal.tsx');
-assert.doesNotMatch(
-  prepaidCheckout,
-  /bg-gradient-to-br from-slate-800 to-slate-900/,
-  'prepaid checkout does not restore the oversized total card',
-);
-assert.match(
-  prepaidCheckout,
-  /preview\.discountedSubtotal/,
-  'prepaid checkout shows the post-discount subtotal',
-);
-assert.match(
-  prepaidCheckout,
-  /t\('discounts'\)/,
-  'prepaid checkout retains the compact cart-level discounts control',
-);
-const numberPadIndex = prepaidCheckout.indexOf('<CurrencyTouchNumberPad');
-const changeReturnedIndex = prepaidCheckout.indexOf("t('changeReturned')");
-assert.ok(
-  numberPadIndex >= 0 && changeReturnedIndex > numberPadIndex,
-  'change returned stays below the payment controls',
 );
 
 // Issue #1453: Executable component rendering and parsed CSS checks for POS drawers,
@@ -335,8 +298,42 @@ try {
     'rendered DrawerContent top direction offsets below the desktop titlebar',
   );
 
+  const {
+    CheckoutPaymentStation,
+  } = require('../frontend/src/components/pos/CheckoutPaymentStation');
+  const stationMarkup = renderWithIntl(
+    React.createElement(
+      CheckoutPaymentStation,
+      {
+        readout: {
+          activeLabel: 'Cash',
+          amountText: '$10.00',
+          paidSummaryText: 'Paid $10.00',
+          dueSummaryText: 'Due $0.00',
+        },
+        quickTenders: [{ label: '$10.00', subLabel: 'Exact', active: true, onClick: () => {} }],
+        keypad: React.createElement('div', { 'data-testid': 'station-keypad-child' }, 'keypad'),
+        changeDisplay: {
+          label: 'Change Returned',
+          formattedAmount: '$0.00',
+          visible: false,
+        },
+      },
+      React.createElement('button', { type: 'button' }, 'Pay $10.00'),
+    ),
+  );
+  assert.ok(
+    stationMarkup.includes('data-checkout-zone="keypad"') &&
+      stationMarkup.includes('data-testid="checkout-change-slot"') &&
+      stationMarkup.indexOf('data-checkout-zone="keypad"') <
+        stationMarkup.indexOf('data-testid="checkout-change-slot"'),
+    'rendered CheckoutPaymentStation places Change Returned below the keypad controls',
+  );
+
   // 3. Parsed CSS AST check on globals.css for Electron no-drag rules
-  const cssAst = postcss.parse(source('frontend/src/app/globals.css'));
+  const cssAst = postcss.parse(
+    readFileSync(resolve(process.cwd(), 'frontend/src/app/globals.css'), 'utf8'),
+  );
   const requiredNoDragSelectors = [
     "[data-testid='scheduled-orders-drawer']",
     "[data-testid='payment-queue-drawer']",

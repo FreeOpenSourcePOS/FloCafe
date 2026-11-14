@@ -244,7 +244,11 @@ test('prepaid checkout preserves the saved discount and bill when retrying after
     expect(discountUpdates).toBe(1);
     expect(billGenerations).toBe(1);
 
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    const checkout = page.getByTestId('prepaid-checkout-modal');
+    await expect(checkout).toBeVisible();
+    await expect(
+      checkout.getByText('Enter the transaction number from the card terminal.'),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Confirm Payment · ฿57.78' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toHaveCount(0);
 

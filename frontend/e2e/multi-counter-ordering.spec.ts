@@ -346,6 +346,10 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
         expect(createdOrder.type).toBe(type.toLowerCase());
         expect(createdOrder.dispatch_policy).toBe('immediate');
         await expect(page.getByTestId('cart-item')).toHaveCount(0);
+        await page
+          .getByTestId('prepaid-checkout-modal')
+          .getByRole('button', { name: 'Done', exact: true })
+          .click();
       }
       await page.getByTestId('pos-counter-selector-btn').click();
       await page.getByTestId(`pos-counter-option-${combinedCounter.id}`).click();

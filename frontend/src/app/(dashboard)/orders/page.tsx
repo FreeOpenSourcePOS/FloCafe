@@ -195,7 +195,12 @@ function OrdersTableQuerySync({
   const tableParam = useSearchParams()?.get('table')?.trim() || '';
 
   useEffect(() => {
-    onFiltersChange((prev) => (prev.table === tableParam ? prev : { ...prev, table: tableParam }));
+    onFiltersChange((prev) => {
+      const nextType =
+        tableParam !== '' && prev.type !== '' && prev.type !== 'dine_in' ? '' : prev.type;
+      if (prev.table === tableParam && prev.type === nextType) return prev;
+      return { ...prev, table: tableParam, type: nextType };
+    });
   }, [tableParam, onFiltersChange]);
 
   return null;
@@ -269,6 +274,7 @@ export default function OrdersPage() {
   ordersFilterKeyRef.current = ordersFilterKey;
   const previousOrdersFilterKeyRef = useRef(ordersFilterKey);
   const ordersFetchIdRef = useRef(0);
+  const ordersMutationGenerationRef = useRef(0);
   const ordersRefreshInProgressRef = useRef(false);
   const ordersLoadMoreInProgressRef = useRef(false);
   const ordersRefreshPendingRef = useRef(false);
@@ -548,6 +554,19 @@ export default function OrdersPage() {
     }
   };
 
+  const invalidateInFlightOrderReads = (orderId?: number | null) => {
+    ordersMutationGenerationRef.current++;
+    if (
+      orderId != null &&
+      Number.isFinite(orderId) &&
+      selectedOrderLookupInProgressRef.current === orderId
+    ) {
+      selectedOrderLookupIdRef.current++;
+      selectedOrderLookupInProgressRef.current = null;
+      redispatchedRefreshSelectedOrderRef.current = null;
+    }
+  };
+
   const reconcileSettledTransition = (refreshedOrder: Order) => {
     const stillHasPayableBills = getOrderBills(refreshedOrder).some(isBillPayableForCheckout);
     setSettledTransition((prev) => {
@@ -572,6 +591,7 @@ export default function OrdersPage() {
     }
     const lookupId = ++selectedOrderLookupIdRef.current;
     const lookupFilterKey = ordersFilterKeyRef.current;
+    const lookupMutationGeneration = ordersMutationGenerationRef.current;
     selectedOrderLookupInProgressRef.current = orderId;
     const request: Promise<boolean> = api
       .get(`/orders/${orderId}`)
@@ -579,7 +599,8 @@ export default function OrdersPage() {
         if (
           lookupId !== selectedOrderLookupIdRef.current ||
           selectedOrderIdRef.current !== orderId ||
-          ordersFilterKeyRef.current !== lookupFilterKey
+          ordersFilterKeyRef.current !== lookupFilterKey ||
+          lookupMutationGeneration !== ordersMutationGenerationRef.current
         )
           return false;
         selectedOrderLookupIdRef.current++;
@@ -609,7 +630,8 @@ export default function OrdersPage() {
         if (
           lookupId !== selectedOrderLookupIdRef.current ||
           selectedOrderIdRef.current !== orderId ||
-          ordersFilterKeyRef.current !== lookupFilterKey
+          ordersFilterKeyRef.current !== lookupFilterKey ||
+          lookupMutationGeneration !== ordersMutationGenerationRef.current
         )
           return false;
         if ((error as { response?: { status?: number } })?.response?.status === 404) {
@@ -675,6 +697,7 @@ export default function OrdersPage() {
     }
     const fetchId = ++ordersFetchIdRef.current;
     const requestFilterKey = ordersFilterKeyRef.current;
+    const requestMutationGeneration = ordersMutationGenerationRef.current;
     setLoadingMoreOrders(true);
     if (cursor === undefined) {
       ordersRefreshInProgressRef.current = true;
@@ -703,7 +726,8 @@ export default function OrdersPage() {
           });
           if (
             fetchId !== ordersFetchIdRef.current ||
-            requestFilterKey !== ordersFilterKeyRef.current
+            requestFilterKey !== ordersFilterKeyRef.current ||
+            requestMutationGeneration !== ordersMutationGenerationRef.current
           )
             return { orders: [], nextCursor: null };
           return { orders: (data.orders || []) as Order[], nextCursor: data.nextCursor ?? null };
@@ -717,12 +741,20 @@ export default function OrdersPage() {
             ...(cursor !== undefined ? { before_id: cursor } : {}),
           },
         });
-        if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
+        if (
+          fetchId !== ordersFetchIdRef.current ||
+          requestFilterKey !== ordersFilterKeyRef.current ||
+          requestMutationGeneration !== ordersMutationGenerationRef.current
+        )
           return false;
         orders.push(...(data.orders || []));
         nextCursor = data.nextCursor ?? null;
       }
-      if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
+      if (
+        fetchId !== ordersFetchIdRef.current ||
+        requestFilterKey !== ordersFilterKeyRef.current ||
+        requestMutationGeneration !== ordersMutationGenerationRef.current
+      )
         return false;
       const selectedId = selectedOrderIdRef.current;
       if (selectedId !== null) {
@@ -777,7 +809,11 @@ export default function OrdersPage() {
       });
       return true;
     } catch {
-      if (fetchId === ordersFetchIdRef.current && requestFilterKey === ordersFilterKeyRef.current)
+      if (
+        fetchId === ordersFetchIdRef.current &&
+        requestFilterKey === ordersFilterKeyRef.current &&
+        requestMutationGeneration === ordersMutationGenerationRef.current
+      )
         toast.error(tOrders('loadOrdersFailed'));
       return false;
     } finally {
@@ -1343,6 +1379,7 @@ export default function OrdersPage() {
     const bill = paymentBill; // capture before clearing state
     const paidOrderId = bill?.order_id != null ? Number(bill.order_id) : null;
     setPaymentBill(null);
+    invalidateInFlightOrderReads(paidOrderId);
     if (bill && paidOrderId !== null && Number.isFinite(paidOrderId)) {
       syncOrderBillInState(paidOrderId, {
         ...bill,
@@ -2012,6 +2049,7 @@ export default function OrdersPage() {
       });
       toast.success(tOrders('orderCancelled'));
       setCancelModal(null);
+      invalidateInFlightOrderReads(cancelledOrderId);
       if (ordersLayout === 'split' && selectedOrderIdRef.current === cancelledOrderId) {
         const nextOrderId = computeNextListOrderId(orders, cancelledOrderId);
         setSettledTransition({ orderId: cancelledOrderId, kind: 'cancelled', nextOrderId });
@@ -2574,6 +2612,7 @@ export default function OrdersPage() {
           onRefunded={() => {
             const refundedOrderId = refundModal.order.id;
             setRefundModal(null);
+            invalidateInFlightOrderReads(refundedOrderId);
             void fetchOrders(undefined, { refreshLoadedPages: true });
             if (selectedOrderIdRef.current === refundedOrderId) {
               void refreshSelectedOrder(refundedOrderId);
@@ -2591,6 +2630,7 @@ export default function OrdersPage() {
           onCorrected={() => {
             const correctedOrderId = correctPaymentModal.order.id;
             setCorrectPaymentModal(null);
+            invalidateInFlightOrderReads(correctedOrderId);
             void fetchOrders(undefined, { refreshLoadedPages: true });
             if (selectedOrderIdRef.current === correctedOrderId) {
               void refreshSelectedOrder(correctedOrderId);

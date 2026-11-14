@@ -1168,6 +1168,9 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
   const toastErrors: string[] = [];
   const printedBillIds: number[] = [];
   const printOrderStatuses: Array<string | undefined> = [];
+  let currentSearchParams = new URLSearchParams();
+  let deferNextActiveFetch = false;
+  let deferredActiveFetch: ((value: unknown) => void) | null = null;
   const order101 = {
     id: 101,
     order_number: 'ORD-101',
@@ -1221,6 +1224,18 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     items: [],
     bill: { id: 801, order_id: 104, total: 25, balance: 25, payment_status: 'unpaid' },
   };
+  const order105 = {
+    id: 105,
+    order_number: 'ORD-105',
+    status: 'pending',
+    type: 'dine_in',
+    table_id: 'tbl-99',
+    subtotal: 18,
+    total: 18,
+    created_at: '2026-01-01 00:04:00',
+    items: [],
+    bill: { id: 901, order_id: 105, total: 18, balance: 18, payment_status: 'unpaid' },
+  };
   let activeOrders: Array<Record<string, any>> = [
     order101,
     {
@@ -1235,6 +1250,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     },
     order103,
     order104,
+    order105,
   ];
   const completedOrder = {
     id: 201,
@@ -1274,7 +1290,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     },
     'next/navigation': {
       useRouter: () => ({ push: () => undefined }),
-      useSearchParams: () => new URLSearchParams(),
+      useSearchParams: () => currentSearchParams,
     },
     'react-hot-toast': {
       __esModule: true,
@@ -1323,6 +1339,12 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
               return { data: { orders: [completedOrder], nextCursor: null } };
             }
             if (params.view === 'active' && !params.search) {
+              if (deferNextActiveFetch) {
+                deferNextActiveFetch = false;
+                return new Promise((resolve) => {
+                  deferredActiveFetch = resolve;
+                });
+              }
               return { data: { orders: activeOrders, nextCursor: null } };
             }
             return { data: { orders: [], nextCursor: null } };
@@ -1375,6 +1397,17 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
                   ...order104,
                   status: 'pending',
                   bill: { id: 801, order_id: 104, total: 25, balance: 0, payment_status: 'paid' },
+                },
+              },
+            };
+          }
+          if (url === '/orders/105') {
+            return {
+              data: {
+                order: {
+                  ...order105,
+                  status: 'completed',
+                  bill: { id: 901, order_id: 105, total: 18, balance: 0, payment_status: 'paid' },
                 },
               },
             };
@@ -1549,6 +1582,15 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     }> = [];
     const pendingEffects: Array<() => void> = [];
 
+    const originalSetInterval = globalThis.setInterval;
+    let backupPollCallback: (() => void) | null = null;
+    globalThis.setInterval = ((fn: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay === 10000 && typeof fn === 'function') {
+        backupPollCallback = fn as () => void;
+      }
+      return originalSetInterval(fn, delay, ...(args as []));
+    }) as typeof setInterval;
+
     const renderPage = () => {
       let stateIndex = 0;
       let refIndex = 0;
@@ -1594,6 +1636,15 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       };
 
       const tree = OrdersPage({});
+      const querySyncEl = collectElements(
+        tree,
+        (el) =>
+          typeof el.type === 'function' &&
+          (el.type as { name?: string }).name === 'OrdersTableQuerySync',
+      )[0];
+      if (querySyncEl) {
+        (querySyncEl.type as (props: unknown) => unknown)(querySyncEl.props);
+      }
       while (pendingEffects.length > 0) {
         const run = pendingEffects.shift()!;
         run();
@@ -1904,7 +1955,75 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         null,
         'settledTransition stays null after slower refreshSelectedOrder settles',
       );
+
+      // 8. Pre-settlement in-flight fetchOrders response resolving AFTER payment completes must not clear settledTransition.
+      const masterListRace = collectElements(tree, (el) => el.type === MasterListStub)[0];
+      masterListRace.props.onSelect(105);
+      tree = renderPage();
+      const raceDetail = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      await raceDetail.props.onPayBill(order105.bill);
+      tree = renderPage();
+      const racePaymentModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(racePaymentModal && backupPollCallback, 'PaymentModal and poll callback ready');
+
+      deferNextActiveFetch = true;
+      backupPollCallback();
+      await flushAll(10);
+      assert.ok(deferredActiveFetch, 'Pre-settlement fetchOrders is suspended in-flight');
+
+      const stalePreSettlementOrder105 = { ...order105, status: 'pending' };
+      activeOrders = activeOrders.filter((o) => o.id !== 105);
+      await racePaymentModal.props.onPaid();
+      tree = await flushAll(20);
+      const raceDetailSettled = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      assert.equal(
+        raceDetailSettled.props.settledTransition,
+        'completed',
+        'settledTransition becomes completed after payment',
+      );
+
+      deferredActiveFetch({
+        data: { orders: [stalePreSettlementOrder105], nextCursor: null },
+      });
+      tree = await flushAll(50);
+      const raceDetailAfterStaleFetch = collectElements(
+        tree,
+        (el) => el.type === DetailPanelStub,
+      )[0];
+      assert.equal(
+        raceDetailAfterStaleFetch.props.settledTransition,
+        'completed',
+        'Delayed pre-settlement fetchOrders does not clear settledTransition or clobber snapshot',
+      );
+      assert.equal(
+        raceDetailAfterStaleFetch.props.order?.status,
+        'completed',
+        'Snapshot preserves completed status after stale pre-settlement fetchOrders settles',
+      );
+
+      // 9. URL ?table= param sync clears incompatible non-dine-in type filter so Table select stays visible.
+      findTypeSelect(tree).props.onChange({ target: { value: 'takeaway' } });
+      tree = renderPage();
+      assert.equal(
+        findTableSelect(tree),
+        undefined,
+        'Table select hidden when Takeaway type is selected',
+      );
+      currentSearchParams = new URLSearchParams('table=tbl-42');
+      await flushAll(20);
+      tree = renderPage();
+      assert.equal(
+        findTypeSelect(tree).props.value,
+        '',
+        'OrdersTableQuerySync clears incompatible Takeaway type when URL specifies ?table=',
+      );
+      assert.equal(
+        findTableSelect(tree)?.props.value,
+        'tbl-42',
+        'OrdersTableQuerySync applies URL table param and keeps Table select visible',
+      );
     } finally {
+      globalThis.setInterval = originalSetInterval;
       for (const entry of effectEntries) {
         if (typeof entry?.cleanup === 'function') entry.cleanup();
       }

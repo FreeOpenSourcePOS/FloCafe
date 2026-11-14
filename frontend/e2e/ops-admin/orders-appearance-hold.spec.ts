@@ -9,6 +9,7 @@ const RUN = Date.now().toString(36).slice(-4);
 function waitForLayoutPut(page: Page) {
   return page.waitForResponse(
     (res) =>
+      res.ok() &&
       res.request().method() === 'PUT' &&
       new URL(res.url()).pathname === '/api/settings/orders_layout',
   );

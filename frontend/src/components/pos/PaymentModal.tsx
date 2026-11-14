@@ -836,6 +836,11 @@ export default function PaymentModal({
     return () => clearTimeout(timer);
   }, [loadSplitCheckSetting]);
 
+  const paymentMethodsEffectRef = useRef({ billId: bill.id, formatInput, toDisplayUnit });
+  useEffect(() => {
+    paymentMethodsEffectRef.current = { billId: bill.id, formatInput, toDisplayUnit };
+  }, [bill.id, formatInput, toDisplayUnit]);
+
   useEffect(() => {
     const custId = bill.customer_id || cartCustomerId;
     if (custId) {
@@ -866,8 +871,13 @@ export default function PaymentModal({
       .then((res) => {
         const methods: CustomPaymentMethod[] = res.data.payment_methods || [];
         setCustomMethods(methods);
+        const {
+          billId: currentBillId,
+          formatInput: formatCurrentInput,
+          toDisplayUnit: toCurrentDisplayUnit,
+        } = paymentMethodsEffectRef.current;
         const lockedAttempt =
-          pendingAttemptRef.current && pendingAttemptRef.current.billId === bill.id
+          pendingAttemptRef.current && pendingAttemptRef.current.billId === currentBillId
             ? pendingAttemptRef.current
             : null;
         setPayments((current) => [
@@ -888,7 +898,7 @@ export default function PaymentModal({
               payment_method_id: method.id,
               amount:
                 matched && Number(matched.amount) > 0
-                  ? formatInput(toDisplayUnit(Number(matched.amount)))
+                  ? formatCurrentInput(toCurrentDisplayUnit(Number(matched.amount)))
                   : '',
             };
           }),

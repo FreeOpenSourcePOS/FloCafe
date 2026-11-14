@@ -75,7 +75,9 @@ export function start(options: FakeEscposPrinterOptions = {}): Promise<FakeEscpo
     if (sockets.size > maxConcurrentConnections) {
       maxConcurrentConnections = sockets.size;
     }
-    socket.on('close', () => sockets.delete(socket));
+    const removeSocket = () => sockets.delete(socket);
+    socket.once('end', removeSocket);
+    socket.once('close', removeSocket);
     socket.on('error', () => {});
     let buffer = Buffer.alloc(0);
     socket.on('data', (chunk: Buffer) => {

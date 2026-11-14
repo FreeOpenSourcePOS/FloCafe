@@ -1278,7 +1278,15 @@ console.log(
   } = {
     customer: null,
     customerId: null,
-    items: [{ id: 'item-1', price: 100, quantity: 1 }],
+    items: [
+      {
+        id: 'item-1',
+        product: { name: 'Test item', price: 100 },
+        quantity: 1,
+        addons: [],
+        special_instructions: '',
+      },
+    ],
     orderType: 'dine_in',
     onlinePlatform: null,
     waivedChargeIds: new Set(),
@@ -1344,6 +1352,7 @@ console.log(
       'use-intl': {
         useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) =>
           params ? `${ns}.${key}:${JSON.stringify(params)}` : `${ns}.${key}`,
+        useLocale: () => 'en-US',
       },
       '@/store/auth': {
         useAuthStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -1835,17 +1844,8 @@ console.log(
     );
     assert.strictEqual(
       prepaidConfirms.length,
-      1,
-      'PrepaidCheckoutModal confirms order on non-repeat Space on modal surface',
-    );
-    assert.deepStrictEqual(
-      prepaidConfirms[0],
-      {
-        payments: [{ method: 'cash', amount: 100 }],
-        walletAmount: 0,
-        discount: null,
-      },
-      'PrepaidCheckoutModal auto-allocates remaining balance to cash and confirms',
+      0,
+      'PrepaidCheckoutModal requires an explicit payment action after Space',
     );
 
     const escRes = dispatchPrepaidKey({

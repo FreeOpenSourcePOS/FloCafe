@@ -661,9 +661,17 @@ test.describe('prepaid retry charge decisions', () => {
         if (route.request().method() === 'POST' && failFirstOrder) {
           failFirstOrder = false;
           await route.fulfill({
-            status: 500,
+            status: 400,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'E2E forced failure' }),
+            body: JSON.stringify({
+              error: 'Invalid order quantity',
+              reason_code: 'order.quantity_invalid',
+              operation: 'order.create',
+              stage: 'validation',
+              classification: 'expected_rejection',
+              outcome: 'not_applied',
+              correlation_id: route.request().headers()['x-operation-id'],
+            }),
           });
           return;
         }
@@ -685,11 +693,13 @@ test.describe('prepaid retry charge decisions', () => {
         (response) =>
           response.request().method() === 'POST' &&
           new URL(response.url()).pathname === '/api/orders' &&
-          response.status() === 500,
+          response.status() === 400,
       );
       await page.getByRole('button', { name: /Confirm Payment/ }).click();
       await firstFailure;
-      await expect(page.getByRole('button', { name: /Confirm Payment/ })).toHaveCount(0);
+      const checkout = page.getByTestId('prepaid-checkout-modal');
+      await expect(checkout.getByText('Order not created. Check the item quantity.')).toBeVisible();
+      await checkout.getByRole('button', { name: 'Close', exact: true }).click();
 
       await cartCharges.getByRole('button', { name: 'Apply', exact: true }).click();
       await cartCharges.getByRole('button', { name: 'Remove', exact: true }).click();

@@ -7,7 +7,7 @@
  *    - Multi-unit donor selection (largest donor first, later guest tie-break)
  *    - Bounds clamping and round-robin even distribution reset
  * 2. `SplitCheckModal` (`mode === 'table'` and `mode === 'guest'`):
- *    - Touch-friendly `size-9 min-h-9 min-w-9` `−` / `+` steppers on check count,
+ *    - Touch-friendly `size-11 min-h-11 min-w-11` `−` / `+` steppers on check count,
  *      every table-grid guest cell, and every leaving-guest row
  *    - Per-row unassigned status badge when decremented below `item.quantity`
  *    - 1-tap `Distribute evenly` in table mode and `Clear` + row highlight in guest mode
@@ -182,6 +182,8 @@ async function run() {
   let splitSettingShouldFail = false;
   const postedPayloads: Array<{ url: string; body: any }> = [];
   const toastErrors: string[] = [];
+  const chargePatches: unknown[] = [];
+  let availableCharges: any[] = [];
 
   const cart = {
     customer: null,
@@ -206,6 +208,7 @@ async function run() {
       Minus: Icon,
       Plus: Icon,
       RotateCcw: Icon,
+      Delete: Icon,
       Percent: Icon,
       Send: Icon,
       ChevronDown: Icon,
@@ -241,7 +244,10 @@ async function run() {
           postedPayloads.push({ url, body });
           return { data: { bills: [{ id: 1 }, { id: 2 }] } };
         },
-        patch: async () => ({ data: {} }),
+        patch: async (_url: string, body: unknown) => {
+          chargePatches.push(body);
+          return { data: { bill: { id: 99 } } };
+        },
       },
       captureClientOperationFailure: async () => undefined,
       createOperationReference: () => 'op-ref-1',
@@ -263,16 +269,16 @@ async function run() {
     },
     '@/store/charges': {
       useChargesStore: (selector: (s: any) => unknown) =>
-        selector({ charges: [], load: async () => undefined }),
-      chargesForOrderType: () => [],
+        selector({ charges: availableCharges, load: async () => undefined }),
+      chargesForOrderType: () => availableCharges,
     },
     '@/hooks/use-confirm': {
       useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }),
     },
     '@/hooks/useManagerApprovers': {
       useManagerApprovers: () => ({
-        approvers: [],
-        selectedApproverId: null,
+        approvers: [{ id: 'manager-test' }],
+        selectedApproverId: 'manager-test',
         loading: false,
         loadFailed: false,
       }),
@@ -408,8 +414,8 @@ async function run() {
     const countDec = findByTestId(rendered.tree, 'split-check-count-decrement');
     const countInc = findByTestId(rendered.tree, 'split-check-count-increment');
     assert(countDec && countInc, 'Number of checks renders touch-friendly - / + buttons');
-    assert.match(countDec.props.className, /\bsize-9\b/, 'check count - button uses size-9');
-    assert.match(countInc.props.className, /\bsize-9\b/, 'check count + button uses size-9');
+    assert.match(countDec.props.className, /\bsize-11\b/, 'check count - button uses size-11');
+    assert.match(countInc.props.className, /\bsize-11\b/, 'check count + button uses size-11');
     assert.equal(countDec.props.disabled, true, 'check count - disabled at MIN_CHECKS (2)');
     assert.equal(countInc.props.disabled, false, 'check count + enabled below maxTableChecks');
 
@@ -418,7 +424,7 @@ async function run() {
     const burgerG1Dec = findByTestId(rendered.tree, 'split-cell-dec-101-1');
     const burgerG1Inc = findByTestId(rendered.tree, 'split-cell-inc-101-1');
     assert(burgerG0Inc && burgerG1Dec && burgerG1Inc, 'table cells render - / + steppers');
-    assert.match(burgerG1Inc.props.className, /\bsize-9\b/, 'table cell + button uses size-9');
+    assert.match(burgerG1Inc.props.className, /\bsize-11\b/, 'table cell + button uses size-11');
     assert.equal(burgerG0Inc.props.disabled, true, 'Guest 1 + disabled when holding all 1 unit');
     assert.equal(burgerG1Dec.props.disabled, true, 'Guest 2 - disabled at 0');
     assert.equal(
@@ -456,6 +462,10 @@ async function run() {
       /remainingCount:\{&quot;count&quot;:1\}/,
       'status pill reports exact unassigned count',
     );
+    const fixedUnassigned = findByTestId(rendered.tree, 'split-unassigned-total');
+    assert(fixedUnassigned, 'the fixed footer shows unassigned units');
+    assert.match(ReactDOMServer.renderToStaticMarkup(fixedUnassigned), /&quot;count&quot;:1/);
+    assert.equal(findByTestId(rendered.tree, 'split-create-checks').props.disabled, true);
 
     // 1-tap Distribute evenly restores round-robin allocation and clears unassigned badge
     const distributeBtn = findByTestId(rendered.tree, 'split-distribute-evenly');
@@ -467,6 +477,7 @@ async function run() {
       undefined,
       'Distribute evenly restores full allocation',
     );
+    assert.equal(findByTestId(rendered.tree, 'split-unassigned-total'), undefined);
 
     // Submitting valid allocation succeeds without allocateAllItems toast error
     toastErrors.length = 0;
@@ -481,7 +492,7 @@ async function run() {
     assert.equal(postedPayloads.length, 1, 'split-check POST sent once');
     assert.equal(splitCompleted, true, 'onSplit callback invoked');
 
-    // Switch to guest mode (`Selected items`) and verify size-9 steppers, bounds, highlight & Clear
+    // Switch to guest mode (`Selected items`) and verify size-11 steppers, bounds, highlight & Clear
     const guestModeBtn = collectElements(
       rendered.tree,
       (el) => typeof el.props?.onClick === 'function' && el.props?.children === 'splitModeSelected',
@@ -493,8 +504,8 @@ async function run() {
     const guestDec101 = findByTestId(rendered.tree, 'guest-item-dec-101');
     const guestInc101 = findByTestId(rendered.tree, 'guest-item-inc-101');
     assert(guestDec101 && guestInc101, 'guest mode renders - / + buttons');
-    assert.match(guestDec101.props.className, /\bsize-9\b/, 'guest - button uses size-9');
-    assert.match(guestInc101.props.className, /\bsize-9\b/, 'guest + button uses size-9');
+    assert.match(guestDec101.props.className, /\bsize-11\b/, 'guest - button uses size-11');
+    assert.match(guestInc101.props.className, /\bsize-11\b/, 'guest + button uses size-11');
     assert.equal(guestDec101.props.disabled, true, 'guest - button disabled at 0');
     assert.equal(guestInc101.props.disabled, false, 'guest + button enabled below item.quantity');
     assert.equal(
@@ -593,13 +604,13 @@ async function run() {
     assert(preset2 && preset3 && preset4, 'Equal Share renders 2, 3, 4 quick-tap preset pills');
     assert.match(
       eqDec.props.className,
-      /\bmin-h-9\b.*\bmin-w-9\b/,
-      'Equal Share - is min-h-9 min-w-9',
+      /\bmin-h-11\b.*\bmin-w-11\b/,
+      'Equal Share - is min-h-11 min-w-11',
     );
     assert.match(
       eqInc.props.className,
-      /\bmin-h-9\b.*\bmin-w-9\b/,
-      'Equal Share + is min-h-9 min-w-9',
+      /\bmin-h-11\b.*\bmin-w-11\b/,
+      'Equal Share + is min-h-11 min-w-11',
     );
     assert.equal(eqInput.props.value, '2', 'initial payer count matches guest_count=2');
     assert.equal(eqDec.props.disabled, true, 'Equal Share - disabled at MIN_EQUAL_SHARE_PAYERS=2');
@@ -762,6 +773,116 @@ async function run() {
       false,
       'equal share tab is restored inactive with aria-pressed=false',
     );
+    // A split bill's customer must not be confused with the parent order or current cart.
+    (cart as any).customerId = 2;
+    (cart as any).customer = { id: 2, name: 'Other cart customer', phone: '5550002' };
+    const mismatchedCustomerBill = {
+      ...paymentBill,
+      customer_id: 1,
+      order: {
+        ...paymentBill.order,
+        customer: { id: 3, name: 'Other order customer', phone: '5550003' },
+      },
+    };
+    const customerPayment = mount(PaymentModal, {
+      bill: mismatchedCustomerBill,
+      currency: 'USD',
+      onClose: () => undefined,
+      onPaid: () => undefined,
+    });
+    let customerRender = customerPayment.render();
+    assert.doesNotMatch(
+      customerRender.html,
+      /Other cart customer|Other order customer/,
+      'unrelated customers are not displayed',
+    );
+    customerPayment.setProps({
+      bill: {
+        ...mismatchedCustomerBill,
+        order: {
+          ...paymentBill.order,
+          customer: { id: 1, name: 'Bill customer', phone: '5550001' },
+        },
+      },
+      currency: 'USD',
+      onClose: () => undefined,
+      onPaid: () => undefined,
+    });
+    customerRender = customerPayment.render();
+    assert.match(
+      customerRender.html,
+      /Bill customer/,
+      'the customer linked to this bill is displayed',
+    );
+    (cart as any).customerId = null;
+    (cart as any).customer = null;
+
+    // The server requires manager approval when a cashier waives an optional charge.
+    currentTenant.role = 'cashier';
+    availableCharges = [{ id: 'fee', is_optional: true, is_default_active: true }];
+    const chargeBill = {
+      ...paymentBill,
+      charges_breakdown: JSON.stringify([
+        {
+          id: 'fee',
+          name: 'Fee',
+          type: 'fixed',
+          amount: 5,
+          calculation_basis: 'gross',
+          waived: false,
+        },
+      ]),
+    };
+    const cashierPayment = mount(PaymentModal, {
+      bill: chargeBill,
+      currency: 'USD',
+      onClose: () => undefined,
+      onPaid: () => undefined,
+    });
+    let chargeRender = cashierPayment.render();
+    const chargeRow = findByTestId(chargeRender.tree, 'payment-charge-fee');
+    const waive = collectElements(
+      chargeRow,
+      (element) => element.type === 'button' && element.props.children === 'waiveCharge',
+    )[0];
+    assert(waive, 'cashier can request an optional charge waiver');
+    waive.props.onClick();
+    chargeRender = cashierPayment.render();
+    assert(
+      findById(chargeRender.tree, 'chargeApproverSelect'),
+      'cashier is prompted for manager approval',
+    );
+    assert.equal(chargePatches.length, 0, 'waiver is not sent before approval');
+    findByTestId(chargeRender.tree, 'charge-approval-cancel').props.onClick();
+    chargeRender = cashierPayment.render();
+    assert.equal(
+      findById(chargeRender.tree, 'chargeApproverSelect'),
+      undefined,
+      'cancelling closes approval',
+    );
+    assert.equal(chargePatches.length, 0, 'cancelling does not waive the charge');
+    collectElements(
+      findByTestId(chargeRender.tree, 'payment-charge-fee'),
+      (element) => element.type === 'button' && element.props.children === 'waiveCharge',
+    )[0].props.onClick();
+    chargeRender = cashierPayment.render();
+    const pin = collectElements(
+      chargeRender.tree,
+      (element) => element.type === 'input' && element.props['aria-label'] === 'managerPin',
+    )[0];
+    pin.props.onChange({ target: { value: '1234' } });
+    chargeRender = cashierPayment.render();
+    const submitApproval = findByTestId(chargeRender.tree, 'charge-approval-submit');
+    assert.equal(submitApproval.props.disabled, false, 'valid approval can be submitted');
+    submitApproval.props.onClick();
+    assert.deepEqual(
+      chargePatches[0],
+      { charge_id: 'fee', waived: true, override_pin: '1234', approver_id: 'manager-test' },
+      'approval accompanies the waiver request',
+    );
+
+    currentTenant.role = 'manager';
+    availableCharges = [];
     console.log(
       '  ✓ PaymentModal unified Split card, 2-tab switcher, steppers, and presets verified',
     );

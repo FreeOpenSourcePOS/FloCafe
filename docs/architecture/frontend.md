@@ -557,12 +557,15 @@ Warnings travel with every result. `hasFinancialPrintWarning` refuses the whole 
 print a total the printer cannot represent, which is why a capability failure is a thrown error and
 not a toast.
 
-Print locales are warmed at authentication, not lazily at render time. `syncPrintPoliciesAtBootstrap`
-applies the tenant's receipt and kitchen-ticket language policy and loads the bundles it selects,
-and the auth store keeps the languages that failed. Every print action calls
-`ensurePrintLanguagesLoaded` again before it encodes, and a locale that still will not load becomes
-a receipt warning saying English labels were used. A receipt that renders in the wrong language is
-a financial document, not a cosmetic bug.
+Print locales are warmed at authentication, not lazily at render time; see
+[warming print locales at bootstrap](internationalization.md#warming-print-locales-at-bootstrap).
+`syncPrintPoliciesAtBootstrap` applies the tenant's receipt and kitchen-ticket language policy and
+loads the bundles it selects, and the auth store keeps the languages that failed. Print actions
+await `resolveReadyBillPrintLanguages`, `resolveReadyKotTicketLanguage`, and
+`ensurePrintLanguagesLoaded` (which wait on the active tenant's bootstrap barrier before resolving
+or encoding), and a locale that still will not load becomes a receipt warning saying English labels
+were used. A receipt that renders in the wrong language is a financial document, not a cosmetic
+bug.
 
 ## Internationalization: 32 locales
 

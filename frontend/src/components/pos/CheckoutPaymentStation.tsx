@@ -2,7 +2,6 @@
 
 import { useState, type ReactNode } from 'react';
 import { CheckCircle2, ChevronDown, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export interface CheckoutStationReadout {
@@ -35,22 +34,6 @@ export interface CheckoutStatusBanner {
   technicalDetails?: string | null;
   technicalDetailsLabel?: string;
   closeLabel?: string;
-  retryLabel?: string;
-  retryDisabled?: boolean;
-  onRetry?: () => void;
-  resendLabel?: string;
-  resendDisabled?: boolean;
-  onResend?: () => void;
-  dismissLabel?: string;
-  onDismiss?: () => void;
-  readyLabel?: string;
-}
-
-export interface CheckoutPrimaryAction {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  testId?: string;
 }
 
 interface Props {
@@ -59,7 +42,6 @@ interface Props {
   keypad: ReactNode;
   changeDisplay: CheckoutChangeDisplay;
   statusBanner?: CheckoutStatusBanner | null;
-  primaryAction?: CheckoutPrimaryAction;
   children?: ReactNode;
   className?: string;
 }
@@ -70,7 +52,6 @@ export function CheckoutPaymentStation({
   keypad,
   changeDisplay,
   statusBanner,
-  primaryAction,
   children,
   className,
 }: Props) {
@@ -248,57 +229,25 @@ export function CheckoutPaymentStation({
                     </p>
                   ) : null}
                 </div>
-                {statusBanner.onDismiss ? (
-                  <button
-                    type="button"
-                    onClick={statusBanner.onDismiss}
-                    aria-label={statusBanner.dismissLabel || statusBanner.closeLabel || 'Close'}
-                    className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
               </div>
 
-              {statusBanner.onRetry || statusBanner.onResend || statusBanner.technicalDetails ? (
+              {statusBanner.technicalDetails ? (
                 <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                  {statusBanner.onRetry && statusBanner.retryLabel ? (
-                    <button
-                      type="button"
-                      disabled={statusBanner.retryDisabled}
-                      onClick={statusBanner.onRetry}
-                      className="rounded bg-background/90 px-2 py-0.5 text-[11px] font-semibold text-foreground shadow-xs ring-1 ring-border hover:bg-background disabled:opacity-50"
-                    >
-                      {statusBanner.retryLabel}
-                    </button>
-                  ) : null}
-                  {statusBanner.onResend && statusBanner.resendLabel ? (
-                    <button
-                      type="button"
-                      disabled={statusBanner.resendDisabled}
-                      onClick={statusBanner.onResend}
-                      className="rounded bg-background/90 px-2 py-0.5 text-[11px] font-semibold text-foreground shadow-xs ring-1 ring-border hover:bg-background disabled:opacity-50"
-                    >
-                      {statusBanner.resendLabel}
-                    </button>
-                  ) : null}
-                  {statusBanner.technicalDetails ? (
-                    <button
-                      type="button"
-                      aria-expanded={detailsOpen}
-                      onClick={() =>
-                        setDetailsToken(
-                          detailsOpen ? null : (statusBanner.technicalDetails ?? null),
-                        )
-                      }
-                      className="ms-auto inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium underline-offset-2 hover:underline"
-                    >
-                      <span>{statusBanner.technicalDetailsLabel || 'Technical details'}</span>
-                      <ChevronDown
-                        className={cn('h-3 w-3 transition-transform', detailsOpen && 'rotate-180')}
-                      />
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    aria-expanded={detailsOpen}
+                    onClick={() =>
+                      setDetailsToken(
+                        detailsOpen ? null : (statusBanner.technicalDetails ?? null),
+                      )
+                    }
+                    className="ms-auto inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium underline-offset-2 hover:underline"
+                  >
+                    <span>{statusBanner.technicalDetailsLabel || 'Technical details'}</span>
+                    <ChevronDown
+                      className={cn('h-3 w-3 transition-transform', detailsOpen && 'rotate-180')}
+                    />
+                  </button>
                 </div>
               ) : null}
             </>
@@ -308,18 +257,7 @@ export function CheckoutPaymentStation({
         </div>
 
         {/* Full-Width Primary CTA */}
-        {children ??
-          (primaryAction ? (
-            <Button
-              type="button"
-              onClick={primaryAction.onClick}
-              disabled={primaryAction.disabled}
-              data-testid={primaryAction.testId}
-              className="h-11 w-full shrink-0 text-sm font-bold transition-colors sm:h-12 sm:text-base"
-            >
-              {primaryAction.label}
-            </Button>
-          ) : null)}
+        {children}
       </div>
     </div>
   );

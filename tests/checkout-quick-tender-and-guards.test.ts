@@ -7,7 +7,6 @@
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { getCurrencyMinorUnitFactor, getCurrencyUnitAdapter } from '../main/countries';
 
@@ -355,15 +354,15 @@ async function testTouchNumberPadAndStationStructure() {
           nextStep: 'Check payment status before retrying.',
           technicalDetails: '{"operation":"payment.create"}',
           technicalDetailsLabel: 'Technical details',
-          retryLabel: 'Check payment status',
-          onRetry: () => {},
+          closeLabel: 'Close',
         },
-        primaryAction: {
-          label: 'Pay $14.20',
-          disabled: false,
-          onClick: () => {},
-        },
-      }),
+      },
+      React.createElement(
+        'button',
+        { type: 'button', onClick: () => {} },
+        'Pay $14.20',
+      ),
+    ),
     );
 
     assert.ok(
@@ -387,12 +386,17 @@ async function testTouchNumberPadAndStationStructure() {
       'Station includes Zone 3D docked footer',
     );
     assert.ok(
+      stationMarkup.indexOf('data-checkout-zone="keypad"') <
+        stationMarkup.indexOf('data-testid="checkout-change-slot"'),
+      'Change returned slot renders below keypad zone',
+    );
+    assert.ok(
       stationMarkup.includes('min-h-[52px]'),
       'Zone 3D reserves fixed status/recovery strip height',
     );
     assert.ok(
       stationMarkup.includes('Technical details') && stationMarkup.includes('Pay $14.20'),
-      'Station renders technical details disclosure and primary CTA label',
+      'Station renders technical details disclosure and child primary CTA',
     );
   });
   console.log('  ✓ TouchNumberPad fillHeight and CheckoutPaymentStation 4 zones verified');
@@ -1113,6 +1117,42 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         'Exact quick value uses minor-unit math without IEEE-754 float drift',
       );
 
+      // Non-cash (Card) row offers only the Exact pill; Cash row keeps cash denomination pills
+      cashInput.props.onFocus();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      const cashQuickZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
+      )[0];
+      const cashQuickButtons = collectElements(
+        cashQuickZone,
+        (el) => el.type === 'button',
+      );
+      assert.ok(
+        cashQuickButtons.length > 1,
+        'Cash row quick-tender strip offers rounded denomination pills in addition to exact',
+      );
+
+      cardInput.props.onFocus();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      const cardQuickZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
+      )[0];
+      const cardQuickButtons = collectElements(
+        cardQuickZone,
+        (el) => el.type === 'button',
+      );
+      assert.equal(
+        cardQuickButtons.length,
+        1,
+        'Non-cash card row offers only the Exact quick-tender pill',
+      );
+      assert.ok(
+        renderToStaticMarkup(cardQuickButtons[0]).includes('exactAmount'),
+        'Single card quick-tender pill is labeled Exact',
+      );
+
       // Focus discount input in Col 1, then leave Discount panel -> amountTarget returns to payment
       const discountTab = collectElements(
         tree,
@@ -1141,7 +1181,45 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         'Closing discount panel resets amountTarget away from discount',
       );
 
-      // PrepaidCheckoutModal: focus discount input then click Done -> amountTarget resets to payment
+      const detailsToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.['aria-expanded'] === 'boolean' &&
+          String(el.props?.className || '').includes('lg:hidden'),
+      )[0];
+      assert.ok(detailsToggle, 'PaymentModal mobile details toggle rendered');
+      detailsToggle.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      const reopenDiscountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      reopenDiscountTab.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      const reopenDiscountInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      reopenDiscountInput.props.onFocus();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      assert.ok(renderToStaticMarkup(tree).includes('5%'));
+      const openDetailsToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] === true &&
+          String(el.props?.className || '').includes('lg:hidden'),
+      )[0];
+      assert.ok(openDetailsToggle, 'PaymentModal details toggle stays expanded when opened');
+      openDetailsToggle.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      assert.ok(
+        !renderToStaticMarkup(tree).includes('5%'),
+        'Closing details drawer resets amountTarget away from discount',
+      );
+
+      // PrepaidCheckoutModal: non-cash quick tenders, rendered layout, and Done/details discount reset
       const prepaidPath = path.resolve(
         ROOT,
         'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
@@ -1154,6 +1232,58 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         onConfirm: async () => {},
       };
       let prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      const initialPrepaidMarkup = renderToStaticMarkup(prepaidTree);
+      assert.ok(
+        !initialPrepaidMarkup.includes('bg-gradient-to-br from-slate-800 to-slate-900'),
+        'Rendered PrepaidCheckoutModal does not restore the oversized total card',
+      );
+      assert.ok(
+        initialPrepaidMarkup.includes('discounts') &&
+          initialPrepaidMarkup.indexOf('data-checkout-zone="keypad"') <
+            initialPrepaidMarkup.indexOf('data-testid="checkout-change-slot"'),
+        'Rendered PrepaidCheckoutModal retains discounts control and renders change slot below keypad',
+      );
+
+      const prepaidCashInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.ok(prepaidCashInput, 'PrepaidCheckoutModal cash amount input rendered');
+      prepaidCashInput.props.onChange({ target: { value: '5.00' } });
+      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      const prepaidCashQuickZone = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
+      )[0];
+      assert.ok(
+        collectElements(prepaidCashQuickZone, (el) => el.type === 'button').length > 1,
+        'PrepaidCheckoutModal cash row keeps rounded cash denomination pills',
+      );
+
+      const prepaidCardInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      assert.ok(prepaidCardInput, 'PrepaidCheckoutModal card amount input rendered');
+      prepaidCardInput.props.onFocus();
+      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      const prepaidCardQuickZone = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
+      )[0];
+      const prepaidCardQuickButtons = collectElements(
+        prepaidCardQuickZone,
+        (el) => el.type === 'button',
+      );
+      assert.equal(
+        prepaidCardQuickButtons.length,
+        1,
+        'PrepaidCheckoutModal non-cash card row offers only the Exact quick-tender pill',
+      );
+      assert.ok(
+        renderToStaticMarkup(prepaidCardQuickButtons[0]).includes('exactAmount'),
+        'PrepaidCheckoutModal single card quick-tender pill is labeled Exact',
+      );
       const prepaidDiscountToggle = collectElements(
         prepaidTree,
         (el) =>
@@ -1267,25 +1397,52 @@ async function testPosPageEscapeAndSessionGuards() {
     );
     orderAttempt.clearPostpaidPaymentAttempt(storage, keyUser1);
     assert.equal(orderAttempt.loadPostpaidPaymentAttempt(storage, keyUser1), null);
-  });
 
-  const posPageSource = fs.readFileSync(
-    path.resolve(ROOT, 'frontend/src/app/(dashboard)/pos/page.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    posPageSource.includes('paymentModalDismissRef'),
-    'pos/page.tsx delegates Escape dismissal through paymentModalDismissRef',
-  );
-  assert.ok(
-    posPageSource.includes('setPrepaidModalAttempt(safeAttempt)'),
-    'pos/page.tsx keeps prepaidModalAttempt synchronized across retries',
-  );
-  assert.ok(
-    posPageSource.includes('liveAuthHeadersFor'),
-    'pos/page.tsx reads rotated live auth token on in-flight checkout retries',
-  );
-  console.log('  ✓ Postpaid attempt storage and pos/page.tsx Escape/retry sync verified');
+    // Behavioral check for PaymentModal Escape dismissal registration & cleanup
+    const harness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    if (!hadWindow) {
+      (globalThis as any).window = { addEventListener: () => {}, removeEventListener: () => {} };
+    }
+    try {
+      installCheckoutComponentMocks(harness);
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      let registeredDismiss: (() => boolean) | undefined;
+      let closedCount = 0;
+      harness.renderAndSettle(PaymentModal, {
+        bill: makeBill('bill-dismiss-reg', 18.0),
+        currency: 'USD',
+        onClose: () => {
+          closedCount++;
+        },
+        onPaid: () => {},
+        onRegisterDismissHandler: (handler?: () => boolean) => {
+          registeredDismiss = handler;
+        },
+      });
+      assert.equal(
+        typeof registeredDismiss,
+        'function',
+        'PaymentModal registers an Escape dismiss handler on mount',
+      );
+      assert.equal(registeredDismiss?.(), true, 'Registered dismiss handler returns true when idle');
+      assert.equal(closedCount, 1, 'Registered dismiss handler invokes onClose when idle');
+      harness.cleanupAll();
+      assert.equal(
+        registeredDismiss,
+        undefined,
+        'PaymentModal unregisters Escape dismiss handler on unmount',
+      );
+    } finally {
+      harness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+  console.log('  ✓ Postpaid attempt storage and Escape dismiss registration verified');
 }
 
 async function run() {

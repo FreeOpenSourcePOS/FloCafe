@@ -36,6 +36,78 @@ export function getPrepaidOrderAttemptStorageKey(userId: string): string {
   return `${PREPAID_ATTEMPT_STORAGE_KEY}${ORDER_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
 }
 
+export const POSTPAID_PAYMENT_ATTEMPT_STORAGE_KEY = 'flo.postpaid.payment.attempt';
+
+export interface StoredPostpaidPaymentAttempt {
+  userId: string;
+  storeId?: string | number;
+  billId: string;
+  idempotencyKey: string;
+  paymentFingerprint: string;
+  receiptIdempotencyKey?: string;
+}
+
+/** Postpaid payment attempts are scoped by cashier user, store, and bill id so
+ * switching staff or counters never replays another cashier's pending payment key. */
+export function getPostpaidPaymentAttemptStorageKey(
+  userId: string,
+  storeId: string | number | null | undefined,
+  billId: string,
+): string {
+  const normalizedStore = normalizeAttemptStoreId(storeId) || 'default';
+  return `${POSTPAID_PAYMENT_ATTEMPT_STORAGE_KEY}${ORDER_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}.store.${encodeURIComponent(normalizedStore)}.bill.${encodeURIComponent(billId)}`;
+}
+
+export function loadPostpaidPaymentAttempt(
+  storage: Pick<Storage, 'getItem'> | null | undefined,
+  key: string,
+): StoredPostpaidPaymentAttempt | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredPostpaidPaymentAttempt> | null;
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      typeof parsed.userId !== 'string' ||
+      typeof parsed.billId !== 'string' ||
+      typeof parsed.idempotencyKey !== 'string' ||
+      typeof parsed.paymentFingerprint !== 'string'
+    ) {
+      return null;
+    }
+    return parsed as StoredPostpaidPaymentAttempt;
+  } catch {
+    return null;
+  }
+}
+
+export function savePostpaidPaymentAttempt(
+  storage: Pick<Storage, 'setItem'> | null | undefined,
+  key: string,
+  attempt: StoredPostpaidPaymentAttempt,
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(key, JSON.stringify(attempt));
+  } catch {
+    // Session storage quota/unavailable falls back to in-memory attempt ref.
+  }
+}
+
+export function clearPostpaidPaymentAttempt(
+  storage: Pick<Storage, 'removeItem'> | null | undefined,
+  key: string,
+): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(key);
+  } catch {
+    // Ignore storage cleanup errors.
+  }
+}
+
 export interface CartStateForFingerprint {
   tableId: string | null;
   customerId: number | string | null;

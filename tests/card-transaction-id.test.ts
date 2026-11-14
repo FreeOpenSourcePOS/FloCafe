@@ -151,7 +151,18 @@ function verifyPrepaidCheckoutModalDiscountPreservation(): void {
   const Icon = () => createElement('span', null);
   const thbAdapter = getCurrencyUnitAdapter('THB', 'TH');
   const cart = {
-    items: [{ id: 'item-1', productId: 'prod-ctid', name: 'Coffee', price: 60, quantity: 1 }],
+    items: [
+      {
+        id: 'item-1',
+        productId: 'prod-ctid',
+        name: 'Coffee',
+        price: 60,
+        product: { name: 'Coffee', price: 60 },
+        quantity: 1,
+        addons: [],
+        special_instructions: '',
+      },
+    ],
     customer: null,
     customerId: null,
     orderType: 'takeaway' as const,
@@ -183,6 +194,7 @@ function verifyPrepaidCheckoutModalDiscountPreservation(): void {
       ChevronDown: Icon,
       Banknote: Icon,
       CreditCard: Icon,
+      Send: Icon,
     },
     '@/components/ui/button': {
       Button: ({ children, variant: _variant, size: _size, ...props }: any) =>
@@ -238,6 +250,7 @@ function verifyPrepaidCheckoutModalDiscountPreservation(): void {
       useAuthStore: () => ({ currentTenant: { currency: 'THB', country: 'TH' } }),
     },
     'use-intl': {
+      useLocale: () => 'en-US',
       useTranslations: () => (key: string, values?: Record<string, unknown>) =>
         values?.amount !== undefined ? `${key}:${values.amount}` : key,
     },

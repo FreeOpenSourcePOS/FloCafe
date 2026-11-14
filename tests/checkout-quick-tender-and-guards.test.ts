@@ -1500,7 +1500,11 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       const uncommittedButtons = findChargeButtons(uncommittedTree);
       assert.equal(uncommittedButtons.length, 3, 'All three charge toggle buttons render');
       for (const btn of uncommittedButtons) {
-        assert.equal(Boolean(btn.props.disabled), false, 'Charge toggle enabled before order commit');
+        assert.equal(
+          Boolean(btn.props.disabled),
+          false,
+          'Charge toggle enabled before order commit',
+        );
         btn.props.onClick();
       }
       assert.deepEqual(chargeMutations, [
@@ -1625,14 +1629,26 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         discountTree,
         (el) => el.type === 'button' && renderToStaticMarkup(el).includes('remove'),
       )[0];
-      assert.equal(committedDiscValInput.props.disabled, true, 'Discount value disabled after commit');
+      assert.equal(
+        committedDiscValInput.props.disabled,
+        true,
+        'Discount value disabled after commit',
+      );
       assert.equal(
         committedDiscReasonInput.props.disabled,
         true,
         'Discount reason disabled after commit',
       );
-      assert.equal(committedFlatBtn.props.disabled, true, 'Discount type toggle disabled after commit');
-      assert.equal(committedRemoveBtn.props.disabled, true, 'Discount remove disabled after commit');
+      assert.equal(
+        committedFlatBtn.props.disabled,
+        true,
+        'Discount type toggle disabled after commit',
+      );
+      assert.equal(
+        committedRemoveBtn.props.disabled,
+        true,
+        'Discount remove disabled after commit',
+      );
 
       committedFlatBtn.props.onClick();
       committedDiscValInput.props.onFocus();

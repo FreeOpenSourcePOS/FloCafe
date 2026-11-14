@@ -75,7 +75,9 @@ export default function TouchNumberPad({
   return (
     <div
       className={cn(
-        fillHeight ? 'grid h-full grid-cols-4 grid-rows-4 gap-2' : 'grid grid-cols-4 gap-2',
+        fillHeight
+          ? 'grid h-full grid-cols-4 grid-rows-4 gap-2 [@media(max-height:660px)]:gap-1'
+          : 'grid grid-cols-4 gap-2',
         className,
       )}
       aria-label={ariaLabel}

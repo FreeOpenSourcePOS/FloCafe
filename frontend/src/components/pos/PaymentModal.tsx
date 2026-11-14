@@ -2060,7 +2060,7 @@ export default function PaymentModal({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3">
       <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden bg-card shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl">
         {/* Compact Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-5">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-foreground sm:text-lg">{t('payment')}</h2>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -3153,7 +3153,7 @@ export default function PaymentModal({
           </div>
 
           {/* Column 3: Full-Height 4-Zone Checkout Payment Station (or Receipt Share when settled) */}
-          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 sm:p-4 lg:overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto">
             {justPaid ? (
               <div className="flex h-full flex-col justify-center space-y-3">
                 <div
@@ -3237,7 +3237,7 @@ export default function PaymentModal({
                 <Button
                   onClick={handlePay}
                   disabled={payCtaDisabled}
-                  className="h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12"
+                  className="h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11"
                   size="lg"
                 >
                   {payCtaLabel}

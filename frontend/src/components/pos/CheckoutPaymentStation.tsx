@@ -79,12 +79,15 @@ export function CheckoutPaymentStation({
   return (
     <div
       data-testid="checkout-payment-station"
-      className={cn('relative flex h-full min-h-0 flex-col gap-2', className)}
+      className={cn(
+        'relative flex h-full min-h-0 flex-col gap-2 [@media(max-height:660px)]:gap-1.5',
+        className,
+      )}
     >
       {/* Zone 3A: Live Tender Readout Card */}
       <div
         data-checkout-zone="readout"
-        className="shrink-0 rounded-xl border border-border bg-muted/25 px-3 py-2 sm:px-3.5 sm:py-2.5"
+        className="shrink-0 rounded-xl border border-border bg-muted/25 px-3 py-2 sm:px-3.5 sm:py-2.5 [@media(max-height:660px)]:py-1.5"
       >
         <div className="flex h-5 items-center justify-between gap-2">
           <span className="truncate text-xs font-medium text-muted-foreground">
@@ -118,7 +121,7 @@ export function CheckoutPaymentStation({
       {/* Zone 3B: Fixed-height Contextual Quick-Tender Strip */}
       <div
         data-checkout-zone="quick-tender"
-        className="grid h-10 shrink-0 grid-cols-4 gap-1.5 sm:h-11"
+        className="grid h-10 shrink-0 grid-cols-4 gap-1.5 sm:h-11 [@media(max-height:660px)]:h-9"
       >
         {quickTenders.length > 0 ? (
           quickTenders.slice(0, 4).map((item, idx) => (
@@ -128,7 +131,7 @@ export function CheckoutPaymentStation({
               disabled={item.disabled}
               onClick={item.onClick}
               className={cn(
-                'flex h-full min-h-10 flex-col items-center justify-center rounded-lg border px-1.5 text-center leading-tight transition-colors sm:min-h-11',
+                'flex h-full min-h-10 flex-col items-center justify-center rounded-lg border px-1.5 text-center leading-tight transition-colors sm:min-h-11 [@media(max-height:660px)]:min-h-9',
                 item.active
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-card text-foreground hover:bg-muted',
@@ -154,13 +157,16 @@ export function CheckoutPaymentStation({
       {/* Zone 3C: Responsive Keypad */}
       <div
         data-checkout-zone="keypad"
-        className="flex min-h-[176px] flex-1 flex-col justify-center sm:min-h-[188px] lg:min-h-[196px] lg:max-h-[336px]"
+        className="flex min-h-[176px] flex-1 flex-col justify-center sm:min-h-[188px] lg:min-h-[196px] [@media(max-height:660px)]:min-h-[188px] lg:max-h-[336px]"
       >
         {keypad}
       </div>
 
       {/* Zone 3D: Docked Change, Fixed Status/Recovery Strip & Primary Submit CTA */}
-      <div data-checkout-zone="footer" className="relative flex shrink-0 flex-col gap-1.5">
+      <div
+        data-checkout-zone="footer"
+        className="relative flex shrink-0 flex-col gap-1.5 [@media(max-height:660px)]:gap-1"
+      >
         {detailsOpen && statusBanner?.technicalDetails ? (
           <div
             role="region"
@@ -190,7 +196,7 @@ export function CheckoutPaymentStation({
         <div
           data-testid="checkout-change-slot"
           className={cn(
-            'flex h-10 items-center justify-between rounded-lg border px-3 text-sm sm:h-11',
+            'flex h-10 items-center justify-between rounded-lg border px-3 text-sm sm:h-11 [@media(max-height:660px)]:h-9',
             changeDisplay.visible
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
               : 'border-border/50 bg-muted/15 text-muted-foreground',
@@ -209,7 +215,7 @@ export function CheckoutPaymentStation({
           data-testid="checkout-status-strip"
           role={isAlertTone ? 'alert' : undefined}
           className={cn(
-            'flex h-[60px] min-h-[52px] flex-col justify-center gap-1 overflow-hidden rounded-lg border px-2.5 py-1.5 sm:h-[68px]',
+            'flex h-[60px] min-h-[52px] flex-col justify-center gap-1 overflow-hidden rounded-lg border px-2.5 py-1.5 sm:h-[68px] [@media(max-height:660px)]:h-12 [@media(max-height:660px)]:min-h-12 [@media(max-height:660px)]:py-1',
             bannerSurfaceClass,
           )}
         >

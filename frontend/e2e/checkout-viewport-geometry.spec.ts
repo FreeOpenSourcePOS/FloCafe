@@ -324,6 +324,26 @@ test('PrepaidCheckoutModal maintains 3-column geometry across viewports and stat
       await modal.getByRole('button', { name: /Back/i }).first().click();
     }
 
+    await page.setViewportSize({ width: 1024, height: 600 });
+    const prepaidCompactFit = await shell.evaluate((el) => {
+      const shellRect = el.getBoundingClientRect();
+      const cta = el.querySelector('[data-checkout-zone="footer"] > button:last-child');
+      const ctaRect = cta ? cta.getBoundingClientRect() : null;
+      const btns = Array.from(
+        el.querySelectorAll('[data-checkout-zone="keypad"] button'),
+      ) as HTMLElement[];
+      return {
+        ctaBottom: ctaRect ? ctaRect.bottom : Infinity,
+        shellBottom: shellRect.bottom,
+        minKeyHeight: btns.length > 0 ? Math.min(...btns.map((b) => b.getBoundingClientRect().height)) : 0,
+      };
+    });
+    expect(
+      prepaidCompactFit.ctaBottom,
+      '1024x600 PrepaidCheckoutModal primary CTA must not clip below modal shell',
+    ).toBeLessThanOrEqual(prepaidCompactFit.shellBottom + 1);
+    expect(prepaidCompactFit.minKeyHeight, '1024x600 keypad height >= 44').toBeGreaterThanOrEqual(44);
+
     await modal.getByRole('button', { name: 'Close' }).first().click();
     await expect(modal).toBeHidden();
   } finally {
@@ -454,16 +474,30 @@ test('PaymentModal holds zero-scroll and <=1px shift with 20 items, 20-payer Equ
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(compactVp);
-      const minKeyHeight = await modal.evaluate((el) => {
+      const compactMetrics = await modal.evaluate((el) => {
+        const shellRect = el.getBoundingClientRect();
+        const cta = el.querySelector('[data-checkout-zone="footer"] > button:last-child');
+        const ctaRect = cta ? cta.getBoundingClientRect() : null;
         const btns = Array.from(
           el.querySelectorAll('[data-checkout-zone="keypad"] button'),
         ) as HTMLElement[];
-        return btns.length > 0 ? Math.min(...btns.map((b) => b.getBoundingClientRect().height)) : 0;
+        return {
+          minKeyHeight:
+            btns.length > 0 ? Math.min(...btns.map((b) => b.getBoundingClientRect().height)) : 0,
+          ctaBottom: ctaRect ? ctaRect.bottom : Infinity,
+          shellBottom: shellRect.bottom,
+        };
       });
       expect(
-        minKeyHeight,
+        compactMetrics.minKeyHeight,
         `${compactVp.width}x${compactVp.height} keypad height >= 44`,
       ).toBeGreaterThanOrEqual(44);
+      if (compactVp.width >= 1024) {
+        expect(
+          compactMetrics.ctaBottom,
+          `${compactVp.width}x${compactVp.height} PaymentModal primary CTA must not clip below modal shell`,
+        ).toBeLessThanOrEqual(compactMetrics.shellBottom + 1);
+      }
     }
   } finally {
     await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);

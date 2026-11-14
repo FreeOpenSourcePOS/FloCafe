@@ -718,17 +718,32 @@ async function runTests() {
           );
         }
 
-        networkTestPrintOverride = async () => ({
-          ok: false,
-          detail: 'Print cancelled during shutdown',
-        });
-        const unknownById = await request(app).post(`/api/printers/${timeoutId}/test`).send({});
-        assertEqualOrThrow(unknownById.status, 502, 'POST /:id/test returns 502 on unknown detail');
-        assertEqualOrThrow(
-          unknownById.body.failure_class,
-          'offline',
-          'unknown dispatch detail falls back to probe cause failure_class',
-        );
+        for (const failureClass of [undefined, 'unknown'] as const) {
+          networkTestPrintOverride = async () => ({
+            ok: false,
+            detail: 'Print cancelled during shutdown',
+            ...(failureClass ? { failureClass } : {}),
+          });
+          const unknownById = await request(app).post(`/api/printers/${timeoutId}/test`).send({});
+          assertEqualOrThrow(unknownById.status, 502, 'POST /:id/test returns 502 on unknown detail');
+          assertEqualOrThrow(
+            unknownById.body.failure_class,
+            'offline',
+            `unknown dispatch detail (failureClass=${String(failureClass)}) falls back to probe cause failure_class`,
+          );
+
+          const unknownActive = await request(app).post('/api/printers/test-active').send({});
+          assertEqualOrThrow(
+            unknownActive.status,
+            502,
+            'POST /test-active returns 502 on unknown detail',
+          );
+          assertEqualOrThrow(
+            unknownActive.body.failure_class,
+            'offline',
+            `POST /test-active unknown dispatch detail (failureClass=${String(failureClass)}) falls back to probe cause failure_class`,
+          );
+        }
       } finally {
         networkTestPrintOverride = null;
       }

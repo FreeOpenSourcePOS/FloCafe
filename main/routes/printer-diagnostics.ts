@@ -67,7 +67,7 @@ export function testPrintFailureClass(
   result: { ok: boolean; detail?: string; failureClass?: string },
   cause: PrinterStatusBody['cause'],
 ): string {
-  if (result.failureClass) return result.failureClass;
+  if (result.failureClass && result.failureClass !== 'unknown') return result.failureClass;
   if (!result.ok) {
     const detailClass = classifyPrintFailure(result.detail);
     if (detailClass !== 'unknown') return detailClass;

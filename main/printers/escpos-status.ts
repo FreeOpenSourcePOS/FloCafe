@@ -253,12 +253,13 @@ export async function probeNetworkPrinterStatus(
             }
             const done = () => {
               clearTimeout(closeTimer);
+              socket.destroy();
               resolve();
             };
             const closeTimer = setTimeout(done, 100);
             closeTimer.unref?.();
             socket.once('close', done);
-            socket.destroy();
+            socket.end();
           });
         }
         return result;

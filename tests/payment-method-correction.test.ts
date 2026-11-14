@@ -1463,6 +1463,16 @@ async function main() {
       true,
       'Idempotency-Key replay after shift close sets idempotentReplay = true',
     );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.bill.payment_method_correction?.correctable,
+      false,
+      'Idempotency-Key replay after shift close refreshes payment_method_correction.correctable to false',
+    );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.bill.payment_method_correction?.reason,
+      'shift_closed',
+      'Idempotency-Key replay after shift close refreshes payment_method_correction.reason to shift_closed',
+    );
 
     // ── 12. Open shift 2, pay splitBillB, and verify split-sibling guard ──
     const openSession2Res = await api(baseUrl, '/api/cash-sessions/open', {

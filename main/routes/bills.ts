@@ -6333,7 +6333,15 @@ router.patch(
               );
             }
             const cached = JSON.parse(existingIdem.response_json);
-            return { ...cached, idempotentReplay: true };
+            const refreshedBill =
+              cached?.bill && typeof cached.bill === 'object'
+                ? withPaymentMethodCorrection(db, bill)
+                : cached?.bill;
+            return {
+              ...cached,
+              ...(refreshedBill !== undefined ? { bill: refreshedBill } : {}),
+              idempotentReplay: true,
+            };
           }
         }
 

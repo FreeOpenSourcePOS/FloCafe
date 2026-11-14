@@ -594,9 +594,6 @@ function installCheckoutComponentMocks(
         MAX_CHECKS: 20,
       };
     }
-    if (request === '@/components/pos/TaxBreakdown') {
-      return { __esModule: true, default: () => null };
-    }
     if (request === '@/lib/api') {
       const apiObj = {
         get: async (url: string) => {
@@ -1217,6 +1214,34 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       assert.ok(
         !renderToStaticMarkup(tree).includes('5%'),
         'Closing details drawer resets amountTarget away from discount',
+      );
+
+      // Opening Tax sub-panel shows the total header and each component row once (no duplicate rows)
+      const taxBillProps = {
+        ...floatProps,
+        bill: {
+          ...makeBill('bill-tax', 57.78),
+          tax_amount: 2.75,
+          tax_breakdown: [{ title: 'VAT', rate: 5, amount: 2.75 }],
+        },
+      };
+      tree = harness.renderAndSettle(PaymentModal, taxBillProps);
+      const pmTaxToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.['aria-expanded'] === 'boolean' &&
+          !String(el.props?.className || '').includes('lg:hidden') &&
+          renderToStaticMarkup(el).includes('tax'),
+      )[0];
+      assert.ok(pmTaxToggle, 'PaymentModal Tax panel toggle rendered');
+      pmTaxToggle.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, taxBillProps);
+      const pmTaxMarkup = renderToStaticMarkup(tree);
+      assert.equal(
+        pmTaxMarkup.split('VAT (5%)').length - 1,
+        1,
+        'PaymentModal Tax sub-panel renders each tax component row once',
       );
 
       // PrepaidCheckoutModal: non-cash quick tenders, rendered layout, and Done/details discount reset

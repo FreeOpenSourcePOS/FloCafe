@@ -22,7 +22,6 @@ import api, {
 } from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Order } from '@/lib/types';
-import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import {
   SplitCheckModal,
   MIN_CHECKS as MIN_EQUAL_SHARE_PAYERS,
@@ -2347,15 +2346,10 @@ export default function PaymentModal({
                 </div>
               ) : activeCol1Panel === 'tax' ? (
                 <div className="space-y-2">
-                  <TaxBreakdown
-                    taxAmount={Number(bill.tax_amount)}
-                    taxBreakdown={taxComponents.map((component) => ({
-                      title: component.title,
-                      rate: component.rate ?? 0,
-                      amount: component.amount,
-                    }))}
-                    theme="light"
-                  />
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
+                    <span>{t('tax')}</span>
+                    <span className="tabular-nums">{currencyFmt(Number(bill.tax_amount))}</span>
+                  </div>
                   {taxComponents.length > 0 && (
                     <div className="space-y-1.5 border-t border-border pt-2 text-xs">
                       {taxComponents.map((component, idx) => (

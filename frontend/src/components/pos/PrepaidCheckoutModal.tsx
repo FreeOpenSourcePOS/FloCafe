@@ -11,7 +11,6 @@ import { useAuthStore } from '@/store/auth';
 import { useTaxPreview } from '@/hooks/use-tax-preview';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import type { Bill } from '@/lib/types';
-import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -1239,11 +1238,10 @@ export default function PrepaidCheckoutModal({
                 </div>
               ) : activeCol1Panel === 'tax' && preview ? (
                 <div className="space-y-2">
-                  <TaxBreakdown
-                    taxAmount={preview.taxAmount}
-                    taxBreakdown={preview.taxBreakdown}
-                    theme="light"
-                  />
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
+                    <span>{t('tax')}</span>
+                    <span className="tabular-nums">{currencyFmt(preview.taxAmount)}</span>
+                  </div>
                   {preview.taxBreakdown.length > 0 ? (
                     <div className="space-y-1.5 border-t border-border pt-2 text-xs">
                       {preview.taxBreakdown.map((item, idx) => (

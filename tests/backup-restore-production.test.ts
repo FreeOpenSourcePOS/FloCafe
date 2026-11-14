@@ -363,7 +363,7 @@ async function run() {
       walSourceDb.pragma('journal_mode = WAL');
       walSourceDb.pragma('wal_autocheckpoint = 0');
       walSourceDb.exec('DROP TABLE _flo_meta');
-      walSourceDb.pragma(`user_version = ${currentVersion}`);
+      walSourceDb.pragma(`user_version = ${currentVersion - 1}`);
       fs.copyFileSync(walSidecarSource, walSidecarTarget);
       fs.copyFileSync(`${walSidecarSource}-wal`, `${walSidecarTarget}-wal`);
     } finally {
@@ -373,7 +373,7 @@ async function run() {
     const walTargetSidecarBytes = fs.readFileSync(`${walSidecarTarget}-wal`);
     assert.equal(
       getSchemaVersionFromBackup(walSidecarTarget),
-      currentVersion,
+      currentVersion - 1,
       'probing a WAL-mode backup with an uncheckpointed -wal sidecar reads committed version',
     );
     assert.equal(
@@ -390,6 +390,50 @@ async function run() {
       fs.readFileSync(`${walSidecarTarget}-wal`),
       walTargetSidecarBytes,
       'probing a -wal sidecar source leaves the -wal bytes untouched',
+    );
+
+    const preLedgerLegacyPath = path.join(testDir, 'pre-v85-stocked-legacy.db');
+    fs.copyFileSync(
+      path.join(__dirname, 'fixtures/upgrade-snapshots/schema-v56-pre-tax-registration-rename.db'),
+      preLedgerLegacyPath,
+    );
+    {
+      const preLedgerDb = new Database(preLedgerLegacyPath);
+      preLedgerDb
+        .prepare(
+          "INSERT INTO users (id, name, email, password, role) VALUES ('pre-v85-owner', 'Legacy Owner', 'pre-v85@test.local', 'test-hash', 'owner')",
+        )
+        .run();
+      preLedgerDb
+        .prepare("INSERT INTO categories (id, name) VALUES ('pre-v85-cat', 'Pre-v85 Category')")
+        .run();
+      preLedgerDb
+        .prepare(
+          "INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity) VALUES ('pre-v85-stocked', 'pre-v85-cat', 'Pre-v85 Stocked', 120, 1, 7)",
+        )
+        .run();
+      preLedgerDb.close();
+    }
+    const preLedgerRestore = restoreBackup(preLedgerLegacyPath, false);
+    assert.equal(
+      preLedgerRestore.success,
+      true,
+      `metadata-free pre-v85 backup with positive stock_quantity restores (${preLedgerRestore.error || ''})`,
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare("SELECT stock_quantity FROM products WHERE id = 'pre-v85-stocked'")
+          .get() as { stock_quantity: number } | undefined
+      )?.stock_quantity,
+      7,
+      'pre-v85 stocked product survives forward migration',
+    );
+    assert.ok(
+      getDatabase()
+        .prepare("SELECT id FROM inventory_movements WHERE product_id = 'pre-v85-stocked'")
+        .get(),
+      'forward migration backfills inventory_movements for pre-v85 stocked product',
     );
 
     // The selected source directory may be read-only (USB/image/network

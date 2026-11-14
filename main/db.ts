@@ -6409,7 +6409,10 @@ export function restoreBackup(
             error: 'Backup is missing required table(s): inventory_movements',
           };
         }
-        const inventoryError = validateInventoryLedgerDatabase(stagedDb);
+        const inventoryError =
+          backupSchemaVersion < 85 && !stagedTables.has('inventory_movements')
+            ? validatePreLedgerBackupInventory(stagedDb, stagedTables)
+            : validateInventoryLedgerDatabase(stagedDb);
         if (inventoryError) {
           return {
             success: false,

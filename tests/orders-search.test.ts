@@ -1194,6 +1194,19 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       { id: 702, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
     ],
   };
+  const order104 = {
+    id: 104,
+    order_number: 'ORD-104',
+    status: 'pending',
+    type: 'takeaway',
+    scheduled_for: '2026-01-01 05:00:00',
+    release_status: 'scheduled',
+    subtotal: 25,
+    total: 25,
+    created_at: '2026-01-01 00:03:00',
+    items: [],
+    bill: { id: 801, order_id: 104, total: 25, balance: 25, payment_status: 'unpaid' },
+  };
   let activeOrders: Array<Record<string, any>> = [
     order101,
     {
@@ -1207,6 +1220,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       items: [],
     },
     order103,
+    order104,
   ];
   const completedOrder = {
     id: 201,
@@ -1325,13 +1339,37 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
               },
             };
           }
-          if (url === '/bills/501' || url === '/bills/502' || url === '/bills/701') {
-            const id = url.endsWith('/502') ? 502 : url.endsWith('/701') ? 701 : 501;
-            const orderId = id === 701 ? 103 : 101;
-            const paymentStatus = id === 701 ? 'unpaid' : 'paid';
+          if (url === '/orders/104') {
+            await new Promise((r) => setTimeout(r, 40));
             return {
               data: {
-                bill: { id, order_id: orderId, total: 20, balance: id === 701 ? 15 : 0, payment_status: paymentStatus },
+                order: {
+                  ...order104,
+                  status: 'pending',
+                  bill: { id: 801, order_id: 104, total: 25, balance: 0, payment_status: 'paid' },
+                },
+              },
+            };
+          }
+          if (url === '/bills/501' || url === '/bills/502' || url === '/bills/701' || url === '/bills/801') {
+            const id = url.endsWith('/502')
+              ? 502
+              : url.endsWith('/701')
+                ? 701
+                : url.endsWith('/801')
+                  ? 801
+                  : 501;
+            const orderId = id === 701 ? 103 : id === 801 ? 104 : 101;
+            const paymentStatus = id === 701 || id === 801 ? 'unpaid' : 'paid';
+            return {
+              data: {
+                bill: {
+                  id,
+                  order_id: orderId,
+                  total: id === 801 ? 25 : 20,
+                  balance: id === 701 ? 15 : id === 801 ? 25 : 0,
+                  payment_status: paymentStatus,
+                },
               },
             };
           }
@@ -1718,7 +1756,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       assert.ok(paymentEl, 'PaymentModal opens with bill 501');
 
       // Keep a stale active order 101 around while verifying snapshot precedence, then drop on refresh
-      activeOrders = [activeOrders[1], activeOrders[2]];
+      activeOrders = activeOrders.filter((o) => o.id !== 101);
       await paymentEl.props.onPaid();
       tree = await flushAll(50);
 
@@ -1793,6 +1831,39 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         splitDetailAfter.props.settledTransition,
         null,
         'Split-bill partial payment keeps settledTransition null while sibling bill remains unpaid',
+      );
+
+      // 7. When fetchOrders resolves before refreshSelectedOrder for an order that stays pending in the list,
+      // fetchOrders still reconciles settledTransition to null instead of leaving the completion banner stuck.
+      const masterListScheduled = collectElements(tree, (el) => el.type === MasterListStub)[0];
+      masterListScheduled.props.onSelect(104);
+      tree = renderPage();
+      const scheduledDetail = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      await scheduledDetail.props.onPayBill(order104.bill);
+      tree = renderPage();
+      const scheduledPaymentModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(scheduledPaymentModal, 'PaymentModal opens for scheduled order bill 801');
+      order104.bill = { ...order104.bill, balance: 0, payment_status: 'paid' };
+      await scheduledPaymentModal.props.onPaid();
+      tree = await flushAll(10);
+      const scheduledDetailBeforeLookup = collectElements(
+        tree,
+        (el) => el.type === DetailPanelStub,
+      )[0];
+      assert.equal(
+        scheduledDetailBeforeLookup.props.settledTransition,
+        null,
+        'fetchOrders reconciles settledTransition to null when an unreleased paid order remains pending in list',
+      );
+      tree = await flushAll(60);
+      const scheduledDetailAfterLookup = collectElements(
+        tree,
+        (el) => el.type === DetailPanelStub,
+      )[0];
+      assert.equal(
+        scheduledDetailAfterLookup.props.settledTransition,
+        null,
+        'settledTransition stays null after slower refreshSelectedOrder settles',
       );
     } finally {
       for (const entry of effectEntries) {

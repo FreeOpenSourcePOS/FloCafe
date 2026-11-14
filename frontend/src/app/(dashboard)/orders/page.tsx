@@ -556,6 +556,23 @@ export default function OrdersPage() {
     }
   };
 
+  const reconcileSettledTransition = (refreshedOrder: Order) => {
+    const stillHasPayableBills = getOrderBills(refreshedOrder).some(isBillPayableForCheckout);
+    setSettledTransition((prev) => {
+      if (!prev || prev.orderId !== refreshedOrder.id) return prev;
+      if (
+        prev.kind === 'completed' &&
+        (stillHasPayableBills || refreshedOrder.status !== 'completed')
+      ) {
+        return null;
+      }
+      if (prev.kind === 'cancelled' && refreshedOrder.status !== 'cancelled') {
+        return null;
+      }
+      return prev;
+    });
+  };
+
   const redispatchedRefreshSelectedOrderRef = useRef<Promise<boolean> | null>(null);
   const refreshSelectedOrder = (orderId: number): Promise<boolean> => {
     if (selectedOrderLookupInProgressRef.current === orderId) {
@@ -580,17 +597,7 @@ export default function OrdersPage() {
         setSelectedOrderMissing(!refreshedOrder);
         setSelectedOrderNotInCurrentList(Boolean(refreshedOrder));
         if (refreshedOrder) {
-          const stillHasPayableBills = getOrderBills(refreshedOrder).some(isBillPayableForCheckout);
-          setSettledTransition((prev) => {
-            if (!prev || prev.orderId !== orderId) return prev;
-            if (
-              prev.kind === 'completed' &&
-              (stillHasPayableBills || refreshedOrder.status !== 'completed')
-            ) {
-              return null;
-            }
-            return prev;
-          });
+          reconcileSettledTransition(refreshedOrder);
         }
         if (refreshedOrder?.bill?.id && !fetchedBillIdsRef.current.has(refreshedOrder.bill.id)) {
           fetchedBillIdsRef.current.add(refreshedOrder.bill.id);
@@ -734,6 +741,7 @@ export default function OrdersPage() {
           setSelectedOrderSnapshot(refreshedSelection);
           setSelectedOrderNotInCurrentList(false);
           setSelectedOrderMissing(false);
+          reconcileSettledTransition(refreshedSelection);
         } else if (
           cursor === undefined &&
           (refreshLoadedPages || !hasLoadedOlderOrdersRef.current)

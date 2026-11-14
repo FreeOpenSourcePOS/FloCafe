@@ -10,6 +10,7 @@ import { getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 import { printerService } from '@/lib/printer/PrinterService';
 import { displayAmountToCents } from '@/lib/money';
+import { cashSessionCloseErrorKey } from '@/lib/cash-session-failure';
 
 /** Open cash session row plus the live expected figure, from
  *  GET /api/cash-sessions/current. The endpoint answers 200 with `null` when
@@ -256,11 +257,11 @@ export function useCashSession() {
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
     } catch (err: unknown) {
-      if (
-        axios.isAxiosError(err) &&
-        err.response?.data?.display_code === 'session_owner_required'
-      ) {
-        setSubmitError(t('shiftCloseOwnerRequired'));
+      const messageKey = axios.isAxiosError(err)
+        ? cashSessionCloseErrorKey(err.response?.data)
+        : null;
+      if (messageKey) {
+        setSubmitError(t(messageKey));
       } else {
         setSubmitError(
           axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Close failed',

@@ -1190,8 +1190,22 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     created_at: '2026-01-01 00:02:00',
     items: [],
     bills: [
-      { id: 701, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
-      { id: 702, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
+      {
+        id: 701,
+        order_id: 103,
+        total: 15,
+        balance: 15,
+        payment_status: 'unpaid',
+        split_group_id: 'sg-1',
+      },
+      {
+        id: 702,
+        order_id: 103,
+        total: 15,
+        balance: 15,
+        payment_status: 'unpaid',
+        split_group_id: 'sg-1',
+      },
     ],
   };
   const order104 = {
@@ -1332,8 +1346,22 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
                   ...order103,
                   status: 'pending',
                   bills: [
-                    { id: 701, order_id: 103, total: 15, balance: 0, payment_status: 'paid', split_group_id: 'sg-1' },
-                    { id: 702, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
+                    {
+                      id: 701,
+                      order_id: 103,
+                      total: 15,
+                      balance: 0,
+                      payment_status: 'paid',
+                      split_group_id: 'sg-1',
+                    },
+                    {
+                      id: 702,
+                      order_id: 103,
+                      total: 15,
+                      balance: 15,
+                      payment_status: 'unpaid',
+                      split_group_id: 'sg-1',
+                    },
                   ],
                 },
               },
@@ -1351,7 +1379,12 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
               },
             };
           }
-          if (url === '/bills/501' || url === '/bills/502' || url === '/bills/701' || url === '/bills/801') {
+          if (
+            url === '/bills/501' ||
+            url === '/bills/502' ||
+            url === '/bills/701' ||
+            url === '/bills/801'
+          ) {
             const id = url.endsWith('/502')
               ? 502
               : url.endsWith('/701')
@@ -1391,7 +1424,9 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         },
         post: async (url: string) => {
           if (url === '/bills/generate') {
-            return { data: { bill: { id: 501, order_id: 101, total: 20, payment_status: 'unpaid' } } };
+            return {
+              data: { bill: { id: 501, order_id: 101, total: 20, payment_status: 'unpaid' } },
+            };
           }
           return { data: {} };
         },
@@ -1525,9 +1560,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
           states.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
           setters.push((next: unknown) => {
             states[idx] =
-              typeof next === 'function'
-                ? (next as (prev: unknown) => unknown)(states[idx])
-                : next;
+              typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
           });
         }
         return [states[idx], setters[idx]];
@@ -1610,7 +1643,10 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
           collectElements(b, (c) => c.type === 'span' && c.props?.children === 'orders.active')
             .length > 0,
       );
-      assert.ok(completedTab && cancelledTab && activeTab, 'Completed, Cancelled, and Active tabs present');
+      assert.ok(
+        completedTab && cancelledTab && activeTab,
+        'Completed, Cancelled, and Active tabs present',
+      );
 
       completedTab.props.onClick();
       renderPage();
@@ -1720,7 +1756,10 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       );
 
       // Clear search and switch back to Active for post-checkout & snapshot print test
-      collectElements(tree, (el) => el.props?.['data-testid'] === 'orders-clear-filters')[0].props.onClick();
+      collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'orders-clear-filters',
+      )[0].props.onClick();
       renderPage();
       tree = await flushAll(400);
       const activeBtn2 = collectElements(

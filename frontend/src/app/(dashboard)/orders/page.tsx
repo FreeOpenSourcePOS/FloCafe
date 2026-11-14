@@ -137,10 +137,7 @@ function computeNextListOrderId(list: Order[], currentOrderId: number): number |
     return list.find((o) => o.id !== currentOrderId)?.id ?? null;
   }
   return (
-    list[idx + 1]?.id ??
-    list[idx - 1]?.id ??
-    list.find((o) => o.id !== currentOrderId)?.id ??
-    null
+    list[idx + 1]?.id ?? list[idx - 1]?.id ?? list.find((o) => o.id !== currentOrderId)?.id ?? null
   );
 }
 
@@ -267,12 +264,7 @@ export default function OrdersPage() {
   ordersFiltersRef.current = filters;
   const tabFilterRef = useRef(tabFilter);
   tabFilterRef.current = tabFilter;
-  const ordersFilterKey = JSON.stringify([
-    tabFilter,
-    filters.search,
-    filters.table,
-    filters.type,
-  ]);
+  const ordersFilterKey = JSON.stringify([tabFilter, filters.search, filters.table, filters.type]);
   const ordersFilterKeyRef = useRef(ordersFilterKey);
   ordersFilterKeyRef.current = ordersFilterKey;
   const previousOrdersFilterKeyRef = useRef(ordersFilterKey);
@@ -1380,7 +1372,11 @@ export default function OrdersPage() {
       setSettledTransition({ orderId: paidOrderId, kind: 'completed', nextOrderId });
     }
     void fetchOrders(undefined, { refreshLoadedPages: true });
-    if (paidOrderId !== null && Number.isFinite(paidOrderId) && selectedOrderIdRef.current === paidOrderId) {
+    if (
+      paidOrderId !== null &&
+      Number.isFinite(paidOrderId) &&
+      selectedOrderIdRef.current === paidOrderId
+    ) {
       void refreshSelectedOrder(paidOrderId);
     }
     if (bill?.id) {
@@ -2067,8 +2063,7 @@ export default function OrdersPage() {
   );
 
   const heldCount = Object.keys(heldOrdersStore.orders).length;
-  const hasActiveFilters =
-    filters.search !== '' || filters.type !== '' || filters.table !== '';
+  const hasActiveFilters = filters.search !== '' || filters.type !== '' || filters.table !== '';
 
   const renderEmptyOrdersState = () => {
     if (
@@ -2372,9 +2367,7 @@ export default function OrdersPage() {
               orderNotInCurrentList={selectedOrderNotInCurrentList}
               orderMissing={selectedOrderMissing}
               settledTransition={
-                settledTransition &&
-                selectedOrder &&
-                settledTransition.orderId === selectedOrder.id
+                settledTransition && selectedOrder && settledTransition.orderId === selectedOrder.id
                   ? settledTransition.kind
                   : null
               }

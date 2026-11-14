@@ -1099,10 +1099,7 @@ export function OrderDetailPanel({ onBack, ...props }: OrderDetailPanelProps) {
           className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-800/50 dark:bg-emerald-950/40"
         >
           <div className="flex items-center gap-2 min-w-0">
-            <CheckCircle2
-              size={16}
-              className="shrink-0 text-emerald-600 dark:text-emerald-400"
-            />
+            <CheckCircle2 size={16} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
               {tOrders('orderSettledBanner')}
             </span>

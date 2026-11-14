@@ -2161,8 +2161,7 @@ test('post-checkout completion banner supports Print, Next Order, and View in Co
   await expect(confirmPrintHeading).toBeVisible();
   const billReadPromise = page.waitForResponse(
     (res) =>
-      res.request().method() === 'GET' &&
-      /^\/api\/bills\/\d+$/.test(new URL(res.url()).pathname),
+      res.request().method() === 'GET' && /^\/api\/bills\/\d+$/.test(new URL(res.url()).pathname),
   );
   await page.getByRole('button', { name: /Confirm Print|Confirm Reprint/ }).click();
   expect((await billReadPromise).ok()).toBeTruthy();
@@ -2174,7 +2173,10 @@ test('post-checkout completion banner supports Print, Next Order, and View in Co
   await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toHaveCount(0);
 
   // Also verify View in Completed carries the settled order straight into the Completed tab.
-  await page.getByRole('button').filter({ hasText: `#${secondOrder.order_number}` }).click();
+  await page
+    .getByRole('button')
+    .filter({ hasText: `#${secondOrder.order_number}` })
+    .click();
   await expect(detailPanel.getByText(`#${secondOrder.order_number}`)).toBeVisible();
   await detailPanel.getByRole('button', { name: /Checkout|Take Payment/ }).click();
   const modal2 = page.locator('.fixed.inset-0').last();
@@ -2206,7 +2208,10 @@ test('post-checkout completion banner supports Print, Next Order, and View in Co
     'true',
   );
   await expect(
-    page.getByRole('button').filter({ hasText: `#${firstOrder.order_number}` }).first(),
+    page
+      .getByRole('button')
+      .filter({ hasText: `#${firstOrder.order_number}` })
+      .first(),
   ).toBeVisible();
   await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toBeVisible();
 

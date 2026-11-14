@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import moduleApi from 'node:module';
 import {
@@ -466,6 +467,98 @@ async function runTests(): Promise<void> {
       usePrinterStore.getState().lastError,
       null,
       'printKot leaves lastError null on tenant change',
+    );
+
+    // 10. Finding #8: printDeliverySlip preserves PrinterOperationError metadata (failure_class, connection_type, code, correlation_id)
+    const deliveryCorrId = '550e8400-e29b-41d4-a716-446655440999';
+    frontendApi.post = async () => {
+      throw {
+        response: {
+          status: 502,
+          data: {
+            error: 'Printer is offline',
+            detail: 'Printer is offline',
+            failure_class: 'offline',
+            connection_type: 'usb',
+            code: 'print.receipt.failed',
+            correlation_id: deliveryCorrId,
+            stage: 'dispatch',
+          },
+        },
+      };
+    };
+    let deliveryErr: unknown = null;
+    try {
+      await usePrinterStore.getState().printDeliverySlip(
+        {
+          id: 99,
+          order_number: 'ORD-99',
+          type: 'delivery',
+          status: 'pending',
+          subtotal: 20,
+          tax_amount: 0,
+          discount_amount: 0,
+          total: 20,
+          created_at: '2026-11-09T12:00:00Z',
+          items: [],
+        } as any,
+        { name: 'Customer', phone: '555-0100', address: '123 Main St' },
+      );
+    } catch (err) {
+      deliveryErr = err;
+    }
+    assert(
+      deliveryErr instanceof PrinterOperationError,
+      'printDeliverySlip throws PrinterOperationError on 502 failure',
+    );
+    assert.equal(deliveryErr.failure_class, 'offline');
+    assert.equal(deliveryErr.connection_type, 'usb');
+    assert.equal(deliveryErr.correlation_id, deliveryCorrId);
+
+    // 11. Finding #3 & #4 UI contracts: forceMount Settings guards + model/width forwarding
+    const printersTabSrc = readFileSync(
+      path.resolve(__dirname, '../frontend/src/components/settings/PrintersSettingsTab.tsx'),
+      'utf8',
+    );
+    const lanDiscoverySrc = readFileSync(
+      path.resolve(__dirname, '../frontend/src/components/settings/LanPrinterDiscovery.tsx'),
+      'utf8',
+    );
+    const statusBadgeSrc = readFileSync(
+      path.resolve(__dirname, '../frontend/src/components/settings/PrinterStatusBadge.tsx'),
+      'utf8',
+    );
+    assert(
+      /\{canManagePrinters\s*&&\s*\(\s*<PrinterStatusBadge[\s\S]*?enabled=\{isActive\}/.test(
+        printersTabSrc,
+      ),
+      'PrinterStatusBadge is gated by canManagePrinters and enabled={isActive}',
+    );
+    assert(
+      /<LanPrinterDiscovery[\s\S]*?enabled=\{isActive\}/.test(printersTabSrc),
+      'LanPrinterDiscovery receives enabled={isActive}',
+    );
+    assert(
+      /if\s*\(\s*!enabled\b/.test(lanDiscoverySrc),
+      'LanPrinterDiscovery guards its scan effect on enabled',
+    );
+    assert(
+      /if\s*\(\s*!enabled\b/.test(statusBadgeSrc),
+      'PrinterStatusBadge guards its status effect on enabled',
+    );
+    assert(
+      /fresh:\s*'1'/.test(statusBadgeSrc),
+      'PrinterStatusBadge passes fresh=1 when refreshKey > 0',
+    );
+    assert(
+      /model:\s*printer\.model/.test(lanDiscoverySrc),
+      'LanPrinterDiscovery forwards printer.model in onAdd',
+    );
+    assert(
+      /!editingPrinterId\s*&&\s*!paperWidthTouched\s*&&\s*!printerForm\.profile_id/.test(
+        printersTabSrc,
+      ),
+      'savePrinterHw omits default paper_width on new auto-profile add',
     );
   } finally {
     if (origIsConnected) {

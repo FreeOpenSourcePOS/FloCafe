@@ -42,14 +42,56 @@ function scanTargetsTest() {
 
   const skipped = localScanTargets({
     docker0: iface('172.17.0.1'),
+    'br-abc123def456': iface('172.18.0.1'),
+    virbr0: iface('192.168.122.1'),
+    wg0: iface('10.8.0.1'),
     linklocal: iface('169.254.3.4'),
     wlan0: iface('192.168.5.20'),
   } as any);
   assertOrThrow(
     skipped.every((host) => host.startsWith('192.168.5.')),
-    'docker0 and 169.254 are skipped',
+    'docker0, br-*, virbr*, wg*, and 169.254 are skipped',
   );
   assertEqualOrThrow(skipped.length, 253, 'only the private interface is scanned');
+
+  // /25../30 subnets compute exact usable host ranges; /31 and /32 are skipped.
+  const slash25Low = localScanTargets({
+    eth0: iface('192.168.1.10', '255.255.255.128'),
+  } as any);
+  assertEqualOrThrow(slash25Low.length, 125, 'a /25 gives 125 usable hosts');
+  assertOrThrow(slash25Low.includes('192.168.1.1'), '/25 low half starts at .1');
+  assertOrThrow(slash25Low.includes('192.168.1.126'), '/25 low half ends at .126');
+  assertOrThrow(!slash25Low.includes('192.168.1.127'), '/25 low half excludes broadcast .127');
+
+  const slash25High = localScanTargets({
+    eth0: iface('192.168.1.200', '255.255.255.128'),
+  } as any);
+  assertEqualOrThrow(slash25High.length, 125, '/25 high half gives 125 usable hosts');
+  assertOrThrow(slash25High.includes('192.168.1.129'), '/25 high half starts at .129');
+  assertOrThrow(slash25High.includes('192.168.1.254'), '/25 high half ends at .254');
+
+  const slash26 = localScanTargets({
+    eth0: iface('192.168.1.70', '255.255.255.192'),
+  } as any);
+  assertEqualOrThrow(slash26.length, 61, 'a /26 gives 61 usable hosts');
+  assertOrThrow(slash26.includes('192.168.1.65'), '/26 starts at .65');
+  assertOrThrow(slash26.includes('192.168.1.126'), '/26 ends at .126');
+
+  const slash30 = localScanTargets({
+    eth0: iface('192.168.1.5', '255.255.255.252'),
+  } as any);
+  assertEqualOrThrow(slash30.join(','), '192.168.1.6', 'a /30 gives the single peer host');
+
+  assertEqualOrThrow(
+    localScanTargets({ eth0: iface('192.168.1.1', '255.255.255.254') } as any).length,
+    0,
+    'a /31 is skipped',
+  );
+  assertEqualOrThrow(
+    localScanTargets({ eth0: iface('192.168.1.1', '255.255.255.255') } as any).length,
+    0,
+    'a /32 is skipped',
+  );
 
   const capped = localScanTargets({
     a: iface('10.1.0.10'),
@@ -85,6 +127,14 @@ async function probePortTest() {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 
   assertEqualOrThrow(await probePort('127.0.0.1', port, 500), false, 'a closed port answers false');
+
+  const abortedController = new AbortController();
+  abortedController.abort();
+  assertEqualOrThrow(
+    await probePort('127.0.0.1', port, 500, abortedController.signal),
+    false,
+    'an aborted signal makes probePort answer false',
+  );
 }
 
 async function scanPort9100Test() {
@@ -159,8 +209,8 @@ async function browseMdnsTest() {
   });
   assertEqualOrThrow(
     withHit.map((hit) => hit.port).join(','),
-    '9101,9100',
-    'a pdl-datastream port is kept; IPP and LPD records give the raw port 9100',
+    '9101,631',
+    'pdl-datastream keeps its raw port and IPP keeps its advertised port 631',
   );
   assertEqualOrThrow(withHit[0].address, '192.168.1.70', 'the printer IPv4 address is read');
   assertEqualOrThrow(withHit[0].name, 'Back Office', 'the friendly name is kept');
@@ -168,14 +218,50 @@ async function browseMdnsTest() {
   assertEqualOrThrow(printers.length, 0, 'no answer gives no printer');
   assertEqualOrThrow(stopped, 3, 'each browser is stopped');
   assertEqualOrThrow(destroyed, 4, 'every browser and the Bonjour instance are destroyed');
+
+  // AbortSignal stops browseMdns immediately and tears down browsers/bonjour.
+  const abortController = new AbortController();
+  let abortDestroyed = 0;
+  const startedAt = Date.now();
+  const browsePending = browseMdns({
+    timeoutMs: 5000,
+    signal: abortController.signal,
+    bonjourFactory: () => ({
+      find: () => ({
+        stop: () => undefined,
+        destroy: () => {
+          abortDestroyed++;
+        },
+      }),
+      destroy: () => {
+        abortDestroyed++;
+      },
+    }),
+  });
+  await delay(10);
+  abortController.abort();
+  await browsePending;
+  const elapsed = Date.now() - startedAt;
+  assertOrThrow(elapsed < 500, `aborted browseMdns settles promptly (${elapsed}ms)`);
+  assertEqualOrThrow(abortDestroyed, 4, 'aborted browseMdns destroys all browsers and Bonjour');
 }
 
 async function discoverLanPrintersTest() {
   const printers = await discoverLanPrinters({
-    hosts: ['192.168.1.50', '192.168.1.60'],
-    probe: async (host) => host === '192.168.1.50' || host === '192.168.1.60',
+    hosts: ['192.168.1.50', '192.168.1.60', '192.168.1.70', '192.168.1.71', '192.168.1.72'],
+    probe: async (host, port) => {
+      if (host === '192.168.1.50' && port === 9100) return true;
+      if (host === '192.168.1.60' && port === 9100) return true;
+      // 192.168.1.70: 9100 closed, custom pdl-datastream port 9101 open
+      if (host === '192.168.1.70' && port === 9101) return true;
+      // 192.168.1.71: IPP-only office printer with 9100 closed -> must be rejected
+      // 192.168.1.72: HP LaserJet with 9100 open (JetDirect) -> driver_only must be rejected
+      if (host === '192.168.1.72' && port === 9100) return true;
+      return false;
+    },
     browse: async () => [
       {
+        type: 'pdl-datastream',
         name: 'Front Desk XP-80',
         host: 'printer.local',
         address: '192.168.1.50',
@@ -183,22 +269,45 @@ async function discoverLanPrintersTest() {
         txt: { ty: ['XPrinter XP-80'] },
       },
       {
-        name: 'Back Office',
-        host: 'back.local',
+        type: 'pdl-datastream',
+        name: 'Custom Port Receipt',
+        host: 'custom.local',
+        address: '192.168.1.70',
+        port: 9101,
+      },
+      {
+        type: 'ipp',
+        name: 'Custom Port Receipt',
+        host: 'custom.local',
         address: '192.168.1.70',
         port: 631,
+        txt: { ty: ['EPSON TM-T88V'] },
+      },
+      {
+        type: 'ipp',
+        name: 'Office AirPrint Inkjet',
+        host: 'office.local',
+        address: '192.168.1.71',
+        port: 631,
         txt: { product: ['Brother QL-820NWB'] },
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'HP LaserJet Pro M404',
+        host: 'laser.local',
+        address: '192.168.1.72',
+        port: 9100,
+        txt: { ty: ['HP LaserJet Pro'] },
       },
     ],
   });
 
-  assertEqualOrThrow(printers.length, 3, 'the merged list holds every address');
   assertEqualOrThrow(
     printers.map((printer) => printer.address).join(','),
     '192.168.1.50,192.168.1.60,192.168.1.70',
-    'the list is sorted by address',
+    'IPP-only closed-9100 and driver-only office printers are excluded',
   );
-  const [both, portOnly, mdnsOnly] = printers;
+  const [both, portOnly, customPdl] = printers;
   assertEqualOrThrow(both.source, 'both', 'an address seen both ways is marked both');
   assertEqualOrThrow(both.name, 'Front Desk XP-80', 'the mDNS name wins over the generic name');
   assertEqualOrThrow(both.model, 'XPrinter XP-80', 'the model comes from the ty TXT record');
@@ -210,12 +319,43 @@ async function discoverLanPrintersTest() {
     'a port-only hit gets the generic name',
   );
   assertEqualOrThrow(portOnly.port, 9100, 'a port-only hit reports the probed port');
-  assertEqualOrThrow(mdnsOnly.source, 'mdns', 'an mDNS-only hit is marked mdns');
-  assertEqualOrThrow(mdnsOnly.port, 631, 'an mDNS-only hit keeps the port that browse reports');
+  assertEqualOrThrow(customPdl.source, 'mdns', 'pdl-datastream custom port hit is marked mdns');
   assertEqualOrThrow(
-    mdnsOnly.model,
-    'Brother QL-820NWB',
-    'the model falls back to the product TXT record',
+    customPdl.port,
+    9101,
+    'dual-service pdl-datastream + ipp preserves raw port 9101 when 9100 is closed',
+  );
+  assertEqualOrThrow(
+    customPdl.model,
+    'EPSON TM-T88V',
+    'model metadata enriches from companion IPP TXT when pdl-datastream lacks TXT',
+  );
+
+  // An _ipp._tcp thermal printer that was not in the host scan list is probed on 9100.
+  const ippWith9100Open = await discoverLanPrinters({
+    hosts: [],
+    probe: async (host, port) => host === '192.168.1.80' && port === 9100,
+    browse: async () => [
+      {
+        type: 'ipp',
+        name: 'Counter Thermal',
+        host: 'counter.local',
+        address: '192.168.1.80',
+        port: 631,
+      },
+      {
+        type: 'ipp',
+        name: 'Upstairs Office Printer',
+        host: 'upstairs.local',
+        address: '192.168.1.81',
+        port: 631,
+      },
+    ],
+  });
+  assertEqualOrThrow(
+    ippWith9100Open.map((p) => `${p.address}:${p.port}`).join(','),
+    '192.168.1.80:9100',
+    'IPP mDNS entry is included on 9100 only when 9100 is confirmed open',
   );
 }
 

@@ -10,12 +10,25 @@ import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
 
 import { openSocket } from './escpos-status';
+import { isKnownDriverOnlyPrinter } from './thermal';
 
 const SOCKET_PORT = 9100;
-const MDNS_TYPES = ['pdl-datastream', 'ipp', 'printer'];
+const MDNS_TYPES = ['pdl-datastream', 'ipp', 'printer'] as const;
 const MAX_NETWORKS = 4;
-const VIRTUAL_IFACE = ['docker', 'veth', 'vmnet', 'vboxnet', 'utun', 'tailscale', 'zt'];
+const VIRTUAL_IFACE = [
+  'docker',
+  'veth',
+  'vmnet',
+  'vboxnet',
+  'utun',
+  'tailscale',
+  'zt',
+  'br-',
+  'virbr',
+  'wg',
+];
 
+export type MdnsServiceType = (typeof MDNS_TYPES)[number];
 export type PrinterSource = 'mdns' | 'port-scan' | 'both';
 
 export interface MdnsPrinter {
@@ -23,6 +36,7 @@ export interface MdnsPrinter {
   host: string;
   address: string;
   port: number;
+  type?: MdnsServiceType;
   txt?: Record<string, unknown>;
 }
 
@@ -39,11 +53,12 @@ export interface ScanOptions {
   timeoutMs?: number;
   port?: number;
   signal?: AbortSignal;
-  probe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>;
+  probe?: (host: string, port: number, timeoutMs: number, signal?: AbortSignal) => Promise<boolean>;
 }
 
 export interface BrowseOptions {
   timeoutMs?: number;
+  signal?: AbortSignal;
   bonjourFactory?: () => BonjourLike;
 }
 
@@ -93,12 +108,24 @@ function netmaskPrefix(netmask: string): number {
   }, 0);
 }
 
-/** The /24 host list of every private interface, without this machine's own addresses. */
+function ipv4ToInt(address: string): number {
+  const [a, b, c, d] = address.split('.').map(Number);
+  return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0;
+}
+
+function intToIpv4(value: number): string {
+  return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff].join(
+    '.',
+  );
+}
+
+/** Host list of every private interface (exact range for /24../30, /24 slice for wider), without this machine's own addresses. */
 export function localScanTargets(
   interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
 ): string[] {
   const own = new Set<string>();
-  const networks: string[] = [];
+  const ranges: Array<{ key: string; start: number; end: number }> = [];
+  const seenKeys = new Set<string>();
   for (const entries of Object.values(interfaces)) {
     for (const entry of entries ?? []) {
       if (entry.family === 'IPv4') own.add(entry.address);
@@ -109,18 +136,38 @@ export function localScanTargets(
     for (const entry of entries ?? []) {
       if (entry.internal || entry.family !== 'IPv4') continue;
       if (!isPrivateIpv4(entry.address)) continue;
-      // A netmask narrower than /24 covers fewer hosts than the /24 list we build.
-      if (netmaskPrefix(entry.netmask) > 24) continue;
-      const network = entry.address.split('.').slice(0, 3).join('.');
-      if (!networks.includes(network)) networks.push(network);
-      if (networks.length === MAX_NETWORKS) break;
+      const prefix = netmaskPrefix(entry.netmask);
+      if (prefix > 30) continue;
+
+      let start: number;
+      let end: number;
+      let key: string;
+      if (prefix >= 24) {
+        const maskInt = (0xffffffff << (32 - prefix)) >>> 0;
+        const networkInt = (ipv4ToInt(entry.address) & maskInt) >>> 0;
+        const broadcastInt = (networkInt | (~maskInt >>> 0)) >>> 0;
+        start = networkInt + 1;
+        end = broadcastInt - 1;
+        key = `${networkInt}/${prefix}`;
+      } else {
+        const network24Int = (ipv4ToInt(entry.address) & 0xffffff00) >>> 0;
+        start = network24Int + 1;
+        end = network24Int + 254;
+        key = `${network24Int}/24`;
+      }
+
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        ranges.push({ key, start, end });
+      }
+      if (ranges.length === MAX_NETWORKS) break;
     }
-    if (networks.length === MAX_NETWORKS) break;
+    if (ranges.length === MAX_NETWORKS) break;
   }
   const targets: string[] = [];
-  for (const network of networks) {
-    for (let host = 1; host <= 254; host++) {
-      const address = `${network}.${host}`;
+  for (const range of ranges) {
+    for (let addr = range.start; addr <= range.end; addr++) {
+      const address = intToIpv4(addr);
       if (!own.has(address)) targets.push(address);
     }
   }
@@ -128,8 +175,13 @@ export function localScanTargets(
 }
 
 /** True when a TCP connection opens. Sends nothing and closes the socket at once. */
-export function probePort(host: string, port: number, timeoutMs = 400): Promise<boolean> {
-  return openSocket(host, port, timeoutMs).then(
+export function probePort(
+  host: string,
+  port: number,
+  timeoutMs = 400,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return openSocket(host, port, timeoutMs, signal).then(
     (socket) => {
       socket.destroy();
       return true;
@@ -154,7 +206,7 @@ export async function scanPort9100(hosts: string[], options: ScanOptions = {}): 
       const index = next++;
       if (index >= hosts.length) return;
       const host = hosts[index];
-      if (await probe(host, port, timeoutMs)) found.push(host);
+      if (await probe(host, port, timeoutMs, signal)) found.push(host);
     }
   };
   const workers = Math.min(Math.max(concurrency, 1), hosts.length);
@@ -176,12 +228,36 @@ function textValue(value: unknown): string | undefined {
 
 /** Browses the printer mDNS types for the timeout, then tears down every handle. */
 export function browseMdns(options: BrowseOptions = {}): Promise<MdnsPrinter[]> {
-  const { timeoutMs = 2500, bonjourFactory = () => new Bonjour() as unknown as BonjourLike } =
-    options;
+  const {
+    timeoutMs = 2500,
+    signal,
+    bonjourFactory = () => new Bonjour() as unknown as BonjourLike,
+  } = options;
   const found = new Map<string, MdnsPrinter>();
   let bonjour: BonjourLike | undefined;
   const browsers: BrowserLike[] = [];
   return new Promise<MdnsPrinter[]>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
+      for (const browser of browsers) {
+        browser.stop?.();
+        browser.destroy?.();
+      }
+      bonjour?.destroy();
+      resolve([...found.values()]);
+    };
+
+    if (signal?.aborted) {
+      finish();
+      return;
+    }
+
     try {
       bonjour = bonjourFactory();
       for (const type of MDNS_TYPES) {
@@ -189,13 +265,18 @@ export function browseMdns(options: BrowseOptions = {}): Promise<MdnsPrinter[]> 
           bonjour.find({ type }, (service) => {
             const address = serviceAddress(service);
             if (!address) return;
-            // Only pdl-datastream names a raw socket port; IPP (631) and LPD (515) cannot take ESC/POS bytes.
-            const port = type === 'pdl-datastream' && service.port ? service.port : SOCKET_PORT;
-            found.set(`${address}:${port}`, {
+            const port =
+              service.port && service.port > 0
+                ? service.port
+                : type === 'pdl-datastream'
+                  ? SOCKET_PORT
+                  : 0;
+            found.set(`${type}:${address}:${port}`, {
               name: service.name || `Network printer (${address})`,
               host: service.host || address,
               address,
               port,
+              type,
               ...(service.txt ? { txt: service.txt } : {}),
             });
           }),
@@ -204,14 +285,14 @@ export function browseMdns(options: BrowseOptions = {}): Promise<MdnsPrinter[]> 
     } catch {
       // A missing mDNS socket must not fail discovery: the port scan still runs.
     }
-    setTimeout(() => {
-      for (const browser of browsers) {
-        browser.stop?.();
-        browser.destroy?.();
-      }
-      bonjour?.destroy();
-      resolve([...found.values()]);
-    }, timeoutMs);
+
+    if (signal?.aborted) {
+      finish();
+      return;
+    }
+    signal?.addEventListener('abort', finish, { once: true });
+    timer = setTimeout(finish, timeoutMs);
+    timer.unref?.();
   });
 }
 
@@ -230,34 +311,102 @@ function modelOf(txt: Record<string, unknown> | undefined): string | undefined {
   return textValue(txt.ty) ?? textValue(txt.product);
 }
 
-function mergePrinters(
+function isPdlRecord(record: MdnsPrinter): boolean {
+  if (record.type) return record.type === 'pdl-datastream';
+  return record.port !== 631 && record.port !== 515;
+}
+
+async function mergePrinters(
   openHosts: string[],
   mdnsPrinters: MdnsPrinter[],
+  scannedHosts: Set<string>,
   port: number,
-): LanPrinter[] {
-  const merged = new Map<string, LanPrinter>();
+  timeoutMs: number,
+  signal: AbortSignal,
+  probe: NonNullable<ScanOptions['probe']>,
+): Promise<LanPrinter[]> {
+  const openHostSet = new Set(openHosts);
+  const byAddress = new Map<string, MdnsPrinter[]>();
   for (const printer of mdnsPrinters) {
-    const model = modelOf(printer.txt);
-    merged.set(printer.address, {
-      address: printer.address,
-      port: printer.port || port,
-      name: printer.name,
-      source: 'mdns',
-      ...(model ? { model } : {}),
-    });
+    const group = byAddress.get(printer.address);
+    if (group) group.push(printer);
+    else byAddress.set(printer.address, [printer]);
   }
+
+  const merged = new Map<string, LanPrinter>();
+  const excludedHosts = new Set<string>();
+
+  await Promise.all(
+    [...byAddress.entries()].map(async ([address, records]) => {
+      const pdlRecord = records.find(isPdlRecord);
+      const primary = pdlRecord ?? records[0];
+      const name = primary.name;
+      const model =
+        modelOf(pdlRecord?.txt) ??
+        records.map((record) => modelOf(record.txt)).find((value) => value !== undefined);
+
+      if (isKnownDriverOnlyPrinter({ name, model })) {
+        excludedHosts.add(address);
+        return;
+      }
+
+      if (openHostSet.has(address)) {
+        merged.set(address, {
+          address,
+          port,
+          name,
+          source: 'both',
+          ...(model ? { model } : {}),
+        });
+        return;
+      }
+
+      if (pdlRecord) {
+        const pdlPort = pdlRecord.port || port;
+        // Skip re-probing port 9100 if the host scan already tested it and found it closed.
+        const alreadyProbedClosed =
+          pdlPort === port && scannedHosts.has(address) && !signal.aborted;
+        if (
+          !alreadyProbedClosed &&
+          !signal.aborted &&
+          (await probe(address, pdlPort, timeoutMs, signal))
+        ) {
+          merged.set(address, {
+            address,
+            port: pdlPort,
+            name,
+            source: 'mdns',
+            ...(model ? { model } : {}),
+          });
+        }
+        return;
+      }
+
+      // IPP/LPD-only mDNS entries are only included when raw port 9100 is confirmed open.
+      if (
+        !scannedHosts.has(address) &&
+        !signal.aborted &&
+        (await probe(address, port, timeoutMs, signal))
+      ) {
+        merged.set(address, {
+          address,
+          port,
+          name,
+          source: 'mdns',
+          ...(model ? { model } : {}),
+        });
+      }
+    }),
+  );
+
   for (const host of openHosts) {
-    const existing = merged.get(host);
-    if (existing) {
-      merged.set(host, { ...existing, port, source: 'both' });
-    } else {
-      merged.set(host, {
-        address: host,
-        port,
-        name: `Network printer (${host})`,
-        source: 'port-scan',
-      });
-    }
+    if (merged.has(host) || excludedHosts.has(host)) continue;
+    merged.set(host, {
+      address: host,
+      port,
+      name: `Network printer (${host})`,
+      source: 'port-scan',
+    });
   }
   return [...merged.values()].sort((a, b) => compareAddress(a.address, b.address));
 }
@@ -283,12 +432,21 @@ export async function discoverLanPrinters(options: DiscoverOptions = {}): Promis
   if (options.signal?.aborted) controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   const deadline = setTimeout(abort, totalTimeoutMs);
+  deadline.unref?.();
   try {
     const [openHosts, mdnsPrinters] = await Promise.all([
       scanPort9100(hosts, { concurrency, timeoutMs, port, probe, signal: controller.signal }),
-      browse({ timeoutMs: Math.min(2500, totalTimeoutMs) }),
+      browse({ timeoutMs: Math.min(2500, totalTimeoutMs), signal: controller.signal }),
     ]);
-    return mergePrinters(openHosts, mdnsPrinters, port);
+    return await mergePrinters(
+      openHosts,
+      mdnsPrinters,
+      new Set(hosts),
+      port,
+      timeoutMs,
+      controller.signal,
+      probe,
+    );
   } finally {
     clearTimeout(deadline);
     options.signal?.removeEventListener('abort', abort);

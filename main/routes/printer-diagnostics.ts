@@ -116,15 +116,33 @@ type Database = { prepare: (sql: string) => { get: (address: string) => unknown 
 
 let scan: DiscoverScan = discoverLanPrinters;
 let detectCache: { at: number; printers: Promise<PrinterInfo[]> } | null = null;
+let detectInFlight: Promise<PrinterInfo[]> | null = null;
+
+/** Clears the shared OS printer-queue cache so the next status probe reads live OS state. */
+export function invalidatePrinterDetectCache(): void {
+  detectCache = null;
+  detectInFlight = null;
+}
 
 // One OS enumeration (a PowerShell spawn on Windows) serves every badge on the page.
-function detectShared(): Promise<PrinterInfo[]> {
+function detectShared(fresh = false): Promise<PrinterInfo[]> {
+  if (fresh) {
+    if (detectInFlight) return detectInFlight;
+    detectCache = null;
+  }
   if (!detectCache || Date.now() - detectCache.at > 5000) {
     const printers = detectConnectedPrinters();
+    detectInFlight = printers;
     detectCache = { at: Date.now(), printers };
-    printers.catch(() => {
-      if (detectCache?.printers === printers) detectCache = null;
-    });
+    printers.then(
+      () => {
+        if (detectInFlight === printers) detectInFlight = null;
+      },
+      () => {
+        if (detectInFlight === printers) detectInFlight = null;
+        if (detectCache?.printers === printers) detectCache = null;
+      },
+    );
   }
   return detectCache.printers;
 }
@@ -134,11 +152,15 @@ let inFlight: Promise<LanPrinter[]> | null = null;
 export function setDiscoverScan(next: DiscoverScan): void {
   scan = next;
   inFlight = null;
-  detectCache = null;
+  invalidatePrinterDetectCache();
 }
 
 function isSaved(db: Database, address: string): boolean {
-  return !!db.prepare('SELECT 1 FROM printers WHERE ip_address = ? LIMIT 1').get(address);
+  return !!db
+    .prepare(
+      "SELECT 1 FROM printers WHERE connection_type = 'network' AND TRIM(ip_address) = ? LIMIT 1",
+    )
+    .get(address);
 }
 
 /**
@@ -189,7 +211,8 @@ export async function printerStatusHandler(req: Request, res: Response): Promise
       res.status(404).json({ error: 'Printer not found' });
       return;
     }
-    res.json(await getPrinterStatus(printer, getHttpRequestSignal(req), detectShared));
+    const fresh = req.query.fresh === '1';
+    res.json(await getPrinterStatus(printer, getHttpRequestSignal(req), () => detectShared(fresh)));
   } catch (error) {
     sendError(req, res, error, 'Status');
   }

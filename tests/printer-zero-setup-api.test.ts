@@ -21,9 +21,44 @@ const mockApp = {
   getVersion: () => 'test',
 };
 
+let usbTestPrintResult: { ok: boolean; detail?: string } = { ok: true };
+let usbDetectQueueStatus: 'idle' | 'offline' = 'offline';
+let usbDetectCalls = 0;
+let usbDetectDelayMs = 0;
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: mockApp };
-  return originalLoad.apply(this, arguments as any);
+  const loaded = originalLoad.apply(this, arguments as any);
+  if (request === '../printers/thermal' || request === '../main/printers/thermal') {
+    return new Proxy(loaded, {
+      get(target, prop, receiver) {
+        if (prop === 'printViaUSB') {
+          return async () => usbTestPrintResult;
+        }
+        if (prop === 'detectConnectedPrinters') {
+          return async () => {
+            usbDetectCalls++;
+            if (usbDetectDelayMs > 0) {
+              await new Promise((resolve) => setTimeout(resolve, usbDetectDelayMs));
+            }
+            return [
+              {
+                name: 'Cached Usb Queue',
+                make: 'Epson',
+                model: 'TM-T20',
+                connectionType: 'usb',
+                deviceUri: 'usb://EPSON/TM-T20',
+                status: usbDetectQueueStatus,
+                isDefault: false,
+              },
+            ];
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+  return loaded;
 };
 
 const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
@@ -32,6 +67,7 @@ const request = require('supertest');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { printerRoutes } = require('../main/routes/printers');
 const { getPrinterStatus, setDiscoverScan } = require('../main/routes/printer-diagnostics');
+const { guessPaperWidth, annotateProfile } = require('../main/printers/thermal');
 
 let currentUserId = 'owner-1';
 
@@ -220,7 +256,11 @@ async function runTests() {
       );
       await new Promise((resolve) => setImmediate(resolve));
       assertEqualOrThrow(paperOut.printed.length, 0, 'the printer kept no printed bytes');
-      assertOrThrow(paperOut.received.length > 0, 'the test page was sent before the probe');
+      assertOrThrow(
+        Buffer.from(paperOut.received).includes('Flo Printer Test') &&
+          Buffer.from(paperOut.received).includes('Network / USB test print'),
+        'the test page payload was sent before the probe',
+      );
     }
 
     // ── 4: LAN discovery ───────────────────────────────────────────────────
@@ -278,6 +318,248 @@ async function runTests() {
       const statusDenied = await request(app).get('/api/printers/anything/status');
       assertEqualOrThrow(statusDenied.status, 403, 'the status probe needs printers.manage');
       currentUserId = 'owner-1';
+    }
+
+    // ── 6: Finding #1 single-connection test print + concurrent status probe ─
+    console.log('\n6: single-connection test print + concurrent status');
+    {
+      const single = await start({ state: {}, singleConnection: true });
+      fakes.push(single);
+      const id = await addNetworkPrinter('SingleSocketTest', single.port);
+
+      const [testRes, statusRes] = await Promise.all([
+        request(app).post(`/api/printers/${id}/test`).send({ rasterProbe: true }),
+        request(app).get(`/api/printers/${id}/status`),
+      ]);
+      assertEqualOrThrow(testRes.status, 200, 'single-connection test print succeeds');
+      assertEqualOrThrow(statusRes.status, 200, 'concurrent status request succeeds');
+      assertEqualOrThrow(
+        statusRes.body.cause,
+        null,
+        'concurrent status never reports false unreachable',
+      );
+      assertEqualOrThrow(
+        single.rejectedConnections,
+        0,
+        'single-connection printer saw zero rejected concurrent connections',
+      );
+      assertEqualOrThrow(
+        single.maxConcurrentConnections,
+        1,
+        'single-connection printer saw at most 1 connection at a time',
+      );
+    }
+
+    // ── 7: Finding #4 model/profile/paper_width auto-resolution ─────────────
+    console.log('\n7: model + escpos-printer-db width/profile resolution');
+    {
+      assertEqualOrThrow(
+        guessPaperWidth('Kitchen', 'Citizen CT-S651'),
+        'cols-48',
+        'guessPaperWidth falls back to findDbProfile for Citizen CT-S651',
+      );
+      const annotatedCitizen = annotateProfile({
+        name: 'Kitchen',
+        make: 'Citizen',
+        model: 'CT-S651',
+        connectionType: 'usb',
+        deviceUri: 'usb://Citizen/CT-S651',
+        status: 'idle',
+        isDefault: false,
+      });
+      assertEqualOrThrow(
+        annotatedCitizen.paperWidth,
+        'cols-48',
+        'annotateProfile preserves DB defaultPaperWidth for CT-S651',
+      );
+      assertEqualOrThrow(
+        annotatedCitizen.profileId,
+        'escpos-db-ct-s651',
+        'annotateProfile attaches matched DB profileId',
+      );
+      assertEqualOrThrow(
+        annotatedCitizen.compatibility,
+        'escpos_thermal',
+        'annotateProfile classifies DB thermal printer as escpos_thermal',
+      );
+
+      const lan58Res = await request(app).post('/api/printers').send({
+        name: 'Front Counter',
+        model: 'POS-5890',
+        connection_type: 'network',
+        ip_address: '192.168.1.90',
+        port: 9100,
+      });
+      assertEqualOrThrow(lan58Res.status, 201, 'LAN quick-add with model creates printer');
+      assertEqualOrThrow(
+        lan58Res.body.printer.paper_width,
+        'cols-32',
+        'POS-5890 resolves cols-32 instead of cols-42',
+      );
+      assertEqualOrThrow(
+        lan58Res.body.printer.configured_profile_id,
+        'escpos-db-pos-5890',
+        'matched DB profile_id is persisted when generic name alone would not match',
+      );
+      assertEqualOrThrow(
+        lan58Res.body.printer.profile_id,
+        'escpos-db-pos-5890',
+        'printerShape keeps persisted DB profile_id',
+      );
+
+      const editRes = await request(app)
+        .put(`/api/printers/${lan58Res.body.printer.id}`)
+        .send({ port: 9101, profile_id: 'escpos-db-pos-5890' });
+      assertEqualOrThrow(
+        editRes.status,
+        200,
+        'editing port on a printer with persisted DB profile_id succeeds',
+      );
+      assertEqualOrThrow(
+        editRes.body.printer.configured_profile_id,
+        'escpos-db-pos-5890',
+        'persisted DB profile_id is retained on edit',
+      );
+    }
+
+    // ── 8: Finding #7 USB detect cache invalidation + fresh=1 ───────────────
+    console.log('\n8: USB status cache invalidation after test print / detect / fresh=1');
+    {
+      const usbRes = await request(app)
+        .post('/api/printers')
+        .send({ name: 'Cached Usb Queue', connection_type: 'usb' });
+      assertEqualOrThrow(usbRes.status, 201, 'cached USB fixture printer is created');
+      const usbId = usbRes.body.printer.id as string;
+
+      usbDetectQueueStatus = 'offline';
+      const initialStatus = await request(app).get(`/api/printers/${usbId}/status`);
+      assertEqualOrThrow(
+        initialStatus.body.cause,
+        'queue_offline',
+        'initial status is queue_offline',
+      );
+
+      // Queue comes back online within 5 seconds; concurrent ?fresh=1 requests coalesce onto one scan.
+      usbDetectQueueStatus = 'idle';
+      usbDetectDelayMs = 60;
+      const callsBeforeFresh = usbDetectCalls;
+      const [freshStatus, coalescedFreshStatus] = await Promise.all([
+        request(app).get(`/api/printers/${usbId}/status?fresh=1`),
+        request(app).get(`/api/printers/${usbId}/status?fresh=1`),
+      ]);
+      usbDetectDelayMs = 0;
+      assertEqualOrThrow(
+        freshStatus.body.cause,
+        null,
+        '?fresh=1 bypasses the 5s cache and immediately sees idle',
+      );
+      assertEqualOrThrow(
+        coalescedFreshStatus.body.cause,
+        null,
+        'concurrent ?fresh=1 request also receives idle',
+      );
+      assertEqualOrThrow(
+        usbDetectCalls - callsBeforeFresh,
+        1,
+        'concurrent ?fresh=1 requests coalesce onto a single OS detection',
+      );
+
+      // Re-populate cache with offline, then verify POST /:id/test invalidates it.
+      await request(app).get(`/api/printers/${usbId}/status?fresh=1`);
+      usbDetectQueueStatus = 'offline';
+      await request(app).get(`/api/printers/${usbId}/status?fresh=1`);
+      usbDetectQueueStatus = 'idle';
+      usbTestPrintResult = { ok: true };
+      const testRes = await request(app).post(`/api/printers/${usbId}/test`).send({});
+      assertEqualOrThrow(testRes.status, 200, 'USB test print succeeds');
+      const afterTestStatus = await request(app).get(`/api/printers/${usbId}/status`);
+      assertEqualOrThrow(
+        afterTestStatus.body.cause,
+        null,
+        'status immediately reflects idle after USB test print invalidates cache',
+      );
+
+      // Re-populate cache with offline, then verify GET /detect invalidates it.
+      usbDetectQueueStatus = 'offline';
+      await request(app).get(`/api/printers/${usbId}/status?fresh=1`);
+      usbDetectQueueStatus = 'idle';
+      const detectRes = await request(app).get('/api/printers/detect');
+      assertEqualOrThrow(detectRes.status, 200, 'GET /detect succeeds');
+      const afterDetectStatus = await request(app).get(`/api/printers/${usbId}/status`);
+      assertEqualOrThrow(
+        afterDetectStatus.body.cause,
+        null,
+        'status immediately reflects idle after GET /detect invalidates cache',
+      );
+    }
+
+    // ── 9: Finding #9b ip_address trim/cleanup & isSaved consistency ────────
+    console.log('\n9: ip_address trim, cleanup on USB switch, and isSaved');
+    {
+      const paddedNet = await request(app).post('/api/printers').send({
+        name: 'Padded IP Printer',
+        connection_type: 'network',
+        ip_address: ' 192.168.1.91 ',
+        port: 9100,
+      });
+      assertEqualOrThrow(paddedNet.status, 201, 'padded IP printer is created');
+      assertEqualOrThrow(
+        paddedNet.body.printer.ip_address,
+        '192.168.1.91',
+        'POST trims ip_address before saving',
+      );
+
+      const switchToUsb = await request(app)
+        .put(`/api/printers/${paddedNet.body.printer.id}`)
+        .send({ connection_type: 'usb' });
+      assertEqualOrThrow(switchToUsb.status, 200, 'switching network printer to usb succeeds');
+      assertEqualOrThrow(
+        switchToUsb.body.printer.ip_address,
+        null,
+        'switching to usb clears stale ip_address',
+      );
+
+      setDiscoverScan(async () => [
+        { address: '192.168.1.91', port: 9100, name: 'LAN 91', source: 'port-scan' },
+      ]);
+      const discRes = await request(app).get('/api/printers/discover');
+      assertEqualOrThrow(
+        discRes.body.printers[0].saved,
+        false,
+        'cleared USB printer no longer marks 192.168.1.91 as saved',
+      );
+    }
+
+    // ── 10: Finding #8 delivery slip 502 includes connection_type ───────────
+    console.log('\n10: POST /print-delivery-slip 502 includes connection_type');
+    {
+      const closed = await closedPort();
+      const netRes = await request(app).post('/api/printers').send({
+        name: 'Delivery Slip Net',
+        connection_type: 'network',
+        ip_address: '127.0.0.1',
+        port: closed,
+        is_default: true,
+      });
+      assertEqualOrThrow(netRes.status, 201, 'default network printer created');
+      db.prepare('UPDATE printers SET is_default = 0 WHERE id != ?').run(netRes.body.printer.id);
+
+      const orderInfo = db
+        .prepare(
+          `INSERT INTO orders (order_number, status, type, subtotal, total, delivery_address, created_at, updated_at)
+           VALUES ('ORD-DEL-502', 'pending', 'delivery', 10, 10, '10 Main St', ?, ?)`,
+        )
+        .run(now(), now());
+
+      const slipRes = await request(app)
+        .post('/api/printers/print-delivery-slip')
+        .send({ orderId: Number(orderInfo.lastInsertRowid) });
+      assertEqualOrThrow(slipRes.status, 502, 'delivery slip to closed port returns 502');
+      assertEqualOrThrow(
+        slipRes.body.connection_type,
+        'network',
+        'delivery slip 502 payload includes connection_type',
+      );
     }
   } finally {
     setDiscoverScan(require('../main/printers/lan-discovery').discoverLanPrinters);

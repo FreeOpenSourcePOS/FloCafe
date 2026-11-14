@@ -121,7 +121,7 @@ export async function cupsQueuePort(
   printerName: string | undefined,
   options: { signal?: AbortSignal; isMas?: boolean; run?: ExecFileLike } = {},
 ): Promise<QueuePort> {
-  if (!printerName || options.isMas) return { kind: 'unknown' };
+  if (!printerName || printerName.startsWith('-') || options.isMas) return { kind: 'unknown' };
   try {
     const run = options.run ?? execFileAsync;
     const { stdout } = await run('lpstat', ['-v', printerName], {

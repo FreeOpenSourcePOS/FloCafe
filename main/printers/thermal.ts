@@ -38,6 +38,8 @@ import { correlationId, type FloErrorCode } from '../errors';
 import { cloudSync } from '../services/cloud-sync';
 import { capturePostHogPrintFailure, capturePostHogPrintRecovered } from '../services/posthog';
 import { printLabel } from '../print/print-labels.generated';
+import { findDbProfile, findDbProfileById } from './capability-db';
+import { withNetworkPortLock } from './network-port-lock';
 import { withWindowsQueueBypass } from './windows-queue-bypass';
 import {
   cupsQueuePort,
@@ -356,6 +358,35 @@ export interface PrinterInfo {
   compatibility?: PrinterCompatibility;
 }
 
+export function isKnownDriverOnlyPrinter(info: {
+  name?: string | null;
+  make?: string | null;
+  model?: string | null;
+  driver?: string | null;
+  deviceUri?: string | null;
+}): boolean {
+  const haystack = [info.name, info.make, info.model, info.driver, info.deviceUri]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_]+/g, '-');
+
+  return (
+    /\b(?:star|tsp100|tsp143|tsp650|tsp700|tsp800|sp700|mc-print|mcp20|mcp30|mcp31)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:ecotank|workforce|stylus|expression|inkjet|laserjet|deskjet|officejet|pixma|maxify|imageclass)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:et-\d\w*|wf-\d\w*|l3\d*|l4\d*|tm[-\s]?l\d*)\b/.test(haystack) ||
+    /\b(?:zebra|zd\d|gk420|gx420|zp450|zt\d|dymo|labelwriter|rollo|brother|ql-\d|td-\d|bixolon\s+slp|label)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:canon|hewlett|hp\b|lexmark|ricoh|kyocera|xerox|konica|minolta|pantum)\b/.test(haystack) ||
+    /\b(?:pdf\w*|xps|onenote|fax|microsoft\s+print|send\s+to|save\s+as|cups-pdf)\b/.test(haystack)
+  );
+}
+
 export function classifyDetectedPrinterCompatibility(info: {
   name?: string | null;
   make?: string | null;
@@ -372,26 +403,16 @@ export function classifyDetectedPrinterCompatibility(info: {
 
   if (info.profileId === 'escpos-impact-76') return 'escpos_impact';
 
-  if (
-    /\b(?:star|tsp100|tsp143|tsp650|tsp700|tsp800|sp700|mc-print|mcp20|mcp30|mcp31)\b/.test(
-      haystack,
-    ) ||
-    /\b(?:ecotank|workforce|stylus|expression|inkjet|laserjet|deskjet|officejet|pixma|maxify|imageclass)\b/.test(
-      haystack,
-    ) ||
-    /\b(?:et-\d\w*|wf-\d\w*|l3\d*|l4\d*|tm[-\s]?l\d*)\b/.test(haystack) ||
-    /\b(?:zebra|zd\d|gk420|gx420|zp450|zt\d|dymo|labelwriter|rollo|brother|ql-\d|td-\d|bixolon\s+slp|label)\b/.test(
-      haystack,
-    ) ||
-    /\b(?:canon|hewlett|hp\b|lexmark|ricoh|kyocera|xerox|konica|minolta|pantum)\b/.test(haystack) ||
-    /\b(?:pdf\w*|xps|onenote|fax|microsoft\s+print|send\s+to|save\s+as|cups-pdf)\b/.test(haystack)
-  ) {
+  if (isKnownDriverOnlyPrinter(info)) {
     return 'driver_only';
   }
 
   const matchedProfile = info.profileId
-    ? (getSupportedPrinterProfiles().find((p) => p.id === info.profileId) ?? null)
-    : matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver);
+    ? (getSupportedPrinterProfiles().find((p) => p.id === info.profileId) ??
+      findDbProfileById(info.profileId) ??
+      null)
+    : (matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver) ??
+      findDbProfile([info.name, info.make, info.model, info.driver].filter(Boolean).join(' ')));
 
   if (matchedProfile?.id === 'escpos-impact-76') return 'escpos_impact';
   if (matchedProfile) return 'escpos_thermal';
@@ -408,7 +429,9 @@ export function classifyDetectedPrinterCompatibility(info: {
 }
 
 export function guessPaperWidth(name: string, model: string): string {
-  const profile = matchSupportedPrinterProfile(name, model);
+  const profile =
+    matchSupportedPrinterProfile(name, model) ??
+    findDbProfile([name, model].filter(Boolean).join(' '));
   if (profile) return profile.defaultPaperWidth;
   const s = (name + ' ' + model).toLowerCase();
   if (s.includes('58') || s.includes('tm-u') || s.includes('u220') || s.includes('76mm')) {
@@ -420,7 +443,9 @@ export function guessPaperWidth(name: string, model: string): string {
 export function annotateProfile(
   info: Omit<PrinterInfo, 'profileId' | 'compatibility'>,
 ): PrinterInfo {
-  const profile = matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver);
+  const profile =
+    matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver) ??
+    findDbProfile([info.name, info.make, info.model, info.driver].filter(Boolean).join(' '));
   const compatibility = classifyDetectedPrinterCompatibility({
     ...info,
     profileId: profile?.id,
@@ -5219,92 +5244,124 @@ export async function printViaNetwork(
       ? trimmedIp.slice(1, -1).trim()
       : trimmedIp;
 
-  return new Promise((resolve) => {
-    const client = new net.Socket();
-    let settled = false;
-    let connected = false;
-    let timer: NodeJS.Timeout | null = null;
+  try {
+    return await withNetworkPortLock(
+      connectHost,
+      port,
+      () =>
+        new Promise<DispatchResult>((resolve) => {
+          const client = new net.Socket();
+          let settled = false;
+          let connected = false;
+          let ending = false;
+          let socketClosed = false;
+          let timer: NodeJS.Timeout | null = null;
+          let closeTimer: NodeJS.Timeout | null = null;
 
-    const onAbort = (): void => {
-      if (timer) clearTimeout(timer);
-      client.destroy();
-      finish({ ok: false, detail: 'Print cancelled during shutdown' });
-    };
-    const finish = (result: DispatchResult): void => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      resolve(result);
-    };
+          client.on('close', () => {
+            socketClosed = true;
+          });
 
-    client.connect(port, connectHost, () => {
-      connected = true;
-      // For small payloads (typical text receipts <4KB), write directly in a single pass.
-      if (data.length <= NETWORK_PRINT_CHUNK_SIZE) {
-        client.write(data, () => {
-          client.end();
-          finish({ ok: true });
-        });
-        return;
-      }
-
-      // For large payloads (e.g. raster graphics, multi-language bitmaps), chunk to avoid overrunning
-      // small microcontroller receive buffers on budget thermal printers.
-      let offset = 0;
-      const sendNextChunk = (): void => {
-        if (settled) return;
-        if (offset >= data.length) {
-          client.end();
-          finish({ ok: true });
-          return;
-        }
-
-        const chunk = data.subarray(offset, offset + NETWORK_PRINT_CHUNK_SIZE);
-        offset += chunk.length;
-
-        const scheduleNext = (): void => {
-          if (settled) return;
-          if (offset < data.length) {
-            timer = setTimeout(sendNextChunk, NETWORK_PRINT_CHUNK_DELAY_MS);
-          } else {
+          const onAbort = (): void => {
+            if (timer) clearTimeout(timer);
+            if (closeTimer) clearTimeout(closeTimer);
+            client.destroy();
+            finish({ ok: false, detail: 'Print cancelled during shutdown' });
+          };
+          const finish = (result: DispatchResult): void => {
+            if (settled) return;
+            settled = true;
+            if (timer) clearTimeout(timer);
+            if (closeTimer) clearTimeout(closeTimer);
+            signal?.removeEventListener('abort', onAbort);
+            resolve(result);
+          };
+          const endAndWaitForClose = (): void => {
+            if (settled || ending) return;
+            ending = true;
+            client.setTimeout(0);
+            if (socketClosed || client.destroyed) {
+              finish({ ok: true });
+              return;
+            }
+            client.once('close', () => {
+              finish({ ok: true });
+            });
+            closeTimer = setTimeout(() => {
+              client.destroy();
+              finish({ ok: true });
+            }, 500);
+            closeTimer.unref?.();
             client.end();
-            finish({ ok: true });
-          }
-        };
+          };
 
-        const canContinue = client.write(chunk, () => {
-          if (canContinue) {
-            scheduleNext();
-          }
-        });
+          client.connect(port, connectHost, () => {
+            connected = true;
+            // For small payloads (typical text receipts <4KB), write directly in a single pass.
+            if (data.length <= NETWORK_PRINT_CHUNK_SIZE) {
+              client.write(data, endAndWaitForClose);
+              return;
+            }
 
-        if (!canContinue) {
-          client.once('drain', scheduleNext);
-        }
-      };
+            // For large payloads (e.g. raster graphics, multi-language bitmaps), chunk to avoid overrunning
+            // small microcontroller receive buffers on budget thermal printers.
+            let offset = 0;
+            const sendNextChunk = (): void => {
+              if (settled) return;
+              if (offset >= data.length) {
+                endAndWaitForClose();
+                return;
+              }
 
-      sendNextChunk();
-    });
+              const chunk = data.subarray(offset, offset + NETWORK_PRINT_CHUNK_SIZE);
+              offset += chunk.length;
 
-    client.on('error', (err) => {
-      console.error(`[Printer] Network error: ${err.message}`);
-      client.destroy();
-      finish({ ok: false, detail: `Network error: ${err.message}` });
-    });
+              const scheduleNext = (): void => {
+                if (settled) return;
+                if (offset < data.length) {
+                  timer = setTimeout(sendNextChunk, NETWORK_PRINT_CHUNK_DELAY_MS);
+                } else {
+                  endAndWaitForClose();
+                }
+              };
 
-    client.setTimeout(5000, () => {
-      client.destroy();
-      finish({
-        ok: false,
-        detail: connected
-          ? `Timed out writing to ${ip}:${port}`
-          : `Timed out connecting to ${ip}:${port}`,
-      });
-    });
-    signal?.addEventListener('abort', onAbort, { once: true });
-    if (signal?.aborted) onAbort();
-  });
+              const canContinue = client.write(chunk, () => {
+                if (canContinue) {
+                  scheduleNext();
+                }
+              });
+
+              if (!canContinue) {
+                client.once('drain', scheduleNext);
+              }
+            };
+
+            sendNextChunk();
+          });
+
+          client.on('error', (err) => {
+            console.error(`[Printer] Network error: ${err.message}`);
+            client.destroy();
+            finish({ ok: false, detail: `Network error: ${err.message}` });
+          });
+
+          client.setTimeout(5000, () => {
+            client.destroy();
+            finish({
+              ok: false,
+              detail: connected
+                ? `Timed out writing to ${ip}:${port}`
+                : `Timed out connecting to ${ip}:${port}`,
+            });
+          });
+          signal?.addEventListener('abort', onAbort, { once: true });
+          if (signal?.aborted) onAbort();
+        }),
+      signal,
+    );
+  } catch {
+    return { ok: false, detail: 'Print cancelled during shutdown' };
+  }
 }
 
 export async function printViaUSB(

@@ -3,6 +3,7 @@
 // mirror python-escpos (RT_MASK_LOWPAPER = 30, RT_MASK_NOPAPER = 114).
 
 import * as net from 'net';
+import { withNetworkPortLock } from './network-port-lock';
 
 export type StatusQuery = 1 | 2 | 3 | 4;
 
@@ -116,6 +117,7 @@ export function openSocket(
     };
     const onAbort = () => finish(new Error('aborted'));
     const timer = setTimeout(() => finish(new Error('connect timeout')), timeoutMs);
+    timer.unref?.();
     socket.once('error', finish);
     socket.once('connect', () => finish());
     if (signal) {
@@ -161,6 +163,7 @@ function makeReader(socket: net.Socket): ReadStatusByte {
         resolve(b);
       };
       const timer = setTimeout(() => settle(null), timeoutMs);
+      timer.unref?.();
       waiter = settle;
       flush();
     });
@@ -174,66 +177,97 @@ export async function probeNetworkPrinterStatus(
 ): Promise<PrinterStatusResult> {
   const timeoutMs = options.timeoutMs ?? 800;
   const result: PrinterStatusResult = { reachable: false, answered: false };
-  let socket: net.Socket;
+
   try {
-    socket = await openSocket(host, port, timeoutMs, options.signal);
+    return await withNetworkPortLock(
+      host,
+      port,
+      async () => {
+        let socket: net.Socket;
+        try {
+          socket = await openSocket(host, port, timeoutMs, options.signal);
+        } catch {
+          return result;
+        }
+        result.reachable = true;
+
+        let socketClosed = false;
+        socket.once('close', () => {
+          socketClosed = true;
+        });
+        const onAbort = () => socket.destroy();
+        options.signal?.addEventListener('abort', onAbort, { once: true });
+        const readStatus = makeReader(socket);
+
+        const ask = async (n: StatusQuery): Promise<number | null> => {
+          socket.write(DLE_EOT[n]);
+          const b = await readStatus(timeoutMs);
+          if (b !== null) result.answered = true;
+          return b;
+        };
+
+        try {
+          if (options.signal?.aborted) return result;
+          const printer = await ask(1);
+          // A clone that ignores DLE EOT stays silent; do not wait out the other queries.
+          if (printer === null) return result;
+          result.online = decodePrinterStatus(printer).online;
+
+          const cause = await ask(2);
+          let errorFlag = false;
+          if (cause !== null) {
+            const decoded = decodeOfflineCause(cause);
+            result.coverOpen = decoded.coverOpen;
+            errorFlag = decoded.error;
+          }
+
+          if (errorFlag) {
+            const reason = await ask(3);
+            if (reason !== null) {
+              const decoded = decodeErrorCause(reason);
+              result.error = decoded.unrecoverableError
+                ? 'unrecoverable'
+                : decoded.cutterError
+                  ? 'cutter'
+                  : decoded.autoRecoverableError
+                    ? 'recoverable'
+                    : undefined;
+            }
+          }
+
+          const paper = await ask(4);
+          if (paper !== null) {
+            const decoded = decodePaperSensor(paper);
+            result.paperNearEnd = decoded.paperNearEnd;
+            result.paperOut = decoded.paperOut;
+          }
+        } catch {
+          // The printer dropped the connection mid-way; report what we already have.
+        } finally {
+          options.signal?.removeEventListener('abort', onAbort);
+          await new Promise<void>((resolve) => {
+            if (socketClosed || socket.destroyed) {
+              socket.destroy();
+              resolve();
+              return;
+            }
+            const done = () => {
+              clearTimeout(closeTimer);
+              resolve();
+            };
+            const closeTimer = setTimeout(done, 100);
+            closeTimer.unref?.();
+            socket.once('close', done);
+            socket.destroy();
+          });
+        }
+        return result;
+      },
+      options.signal,
+    );
   } catch {
     return result;
   }
-  result.reachable = true;
-
-  const onAbort = () => socket.destroy();
-  options.signal?.addEventListener('abort', onAbort);
-  const readStatus = makeReader(socket);
-
-  const ask = async (n: StatusQuery): Promise<number | null> => {
-    socket.write(DLE_EOT[n]);
-    const b = await readStatus(timeoutMs);
-    if (b !== null) result.answered = true;
-    return b;
-  };
-
-  try {
-    const printer = await ask(1);
-    // A clone that ignores DLE EOT stays silent; do not wait out the other queries.
-    if (printer === null) return result;
-    result.online = decodePrinterStatus(printer).online;
-
-    const cause = await ask(2);
-    let errorFlag = false;
-    if (cause !== null) {
-      const decoded = decodeOfflineCause(cause);
-      result.coverOpen = decoded.coverOpen;
-      errorFlag = decoded.error;
-    }
-
-    if (errorFlag) {
-      const reason = await ask(3);
-      if (reason !== null) {
-        const decoded = decodeErrorCause(reason);
-        result.error = decoded.unrecoverableError
-          ? 'unrecoverable'
-          : decoded.cutterError
-            ? 'cutter'
-            : decoded.autoRecoverableError
-              ? 'recoverable'
-              : undefined;
-      }
-    }
-
-    const paper = await ask(4);
-    if (paper !== null) {
-      const decoded = decodePaperSensor(paper);
-      result.paperNearEnd = decoded.paperNearEnd;
-      result.paperOut = decoded.paperOut;
-    }
-  } catch {
-    // The printer dropped the connection mid-way; report what we already have.
-  } finally {
-    options.signal?.removeEventListener('abort', onAbort);
-    socket.destroy();
-  }
-  return result;
 }
 
 export type PrinterFailureCause =

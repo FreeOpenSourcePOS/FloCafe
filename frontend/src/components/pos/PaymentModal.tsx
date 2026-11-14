@@ -960,6 +960,7 @@ export default function PaymentModal({
       )
         return;
     }
+    setAutoFilledSingleIndex(null);
     setPaymentsTouched(true);
     setPayments((rows) =>
       rows.map((row, rowIndex) => {
@@ -1683,6 +1684,30 @@ export default function PaymentModal({
         headers: operationHeaders(attempt.operationId),
       });
       const currentBill = data?.bill as Bill | undefined;
+      if (
+        currentBill &&
+        (currentBill.payment_status === 'refunded' ||
+          currentBill.payment_status === 'partially_refunded' ||
+          currentBill.order?.status === 'cancelled')
+      ) {
+        onBillUpdate?.({ ...bill, ...currentBill, order: currentBill.order ?? bill.order });
+        lockAttempt(null);
+        setPaymentOutcomeUnknown(false);
+        const isCancelled = currentBill.order?.status === 'cancelled';
+        setRequestFailure({
+          message: isCancelled ? tOrders('noFurtherActions') : t('paymentBillRefunded'),
+          nextStep: '',
+          details: {
+            operation: 'payment.create',
+            stage: 'recovery',
+            outcome: 'not_applied',
+            reasonCode: isCancelled ? 'order_cancelled' : 'bill_refunded',
+            correlationId: attempt.operationId,
+          },
+          status: null,
+        });
+        return;
+      }
       if (!currentBill || !['paid', 'partial', 'unpaid'].includes(currentBill.payment_status))
         throw new Error('Bill status unavailable');
       onBillUpdate?.({ ...bill, ...currentBill, order: bill.order });
@@ -2029,12 +2054,18 @@ export default function PaymentModal({
 
   const taxComponents = resolveTaxComponents(bill);
 
+  const billTerminal =
+    bill.payment_status === 'refunded' ||
+    bill.payment_status === 'partially_refunded' ||
+    bill.order?.status === 'cancelled';
+
   const payCtaDisabled =
     processing ||
     openingSplitCheck ||
     applyingDiscount ||
     Boolean(updatingChargeId) ||
     chargeStateUncertain ||
+    billTerminal ||
     (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
     Boolean(
       kitchenOverridePin &&
@@ -2090,8 +2121,16 @@ export default function PaymentModal({
               {showDetails ? t('close') : kitchenOverrideRequired ? t('managerPin') : t('items')}
             </button>
             <button
-              onClick={justPaid ? onPaid : onClose}
-              disabled={processing || attemptLocked}
+              onClick={() => dismissHandlerRef.current()}
+              disabled={
+                processing ||
+                attemptLocked ||
+                paymentOutcomeUnknown ||
+                applyingDiscount ||
+                Boolean(updatingChargeId) ||
+                chargeStateUncertain ||
+                splitCheckSaving
+              }
               className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
               aria-label={t('close')}
             >

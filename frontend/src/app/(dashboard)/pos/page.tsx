@@ -300,6 +300,7 @@ export default function POSPage() {
   const tSettings = useTranslations('settings');
   const tExpenses = useTranslations('expenses');
   const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog, isConfirmOpen } = useConfirm();
@@ -340,6 +341,7 @@ export default function POSPage() {
   const [prepaidRecovery, setPrepaidRecovery] = useState<{
     message: string;
     statusChecked: boolean;
+    terminal?: boolean;
     nextStep?: string;
     details: {
       operation: string;
@@ -2769,6 +2771,39 @@ export default function POSPage() {
     setShowPrepaidCheckout(false);
   };
 
+  const resolveTerminalPrepaidBill = (
+    terminalBill: Pick<Bill, 'payment_status' | 'order'>,
+    userId: string | null,
+    correlationId: string | null | undefined,
+  ): boolean => {
+    const isRefunded =
+      terminalBill.payment_status === 'refunded' ||
+      terminalBill.payment_status === 'partially_refunded';
+    const isCancelled = terminalBill.order?.status === 'cancelled';
+    if (!isRefunded && !isCancelled) return false;
+    clearPrepaidAttempt(userId);
+    setPrepaidModalAttempt(null);
+    prepaidRecoveryRef.current = null;
+    setPrepaidRecovery(null);
+    const terminalFailure = {
+      message: isCancelled ? tOrders('noFurtherActions') : t('paymentBillRefunded'),
+      statusChecked: true,
+      terminal: true,
+      nextStep: undefined,
+      details: {
+        operation: 'payment.create',
+        stage: 'recovery',
+        outcome: 'not_applied',
+        reasonCode: isCancelled ? 'order_cancelled' : 'bill_refunded',
+        correlationId: correlationId ?? null,
+        httpStatus: null,
+      },
+    };
+    prepaidFailureRef.current = terminalFailure;
+    setPrepaidFailure(terminalFailure);
+    return true;
+  };
+
   // Handle prepaid checkout - place order and pay in one step
   const handlePrepaidCheckout = async (
     payments: PrepaidPayment[],
@@ -2867,6 +2902,13 @@ export default function POSPage() {
           },
         });
         if (!isSessionCurrent()) return;
+        if (
+          data?.bill &&
+          resolveTerminalPrepaidBill(data.bill, originUserId, recoveryOperationId)
+        ) {
+          setSubmitting(false);
+          return;
+        }
         if (!data?.bill || !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)) {
           throw new Error('Bill status unavailable');
         }
@@ -4687,6 +4729,17 @@ export default function POSPage() {
                     ...operationHeaders(attempt.operationId),
                   },
                 });
+                if (!checkSessionCurrent(originContext)) return;
+                if (
+                  data?.bill &&
+                  resolveTerminalPrepaidBill(
+                    data.bill,
+                    originContext.userId,
+                    attempt.operationId ?? null,
+                  )
+                ) {
+                  return;
+                }
                 if (
                   !data?.bill ||
                   !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)

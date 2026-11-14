@@ -431,6 +431,7 @@ function installCheckoutComponentMocks(
     discount?: { type: 'amount' | 'percentage'; value: number; reason?: string } | null;
     apiGet?: (url: string) => Promise<any>;
     apiPost?: (url: string, body: any) => Promise<any>;
+    apiPatch?: (url: string, body: any) => Promise<any>;
     charges?: any[];
     chargesBreakdown?: any[];
     optedInChargeIds?: Set<string>;
@@ -637,12 +638,16 @@ function installCheckoutComponentMocks(
           if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
           if (String(url).includes('payment-methods')) return { data: { methods: [] } };
           if (String(url).includes('printers')) return { data: { printers: [] } };
-          if (String(url).includes('settings')) return { data: { split_checks_enabled: true } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
           if (String(url).includes('/bills/')) return { data: { bill: makeBill('bill-1', 20) } };
           return { data: {} };
         },
         post: async (url: string, body: any) =>
           overrides.apiPost ? overrides.apiPost(url, body) : { data: {} },
+        patch: async (url: string, body: any) =>
+          overrides.apiPatch ? overrides.apiPatch(url, body) : { data: {} },
         defaults: { headers: { common: {} } },
       };
       return {
@@ -768,27 +773,42 @@ async function testPaymentModalLockDismissAndBillReset() {
         'PaymentModal registers its dismiss handler for pos/page.tsx Escape coordination',
       );
 
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      tree = harness.renderAndSettle(PaymentModal, baseProps);
+
       const splitBtn = collectElements(
         tree,
         (el) => el.type === 'button' && el.props?.['data-testid'] === 'split-mode-items-tab',
       )[0];
-      if (splitBtn) {
-        splitBtn.props.onClick();
-        tree = harness.renderAndSettle(PaymentModal, baseProps);
-        assert.ok(
-          collectElements(tree, (el) => el.props?.['data-testid'] === 'split-check-modal-stub')
-            .length === 1,
-          'SplitCheckModal opened inside PaymentModal',
-        );
-        const handledInner = registeredDismiss!();
-        assert.equal(
-          handledInner,
-          true,
-          'Dismiss handler claims Escape while SplitCheckModal open',
-        );
-        assert.equal(closeCount, 0, 'Dismissing inner SplitCheckModal does NOT close PaymentModal');
-        tree = harness.renderAndSettle(PaymentModal, baseProps);
-      }
+      assert.ok(splitBtn, 'split-mode-items-tab renders when split_checks_enabled setting is true');
+      splitBtn.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, baseProps);
+      const openSplitBtn = collectElements(
+        tree,
+        (el) =>
+          typeof el.props?.onClick === 'function' &&
+          Array.isArray(el.props?.children) &&
+          el.props.children.includes('splitCheck') &&
+          !el.props?.disabled,
+      )[0];
+      assert.ok(openSplitBtn, 'Split Check action button renders and is enabled');
+      await openSplitBtn.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, baseProps);
+      assert.ok(
+        collectElements(tree, (el) => el.props?.['data-testid'] === 'split-check-modal-stub')
+          .length === 1,
+        'SplitCheckModal opened inside PaymentModal',
+      );
+      const handledInner = registeredDismiss!();
+      assert.equal(handledInner, true, 'Dismiss handler claims Escape while SplitCheckModal open');
+      assert.equal(closeCount, 0, 'Dismissing inner SplitCheckModal does NOT close PaymentModal');
+      tree = harness.renderAndSettle(PaymentModal, baseProps);
+      assert.equal(
+        collectElements(tree, (el) => el.props?.['data-testid'] === 'split-check-modal-stub')
+          .length,
+        0,
+        'SplitCheckModal closed after inner dismiss',
+      );
 
       const handledOuter = registeredDismiss!();
       assert.equal(handledOuter, true, 'Dismiss handler returns true on outer close');
@@ -1850,6 +1870,305 @@ async function testPosPageEscapeAndSessionGuards() {
   console.log('  ✓ Postpaid attempt storage and Escape dismiss registration verified');
 }
 
+async function testReviewFixRegressions() {
+  console.log(
+    '\n--- 6. CodeRabbit Review Regressions (Equal Share + Header Guard + Terminal Recovery) ---',
+  );
+  await withAliases(async () => {
+    // 6a. Applying an equal share clears autoFilledSingleIndex so recording share 1 does NOT refill Cash with remaining balance.
+    const eqHarness = createStatefulHarness();
+    try {
+      let currentBill: any = makeBill('bill-eq-1', 90);
+      installCheckoutComponentMocks(eqHarness, {
+        confirmFn: async () => true,
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'none', discount_requires_approval: false } };
+          if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+          return { data: {} };
+        },
+        apiPost: async () => {
+          currentBill = {
+            ...currentBill,
+            paid_amount: 30,
+            balance: 60,
+            payment_status: 'partial',
+          };
+          return { data: { bill: currentBill, loyaltyPointsEarned: 0 } };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const makeEqProps = () => ({
+        bill: currentBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+        onBillUpdate: (updated: any) => {
+          currentBill = updated;
+        },
+      });
+
+      let tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+
+      // Auto-fill Cash with 90
+      const cashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      assert.ok(cashBtn, 'Cash tender button rendered');
+      cashBtn.props.onClick();
+      tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+      const cashInputBefore = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(
+        cashInputBefore?.props?.value,
+        '90',
+        'Cash auto-filled to 90 before Equal Share',
+      );
+
+      // Switch to Equal Share -> 3 payers -> Apply to Cash (share = 30)
+      const equalTabBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'split-mode-equal-tab',
+      )[0];
+      assert.ok(equalTabBtn, 'Equal Share tab rendered');
+      equalTabBtn.props.onClick();
+      tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+
+      const preset3 = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'equal-share-preset-3',
+      )[0];
+      assert.ok(preset3, 'Equal Share 3-payer preset rendered');
+      preset3.props.onClick();
+      tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+
+      const applyEqualCashBtn = collectElements(
+        tree,
+        (el) =>
+          typeof el.props?.onClick === 'function' &&
+          String(el.props?.children) === 'equalShareApplyTo',
+      )[0];
+      assert.ok(applyEqualCashBtn, 'Equal Share apply button rendered for Cash');
+      await applyEqualCashBtn.props.onClick();
+      tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+
+      const cashAfterApply = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(cashAfterApply?.props?.value, '30', 'Cash equals first share of 30');
+
+      // Submit first equal share -> bill balance updates to 60 -> Cash must NOT be refilled to 60!
+      const payCta = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.ok(payCta, 'Pay CTA found');
+      await payCta.props.onClick();
+      tree = eqHarness.renderAndSettle(PaymentModal, makeEqProps());
+
+      const cashAfterFirstShare = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(
+        cashAfterFirstShare?.props?.value,
+        '',
+        'Recording equal share clears Cash without balance reconciliation refilling remaining 60',
+      );
+    } finally {
+      eqHarness.cleanupAll();
+    }
+
+    // 6b. PaymentModal header Close button is guarded while applyingDiscount is active.
+    const closeGuardHarness = createStatefulHarness();
+    try {
+      let resolveDiscountPatch!: (v: any) => void;
+      const bill = makeBill('bill-guard', 40);
+      let closeCount = 0;
+      installCheckoutComponentMocks(closeGuardHarness, {
+        apiPatch: (url: string) => {
+          if (String(url).includes('/discount')) {
+            return new Promise((resolve) => {
+              resolveDiscountPatch = resolve;
+            });
+          }
+          return Promise.resolve({ data: {} });
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const guardProps = {
+        bill,
+        currency: 'USD',
+        onClose: () => {
+          closeCount++;
+        },
+        onPaid: () => {},
+      };
+      let tree = closeGuardHarness.renderAndSettle(PaymentModal, guardProps);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      tree = closeGuardHarness.renderAndSettle(PaymentModal, guardProps);
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.ok(discountTab, 'Discount panel toggle rendered');
+      discountTab.props.onClick();
+      tree = closeGuardHarness.renderAndSettle(PaymentModal, guardProps);
+
+      const discountInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && !el.props?.['aria-label'],
+      )[0];
+      assert.ok(discountInput, 'Discount input rendered');
+      discountInput.props.onChange({ target: { value: '10' } });
+      tree = closeGuardHarness.renderAndSettle(PaymentModal, guardProps);
+
+      const applyDiscountBtn = collectElements(
+        tree,
+        (el) =>
+          typeof el.props?.onClick === 'function' && String(el.props?.children) === 'applyDiscount',
+      )[0];
+      assert.ok(applyDiscountBtn, 'Apply discount button rendered');
+      const discountPromise = applyDiscountBtn.props.onClick();
+      tree = closeGuardHarness.renderAndSettle(PaymentModal, guardProps);
+
+      const closeBtnDuringPatch = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['aria-label'] === 'close',
+      )[0];
+      assert.ok(closeBtnDuringPatch, 'Header Close button rendered');
+      assert.equal(
+        Boolean(closeBtnDuringPatch.props.disabled),
+        true,
+        'Header Close button is disabled while discount patch is in flight',
+      );
+      closeBtnDuringPatch.props.onClick();
+      assert.equal(
+        closeCount,
+        0,
+        'Header Close click does NOT dismiss during active discount update',
+      );
+
+      resolveDiscountPatch({ data: { bill: { ...bill, total: 36, balance: 36 } } });
+      await discountPromise;
+      tree = closeGuardHarness.renderAndSettle(PaymentModal, guardProps);
+      const closeBtnAfterPatch = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['aria-label'] === 'close',
+      )[0];
+      assert.equal(
+        Boolean(closeBtnAfterPatch.props.disabled),
+        false,
+        'Header Close button re-enables once discount update finishes',
+      );
+      closeBtnAfterPatch.props.onClick();
+      assert.equal(closeCount, 1, 'Header Close dismisses cleanly once idle');
+    } finally {
+      closeGuardHarness.cleanupAll();
+    }
+
+    // 6c. PrepaidCheckoutModal terminal failure allows dismissal while blocking payment retries.
+    const termHarness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    const keyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWindow || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.delete(fn);
+      },
+    };
+    try {
+      installCheckoutComponentMocks(termHarness);
+      const prepaidPath = path.resolve(
+        ROOT,
+        'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
+      );
+      delete require.cache[prepaidPath];
+      const PrepaidCheckoutModal = require(prepaidPath).default;
+
+      let closed = 0;
+      let confirmCalled = 0;
+      const tree = termHarness.renderAndSettle(PrepaidCheckoutModal, {
+        currency: 'USD',
+        recovery: null,
+        failure: {
+          message: 'paymentBillRefunded',
+          terminal: true,
+          details: {
+            operation: 'payment.create',
+            stage: 'recovery',
+            outcome: 'not_applied',
+            reasonCode: 'bill_refunded',
+            correlationId: 'op-term-1',
+            httpStatus: null,
+          },
+        },
+        onClose: () => {
+          closed++;
+        },
+        onConfirm: () => {
+          confirmCalled++;
+        },
+      });
+      const closeBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['aria-label'] === 'close',
+      )[0];
+      assert.ok(closeBtn, 'PrepaidCheckoutModal Close button rendered');
+      assert.equal(
+        Boolean(closeBtn.props.disabled),
+        false,
+        'Terminal failure unlocks Close button in PrepaidCheckoutModal',
+      );
+      const primaryBtn = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.ok(primaryBtn, 'PrepaidCheckoutModal primary CTA rendered');
+      assert.equal(
+        Boolean(primaryBtn.props.disabled),
+        true,
+        'Terminal failure disables payment retry CTA',
+      );
+      primaryBtn.props.onClick();
+      assert.equal(confirmCalled, 0, 'Primary handler refuses submission on terminal failure');
+      for (const listener of keyListeners) {
+        listener({ key: 'Escape', preventDefault: () => {}, target: null });
+      }
+      assert.equal(closed, 1, 'Escape dismisses terminal PrepaidCheckoutModal');
+      closeBtn.props.onClick();
+      assert.equal(closed, 2, 'Close button dismisses terminal PrepaidCheckoutModal');
+    } finally {
+      termHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+  console.log(
+    '  ✓ Equal Share auto-fill clear, header dismiss guard, and terminal recovery verified',
+  );
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -1858,6 +2177,7 @@ async function run() {
   await testPrepaidAutoFillTracksDiscountUpdates();
   await testExactQuickValuesAndDiscountTargetReset();
   await testPosPageEscapeAndSessionGuards();
+  await testReviewFixRegressions();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

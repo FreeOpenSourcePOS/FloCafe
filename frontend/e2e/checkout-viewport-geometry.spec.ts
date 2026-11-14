@@ -59,14 +59,6 @@ async function setBusinessSettings(
   expect(bizRes.ok()).toBeTruthy();
   const originalBusiness = await bizRes.json();
 
-  if (patch.billing_type && originalBusiness.billing_type !== patch.billing_type) {
-    const putBiz = await page.request.put(`${BASE}/api/settings/business`, {
-      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
-      data: { ...originalBusiness, billing_type: patch.billing_type },
-    });
-    expect(putBiz.ok()).toBeTruthy();
-  }
-
   let originalCardRequired: string | null = null;
   if (patch.card_transaction_id_required !== undefined) {
     const cardRes = await page.request.get(`${BASE}/api/settings/card_transaction_id_required`, {
@@ -76,11 +68,27 @@ async function setBusinessSettings(
       const cardData = await cardRes.json();
       originalCardRequired = String(cardData?.setting?.value ?? 'false');
     }
-    const putCard = await page.request.put(`${BASE}/api/settings/card_transaction_id_required`, {
-      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
-      data: { value: patch.card_transaction_id_required ? 'true' : 'false' },
-    });
-    expect(putCard.ok()).toBeTruthy();
+  }
+
+  try {
+    if (patch.billing_type && originalBusiness.billing_type !== patch.billing_type) {
+      const putBiz = await page.request.put(`${BASE}/api/settings/business`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+        data: { ...originalBusiness, billing_type: patch.billing_type },
+      });
+      expect(putBiz.ok()).toBeTruthy();
+    }
+
+    if (patch.card_transaction_id_required !== undefined) {
+      const putCard = await page.request.put(`${BASE}/api/settings/card_transaction_id_required`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+        data: { value: patch.card_transaction_id_required ? 'true' : 'false' },
+      });
+      expect(putCard.ok()).toBeTruthy();
+    }
+  } catch (error) {
+    await restoreBusinessSettings(page, { originalBusiness, originalCardRequired }).catch(() => {});
+    throw error;
   }
 
   return { originalBusiness, originalCardRequired };
@@ -429,7 +437,13 @@ test('PaymentModal holds zero-scroll and <=1px shift with 20 items, 20-payer Equ
         contentType: 'application/json',
         body: JSON.stringify({
           error: 'Card transaction_id is required',
-          code: 'card_transaction_id_required',
+          reason_code: 'payment.invalid',
+          operation: 'payment.create',
+          stage: 'validation',
+          classification: 'expected_rejection',
+          outcome: 'not_applied',
+          correlation_id: route.request().headers()['x-operation-id'],
+          display_code: 'card_transaction_id_required',
         }),
       });
     });
@@ -457,10 +471,13 @@ test('PaymentModal holds zero-scroll and <=1px shift with 20 items, 20-payer Equ
     await page.unroute('**/api/bills/*/payments');
 
     // Also verify unknown network recovery strip causes <=1px shift
+    let abortedPaymentPosts = 0;
     await page.route('**/api/bills/*/payments', async (route) => {
+      abortedPaymentPosts += 1;
       await route.abort('failed');
     });
     await submitCta.click();
+    await expect.poll(() => abortedPaymentPosts).toBe(1);
     await expect(
       modal.getByRole('button', { name: /Send same payment|Check payment status/i }).first(),
     ).toBeVisible({ timeout: 5000 });

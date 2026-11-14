@@ -85,6 +85,7 @@ interface Props {
   failure?: {
     message: string;
     nextStep?: string;
+    terminal?: boolean;
     details: {
       operation: string;
       stage: string;
@@ -1021,6 +1022,7 @@ export default function PrepaidCheckoutModal({
 
   const confirmDisabled =
     processing ||
+    Boolean(failure?.terminal) ||
     (!recovery &&
       (taxLoading ||
         !preview ||
@@ -1045,7 +1047,7 @@ export default function PrepaidCheckoutModal({
         : t('confirmPaymentAmount', { amount: currencyFmt(remaining) });
 
   const handlePrimarySubmit = () => {
-    if (inFlightRef.current) return;
+    if (inFlightRef.current || failure?.terminal) return;
     if (recovery && !recovery.statusChecked && onCheckRecovery) {
       inFlightRef.current = true;
       setProcessing(true);

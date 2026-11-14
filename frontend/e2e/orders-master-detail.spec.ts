@@ -1964,3 +1964,150 @@ test('payment correction waits for fresh eligibility and preserves mixed line in
     releaseBill();
   }
 });
+
+test('shiftless paid order allows payment correction and closed-shift order hides footer button with single-reason menu copy', async ({
+  page,
+}) => {
+  const auth = () => ({
+    Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+  });
+
+  // Ensure no cash shift is open before creating the shiftless paid order
+  const currentRes = await page.request.get(`${BASE}/api/cash-sessions/current`, {
+    headers: auth(),
+  });
+  expect(currentRes.ok()).toBeTruthy();
+  const currentBody = await currentRes.json();
+  const activeSession = currentBody?.session ?? (currentBody?.id ? currentBody : null);
+  if (activeSession?.id) {
+    const closeExisting = await page.request.post(
+      `${BASE}/api/cash-sessions/${activeSession.id}/close`,
+      {
+        headers: auth(),
+        data: { counted_cash_cents: activeSession.expected_cash_cents ?? 0 },
+      },
+    );
+    expect(closeExisting.ok()).toBeTruthy();
+  }
+
+  // Provision owner PIN for payment method correction approval
+  const setPinRes = await page.request.put(`${BASE}/api/staff/e2e-owner`, {
+    headers: auth(),
+    data: { pin: '1234' },
+  });
+  expect(setPinRes.ok()).toBeTruthy();
+
+  try {
+    // 1. Shiftless paid order (card, cash_session_id = 0)
+    const shiftlessOrder = await createTakeaway(page, 'Shiftless payment correction E2E');
+    const shiftlessBillRes = await page.request.post(`${BASE}/api/bills/generate`, {
+      headers: auth(),
+      data: { order_id: shiftlessOrder.id },
+    });
+    expect(shiftlessBillRes.ok()).toBeTruthy();
+    const { bill: shiftlessBill } = await shiftlessBillRes.json();
+    const payShiftlessRes = await page.request.post(
+      `${BASE}/api/bills/${shiftlessBill.id}/payment`,
+      {
+        headers: auth(),
+        data: { method: 'card', amount: null, transaction_id: 'TX-E2E-SHIFTLESS-01' },
+      },
+    );
+    expect(payShiftlessRes.ok()).toBeTruthy();
+    const paidShiftless = (await payShiftlessRes.json()).bill;
+    expect(paidShiftless.payment_details[0].cash_session_id).toBe(0);
+
+    // 2. Closed-shift paid order
+    const openShiftRes = await page.request.post(`${BASE}/api/cash-sessions/open`, {
+      headers: auth(),
+      data: { opening_float_cents: 0 },
+    });
+    expect(openShiftRes.ok()).toBeTruthy();
+    const openedShift = await openShiftRes.json();
+    const closedShiftOrder = await createTakeaway(page, 'Closed-shift payment correction E2E');
+    const closedShiftBillRes = await page.request.post(`${BASE}/api/bills/generate`, {
+      headers: auth(),
+      data: { order_id: closedShiftOrder.id },
+    });
+    expect(closedShiftBillRes.ok()).toBeTruthy();
+    const { bill: closedShiftBill } = await closedShiftBillRes.json();
+    const payClosedShiftRes = await page.request.post(
+      `${BASE}/api/bills/${closedShiftBill.id}/payment`,
+      {
+        headers: auth(),
+        data: { method: 'cash', amount: null },
+      },
+    );
+    expect(payClosedShiftRes.ok()).toBeTruthy();
+    const closeShiftRes = await page.request.post(
+      `${BASE}/api/cash-sessions/${openedShift.id}/close`,
+      {
+        headers: auth(),
+        data: { counted_cash_cents: Math.round(Number(closedShiftBill.total) * 100) },
+      },
+    );
+    expect(closeShiftRes.ok()).toBeTruthy();
+
+    const pinUsersFetched = page
+      .waitForResponse((res) => res.url().includes('/api/auth/pin-users'), { timeout: 5_000 })
+      .catch(() => null);
+    await page.goto(`${BASE}/auth/login`);
+    await pinUsersFetched;
+    const passwordTab = page.getByTestId('signin-mode-password');
+    if (await passwordTab.isVisible()) {
+      await passwordTab.click();
+    }
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+
+    // Verify shiftless paid order exposes working Correct payment method button
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${shiftlessOrder.order_number}` })
+      .click();
+    const detailPanel = page.getByTestId('orders-detail-panel');
+    await expect(detailPanel.getByTestId('correct-payment-method-button')).toBeVisible();
+    await expect(detailPanel.getByTestId('correct-payment-method-button')).toBeEnabled();
+    await detailPanel.getByTestId('correct-payment-method-button').click();
+
+    await expect(page.getByTestId('correct-payment-method-modal')).toBeVisible();
+    await page.getByTestId('correct-payment-method-select').selectOption('cash');
+    await page.getByTestId('correct-payment-pin-input').fill('1234');
+    await page.getByTestId('correct-payment-submit-button').click();
+    await expect(page.getByTestId('correct-payment-method-modal')).toBeHidden();
+
+    // Confirm persisted method switched to cash
+    const updatedShiftlessRes = await page.request.get(`${BASE}/api/bills/${shiftlessBill.id}`, {
+      headers: auth(),
+    });
+    expect(updatedShiftlessRes.ok()).toBeTruthy();
+    const updatedShiftless = (await updatedShiftlessRes.json()).bill;
+    expect(updatedShiftless.payment_details[0].method).toBe('cash');
+    expect(updatedShiftless.payment_details[0].cash_session_id).toBe(0);
+
+    // Verify closed-shift paid order hides footer button and shows concise single-reason in overflow menu
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${closedShiftOrder.order_number}` })
+      .click();
+    await expect(detailPanel.getByTestId('correct-payment-method-button')).toHaveCount(0);
+    await expect(detailPanel).not.toContainText('Unavailable: check refunds');
+
+    // Open the overflow menu (second button in the header actions, right after the Print icon button)
+    const overflowTrigger = detailPanel.locator('button[aria-haspopup="menu"]');
+    await overflowTrigger.click();
+    const menuItem = page.getByTestId('correct-payment-method-menu-item');
+    await expect(menuItem).toBeVisible();
+    await expect(menuItem).toHaveAttribute('aria-disabled', 'true');
+    await expect(menuItem).toContainText('Cash shift is closed');
+  } finally {
+    await page.request.put(`${BASE}/api/staff/e2e-owner`, {
+      headers: auth(),
+      data: { pin: null },
+    });
+  }
+});

@@ -5888,6 +5888,32 @@ function correctionPayments(value: CorrectionBill['payment_details']): Correctio
   }
 }
 
+function parseExplicitLineSessionId(raw: unknown): number | null {
+  if (typeof raw === 'number') {
+    return Number.isInteger(raw) && raw >= 0 ? raw : null;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!/^\d+$/.test(trimmed)) return null;
+    const parsed = Number(trimmed);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function withPaymentMethodCorrection<T extends Record<string, unknown>>(
+  db: ReturnType<typeof getDatabase>,
+  bill: T,
+) {
+  return {
+    ...bill,
+    payment_method_correction: paymentMethodCorrectionEligibility(
+      db,
+      bill as unknown as CorrectionBill,
+    ),
+  };
+}
+
 export function paymentMethodCorrectionEligibility(
   db: ReturnType<typeof getDatabase>,
   bill: CorrectionBill,
@@ -5930,8 +5956,8 @@ export function paymentMethodCorrectionEligibility(
     new Set(
       [...payments, ...siblingLines.flatMap((entry) => entry.lines)]
         .filter((line) => line && typeof line === 'object')
-        .map((line) => Number(line.cash_session_id))
-        .filter((id) => Number.isInteger(id) && id > 0),
+        .map((line) => parseExplicitLineSessionId(line.cash_session_id))
+        .filter((id): id is number => id !== null && id > 0),
     ),
   );
   const sessions = sessionIds.length
@@ -5950,6 +5976,24 @@ export function paymentMethodCorrectionEligibility(
     if (!closedDates.has(date)) closedDates.set(date, closedDayExists(db, date));
     return closedDates.get(date);
   };
+  const isLineSessionEligible = (
+    rawSessionId: unknown,
+    lineTimestamp: unknown,
+    fallbackPaidAt: unknown,
+    fallbackCreatedAt: unknown,
+  ): boolean => {
+    const sid = parseExplicitLineSessionId(rawSessionId);
+    if (sid === null) return false;
+    if (
+      isClosed(resolveBillBusinessDate(db, lineTimestamp || fallbackPaidAt || fallbackCreatedAt)) ||
+      isClosed(today)
+    ) {
+      return false;
+    }
+    if (sid === NO_CASH_SESSION_ID) return true;
+    const s = sessionsById.get(sid);
+    return Boolean(s && s.status === 'open' && (perStaff || s.id === openSession?.id));
+  };
   const lines = payments.map((line, index) => {
     if (!line || typeof line !== 'object') {
       return { index, correctable: false, reason: 'payment_line_not_found' };
@@ -5962,15 +6006,9 @@ export function paymentMethodCorrectionEligibility(
         isClosed(today))
     )
       reason = 'day_closed';
-    const sessionId = Number(line?.cash_session_id);
-    const session = sessionsById.get(sessionId);
     if (
       !reason &&
-      (!Number.isInteger(sessionId) ||
-        sessionId <= 0 ||
-        !session ||
-        session.status !== 'open' ||
-        (!perStaff && session.id !== openSession?.id))
+      !isLineSessionEligible(line.cash_session_id, line.timestamp, bill.paid_at, bill.created_at)
     )
       reason = 'shift_closed';
     if (!reason) {
@@ -5989,14 +6027,13 @@ export function paymentMethodCorrectionEligibility(
             reason = 'split_sibling_refunded';
             break;
           }
-          const id = Number(item.cash_session_id);
-          const siblingSession = sessionsById.get(id);
           if (
-            !Number.isInteger(id) ||
-            id <= 0 ||
-            !siblingSession ||
-            siblingSession.status !== 'open' ||
-            id !== sessionId
+            !isLineSessionEligible(
+              item.cash_session_id,
+              item.timestamp,
+              entry.sibling.paid_at,
+              entry.sibling.created_at,
+            )
           ) {
             reason = 'split_sibling_shift_closed';
             break;
@@ -6017,7 +6054,7 @@ export function paymentMethodCorrectionEligibility(
   };
 }
 
-// PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift is open
+// PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift (if any) and business day are open
 router.patch(
   '/:id/payments/:index/method',
   requirePermission('payments.take'),
@@ -6296,7 +6333,15 @@ router.patch(
               );
             }
             const cached = JSON.parse(existingIdem.response_json);
-            return { ...cached, idempotentReplay: true };
+            const refreshedBill =
+              cached?.bill && typeof cached.bill === 'object'
+                ? withPaymentMethodCorrection(db, parseRowJson(bill))
+                : cached?.bill;
+            return {
+              ...cached,
+              ...(refreshedBill !== undefined ? { bill: refreshedBill } : {}),
+              idempotentReplay: true,
+            };
           }
         }
 
@@ -6331,6 +6376,7 @@ router.patch(
             409,
           ],
           wallet_method_immutable: ['Cannot correct payment method on a wallet payment line', 409],
+          cash_session_required: ['Open a cash shift before correcting a payment to cash', 409],
         };
         const rejectCorrection = (reason: string) => {
           const [message, status] = correctionErrors[reason];
@@ -6353,7 +6399,10 @@ router.patch(
           }
         }
         if (lineEligibility.reason) rejectCorrection(lineEligibility.reason);
-        const effectiveSessionId = Number(targetLine.cash_session_id);
+        const lineSessionId = parseExplicitLineSessionId(targetLine.cash_session_id);
+        if (lineSessionId === null) {
+          rejectCorrection('shift_closed');
+        }
 
         const rawMethod = typeof method === 'string' ? method.trim() : '';
         if (!rawMethod || rawMethod.length > 60) {
@@ -6531,7 +6580,7 @@ router.patch(
             }
           }
           const replayPayload = {
-            bill: parseRowJson(bill),
+            bill: withPaymentMethodCorrection(db, parseRowJson(bill)),
             audit: latestAuditRow
               ? {
                   id: latestAuditRow.id,
@@ -6597,6 +6646,33 @@ router.patch(
           }
         }
 
+        const oldIsCash = isCashTender(db, {
+          method: oldMethod,
+          payment_method_id: oldPaymentMethodId,
+        });
+        const newIsCash = isCashTender(db, {
+          method: resolvedMethod,
+          payment_method_id: resolvedPaymentMethodId,
+        });
+
+        let effectiveSessionId = lineSessionId as number;
+        if (lineSessionId === NO_CASH_SESSION_ID && !oldIsCash && newIsCash) {
+          const actorOpenSession = getOpenSession(db, effectiveActorUserId);
+          if (actorOpenSession) {
+            const lineBusinessDate = resolveBillBusinessDate(
+              db,
+              targetLine.timestamp || bill.paid_at || bill.created_at,
+            );
+            const sessionBusinessDate = resolveBillBusinessDate(db, actorOpenSession.opened_at);
+            if (sessionBusinessDate !== lineBusinessDate) {
+              rejectCorrection('shift_closed');
+            }
+            effectiveSessionId = actorOpenSession.id;
+          } else if (getSettingValue('require_open_shift') === 'true') {
+            rejectCorrection('cash_session_required');
+          }
+        }
+
         const changedAt = now();
         const updatedLine: Record<string, unknown> = {
           ...targetLine,
@@ -6614,10 +6690,6 @@ router.patch(
           delete updatedLine.transaction_id;
         }
 
-        const newIsCash = isCashTender(db, {
-          method: resolvedMethod,
-          payment_method_id: resolvedPaymentMethodId,
-        });
         if (newIsCash) {
           updatedLine.tendered_amount = Number(targetLine.amount);
           updatedLine.change_amount = 0;
@@ -6676,6 +6748,7 @@ router.patch(
           approver_id: verifiedApprover.id,
           approved_by: verifiedApprover.id,
           reason: normalizedReason,
+          old_cash_session_id: lineSessionId,
           cash_session_id: effectiveSessionId,
           idempotency_key: idempotencyKey ?? null,
           timestamp: changedAt,
@@ -6694,8 +6767,9 @@ router.patch(
           )
           .get(bill.order_id) as { id: number; created_at: string } | undefined;
 
-        const updatedBill = parseRowJson(
-          db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id),
+        const updatedBill = withPaymentMethodCorrection(
+          db,
+          parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id)),
         );
         const responsePayload = {
           bill: updatedBill,

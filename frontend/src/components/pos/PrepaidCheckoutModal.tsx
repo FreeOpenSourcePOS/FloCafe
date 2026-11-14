@@ -193,12 +193,6 @@ export default function PrepaidCheckoutModal({
     hasInitialDiscount ? 'discount' : 'items',
   );
   const discountOpen = activeCol1Panel === 'discount';
-  const setDiscountOpen = (next: boolean | ((prev: boolean) => boolean)) => {
-    setActiveCol1Panel((prev) => {
-      const resolved = typeof next === 'function' ? next(prev === 'discount') : next;
-      return resolved ? 'discount' : 'items';
-    });
-  };
   const [discountType, setDiscountType] = useState<DiscountType>(
     hasInitialDiscount && initialDiscount ? initialDiscount.type : 'percentage',
   );
@@ -218,6 +212,21 @@ export default function PrepaidCheckoutModal({
   const [discountPin, setDiscountPin] = useState('');
   const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>({ kind: 'payment', index: 0 });
+  const setCol1Panel = (
+    next: 'items' | 'discount' | 'tax' | ((prev: 'items' | 'discount' | 'tax') => 'items' | 'discount' | 'tax'),
+  ) => {
+    const resolved = typeof next === 'function' ? next(activeCol1Panel) : next;
+    if (resolved !== activeCol1Panel) {
+      setActiveCol1Panel(resolved);
+    }
+    if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
+      setAmountTarget({ kind: 'payment', index: 0 });
+    }
+  };
+  const setDiscountOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === 'function' ? next(activeCol1Panel === 'discount') : next;
+    setCol1Panel(resolved ? 'discount' : 'items');
+  };
   const [showDetails, setShowDetails] = useState(false);
 
   const previewDiscount = useMemo(() => {
@@ -537,7 +546,7 @@ export default function PrepaidCheckoutModal({
     if (amountTarget.kind === 'wallet') {
       const maxWalletCurrencyStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
       const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
-      const clamped = parseFloat(value) > maxDisplay ? String(maxDisplay) : value;
+      const clamped = parseFloat(value) > maxDisplay ? formatInput(maxDisplay) : value;
       setWalletAmount(clamped);
       setAutoFilledSingleIndex(null);
       setPaymentsTouched(true);
@@ -559,26 +568,38 @@ export default function PrepaidCheckoutModal({
           )
         : undefined;
 
+  const remainingWalletMinor = () => {
+    if (!walletBalance || walletBalance <= 0) return 0;
+    const allocatedPaymentsMinor = payments.reduce(
+      (sum, payment) => sum + toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
+      0,
+    );
+    const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+    return Math.min(
+      toMinorUnits(maxWalletStored),
+      Math.max(0, remainingMinor - allocatedPaymentsMinor),
+    );
+  };
+
   const activeAmountQuickValues = (() => {
     if (amountTarget?.kind === 'payment') {
-      const allocatedElsewhere = payments.reduce(
-        (sum, payment, index) =>
-          index === amountTarget.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0),
-        walletAmt,
+      const rowMinor = payments.map((payment) =>
+        toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
       );
-      const dueDisplay = toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
-      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
+      const dueMinor = allocateRemainingMinor(
+        Math.max(0, remainingMinor - toMinorUnits(walletAmt)),
+        rowMinor,
+        amountTarget.index,
+      );
+      return dueMinor > 0
+        ? [{ label: t('exactAmount'), value: formatInput(toDisplayUnit(dueMinor / minorFactor)) }]
+        : [];
     }
     if (amountTarget?.kind === 'wallet') {
-      const allocatedElsewhere = payments.reduce(
-        (sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0),
-        0,
-      );
-      const maxWalletStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
-      const dueDisplay = toDisplayUnit(
-        Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere)),
-      );
-      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
+      const dueMinor = remainingWalletMinor();
+      return dueMinor > 0
+        ? [{ label: t('exactAmount'), value: formatInput(toDisplayUnit(dueMinor / minorFactor)) }]
+        : [];
     }
     return [];
   })();
@@ -875,15 +896,7 @@ export default function PrepaidCheckoutModal({
       });
     }
     if (amountTarget?.kind === 'wallet' && walletBalance && walletBalance > 0) {
-      const allocatedPaymentsMinor = payments.reduce(
-        (sum, payment) => sum + toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
-        0,
-      );
-      const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-      const dueMinor = Math.min(
-        toMinorUnits(maxWalletStored),
-        Math.max(0, remainingMinor - allocatedPaymentsMinor),
-      );
+      const dueMinor = remainingWalletMinor();
       if (dueMinor <= 0) return [];
       const exactDisplay = toDisplayUnit(dueMinor / minorFactor);
       const formattedInput = formatInput(exactDisplay);
@@ -1034,7 +1047,15 @@ export default function PrepaidCheckoutModal({
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowDetails((open) => !open)}
+                onClick={() =>
+                  setShowDetails((open) => {
+                    const next = !open;
+                    if (!next && amountTarget?.kind === 'discount') {
+                      setAmountTarget({ kind: 'payment', index: 0 });
+                    }
+                    return next;
+                  })
+                }
                 disabled={locked}
                 aria-expanded={showDetails}
                 className="touch-target rounded-lg border border-border px-3 text-sm font-medium lg:hidden"
@@ -1065,7 +1086,7 @@ export default function PrepaidCheckoutModal({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setActiveCol1Panel('items')}
+                  onClick={() => setCol1Panel('items')}
                   className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-muted/60 px-2.5 text-xs font-semibold text-foreground hover:bg-muted"
                 >
                   <span>&larr;</span>
@@ -1181,7 +1202,7 @@ export default function PrepaidCheckoutModal({
                     <Button
                       type="button"
                       className="flex-1"
-                      onClick={() => setActiveCol1Panel('items')}
+                      onClick={() => setCol1Panel('items')}
                     >
                       {tCommon('done')}
                     </Button>
@@ -1371,7 +1392,7 @@ export default function PrepaidCheckoutModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActiveCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
+                  onClick={() => setCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
                   aria-expanded={activeCol1Panel === 'tax'}
                   className="flex w-full items-center justify-between text-muted-foreground hover:text-foreground"
                 >
@@ -1550,17 +1571,9 @@ export default function PrepaidCheckoutModal({
                       disabled={!walletBalance || walletBalance <= 0}
                       onClick={() => {
                         if (!walletBalance) return;
-                        const allocatedElsewhere = payments.reduce(
-                          (sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0),
-                          0,
-                        );
-                        const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-                        const dueStored = Math.min(
-                          maxWalletStored,
-                          Math.max(0, remaining - allocatedElsewhere),
-                        );
-                        const dueDisplay = toDisplayUnit(dueStored);
-                        setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
+                        const dueMinor = remainingWalletMinor();
+                        const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+                        setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
                         setAutoFilledSingleIndex(null);
                         setAmountTarget({ kind: 'wallet' });
                       }}
@@ -1585,7 +1598,7 @@ export default function PrepaidCheckoutModal({
                           const maxDisplay = toDisplayUnit(
                             Math.min(maxWalletCurrencyStored, remaining),
                           );
-                          const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
+                          const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
                           setWalletAmount(clamped);
                           setAutoFilledSingleIndex(null);
                           setPaymentsTouched(true);

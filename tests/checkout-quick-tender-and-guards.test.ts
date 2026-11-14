@@ -1049,6 +1049,157 @@ async function testPrepaidAutoFillTracksDiscountUpdates() {
   console.log('  ✓ PrepaidCheckoutModal auto-fill discount tracking verified');
 }
 
+async function testExactQuickValuesAndDiscountTargetReset() {
+  console.log('\n--- 4b. Exact Quick Value Precision & Discount AmountTarget Reset ---');
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    if (!hadWindow) {
+      (globalThis as any).window = { addEventListener: () => {}, removeEventListener: () => {} };
+    }
+    try {
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('discount')) {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
+          if (String(url).includes('settings')) return { data: { split_checks_enabled: true } };
+          return { data: {} };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const floatProps = {
+        bill: makeBill('bill-float', 57.78),
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      };
+      let tree = harness.renderAndSettle(PaymentModal, floatProps);
+
+      // Enter 10.10 in Card -> 57.78 - 10.10 in IEEE-754 float is 47.68000000000001
+      const cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      assert.ok(cardInput, 'Card amount input rendered');
+      cardInput.props.onChange({ target: { value: '10.10' } });
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+
+      const exactQuickBtn = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.onClick === 'function' &&
+          renderToStaticMarkup(el).includes('exactAmount'),
+      )[0];
+      assert.ok(exactQuickBtn, 'Keypad Exact quick-value button rendered');
+      exactQuickBtn.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+
+      const cashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(
+        cashInput?.props?.value,
+        '47.68',
+        'Exact quick value uses minor-unit math without IEEE-754 float drift',
+      );
+
+      // Focus discount input in Col 1, then leave Discount panel -> amountTarget returns to payment
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.ok(discountTab, 'PaymentModal discount tab button rendered');
+      discountTab.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+
+      const discountInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      assert.ok(discountInput, 'PaymentModal discount input rendered');
+      discountInput.props.onFocus();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      assert.ok(
+        renderToStaticMarkup(tree).includes('5%'),
+        'Focusing discount input switches quick tenders to discount percentages',
+      );
+
+      discountTab.props.onClick();
+      tree = harness.renderAndSettle(PaymentModal, floatProps);
+      assert.ok(
+        !renderToStaticMarkup(tree).includes('5%'),
+        'Closing discount panel resets amountTarget away from discount',
+      );
+
+      // PrepaidCheckoutModal: focus discount input then click Done -> amountTarget resets to payment
+      const prepaidPath = path.resolve(
+        ROOT,
+        'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
+      );
+      delete require.cache[prepaidPath];
+      const PrepaidCheckoutModal = require(prepaidPath).default;
+      const prepaidProps = {
+        currency: 'USD',
+        onClose: () => {},
+        onConfirm: async () => {},
+      };
+      let prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      const prepaidDiscountToggle = collectElements(
+        prepaidTree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.['aria-expanded'] === 'boolean' &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      assert.ok(prepaidDiscountToggle, 'PrepaidCheckoutModal discount toggle rendered');
+      prepaidDiscountToggle.props.onClick();
+      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+
+      const prepaidDiscountInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      assert.ok(prepaidDiscountInput, 'PrepaidCheckoutModal discount input rendered');
+      prepaidDiscountInput.props.onFocus();
+      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      assert.ok(
+        renderToStaticMarkup(prepaidTree).includes('5%'),
+        'Focusing prepaid discount input switches quick tenders to discount percentages',
+      );
+
+      const prepaidDoneBtn = collectElements(
+        prepaidTree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.onClick === 'function' &&
+          renderToStaticMarkup(el).includes('done'),
+      )[0];
+      assert.ok(prepaidDoneBtn, 'PrepaidCheckoutModal discount Done button rendered');
+      prepaidDoneBtn.props.onClick();
+      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      assert.ok(
+        !renderToStaticMarkup(prepaidTree).includes('5%'),
+        'Done button in prepaid discount panel resets amountTarget away from discount',
+      );
+    } finally {
+      harness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+  console.log('  ✓ Exact quick-value precision and discount amountTarget reset verified');
+}
+
 async function testPosPageEscapeAndSessionGuards() {
   console.log(
     '\n--- 5. pos/page.tsx Escape Delegation & Token-Rotation Continuity + Postpaid Attempt Storage ---',
@@ -1143,6 +1294,7 @@ async function run() {
   await testPaymentModalLockDismissAndBillReset();
   await testPaymentModalSettledDismissAndRestoredAttempt();
   await testPrepaidAutoFillTracksDiscountUpdates();
+  await testExactQuickValuesAndDiscountTargetReset();
   await testPosPageEscapeAndSessionGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }

@@ -19,9 +19,12 @@ import type {
   ResolvedPrintLanguages,
 } from '@print/types';
 import { createTranslator } from 'use-intl/core';
-import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
+import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
-import { awaitPrintPolicyBootstrap } from '@/lib/print-policy-bootstrap';
+import {
+  awaitPrintPolicyBootstrap,
+  loadPrintLocaleWithDeadline,
+} from '@/lib/print-policy-bootstrap';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@countries';
 import { resolveTaxComponents } from './tax-components';
@@ -120,10 +123,11 @@ export const printLabelResolver: LabelResolver = (conceptId: string, language: s
 /** Loads requested receipt language message bundles into memory before building documents. */
 export async function ensurePrintLanguagesLoaded(
   languages: ResolvedPrintLanguages,
+  timeoutMs?: number,
 ): Promise<PrintLanguageCode[]> {
   await awaitPrintPolicyBootstrap();
   const outcomes = await Promise.allSettled(
-    languages.map((language) => loadLocaleMessages(language as Language)),
+    languages.map((language) => loadPrintLocaleWithDeadline(language as Language, timeoutMs)),
   );
   return languages.filter((_, index) => outcomes[index].status === 'rejected');
 }

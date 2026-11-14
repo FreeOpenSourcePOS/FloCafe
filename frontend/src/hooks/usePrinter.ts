@@ -1048,6 +1048,15 @@ export const usePrinterStore = create<PrinterState>()(
         set({ lastError: null });
         const initialPrinter = get().hardwarePrinter;
         let reservedPopup: Window | null = null;
+        const initialTenant = useAuthStore.getState().currentTenant;
+        const authTenantIdAtStart = initialTenant?.id ?? null;
+        const isSameTenant = () =>
+          (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
+        const throwIfTenantChanged = (): void => {
+          if (isSameTenant()) return;
+          if (reservedPopup && !reservedPopup.closed) reservedPopup.close();
+          throw new PrintCancelledOnTenantChangeError();
+        };
         try {
           reservedPopup = printerService.reserveBrowserPrintWindow();
           const {
@@ -1059,9 +1068,10 @@ export const usePrinterStore = create<PrinterState>()(
           // A settings change can swap the receipt language without loading its
           // bundle, so load it first rather than printing an English slip silently.
           const slipLanguages = await resolveReadyBillPrintLanguages();
+          throwIfTenantChanged();
           const failedSlipLanguages = await ensurePrintLanguagesLoaded(slipLanguages);
-          const tenant = useAuthStore.getState().currentTenant;
-          const tenantTimezone = tenant?.timezone;
+          throwIfTenantChanged();
+          const tenantTimezone = initialTenant?.timezone;
           const orderForPrint = (opts as { items?: OrderItem[] } | undefined)?.items
             ? { ...order, items: (opts as { items?: OrderItem[] }).items }
             : order;
@@ -1106,6 +1116,7 @@ export const usePrinterStore = create<PrinterState>()(
               if (reservedPopup && !reservedPopup.closed) reservedPopup.close();
               return response.data.warnings || [];
             } catch (err: unknown) {
+              throwIfTenantChanged();
               const e = err as {
                 response?: { data?: { error?: string; detail?: string } };
                 message?: string;
@@ -1129,6 +1140,7 @@ export const usePrinterStore = create<PrinterState>()(
           }
 
           await printerService.awaitPendingReconnect();
+          throwIfTenantChanged();
           if (
             (get().printMethod !== 'escpos' || !printerService.isConnected) &&
             (!reservedPopup || reservedPopup.closed)
@@ -1140,6 +1152,7 @@ export const usePrinterStore = create<PrinterState>()(
           const paymentResponse = await api.get<{ payment?: DeliverySlipPayment }>(
             `/printers/delivery-slip-payment/${order.id}`,
           );
+          throwIfTenantChanged();
           const slipPayment = paymentResponse.data.payment;
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             if (reservedPopup && !reservedPopup.closed) reservedPopup.close();
@@ -1171,6 +1184,7 @@ export const usePrinterStore = create<PrinterState>()(
               toast.error(refusal);
               throw new Error(refusal);
             }
+            throwIfTenantChanged();
             set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
             return [
@@ -1187,6 +1201,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const { generateDeliverySlipHtml } =
             await import('@/lib/printer/delivery-slip-web-print');
+          throwIfTenantChanged();
           const html = generateDeliverySlipHtml(slipOrder, slipItems, slipContact, {
             paperWidth,
             textSize: activeTextSize,
@@ -1205,6 +1220,12 @@ export const usePrinterStore = create<PrinterState>()(
           })) as PrintWarning[];
         } catch (err) {
           if (reservedPopup && !reservedPopup.closed) reservedPopup.close();
+          if (isPrintCancelledOnTenantChangeError(err)) {
+            throw err;
+          }
+          if (!isSameTenant()) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
           set({ lastError: (err as Error).message });
           throw err;
         }

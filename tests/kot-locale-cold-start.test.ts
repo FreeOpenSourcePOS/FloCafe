@@ -198,14 +198,8 @@ async function run(): Promise<void> {
     }
   }
 
-  // ------------------------------------------------------------------
-  // Scenario 3: KDS sign-in (`syncAuthenticatedSession`) marks auth ready
-  // synchronously while `syncPrintPoliciesAtBootstrap` awaits delayed locale
-  // loading. Immediate browser receipt (`printBill` / `printWebBill`), WebUSB
-  // receipt (`printBill`), and KOT (`printKot`) prints must await the active
-  // tenant's print-policy bootstrap before resolving policy languages so the
-  // very first print uses the tenant's fixed locale rather than English/default.
-  // ------------------------------------------------------------------
+  // Scenario 3: KDS sign-in with delayed locale load gates immediate receipt and KOT
+  // prints on bootstrap readiness so the first print uses the tenant's fixed locale.
   {
     const authModule =
       require('../frontend/src/store/auth') as typeof import('../frontend/src/store/auth');
@@ -492,6 +486,213 @@ async function run(): Promise<void> {
         (directWebBillHtmls[0] ?? '').slice(0, 160),
       );
       releaseDeLoad();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Scenario 5: token rotation via replaceSessionToken during KDS locale warmup
+      // preserves policy ownership so Italian receipt and KOT policies still apply.
+      check('it messages are not cached before rotation test', !loader.getCachedMessages('it'));
+      let releaseItLoad!: () => void;
+      const itLoadGate = new Promise<void>((resolve) => {
+        releaseItLoad = resolve;
+      });
+      loaderModule.loadLocaleMessages = async (lang: string) => {
+        if (lang === 'it') {
+          await itLoadGate;
+        }
+        return originalLoad(lang);
+      };
+      const itTenant = {
+        ...frTenant,
+        id: 80,
+        country: 'IT',
+        bill_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'it' },
+          additional: [],
+        }),
+        kot_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'it' },
+          additional: [],
+        }),
+      };
+      printerStore.getState().setPrintMethod('browser');
+      browserReceiptHtmls.length = 0;
+      kotHtmls.length = 0;
+      authModule.useAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-token-it-initial',
+        user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+        currentTenant: itTenant,
+        tenants: [itTenant],
+      });
+      authModule.useAuthStore.getState().replaceSessionToken('kds-token-it-rotated');
+      check(
+        'replaceSessionToken updates active JWT during bootstrap',
+        authModule.useAuthStore.getState().token === 'kds-token-it-rotated',
+      );
+      const rotatedBillPopup = makePopupWindow(browserReceiptHtmls) as any;
+      const rotatedBillPrint = printerStore
+        .getState()
+        .printBill(sampleBill, itTenant, {}, rotatedBillPopup);
+      const rotatedKotPrint = printerStore.getState().printKot(sampleOrder);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseItLoad();
+      await Promise.all([rotatedBillPrint, rotatedKotPrint]);
+      check(
+        'receipt policy still applies after KDS token rotation during locale warmup',
+        (browserReceiptHtmls[0] ?? '').includes('Grazie per la visita!'),
+        (browserReceiptHtmls[0] ?? '').slice(0, 160),
+      );
+      check(
+        'KOT policy still applies after KDS token rotation during locale warmup',
+        (kotHtmls[0] ?? '').includes('BIGLIETTO ORDINE DI CUCINA'),
+        (kotHtmls[0] ?? '').slice(0, 160),
+      );
+
+      // Scenario 6: hung locale fetch hits the bounded deadline, applies policies,
+      // releases the bootstrap barrier, and falls back to English with a warning.
+      const bootstrapModule =
+        require('../frontend/src/lib/print-policy-bootstrap') as typeof import('../frontend/src/lib/print-policy-bootstrap');
+      const printDocModule =
+        require('../frontend/src/lib/printer/print-document') as typeof import('../frontend/src/lib/printer/print-document');
+      loaderModule.loadLocaleMessages = async (lang: string) => {
+        if (lang === 'ja') {
+          return new Promise<never>(() => {});
+        }
+        return originalLoad(lang);
+      };
+      const jaTenant = {
+        ...frTenant,
+        id: 81,
+        country: 'JP',
+        bill_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'ja' },
+          additional: [],
+        }),
+        kot_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'ja' },
+          additional: [],
+        }),
+      };
+      const startedAt = Date.now();
+      const timedOutLanguages = await bootstrapModule.registerPrintPolicyBootstrap(
+        bootstrapModule.syncPrintPoliciesAtBootstrap(
+          jaTenant,
+          posSettings.usePosSettingsStore,
+          () => true,
+          30,
+        ),
+      );
+      const elapsedMs = Date.now() - startedAt;
+      check(
+        'hung locale load settles promptly at deadline and reports ja as failed',
+        elapsedMs < 1000 && timedOutLanguages.includes('ja'),
+        `elapsed=${elapsedMs}ms failed=${JSON.stringify(timedOutLanguages)}`,
+      );
+      check(
+        'tenant receipt policy is still applied after bounded locale timeout',
+        (posSettings.usePosSettingsStore.getState().billLanguagePolicy as any)?.primary
+          ?.language === 'ja',
+      );
+      const docFailed = await printDocModule.ensurePrintLanguagesLoaded(['ja'], 30);
+      check(
+        'ensurePrintLanguagesLoaded also bounds hung locale fetches',
+        docFailed.includes('ja'),
+        JSON.stringify(docFailed),
+      );
+
+      // Scenario 7: printDeliverySlip cancels cleanly and closes reserved popup
+      // if the active tenant changes while waiting on language bootstrap.
+      const apiModule = require('../frontend/src/lib/api').default as {
+        get: (...args: any[]) => Promise<any>;
+      };
+      const originalApiGet = apiModule.get;
+      const originalReserve = printerService.reserveBrowserPrintWindow.bind(printerService);
+      let paymentFetchCount = 0;
+      apiModule.get = async (...args: any[]) => {
+        if (String(args[0] ?? '').includes('/printers/delivery-slip-payment/')) {
+          paymentFetchCount += 1;
+        }
+        return originalApiGet(...args);
+      };
+      const slipPopup = makePopupWindow([]) as any;
+      (printerService as any).reserveBrowserPrintWindow = () => slipPopup;
+      let releaseEsLoad!: () => void;
+      const esLoadGate = new Promise<void>((resolve) => {
+        releaseEsLoad = resolve;
+      });
+      loaderModule.loadLocaleMessages = async (lang: string) => {
+        if (lang === 'es') {
+          await esLoadGate;
+        }
+        return originalLoad(lang);
+      };
+      const esTenant = {
+        ...frTenant,
+        id: 82,
+        country: 'ES',
+        bill_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'es' },
+          additional: [],
+        }),
+        kot_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'es' },
+          additional: [],
+        }),
+      };
+      try {
+        authModule.useAuthStore.getState().syncAuthenticatedSession({
+          token: 'kds-token-es',
+          user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+          currentTenant: esTenant,
+          tenants: [esTenant],
+        });
+        const slipPromise = printerStore
+          .getState()
+          .printDeliverySlip(sampleOrder, { name: 'Ana', phone: '5550100', address: 'Calle 1' });
+        authModule.useAuthStore.getState().syncAuthenticatedSession({
+          token: 'kds-token-fr-next',
+          user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+          currentTenant: frTenant,
+          tenants: [frTenant],
+        });
+        releaseEsLoad();
+        let caughtSlipErr: unknown = null;
+        try {
+          await slipPromise;
+        } catch (err) {
+          caughtSlipErr = err;
+        }
+        check(
+          'printDeliverySlip rejects with PrintCancelledOnTenantChangeError on tenant switch',
+          usePrinter.isPrintCancelledOnTenantChangeError(caughtSlipErr),
+          String(caughtSlipErr),
+        );
+        check('printDeliverySlip closes reserved popup on tenant switch', slipPopup.closed);
+        check(
+          'printDeliverySlip skips payment fetch and leaves lastError null on tenant switch',
+          paymentFetchCount === 0 && printerStore.getState().lastError === null,
+          `paymentFetchCount=${paymentFetchCount} lastError=${printerStore.getState().lastError}`,
+        );
+      } finally {
+        apiModule.get = originalApiGet;
+        (printerService as any).reserveBrowserPrintWindow = originalReserve;
+        authModule.useAuthStore.getState().clearLocalSession();
+      }
+
+      // Scenario 8: print-test page rechecks active tenant after bootstrap waits.
+      const fs = require('node:fs') as typeof import('node:fs');
+      const printTestSrc = fs.readFileSync(
+        path.join(process.cwd(), 'frontend/src/app/(dashboard)/print-test/page.tsx'),
+        'utf8',
+      );
+      check(
+        'print-test KOT and HTML download recheck tenant after language bootstrap waits',
+        printTestSrc.includes(
+          'const kotLanguage = await resolveReadyKotTicketLanguage();\n              assertSameTenant(tenantIdAtStart, reservedWindow);',
+        ) &&
+          printTestSrc.includes(
+            'languages = await resolveReadyBillPrintLanguages();\n      assertSameTenant(tenantIdAtStart);',
+          ),
+      );
     } finally {
       loaderModule.loadLocaleMessages = originalLoad;
       (printerService as any).printViaBrowser = originalPrintViaBrowser;

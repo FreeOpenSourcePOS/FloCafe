@@ -14,6 +14,7 @@ import {
 } from '../lib/print-policy-bootstrap';
 
 let authOperation = 0;
+let printPolicyOperation = 0;
 
 function syncTenantLanguage(t: Tenant | null | undefined) {
   const lang = t?.language;
@@ -120,6 +121,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email: string, password: string, rememberMe = false) => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const { data } = await api.post('/auth/login', { email, password, rememberMe });
     if (operation !== authOperation) return;
@@ -133,7 +135,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         syncPrintPoliciesAtBootstrap(
           currentTenant,
           usePosSettingsStore,
-          () => operation === authOperation,
+          () => policyOperation === printPolicyOperation,
         ),
       );
     } else {
@@ -154,6 +156,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   pinLogin: async (userId: string, pin: string, rememberMe = false) => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const { data } = await api.post('/auth/pin-login', { user_id: userId, pin, rememberMe });
     if (operation !== authOperation) return;
@@ -167,7 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         syncPrintPoliciesAtBootstrap(
           currentTenant,
           usePosSettingsStore,
-          () => operation === authOperation,
+          () => policyOperation === printPolicyOperation,
         ),
       );
     } else {
@@ -188,6 +191,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   lock: async () => {
     ++authOperation;
+    ++printPolicyOperation;
     clearBillTemplateProvenance();
     clearPrintPolicyBootstrap();
     resetPrintPolicies();
@@ -219,6 +223,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   selectTenant: async (tenantId: number) => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const { data } = await api.post('/auth/tenants/select', { tenant_id: tenantId });
     if (operation !== authOperation) return;
@@ -228,7 +233,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       syncPrintPoliciesAtBootstrap(
         data.tenant,
         usePosSettingsStore,
-        () => operation === authOperation,
+        () => policyOperation === printPolicyOperation,
       ),
     );
     if (operation !== authOperation) return;
@@ -266,6 +271,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
     ++authOperation;
+    ++printPolicyOperation;
     clearBillTemplateProvenance();
     clearPrintPolicyBootstrap();
     resetPrintPolicies();
@@ -307,7 +313,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   /** Syncs a KDS login into the shared dashboard store and warms print policies. */
   syncAuthenticatedSession: (payload) => {
-    const operation = ++authOperation;
+    ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const tenants = payload.tenants ?? (payload.currentTenant ? [payload.currentTenant] : []);
     const currentTenant = payload.currentTenant ?? (tenants.length === 1 ? tenants[0] : null);
@@ -328,11 +335,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         syncPrintPoliciesAtBootstrap(
           currentTenant,
           usePosSettingsStore,
-          () => operation === authOperation,
+          () => policyOperation === printPolicyOperation,
         ),
       )
         .then((failedLanguages) => {
-          if (operation === authOperation) {
+          if (policyOperation === printPolicyOperation) {
             set({ printLanguageLoadErrors: failedLanguages });
           }
         })
@@ -364,6 +371,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   /** Hydrates session state from localStorage while keeping tokens on transient errors. */
   loadFromStorage: async () => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     if (typeof window === 'undefined') {
       set({ loading: false, printLanguageLoadErrors: [] });
@@ -413,12 +421,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             syncPrintPoliciesAtBootstrap(
               resolved,
               usePosSettingsStore,
-              () => operation === authOperation,
+              () => policyOperation === printPolicyOperation,
             ),
           );
         })
         .then((failedLanguages) => {
-          if (operation !== authOperation || failedLanguages === null) return;
+          if (policyOperation !== printPolicyOperation || failedLanguages === null) return;
           set({ loading: false, printLanguageLoadErrors: failedLanguages });
         })
         .catch((error: unknown) => {

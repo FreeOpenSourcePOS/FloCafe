@@ -88,12 +88,36 @@ function parsePolicy(
   }
 }
 
+export const DEFAULT_PRINT_LOCALE_TIMEOUT_MS = 5_000;
+
+/** Loads a print locale bundle bounded by a deadline so hung fetches fall back to English. */
+export async function loadPrintLocaleWithDeadline(
+  language: Language,
+  timeoutMs: number = DEFAULT_PRINT_LOCALE_TIMEOUT_MS,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      loadLocaleMessages(language).then(() => undefined),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`Timed out loading print locale "${language}" after ${timeoutMs}ms`));
+        }, timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** Applies tenant print policies and warms selected locales at auth bootstrap;
  * returns any locales that failed to load. */
 export async function syncPrintPoliciesAtBootstrap(
   tenant: Tenant,
   settingsStore: PosSettingsActions,
   isCurrent: () => boolean = () => true,
+  localeTimeoutMs: number = DEFAULT_PRINT_LOCALE_TIMEOUT_MS,
 ): Promise<Language[]> {
   const receiptPolicy = parsePolicy(
     tenant.bill_language_policy,
@@ -111,7 +135,7 @@ export async function syncPrintPoliciesAtBootstrap(
 
   const languages = [...new Set([...receiptLanguages, kotLanguage])] as Language[];
   const outcomes = await Promise.allSettled(
-    languages.map((language) => loadLocaleMessages(language)),
+    languages.map((language) => loadPrintLocaleWithDeadline(language, localeTimeoutMs)),
   );
   if (!isCurrent()) return [];
 

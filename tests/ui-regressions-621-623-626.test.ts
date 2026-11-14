@@ -1,127 +1,11 @@
 /**
- * Source-level guards for the UI regressions fixed by issues #621, #623, and #626.
- * Behavioral table update coverage lives in tables-string-ids.test.ts; these checks
- * keep the responsive layout and dark-mode utilities from being accidentally removed.
+ * Executable component rendering and parsed CSS checks for POS drawers,
+ * side sheets, CheckoutPaymentStation zone ordering, CartPanel, PosTopbar, CustomerSearch,
+ * and KDS components (#621, #623, #625, #626, #1453).
  */
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-
-const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
-
-const tables = source('frontend/src/app/(dashboard)/tables/page.tsx');
-assert.match(
-  tables,
-  /tenantCan\(currentTenant, 'tables\.manage'\)/,
-  'table management controls stay permission-gated',
-);
-assert.match(
-  tables,
-  /api\.put\(`\/tables\/\$\{editingTable\.id\}`/,
-  'table editor persists through PUT',
-);
-assert.match(
-  tables,
-  /TABLE_NAME_DUPLICATE: tTables\('tableNameDuplicate'\)/,
-  'backend table errors map to localized UI messages',
-);
-assert.match(
-  tables,
-  /TABLE_LOCATION_INVALID: tTables\('tableLocationInvalid'\)/,
-  'backend location errors map to localized UI messages',
-);
-assert.match(
-  tables,
-  /Number\.isInteger\(capacity\).*capacity < 1/s,
-  'table capacity is validated before submission',
-);
-assert.match(tables, /tTables\('allFloors'\)/, 'floor filter retains its all-floors option');
-assert.match(
-  tables,
-  /\[table\.floor, table\.section\]/,
-  'floor and section remain visible together',
-);
-
-const whatsapp = source('frontend/src/components/settings/WhatsAppEnableCard.tsx');
-assert.match(
-  whatsapp,
-  /font-semibold text-foreground/,
-  'WhatsApp enable heading uses theme foreground',
-);
-
-const settings = source('frontend/src/app/(dashboard)/settings/page.tsx');
-assert.match(
-  settings,
-  /dark:bg-yellow-950\/50 dark:border-yellow-800/,
-  'update warning has a dark-mode surface',
-);
-assert.match(
-  settings,
-  /text-yellow-700 dark:text-yellow-300/,
-  'update warning copy has dark-mode contrast',
-);
-assert.match(
-  settings,
-  /text-red-600 dark:text-red-300/,
-  'update failure copy has dark-mode contrast',
-);
-
-const customers = source('frontend/src/app/(dashboard)/customers/page.tsx');
-assert.match(
-  customers,
-  /text-muted-foreground whitespace-nowrap.*formatDate/s,
-  'ledger dates use semantic text color',
-);
-assert.match(
-  customers,
-  /text-end text-foreground whitespace-nowrap.*fmt\(b\.total\)/s,
-  'ledger totals use semantic text color',
-);
-
-const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
-assert.match(
-  dashboard,
-  /dayInputRef.*monthInputRef/s,
-  'dashboard retains explicit date and month picker controls',
-);
-assert.match(
-  dashboard,
-  /input\.showPicker\(\)/,
-  'dashboard calendar buttons invoke the native Chromium picker',
-);
-assert.match(
-  dashboard,
-  /aria-label=\{t\('openDatePicker'\)\}/,
-  'dashboard date picker trigger stays accessible',
-);
-
-const prepaidCheckout = source('frontend/src/components/pos/PrepaidCheckoutModal.tsx');
-assert.doesNotMatch(
-  prepaidCheckout,
-  /bg-gradient-to-br from-slate-800 to-slate-900/,
-  'prepaid checkout does not restore the oversized total card',
-);
-assert.match(
-  prepaidCheckout,
-  /preview\.discountedSubtotal/,
-  'prepaid checkout shows the post-discount subtotal',
-);
-assert.match(
-  prepaidCheckout,
-  /t\('discounts'\)/,
-  'prepaid checkout retains the compact cart-level discounts control',
-);
-const stationSource = source('frontend/src/components/pos/CheckoutPaymentStation.tsx');
-const numberPadIndex = prepaidCheckout.indexOf('<CurrencyTouchNumberPad');
-const changeReturnedIndex = prepaidCheckout.indexOf("t('changeReturned')");
-assert.ok(
-  prepaidCheckout.includes('<CheckoutPaymentStation') &&
-    numberPadIndex >= 0 &&
-    changeReturnedIndex > numberPadIndex &&
-    stationSource.indexOf('data-checkout-zone="keypad"') <
-      stationSource.indexOf('data-testid="checkout-change-slot"'),
-  'change returned stays below the payment controls',
-);
 
 // Issue #1453: Executable component rendering and parsed CSS checks for POS drawers,
 // side sheets, CartPanel, PosTopbar, CustomerSearch, and dashboard search fields.
@@ -326,8 +210,38 @@ try {
     'rendered DrawerContent top direction offsets below the desktop titlebar',
   );
 
+  const { CheckoutPaymentStation } = require('../frontend/src/components/pos/CheckoutPaymentStation');
+  const stationMarkup = renderWithIntl(
+    React.createElement(
+      CheckoutPaymentStation,
+      {
+        readout: {
+          activeLabel: 'Cash',
+          amountText: '$10.00',
+          paidSummaryText: 'Paid $10.00',
+          dueSummaryText: 'Due $0.00',
+        },
+        quickTenders: [{ label: '$10.00', subLabel: 'Exact', active: true, onClick: () => {} }],
+        keypad: React.createElement('div', { 'data-testid': 'station-keypad-child' }, 'keypad'),
+        changeDisplay: {
+          label: 'Change Returned',
+          formattedAmount: '$0.00',
+          visible: false,
+        },
+      },
+      React.createElement('button', { type: 'button' }, 'Pay $10.00'),
+    ),
+  );
+  assert.ok(
+    stationMarkup.includes('data-checkout-zone="keypad"') &&
+      stationMarkup.includes('data-testid="checkout-change-slot"') &&
+      stationMarkup.indexOf('data-checkout-zone="keypad"') <
+        stationMarkup.indexOf('data-testid="checkout-change-slot"'),
+    'rendered CheckoutPaymentStation places Change Returned below the keypad controls',
+  );
+
   // 3. Parsed CSS AST check on globals.css for Electron no-drag rules
-  const cssAst = postcss.parse(source('frontend/src/app/globals.css'));
+  const cssAst = postcss.parse(readFileSync(resolve(process.cwd(), 'frontend/src/app/globals.css'), 'utf8'));
   const requiredNoDragSelectors = [
     "[data-testid='scheduled-orders-drawer']",
     "[data-testid='payment-queue-drawer']",

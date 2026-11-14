@@ -1931,12 +1931,25 @@ export default function PaymentModal({
           0,
         ) + toMinorUnits(walletAmt);
       const dueMinor = Math.max(0, remainingMinor - allocatedElsewhereMinor);
+      const currentVal = payments[targetIndex]?.amount || '';
+      if (payments[targetIndex].method !== 'cash') {
+        if (dueMinor <= 0) return [];
+        const exactDisplay = toDisplayUnit(dueMinor / minorFactor);
+        const formattedInput = formatInput(exactDisplay);
+        return [
+          {
+            label: currencyFmt(dueMinor / minorFactor),
+            subLabel: t('exactAmount'),
+            active: currentVal !== '' && formattedInput === currentVal,
+            onClick: () => allocateRemainingTo(targetIndex),
+          },
+        ];
+      }
       const displayAmounts = computeQuickCashDisplayAmounts({
         remainingMinor: dueMinor,
         minorFactor,
         unitAdapter,
       });
-      const currentVal = payments[targetIndex]?.amount || '';
       return displayAmounts.map((displayVal, pillIndex) => {
         const formattedInput = formatInput(displayVal);
         return {
@@ -2057,15 +2070,13 @@ export default function PaymentModal({
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={() =>
-                setShowDetails((open) => {
-                  const next = !open;
-                  if (!next && amountTarget?.kind === 'discount') {
-                    setAmountTarget({ kind: 'payment', index: 0 });
-                  }
-                  return next;
-                })
-              }
+              onClick={() => {
+                const next = !showDetails;
+                setShowDetails(next);
+                if (!next && amountTarget?.kind === 'discount') {
+                  setAmountTarget({ kind: 'payment', index: 0 });
+                }
+              }}
               aria-expanded={showDetails}
               className="touch-target rounded-lg border border-border px-3 text-sm font-medium lg:hidden"
             >

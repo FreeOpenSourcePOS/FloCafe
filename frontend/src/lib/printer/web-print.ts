@@ -21,6 +21,7 @@ import {
   ensurePrintLanguagesLoaded,
   printLabelResolver,
   resolveBillPrintLanguages,
+  resolveReadyBillPrintLanguages,
 } from './print-document';
 import { RECEIPT_BRANDING_NAME } from './branding';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
@@ -130,8 +131,6 @@ export async function printWebBill(
   opts: WebPrintOptions = {},
   reservedWindow?: Window | null,
 ): Promise<PrintWarning[]> {
-  const languages = resolvePrintLanguages(opts);
-
   // 1. Open popup window synchronously to maintain transient user activation
   const printWindow =
     reservedWindow === undefined
@@ -144,10 +143,11 @@ export async function printWebBill(
     throw new Error('Popup window was blocked by browser');
   }
 
-  // Ensure print languages are loaded before synchronous document build.
+  // Ensure print policy and language bundles are loaded before synchronous document build.
   let warnings: PrintWarning[];
   let html: string;
   try {
+    const languages = opts.languages ?? (await resolveReadyBillPrintLanguages(opts.language));
     const failedLanguages = await ensurePrintLanguagesLoaded(languages);
     warnings = failedLanguages.map((language) => ({
       field: 'receipt language',

@@ -25,7 +25,7 @@ import {
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
 import {
   ensurePrintLanguagesLoaded,
-  resolveBillPrintLanguages,
+  resolveReadyBillPrintLanguages,
 } from '@/lib/printer/print-document';
 import { generateKotHtml } from '@/lib/printer/kot-web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
@@ -72,10 +72,19 @@ export default function PrintTestPage() {
   );
   const testCustomer = useMemo(() => createTestCustomer(), []);
 
+  const assertSameTenant = (
+    tenantIdAtStart: number | null,
+    reservedWindow?: Window | null,
+  ): void => {
+    if ((useAuthStore.getState().currentTenant?.id ?? null) === tenantIdAtStart) return;
+    if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+    throw new PrintCancelledOnTenantChangeError();
+  };
+
   const resolveHydratedShowLargeOrderNumber = async (
+    tenantIdAtStart: number | null,
     reservedWindow?: Window | null,
   ): Promise<boolean> => {
-    const tenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
     const isSameTenant = () =>
       (useAuthStore.getState().currentTenant?.id ?? null) === tenantIdAtStart;
     const ready = await ensureReceiptSettingsLoaded(tenantIdAtStart).catch(() => isSameTenant());
@@ -87,6 +96,7 @@ export default function PrintTestPage() {
   };
 
   const handlePrint = async () => {
+    const tenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
     setTesting(true);
     try {
       switch (effectiveTestMode) {
@@ -98,13 +108,21 @@ export default function PrintTestPage() {
               typeof window !== 'undefined'
                 ? window.open('', '_blank', 'width=800,height=600')
                 : null;
-            const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(reservedWindow);
+            const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(
+              tenantIdAtStart,
+              reservedWindow,
+            );
+            const languages = await resolveReadyBillPrintLanguages();
+            assertSameTenant(tenantIdAtStart, reservedWindow);
+            await ensurePrintLanguagesLoaded(languages);
+            assertSameTenant(tenantIdAtStart, reservedWindow);
             const printWarnings = await printWebBill(
               testBill,
               testTenant,
               {
                 paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
                 showLargeOrderNumber,
+                languages,
               },
               reservedWindow,
             );
@@ -122,7 +140,14 @@ export default function PrintTestPage() {
               typeof window !== 'undefined'
                 ? window.open('', '_blank', 'width=800,height=600')
                 : null;
-            const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(reservedWindow);
+            const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(
+              tenantIdAtStart,
+              reservedWindow,
+            );
+            const languages = await resolveReadyBillPrintLanguages();
+            assertSameTenant(tenantIdAtStart, reservedWindow);
+            await ensurePrintLanguagesLoaded(languages);
+            assertSameTenant(tenantIdAtStart, reservedWindow);
             const printWarnings = await printWebBill(
               testBill,
               testTenant,
@@ -133,6 +158,7 @@ export default function PrintTestPage() {
                 address: '123 Main Street, Mumbai - 400001',
                 phone: '+91 9876543210',
                 showLargeOrderNumber,
+                languages,
               },
               reservedWindow,
             );
@@ -159,11 +185,15 @@ export default function PrintTestPage() {
             // Render semantic KOT HTML and preload ticket locale if different from UI language.
             const reservedWindow = printerService.reserveBrowserPrintWindow();
             try {
-              const showLargeOrderNumber =
-                await resolveHydratedShowLargeOrderNumber(reservedWindow);
-              const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-              const kotLanguage = resolveKotTicketLanguage();
+              const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(
+                tenantIdAtStart,
+                reservedWindow,
+              );
+              const { resolveReadyKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+              const kotLanguage = await resolveReadyKotTicketLanguage();
+              assertSameTenant(tenantIdAtStart, reservedWindow);
               const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
+              assertSameTenant(tenantIdAtStart, reservedWindow);
               const html = generateKotHtml(testOrder, {
                 paperWidth,
                 language: kotLanguage,
@@ -199,7 +229,14 @@ export default function PrintTestPage() {
             typeof window !== 'undefined'
               ? window.open('', '_blank', 'width=800,height=600')
               : null;
-          const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(reservedWindow);
+          const showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(
+            tenantIdAtStart,
+            reservedWindow,
+          );
+          const languages = await resolveReadyBillPrintLanguages();
+          assertSameTenant(tenantIdAtStart, reservedWindow);
+          await ensurePrintLanguagesLoaded(languages);
+          assertSameTenant(tenantIdAtStart, reservedWindow);
           const printWarnings = await printWebBill(
             testBill,
             testTenant,
@@ -207,6 +244,7 @@ export default function PrintTestPage() {
               paperSize: printerPaperSize,
               includeTaxId: true,
               showLargeOrderNumber,
+              languages,
             },
             reservedWindow,
           );
@@ -236,16 +274,21 @@ export default function PrintTestPage() {
   };
 
   const handleDownloadHtml = async () => {
+    const tenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
     let showLargeOrderNumber: boolean;
+    let languages: Awaited<ReturnType<typeof resolveReadyBillPrintLanguages>>;
+    let failedLanguages: Awaited<ReturnType<typeof ensurePrintLanguagesLoaded>>;
     try {
-      showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber();
+      showLargeOrderNumber = await resolveHydratedShowLargeOrderNumber(tenantIdAtStart);
+      languages = await resolveReadyBillPrintLanguages();
+      assertSameTenant(tenantIdAtStart);
+      failedLanguages = await ensurePrintLanguagesLoaded(languages);
+      assertSameTenant(tenantIdAtStart);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
       toast.error(t('failedWithReason', { message: tCommon('somethingWrong') }));
       return;
     }
-    const languages = resolveBillPrintLanguages();
-    const failedLanguages = await ensurePrintLanguagesLoaded(languages);
     if (failedLanguages.length > 0) {
       showPrintLanguageLoadErrorsToast(failedLanguages);
       return;

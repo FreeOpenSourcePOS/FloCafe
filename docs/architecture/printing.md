@@ -233,15 +233,20 @@ socket and decodes the answer into online, cover open, paper out, paper near end
 The probe never throws, and it returns when the first query gets no answer, so a printer that does
 not implement `DLE EOT` costs one timeout. `statusToFailureCause()` maps the result to one cause:
 `paper_out`, `cover_open`, `printer_error`, `offline`, or `unreachable`. USB queues report
-`queue_offline` or `queue_missing` from OS detection. After a test print to a network printer, the route
-probes that printer, because a raw socket accepts bytes that a printer without paper drops. The frontend
-turns the cause, or else the failure class and the operating system, into one fix step
+`queue_offline` or `queue_missing` from OS detection. After a test print to a network printer, the
+route probes that printer and treats `paper_out`, `cover_open`, `printer_error`, and `offline` as
+failures (preserving `failure_class` from dispatch when more specific, such as `timeout`), because a
+raw socket can accept bytes that an offline or faulted printer drops. The frontend turns the cause,
+or else the failure class and the operating system, into one fix step
 (`frontend/src/lib/printer/print-failure-help.ts`).
 
 `main/printers/lan-discovery.ts` finds printers when the Printers page opens. It scans port 9100 on
 up to four private /24 networks of this machine, skipping virtual adapters and link-local
 addresses, and browses mDNS for `_pdl-datastream._tcp`, `_ipp._tcp`, and `_printer._tcp`, within a
-3 s budget. The macOS builds declare those services in `NSBonjourServices`.
+3 s budget. Both `probePort()` and `DLE EOT` status probes share the per-`host:port` FIFO mutex in
+`main/printers/network-port-lock.ts` (`withNetworkPortLock()`) with `printViaNetwork()`, so discovery
+and status checks serialize behind active print jobs on single-connection `:9100` printers. The macOS
+builds declare those services in `NSBonjourServices`.
 
 ## Printer profiles
 

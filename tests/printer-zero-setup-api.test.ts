@@ -22,6 +22,9 @@ const mockApp = {
 };
 
 let usbTestPrintResult: { ok: boolean; detail?: string } = { ok: true };
+let networkTestPrintOverride:
+  | ((...args: any[]) => Promise<{ ok: boolean; detail?: string; failureClass?: string }>)
+  | null = null;
 let usbDetectQueueStatus: 'idle' | 'offline' = 'offline';
 let usbDetectCalls = 0;
 let usbDetectDelayMs = 0;
@@ -32,6 +35,12 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === '../printers/thermal' || request === '../main/printers/thermal') {
     return new Proxy(loaded, {
       get(target, prop, receiver) {
+        if (prop === 'printViaNetwork') {
+          return (...args: any[]) =>
+            networkTestPrintOverride
+              ? networkTestPrintOverride(...args)
+              : Reflect.get(target, prop, receiver).apply(target, args);
+        }
         if (prop === 'printViaUSB') {
           return async () => usbTestPrintResult;
         }
@@ -560,6 +569,188 @@ async function runTests() {
         'network',
         'delivery slip 502 payload includes connection_type',
       );
+    }
+
+    // ── 11: explicit DLE EOT offline fails test print while silent clone stays 200 ─
+    console.log('\n11: POST /:id/test and /test-active for explicit offline vs silent DLE EOT');
+    {
+      const offlinePrinter = await start({ state: { online: false } });
+      const silentPrinter = await start({ silent: true });
+      fakes.push(offlinePrinter, silentPrinter);
+
+      const offlineRes = await request(app).post('/api/printers').send({
+        name: 'OfflineDleEotPrinter',
+        connection_type: 'network',
+        ip_address: '127.0.0.1',
+        port: offlinePrinter.port,
+        is_default: true,
+      });
+      assertEqualOrThrow(offlineRes.status, 201, 'offline DLE EOT printer fixture is created');
+      const offlineId = offlineRes.body.printer.id as string;
+      db.prepare('UPDATE printers SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END').run(
+        offlineId,
+      );
+
+      const testOfflineById = await request(app).post(`/api/printers/${offlineId}/test`).send({});
+      assertEqualOrThrow(
+        testOfflineById.status,
+        502,
+        'POST /:id/test returns 502 when printer explicitly answers DLE EOT offline',
+      );
+      assertEqualOrThrow(
+        testOfflineById.body.cause,
+        'offline',
+        'POST /:id/test reports cause offline',
+      );
+      assertEqualOrThrow(
+        testOfflineById.body.failure_class,
+        'offline',
+        'POST /:id/test reports failure_class offline',
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      assertEqualOrThrow(
+        offlinePrinter.printed.length,
+        0,
+        'offline printer discarded the test page bytes',
+      );
+
+      const testOfflineActive = await request(app).post('/api/printers/test-active').send({});
+      assertEqualOrThrow(
+        testOfflineActive.status,
+        502,
+        'POST /test-active returns 502 when default printer explicitly answers DLE EOT offline',
+      );
+      assertEqualOrThrow(
+        testOfflineActive.body.error,
+        'Test print failed',
+        'POST /test-active preserves sanitized error summary',
+      );
+      assertEqualOrThrow(
+        testOfflineActive.body.cause,
+        'offline',
+        'POST /test-active reports cause offline',
+      );
+      assertEqualOrThrow(
+        testOfflineActive.body.failure_class,
+        'offline',
+        'POST /test-active reports failure_class offline',
+      );
+      assertEqualOrThrow(
+        'detail' in testOfflineActive.body,
+        false,
+        'POST /test-active omits raw network detail',
+      );
+
+      const silentRes = await request(app).post('/api/printers').send({
+        name: 'SilentClonePrinter',
+        connection_type: 'network',
+        ip_address: '127.0.0.1',
+        port: silentPrinter.port,
+        is_default: true,
+      });
+      assertEqualOrThrow(silentRes.status, 201, 'silent DLE EOT printer fixture is created');
+      const silentId = silentRes.body.printer.id as string;
+      db.prepare('UPDATE printers SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END').run(
+        silentId,
+      );
+
+      const testSilentById = await request(app).post(`/api/printers/${silentId}/test`).send({});
+      assertEqualOrThrow(
+        testSilentById.status,
+        200,
+        'POST /:id/test keeps HTTP 200 compatibility for silent DLE EOT printers',
+      );
+      assertEqualOrThrow(testSilentById.body.success, true, 'silent POST /:id/test succeeds');
+
+      const testSilentActive = await request(app).post('/api/printers/test-active').send({});
+      assertEqualOrThrow(
+        testSilentActive.status,
+        200,
+        'POST /test-active keeps HTTP 200 compatibility for silent DLE EOT printers',
+      );
+      assertEqualOrThrow(testSilentActive.body.success, true, 'silent POST /test-active succeeds');
+    }
+
+    // ── 12: network dispatch timeout preserves failure_class timeout ─────────
+    console.log('\n12: network dispatch timeout preserves failure_class timeout over unreachable');
+    {
+      const closed = await closedPort();
+      const timeoutPrinterRes = await request(app).post('/api/printers').send({
+        name: 'TimeoutTestPrinter',
+        connection_type: 'network',
+        ip_address: '127.0.0.1',
+        port: closed,
+        is_default: true,
+      });
+      assertEqualOrThrow(timeoutPrinterRes.status, 201, 'timeout printer fixture is created');
+      const timeoutId = timeoutPrinterRes.body.printer.id as string;
+      db.prepare('UPDATE printers SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END').run(
+        timeoutId,
+      );
+
+      try {
+        for (const detail of [
+          `Timed out connecting to 127.0.0.1:${closed}`,
+          `Timed out writing to 127.0.0.1:${closed}`,
+        ]) {
+          networkTestPrintOverride = async () => ({ ok: false, detail });
+
+          const byIdRes = await request(app).post(`/api/printers/${timeoutId}/test`).send({});
+          assertEqualOrThrow(byIdRes.status, 502, `POST /:id/test returns 502 for ${detail}`);
+          assertEqualOrThrow(byIdRes.body.cause, 'unreachable', 'POST /:id/test keeps probe cause');
+          assertEqualOrThrow(
+            byIdRes.body.failure_class,
+            'timeout',
+            `POST /:id/test preserves failure_class timeout for ${detail}`,
+          );
+
+          const activeRes = await request(app).post('/api/printers/test-active').send({});
+          assertEqualOrThrow(activeRes.status, 502, `POST /test-active returns 502 for ${detail}`);
+          assertEqualOrThrow(
+            activeRes.body.cause,
+            'unreachable',
+            'POST /test-active keeps probe cause',
+          );
+          assertEqualOrThrow(
+            activeRes.body.failure_class,
+            'timeout',
+            `POST /test-active preserves failure_class timeout for ${detail}`,
+          );
+        }
+
+        for (const failureClass of [undefined, 'unknown'] as const) {
+          networkTestPrintOverride = async () => ({
+            ok: false,
+            detail: 'Print cancelled during shutdown',
+            ...(failureClass ? { failureClass } : {}),
+          });
+          const unknownById = await request(app).post(`/api/printers/${timeoutId}/test`).send({});
+          assertEqualOrThrow(
+            unknownById.status,
+            502,
+            'POST /:id/test returns 502 on unknown detail',
+          );
+          assertEqualOrThrow(
+            unknownById.body.failure_class,
+            'offline',
+            `unknown dispatch detail (failureClass=${String(failureClass)}) falls back to probe cause failure_class`,
+          );
+
+          const unknownActive = await request(app).post('/api/printers/test-active').send({});
+          assertEqualOrThrow(
+            unknownActive.status,
+            502,
+            'POST /test-active returns 502 on unknown detail',
+          );
+          assertEqualOrThrow(
+            unknownActive.body.failure_class,
+            'offline',
+            `POST /test-active unknown dispatch detail (failureClass=${String(failureClass)}) falls back to probe cause failure_class`,
+          );
+        }
+      } finally {
+        networkTestPrintOverride = null;
+      }
     }
   } finally {
     setDiscoverScan(require('../main/printers/lan-discovery').discoverLanPrinters);

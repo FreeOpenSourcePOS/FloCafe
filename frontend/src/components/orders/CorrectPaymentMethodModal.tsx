@@ -12,7 +12,32 @@ import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import type { Bill, Order } from '@/lib/types';
 import toast from 'react-hot-toast';
-import { useTranslations } from 'use-intl';
+import { useTranslations, type AppConfig } from 'use-intl';
+
+type OrdersKey = keyof AppConfig['Messages']['orders'];
+
+export function getPaymentCorrectionUnavailableMessage(
+  tOrders: (key: OrdersKey) => string,
+  reason?: string | null,
+): string {
+  switch (reason) {
+    case 'day_closed':
+      return tOrders('correctPaymentReasonDayClosed');
+    case 'shift_closed':
+      return tOrders('correctPaymentReasonShiftClosed');
+    case 'bill_refunded':
+    case 'payment_line_refunded':
+      return tOrders('correctPaymentReasonRefunded');
+    case 'wallet_method_immutable':
+      return tOrders('correctPaymentReasonWallet');
+    case 'split_sibling_shift_closed':
+      return tOrders('correctPaymentReasonSplitShiftClosed');
+    case 'split_sibling_refunded':
+      return tOrders('correctPaymentReasonSplitRefunded');
+    default:
+      return tOrders('correctPaymentUnavailable');
+  }
+}
 
 const BUILT_IN_PAYMENT_KEYS = {
   cash: 'methodCash',
@@ -197,6 +222,20 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
       toast.success(tOrders('paymentMethodCorrected'));
       onCorrected(data?.bill);
     } catch (error) {
+      const data = (
+        error as { response?: { data?: { code?: unknown; reason?: unknown } } } | undefined
+      )?.response?.data;
+      const code =
+        typeof data?.code === 'string'
+          ? data.code
+          : typeof data?.reason === 'string'
+            ? data.reason
+            : null;
+      if (code === 'cash_session_required') {
+        toast.error(tOrders('correctPaymentCashSessionRequired'));
+        setIdempotencyKey(createPaymentIdempotencyKey());
+        return;
+      }
       const msg = extractErrorMessage(error) || tOrders('correctPaymentMethodFailed');
       toast.error(msg);
       setIdempotencyKey(createPaymentIdempotencyKey());
@@ -226,7 +265,10 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
         )}
         {effectiveBill && !effectiveBill.payment_method_correction?.correctable && (
           <p role="status" className="text-xs text-muted-foreground mb-4">
-            {tOrders('correctPaymentUnavailable')}
+            {getPaymentCorrectionUnavailableMessage(
+              tOrders,
+              effectiveBill.payment_method_correction?.reason,
+            )}
           </p>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -257,6 +299,11 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
                     disabled={!b.payment_method_correction?.correctable}
                   >
                     {b.split_label || `#${b.bill_number}`} · {fmt(Number(b.total))}
+                    {!b.payment_method_correction?.correctable &&
+                      ` · ${getPaymentCorrectionUnavailableMessage(
+                        tOrders,
+                        b.payment_method_correction?.reason,
+                      )}`}
                   </option>
                 ))}
               </select>
@@ -281,24 +328,23 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
                 }}
                 className="w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground"
               >
-                {paymentLines.map((line, idx) =>
-                  line && typeof line === 'object' ? (
+                {paymentLines.map((line, idx) => {
+                  if (!line || typeof line !== 'object') return null;
+                  const lineMeta = effectiveBill?.payment_method_correction?.lines.find(
+                    (item) => item.index === idx,
+                  );
+                  return (
                     <option
                       key={`${line.method}-${idx}`}
                       value={idx}
-                      disabled={
-                        !effectiveBill?.payment_method_correction?.lines.find(
-                          (item) => item.index === idx,
-                        )?.correctable
-                      }
+                      disabled={!lineMeta?.correctable}
                     >
                       #{idx + 1} · {formatLineMethod(line.method)} · {fmt(Number(line.amount))}
-                      {!effectiveBill?.payment_method_correction?.lines.find(
-                        (item) => item.index === idx,
-                      )?.correctable && ` · ${tOrders('correctPaymentUnavailable')}`}
+                      {!lineMeta?.correctable &&
+                        ` · ${getPaymentCorrectionUnavailableMessage(tOrders, lineMeta?.reason)}`}
                     </option>
-                  ) : null,
-                )}
+                  );
+                })}
               </select>
             ) : currentLine ? (
               <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-border bg-muted/40 text-sm">

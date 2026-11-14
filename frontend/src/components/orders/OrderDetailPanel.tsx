@@ -62,6 +62,7 @@ import {
   resolveOrderPaymentStatus,
 } from '@/lib/order-payment-state';
 import PendingOrderItemEdits from './PendingOrderItemEdits';
+import { getPaymentCorrectionUnavailableMessage } from './CorrectPaymentMethodModal';
 import {
   orderStatusBadge,
   paymentStatusBadge,
@@ -232,6 +233,13 @@ function OrderDetailContent({
   const hasCorrectablePayment = correctablePaidBills.some(
     (b) => b.payment_method_correction?.correctable === true,
   );
+  const primaryCorrectionUnavailableReason =
+    correctablePaidBills.find(
+      (b) => b.payment_method_correction && !b.payment_method_correction.correctable,
+    )?.payment_method_correction?.reason ?? null;
+  const correctionUnavailableText = !hasCorrectablePayment
+    ? getPaymentCorrectionUnavailableMessage(tOrders, primaryCorrectionUnavailableReason)
+    : undefined;
   const hasEligibleRefund = paidBills.length > 0;
   const hasCollectedFunds = orderHasCollectedFunds(order);
   const customerEditLocked = isOrderCustomerEditLocked(order);
@@ -376,7 +384,7 @@ function OrderDetailContent({
                   <MoreHorizontal size={17} />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-60">
                 {order.type === 'dine_in' && !['completed', 'cancelled'].includes(order.status) && (
                   <DropdownMenuItem
                     onClick={() => onConvertToTakeaway(order)}
@@ -404,17 +412,15 @@ function OrderDetailContent({
                   <DropdownMenuItem
                     data-testid="correct-payment-method-menu-item"
                     disabled={!hasCorrectablePayment}
-                    title={
-                      !hasCorrectablePayment ? tOrders('correctPaymentUnavailable') : undefined
-                    }
+                    title={correctionUnavailableText}
                     onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
                   >
                     <CreditCard size={14} className="me-2" />
                     <span>
                       {tOrders('correctPaymentMethod')}
                       {!hasCorrectablePayment && (
-                        <span className="block text-xs">
-                          {tOrders('correctPaymentUnavailable')}
+                        <span className="block text-xs text-muted-foreground whitespace-normal">
+                          {correctionUnavailableText}
                         </span>
                       )}
                     </span>
@@ -983,25 +989,16 @@ function OrderDetailContent({
                 {tOrders('sendReceipt')}
               </Button>
             )}
-            {canCorrectPaymentMethod && onCorrectPaymentMethod && (
-              <div className="flex-1">
-                <Button
-                  variant="outline"
-                  data-testid="correct-payment-method-button"
-                  disabled={!hasCorrectablePayment}
-                  title={!hasCorrectablePayment ? tOrders('correctPaymentUnavailable') : undefined}
-                  onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
-                  className="flex-1 h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
-                >
-                  <CreditCard size={15} className="me-1.5 text-muted-foreground" />
-                  {tOrders('correctPaymentMethod')}
-                </Button>
-                {!hasCorrectablePayment && (
-                  <p className="text-xs text-muted-foreground">
-                    {tOrders('correctPaymentUnavailable')}
-                  </p>
-                )}
-              </div>
+            {canCorrectPaymentMethod && hasCorrectablePayment && onCorrectPaymentMethod && (
+              <Button
+                variant="outline"
+                data-testid="correct-payment-method-button"
+                onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
+                className="flex-1 h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
+              >
+                <CreditCard size={15} className="me-1.5 text-muted-foreground" />
+                {tOrders('correctPaymentMethod')}
+              </Button>
             )}
             {canRefund && hasEligibleRefund && (
               <Button

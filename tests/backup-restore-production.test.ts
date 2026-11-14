@@ -46,6 +46,7 @@ import {
   getDatabase,
   getDbPath,
   initDatabase,
+  listBackups,
   restoreBackup,
   validateInventoryLedgerDatabase,
   buildIdealSchemaDb,
@@ -143,6 +144,297 @@ async function run() {
     }
     const currentVersion = getCurrentSchemaVersion();
     const { path: sameSchemaBackup } = await createBackup();
+
+    for (const missing of ['table', 'row'] as const) {
+      const legacyPath = path.join(testDir, `same-schema-without-meta-${missing}.db`);
+      fs.copyFileSync(sameSchemaBackup, legacyPath);
+      const legacyDb = new Database(legacyPath);
+      if (missing === 'table') legacyDb.exec('DROP TABLE _flo_meta');
+      else legacyDb.prepare("DELETE FROM _flo_meta WHERE key = 'schema_version'").run();
+      legacyDb.close();
+      const originalBytes = fs.readFileSync(legacyPath);
+      assert.equal(
+        getSchemaVersionFromBackup(legacyPath),
+        currentVersion,
+        'SQLite user_version identifies a backup without a metadata stamp',
+      );
+      const restoredLegacy = restoreBackup(legacyPath, true);
+      assert.equal(
+        restoredLegacy.success,
+        true,
+        `same-version backup without metadata ${missing} restores`,
+      );
+      assert.ok(
+        getDatabase().prepare("SELECT id FROM products WHERE id = 'restore-product'").get(),
+        'restored business data survives',
+      );
+      assert.deepEqual(
+        fs.readFileSync(legacyPath),
+        originalBytes,
+        'the selected backup is not modified',
+      );
+    }
+
+    const malformedMetadata = path.join(testDir, 'malformed-schema-metadata.db');
+    fs.copyFileSync(sameSchemaBackup, malformedMetadata);
+    {
+      const malformedDb = new Database(malformedMetadata);
+      malformedDb
+        .prepare("UPDATE _flo_meta SET value = ? WHERE key = 'schema_version'")
+        .run(`${currentVersion}invalid`);
+      malformedDb.close();
+    }
+    assert.equal(
+      getSchemaVersionFromBackup(malformedMetadata),
+      null,
+      'malformed metadata is not replaced by the SQLite version',
+    );
+    assert.equal(
+      restoreBackup(malformedMetadata, true).success,
+      false,
+      'malformed metadata cannot be restored',
+    );
+
+    const zeroMetadata = path.join(testDir, 'zero-schema-metadata.db');
+    fs.copyFileSync(sameSchemaBackup, zeroMetadata);
+    {
+      const zeroDb = new Database(zeroMetadata);
+      zeroDb.prepare("UPDATE _flo_meta SET value = '0' WHERE key = 'schema_version'").run();
+      zeroDb.close();
+    }
+    assert.equal(
+      getSchemaVersionFromBackup(zeroMetadata),
+      null,
+      'zero metadata version is rejected instead of passing preflight or falling back',
+    );
+    assert.equal(
+      restoreBackup(zeroMetadata, true).success,
+      false,
+      'zero metadata version cannot be restored',
+    );
+
+    const conflictingMetadata = path.join(testDir, 'conflicting-schema-metadata.db');
+    fs.copyFileSync(sameSchemaBackup, conflictingMetadata);
+    {
+      const conflictingDb = new Database(conflictingMetadata);
+      conflictingDb.pragma(`user_version = ${currentVersion - 1}`);
+      conflictingDb.close();
+    }
+    assert.equal(
+      restoreBackup(conflictingMetadata, false).success,
+      false,
+      'conflicting metadata and header versions cannot be restored',
+    );
+
+    const newerWithoutMetadata = path.join(testDir, 'newer-without-metadata.db');
+    fs.copyFileSync(sameSchemaBackup, newerWithoutMetadata);
+    {
+      const newerDb = new Database(newerWithoutMetadata);
+      newerDb.exec('DROP TABLE _flo_meta');
+      newerDb.pragma(`user_version = ${currentVersion + 1}`);
+      newerDb.close();
+    }
+    assert.equal(
+      getSchemaVersionFromBackup(newerWithoutMetadata),
+      currentVersion + 1,
+      'the newer SQLite version is detected without metadata',
+    );
+    assert.equal(
+      restoreBackup(newerWithoutMetadata, true).success,
+      false,
+      'a newer backup is not restored',
+    );
+    const unrelatedDatabase = path.join(testDir, 'unrelated-database.db');
+    {
+      const unrelatedDb = new Database(unrelatedDatabase);
+      unrelatedDb.pragma(`user_version = ${currentVersion}`);
+      unrelatedDb.exec('CREATE TABLE unrelated (id INTEGER PRIMARY KEY)');
+      unrelatedDb.close();
+    }
+    assert.equal(
+      getSchemaVersionFromBackup(unrelatedDatabase),
+      currentVersion,
+      'a positive SQLite version can be read before full validation',
+    );
+    assert.equal(
+      restoreBackup(unrelatedDatabase, true).success,
+      false,
+      'a versioned non-Flo database fails the existing schema checks',
+    );
+    assert.ok(
+      getDatabase().prepare("SELECT id FROM products WHERE id = 'restore-product'").get(),
+      'rejected backups do not replace the live database',
+    );
+
+    const walLegacyDir = path.join(testDir, 'wal-legacy-source');
+    fs.mkdirSync(walLegacyDir, { recursive: true });
+    const walLegacyPath = path.join(walLegacyDir, 'wal-legacy.db');
+    fs.copyFileSync(sameSchemaBackup, walLegacyPath);
+    {
+      const walLegacyDb = new Database(walLegacyPath);
+      walLegacyDb.pragma('journal_mode = WAL');
+      walLegacyDb.exec('DROP TABLE _flo_meta');
+      walLegacyDb.pragma('wal_checkpoint(TRUNCATE)');
+      walLegacyDb.close();
+    }
+    assert.equal(
+      fs.existsSync(`${walLegacyPath}-wal`),
+      false,
+      'WAL legacy fixture has no WAL file',
+    );
+    assert.equal(
+      fs.existsSync(`${walLegacyPath}-shm`),
+      false,
+      'WAL legacy fixture has no SHM file',
+    );
+    const walLegacyBytes = fs.readFileSync(walLegacyPath);
+    fs.chmodSync(walLegacyDir, 0o500);
+    try {
+      assert.equal(
+        getSchemaVersionFromBackup(walLegacyPath),
+        currentVersion,
+        'probing a WAL-mode backup without _flo_meta reads positive user_version',
+      );
+      assert.equal(
+        fs.existsSync(`${walLegacyPath}-wal`),
+        false,
+        'probing WAL-mode backup leaves no WAL sidecar',
+      );
+      assert.equal(
+        fs.existsSync(`${walLegacyPath}-shm`),
+        false,
+        'probing WAL-mode backup leaves no SHM sidecar',
+      );
+      assert.deepEqual(
+        fs.readFileSync(walLegacyPath),
+        walLegacyBytes,
+        'probing WAL-mode backup does not mutate source bytes',
+      );
+      assert.equal(
+        restoreBackup(walLegacyPath, true).success,
+        true,
+        'restoring a WAL-mode backup without _flo_meta succeeds from read-only dir',
+      );
+      assert.equal(
+        fs.existsSync(`${walLegacyPath}-wal`),
+        false,
+        'restoring WAL-mode backup leaves no WAL sidecar',
+      );
+      assert.equal(
+        fs.existsSync(`${walLegacyPath}-shm`),
+        false,
+        'restoring WAL-mode backup leaves no SHM sidecar',
+      );
+    } finally {
+      fs.chmodSync(walLegacyDir, 0o700);
+    }
+
+    const managedWalLegacyName = 'flo-backup-2026-08-15T00-00-00-000Z-wallegacy.db';
+    const managedWalLegacyPath = path.join(testDir, 'backups', managedWalLegacyName);
+    fs.copyFileSync(walLegacyPath, managedWalLegacyPath);
+    const listedWalLegacy = listBackups().find((entry) => entry.fileName === managedWalLegacyName);
+    assert.equal(
+      listedWalLegacy?.schemaVersion,
+      currentVersion,
+      'listBackups reads positive user_version for managed WAL-mode backups without _flo_meta',
+    );
+    assert.equal(
+      fs.existsSync(`${managedWalLegacyPath}-wal`),
+      false,
+      'listing a managed WAL-mode backup creates no WAL sidecar',
+    );
+    assert.equal(
+      fs.existsSync(`${managedWalLegacyPath}-shm`),
+      false,
+      'listing a managed WAL-mode backup creates no SHM sidecar',
+    );
+    assert.equal(
+      restoreBackup(managedWalLegacyPath, true).success,
+      true,
+      'managed WAL-mode backup remains restorable after listing',
+    );
+    fs.unlinkSync(managedWalLegacyPath);
+
+    const walSidecarSource = path.join(testDir, 'wal-sidecar-source.db');
+    const walSidecarTarget = path.join(testDir, 'wal-sidecar-probed.db');
+    fs.copyFileSync(sameSchemaBackup, walSidecarSource);
+    const walSourceDb = new Database(walSidecarSource);
+    try {
+      walSourceDb.pragma('journal_mode = WAL');
+      walSourceDb.pragma('wal_autocheckpoint = 0');
+      walSourceDb.exec('DROP TABLE _flo_meta');
+      walSourceDb.pragma(`user_version = ${currentVersion - 1}`);
+      fs.copyFileSync(walSidecarSource, walSidecarTarget);
+      fs.copyFileSync(`${walSidecarSource}-wal`, `${walSidecarTarget}-wal`);
+    } finally {
+      walSourceDb.close();
+    }
+    const walTargetBytes = fs.readFileSync(walSidecarTarget);
+    const walTargetSidecarBytes = fs.readFileSync(`${walSidecarTarget}-wal`);
+    assert.equal(
+      getSchemaVersionFromBackup(walSidecarTarget),
+      currentVersion - 1,
+      'probing a WAL-mode backup with an uncheckpointed -wal sidecar reads committed version',
+    );
+    assert.equal(
+      fs.existsSync(`${walSidecarTarget}-shm`),
+      false,
+      'probing a -wal sidecar source creates no -shm sidecar beside the source',
+    );
+    assert.deepEqual(
+      fs.readFileSync(walSidecarTarget),
+      walTargetBytes,
+      'probing a -wal sidecar source leaves the .db bytes untouched',
+    );
+    assert.deepEqual(
+      fs.readFileSync(`${walSidecarTarget}-wal`),
+      walTargetSidecarBytes,
+      'probing a -wal sidecar source leaves the -wal bytes untouched',
+    );
+
+    const preLedgerLegacyPath = path.join(testDir, 'pre-v85-stocked-legacy.db');
+    fs.copyFileSync(
+      path.join(__dirname, 'fixtures/upgrade-snapshots/schema-v56-pre-tax-registration-rename.db'),
+      preLedgerLegacyPath,
+    );
+    {
+      const preLedgerDb = new Database(preLedgerLegacyPath);
+      preLedgerDb
+        .prepare(
+          "INSERT INTO users (id, name, email, password, role) VALUES ('pre-v85-owner', 'Legacy Owner', 'pre-v85@test.local', 'test-hash', 'owner')",
+        )
+        .run();
+      preLedgerDb
+        .prepare("INSERT INTO categories (id, name) VALUES ('pre-v85-cat', 'Pre-v85 Category')")
+        .run();
+      preLedgerDb
+        .prepare(
+          "INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity) VALUES ('pre-v85-stocked', 'pre-v85-cat', 'Pre-v85 Stocked', 120, 1, 7)",
+        )
+        .run();
+      preLedgerDb.close();
+    }
+    const preLedgerRestore = restoreBackup(preLedgerLegacyPath, false);
+    assert.equal(
+      preLedgerRestore.success,
+      true,
+      `metadata-free pre-v85 backup with positive stock_quantity restores (${preLedgerRestore.error || ''})`,
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare("SELECT stock_quantity FROM products WHERE id = 'pre-v85-stocked'")
+          .get() as { stock_quantity: number } | undefined
+      )?.stock_quantity,
+      7,
+      'pre-v85 stocked product survives forward migration',
+    );
+    assert.ok(
+      getDatabase()
+        .prepare("SELECT id FROM inventory_movements WHERE product_id = 'pre-v85-stocked'")
+        .get(),
+      'forward migration backfills inventory_movements for pre-v85 stocked product',
+    );
 
     // The selected source directory may be read-only (USB/image/network
     // mounts). Restore stages bytes in an application-owned temp directory and

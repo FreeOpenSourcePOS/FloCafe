@@ -3469,21 +3469,6 @@ function parseCanonicalSchemaVersion(value: unknown): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function readBackupSchemaVersion(fullPath: string): number | null {
-  let backupDb: Database.Database | undefined;
-  try {
-    backupDb = new Database(fullPath, { readonly: true, fileMustExist: true });
-    const row = backupDb
-      .prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`)
-      .get() as { value: string } | undefined;
-    return row ? parseCanonicalSchemaVersion(row.value) : null;
-  } catch {
-    return null;
-  } finally {
-    backupDb?.close();
-  }
-}
-
 export type BackupMetadata = {
   schemaVersion: number | null;
   appVersion: string | null;
@@ -3662,7 +3647,7 @@ export function listBackupsPage(options: BackupPaginationOptions = {}): BackupPa
     sizeBytes: entry.sizeBytes,
     createdAt: entry.createdAt,
     kind: entry.kind,
-    schemaVersion: readBackupSchemaVersion(entry.fullPath),
+    schemaVersion: getSchemaVersionFromBackup(entry.fullPath),
   }));
   const last = backups[backups.length - 1];
   const nextCursor = hasMore && last ? encodeBackupCursor(last.createdAt, last.fileName) : null;
@@ -6283,9 +6268,14 @@ export function restoreBackup(
     let unreadableSource = false;
     try {
       backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
-      const metaRow = backupDb
-        .prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`)
-        .get() as { value: string } | undefined;
+      const hasMetadataTable = backupDb
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
+        .get();
+      const metaRow = hasMetadataTable
+        ? (backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as
+            | { value: string }
+            | undefined)
+        : undefined;
       metadataStampPresent = Boolean(metaRow);
       metadataVersion = metaRow ? (parseCanonicalSchemaVersion(metaRow.value) ?? 0) : 0;
       pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
@@ -6419,7 +6409,10 @@ export function restoreBackup(
             error: 'Backup is missing required table(s): inventory_movements',
           };
         }
-        const inventoryError = validateInventoryLedgerDatabase(stagedDb);
+        const inventoryError =
+          backupSchemaVersion < 85 && !stagedTables.has('inventory_movements')
+            ? validatePreLedgerBackupInventory(stagedDb, stagedTables)
+            : validateInventoryLedgerDatabase(stagedDb);
         if (inventoryError) {
           return {
             success: false,
@@ -6435,6 +6428,19 @@ export function restoreBackup(
       }
 
       if (backupSchemaVersion === currentVersion) {
+        if (!metadataStampPresent) {
+          const stagedMetadataDb = new Database(backupPath, { fileMustExist: true });
+          try {
+            stagedMetadataDb.exec(
+              'CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)',
+            );
+            stagedMetadataDb
+              .prepare("INSERT INTO _flo_meta (key, value) VALUES ('schema_version', ?)")
+              .run(String(backupSchemaVersion));
+          } finally {
+            stagedMetadataDb.close();
+          }
+        }
         repairStagedBackupSchema(backupPath, currentVersion);
         const validationError = validateDirectBackup(backupPath, currentVersion);
         if (validationError) {
@@ -6890,19 +6896,25 @@ function materializeRestoreSource(
 }
 
 export function getSchemaVersionFromBackup(backupPath: string): number | null {
-  let backupDb: Database.Database | undefined;
   try {
-    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
-    const metaRow = backupDb
-      .prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`)
-      .get() as { value: string } | undefined;
-    if (!metaRow) return null;
-    const version = Number.parseInt(metaRow.value, 10);
-    return Number.isFinite(version) && version >= 0 ? version : null;
+    return withProbedDatabaseFile(backupPath, (backupDb) => {
+      const hasMetadataTable = backupDb
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
+        .get();
+      const metaRow = hasMetadataTable
+        ? (backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as
+            | { value: string }
+            | undefined)
+        : undefined;
+      if (metaRow) {
+        const version = parseCanonicalSchemaVersion(metaRow.value);
+        return version !== null && version > 0 ? version : null;
+      }
+      const version = Number(backupDb.pragma('user_version', { simple: true }));
+      return Number.isSafeInteger(version) && version > 0 ? version : null;
+    });
   } catch {
     return null;
-  } finally {
-    backupDb?.close();
   }
 }
 

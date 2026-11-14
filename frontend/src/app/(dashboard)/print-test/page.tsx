@@ -25,7 +25,7 @@ import {
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
 import {
   ensurePrintLanguagesLoaded,
-  resolveBillPrintLanguages,
+  resolveReadyBillPrintLanguages,
 } from '@/lib/printer/print-document';
 import { generateKotHtml } from '@/lib/printer/kot-web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
@@ -161,8 +161,8 @@ export default function PrintTestPage() {
             try {
               const showLargeOrderNumber =
                 await resolveHydratedShowLargeOrderNumber(reservedWindow);
-              const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-              const kotLanguage = resolveKotTicketLanguage();
+              const { resolveReadyKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+              const kotLanguage = await resolveReadyKotTicketLanguage();
               const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
               const html = generateKotHtml(testOrder, {
                 paperWidth,
@@ -244,7 +244,7 @@ export default function PrintTestPage() {
       toast.error(t('failedWithReason', { message: tCommon('somethingWrong') }));
       return;
     }
-    const languages = resolveBillPrintLanguages();
+    const languages = await resolveReadyBillPrintLanguages();
     const failedLanguages = await ensurePrintLanguagesLoaded(languages);
     if (failedLanguages.length > 0) {
       showPrintLanguageLoadErrorsToast(failedLanguages);

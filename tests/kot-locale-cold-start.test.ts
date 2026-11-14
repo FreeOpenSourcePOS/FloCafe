@@ -21,7 +21,12 @@ const originalResolveFilename = moduleApi._resolveFilename;
 
 /** Keep alias resolution active for the whole run: usePrinter dynamically
  *  imports kot-web-print via '@/lib/printer/kot-web-print' at print time. */
-moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+moduleApi._resolveFilename = function (
+  request: string,
+  parent: any,
+  isMain: boolean,
+  options?: any,
+) {
   let resolvedRequest = request;
   if (request === '@countries') {
     resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
@@ -111,7 +116,11 @@ async function run(): Promise<void> {
     const html = captured[0] ?? '';
     // The fixed fa policy's banner label — proof the fa bundle was loaded
     // before generation instead of falling back to English.
-    check('KOT labels render in the fixed fa language on cold start', html.includes('برگ سفارش آشپزخانه'), html.slice(0, 200));
+    check(
+      'KOT labels render in the fixed fa language on cold start',
+      html.includes('برگ سفارش آشپزخانه'),
+      html.slice(0, 200),
+    );
     check('KOT labels do NOT fall back to English', !html.includes('KITCHEN ORDER TICKET'));
     check('order number still rendered', html.includes('ORD-KOT-COLD-001'));
   } finally {
@@ -148,7 +157,13 @@ async function run(): Promise<void> {
         status: 'pending',
         created_at: '2026-08-22T18:42:00Z',
         items: [
-          { product_name: 'Espresso', quantity: 1, status: 'pending', addons: [], special_instructions: null },
+          {
+            product_name: 'Espresso',
+            quantity: 1,
+            status: 'pending',
+            addons: [],
+            special_instructions: null,
+          },
         ],
       } as any;
 
@@ -160,17 +175,338 @@ async function run(): Promise<void> {
       }
 
       check('KOT print proceeds despite failed locale load', failureCaptured.length === 1);
-      check('failed KOT locale is surfaced as a print warning',
-        warnings.some((w) => w.field === 'kot language' && w.text === 'fa' && /could not be loaded/.test(w.message)),
+      check(
+        'failed KOT locale is surfaced as a print warning',
+        warnings.some(
+          (w) =>
+            w.field === 'kot language' && w.text === 'fa' && /could not be loaded/.test(w.message),
+        ),
         JSON.stringify(warnings),
       );
       // Note: scenario 1 already warmed the fa cache, so the ticket may
       // render cached Persian labels here; what matters is that printing
       // proceeds and the failure is surfaced rather than silent.
-      check('ticket still renders content', (failureCaptured[0] ?? '').includes('ORD-KOT-COLD-002'));
+      check(
+        'ticket still renders content',
+        (failureCaptured[0] ?? '').includes('ORD-KOT-COLD-002'),
+      );
     } finally {
       loaderModule.loadLocaleMessages = originalLoad;
       (printerService as any).printViaBrowser = originalPrintViaBrowser;
+      settings.setKotLanguagePolicy(policy.defaultPrintLanguagePolicy() as never);
+      settings.setLanguage('en');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Scenario 3: KDS sign-in (`syncAuthenticatedSession`) marks auth ready
+  // synchronously while `syncPrintPoliciesAtBootstrap` awaits delayed locale
+  // loading. Immediate browser receipt (`printBill` / `printWebBill`), WebUSB
+  // receipt (`printBill`), and KOT (`printKot`) prints must await the active
+  // tenant's print-policy bootstrap before resolving policy languages so the
+  // very first print uses the tenant's fixed locale rather than English/default.
+  // ------------------------------------------------------------------
+  {
+    const authModule =
+      require('../frontend/src/store/auth') as typeof import('../frontend/src/store/auth');
+    const webPrintModule =
+      require('../frontend/src/lib/printer/web-print') as typeof import('../frontend/src/lib/printer/web-print');
+    const loaderModule = require('../frontend/src/lib/i18n/loader');
+    const originalLoad = loaderModule.loadLocaleMessages;
+    const originalWindow = (globalThis as any).window;
+    const originalLocalStorage = (globalThis as any).localStorage;
+    const originalPrint = printerService.print.bind(printerService);
+    const isConnectedDescriptor = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(printerService),
+      'isConnected',
+    );
+
+    const storageMap = new Map<string, string>();
+    (globalThis as any).localStorage = {
+      getItem: (k: string) => storageMap.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        storageMap.set(k, v);
+      },
+      removeItem: (k: string) => {
+        storageMap.delete(k);
+      },
+    };
+
+    const makePopupWindow = (sink: string[]) => ({
+      closed: false,
+      close() {
+        this.closed = true;
+      },
+      print() {},
+      document: {
+        readyState: 'complete',
+        open() {},
+        write(html: string) {
+          sink.push(html);
+        },
+        close() {},
+      },
+    });
+
+    try {
+      check('fr messages are not cached before KDS sign-in', !loader.getCachedMessages('fr'));
+      settings.setBillLanguagePolicy(policy.defaultPrintLanguagePolicy() as never);
+      settings.setKotLanguagePolicy(policy.defaultPrintLanguagePolicy() as never);
+      settings.setLanguage('en');
+      settings.setKotPrintingEnabled(true);
+
+      let releaseFrLoad!: () => void;
+      const frLoadGate = new Promise<void>((resolve) => {
+        releaseFrLoad = resolve;
+      });
+      loaderModule.loadLocaleMessages = async (lang: string) => {
+        if (lang === 'fr') {
+          await frLoadGate;
+        }
+        return originalLoad(lang);
+      };
+
+      const frTenant = {
+        id: 77,
+        business_name: 'Bistro Flo',
+        business_type: 'cafe',
+        country: 'FR',
+        currency: 'EUR',
+        timezone: 'Europe/Paris',
+        plan: 'desktop',
+        status: 'active',
+        language: 'en',
+        permission_ids: ['kds.view'],
+        bill_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'fr' },
+          additional: [],
+        }),
+        kot_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'fr' },
+          additional: [],
+        }),
+      } as any;
+
+      const sampleOrder = {
+        id: 701,
+        order_number: 'ORD-KDS-SYNC-001',
+        type: 'dine_in',
+        status: 'completed',
+        subtotal: 20,
+        tax_amount: 0,
+        discount_amount: 0,
+        total: 20,
+        created_at: '2026-08-22T18:42:00Z',
+        items: [
+          {
+            id: 1,
+            order_id: 701,
+            product_id: 'p1',
+            product_name: 'Croissant',
+            unit_price: 10,
+            quantity: 2,
+            subtotal: 20,
+            tax_amount: 0,
+            total: 20,
+            status: 'pending',
+            addons: [],
+            special_instructions: null,
+          },
+        ],
+      } as any;
+
+      const sampleBill = {
+        id: 901,
+        bill_number: 'BILL-KDS-SYNC-001',
+        order_id: 701,
+        subtotal: 20,
+        tax_amount: 0,
+        discount_amount: 0,
+        service_charge: 0,
+        delivery_charge: 0,
+        total: 20,
+        paid_amount: 20,
+        balance: 0,
+        payment_status: 'paid',
+        payment_details: [{ method: 'cash', amount: 20, timestamp: '2026-08-22T18:45:00Z' }],
+        order: sampleOrder,
+      } as any;
+
+      const browserReceiptHtmls: string[] = [];
+      const directWebBillHtmls: string[] = [];
+      const kotHtmls: string[] = [];
+      (globalThis as any).window = {
+        dispatchEvent: () => true,
+        open: () => makePopupWindow(directWebBillHtmls),
+      };
+      (printerService as any).printViaBrowser = async (html: string): Promise<void> => {
+        kotHtmls.push(html);
+      };
+      printerStore.getState().setPrintMethod('browser');
+
+      authModule.useAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-token-fr',
+        user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+        currentTenant: frTenant,
+        tenants: [frTenant],
+      });
+
+      check(
+        'syncAuthenticatedSession marks auth loading=false synchronously',
+        authModule.useAuthStore.getState().loading === false,
+      );
+
+      // Start immediate browser receipt + direct printWebBill + KOT print BEFORE fr locale resolves.
+      const reservedPopup = makePopupWindow(browserReceiptHtmls) as any;
+      const immediateBillPrint = printerStore
+        .getState()
+        .printBill(sampleBill, frTenant, {}, reservedPopup);
+      const immediateWebBillPrint = webPrintModule.printWebBill(sampleBill, frTenant, {});
+      const immediateKotPrint = printerStore.getState().printKot(sampleOrder);
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseFrLoad();
+      await Promise.all([immediateBillPrint, immediateWebBillPrint, immediateKotPrint]);
+
+      const firstBrowserHtml = browserReceiptHtmls[0] ?? '';
+      check(
+        'first browser printBill after KDS sign-in renders French locale tag',
+        firstBrowserHtml.includes('<html lang="fr-FR" dir="ltr">'),
+        firstBrowserHtml.slice(0, 160),
+      );
+      check(
+        'first browser printBill after KDS sign-in renders French footer label',
+        firstBrowserHtml.includes('Merci de votre visite !'),
+      );
+      const firstDirectWebHtml = directWebBillHtmls[0] ?? '';
+      check(
+        'first direct printWebBill after KDS sign-in renders French locale tag',
+        firstDirectWebHtml.includes('<html lang="fr-FR" dir="ltr">'),
+        firstDirectWebHtml.slice(0, 160),
+      );
+      const firstKotHtml = kotHtmls[0] ?? '';
+      check(
+        'first KOT print after KDS sign-in renders French banner',
+        firstKotHtml.includes('BON DE COMMANDE CUISINE'),
+        firstKotHtml.slice(0, 160),
+      );
+
+      // Verify WebUSB receipt path on a fresh uncached locale ('nl') with delayed load.
+      check(
+        'nl messages are not cached before WebUSB KDS sign-in',
+        !loader.getCachedMessages('nl'),
+      );
+      let releaseNlLoad!: () => void;
+      const nlLoadGate = new Promise<void>((resolve) => {
+        releaseNlLoad = resolve;
+      });
+      loaderModule.loadLocaleMessages = async (lang: string) => {
+        if (lang === 'nl') {
+          await nlLoadGate;
+        }
+        return originalLoad(lang);
+      };
+
+      const nlTenant = {
+        ...frTenant,
+        id: 78,
+        country: 'NL',
+        bill_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'nl' },
+          additional: [],
+        }),
+        kot_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'nl' },
+          additional: [],
+        }),
+      };
+
+      const webusbPayloads: Uint8Array[] = [];
+      Object.defineProperty(printerService, 'isConnected', {
+        configurable: true,
+        get: () => true,
+      });
+      (printerService as any).print = async (bytes: Uint8Array): Promise<void> => {
+        webusbPayloads.push(bytes);
+      };
+      printerStore.getState().setPrintMethod('escpos');
+
+      authModule.useAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-token-nl',
+        user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+        currentTenant: nlTenant,
+        tenants: [nlTenant],
+      });
+
+      const immediateWebUsbBill = printerStore.getState().printBill(sampleBill, nlTenant);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseNlLoad();
+      await immediateWebUsbBill;
+
+      const webusbText = Buffer.from(webusbPayloads[0] ?? new Uint8Array()).toString('latin1');
+      check(
+        'first WebUSB printBill after KDS sign-in renders Dutch receipt labels',
+        webusbText.includes('Factuurnr.: BILL-KDS-SYNC-001') &&
+          webusbText.includes('Bedankt voor uw bezoek!'),
+        webusbText.slice(0, 320),
+      );
+
+      // Scenario 4: clearing session while a bootstrap locale load is in flight releases waiters
+      // and resets stale fixed policies back to default inherit.
+      let releaseDeLoad!: () => void;
+      const deLoadGate = new Promise<void>((resolve) => {
+        releaseDeLoad = resolve;
+      });
+      loaderModule.loadLocaleMessages = async (lang: string) => {
+        if (lang === 'de') {
+          await deLoadGate;
+        }
+        return originalLoad(lang);
+      };
+      const deTenant = {
+        ...frTenant,
+        id: 79,
+        country: 'DE',
+        bill_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'de' },
+          additional: [],
+        }),
+        kot_language_policy: JSON.stringify({
+          primary: { mode: 'fixed', language: 'de' },
+          additional: [],
+        }),
+      };
+      authModule.useAuthStore.getState().syncAuthenticatedSession({
+        token: 'kds-token-de',
+        user: { id: 'u-kds', name: 'Chef', email: 'chef@bistro.local', role: 'chef' } as any,
+        currentTenant: deTenant,
+        tenants: [deTenant],
+      });
+      authModule.useAuthStore.getState().clearLocalSession();
+      settings.setLanguage('en');
+      directWebBillHtmls.length = 0;
+      await webPrintModule.printWebBill(sampleBill, frTenant, {});
+      check(
+        'clearLocalSession releases pending bootstrap without hanging and resets policy to default',
+        (directWebBillHtmls[0] ?? '').includes('<html lang="en" dir="ltr">'),
+        (directWebBillHtmls[0] ?? '').slice(0, 160),
+      );
+      releaseDeLoad();
+    } finally {
+      loaderModule.loadLocaleMessages = originalLoad;
+      (printerService as any).printViaBrowser = originalPrintViaBrowser;
+      (printerService as any).print = originalPrint;
+      if (isConnectedDescriptor) {
+        Object.defineProperty(printerService, 'isConnected', isConnectedDescriptor);
+      } else {
+        delete (printerService as any).isConnected;
+      }
+      if (originalWindow === undefined) delete (globalThis as any).window;
+      else (globalThis as any).window = originalWindow;
+      if (originalLocalStorage === undefined) delete (globalThis as any).localStorage;
+      else (globalThis as any).localStorage = originalLocalStorage;
+      printerStore.getState().setPrintMethod('browser');
+      settings.setBillLanguagePolicy(policy.defaultPrintLanguagePolicy() as never);
       settings.setKotLanguagePolicy(policy.defaultPrintLanguagePolicy() as never);
       settings.setLanguage('en');
     }

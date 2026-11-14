@@ -18,7 +18,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
 import {
   ensurePrintLanguagesLoaded,
-  resolveBillPrintLanguages,
+  resolveReadyBillPrintLanguages,
   buildFrontendBillDocument,
   buildFrontendKotDocument,
 } from '@/lib/printer/print-document';
@@ -367,6 +367,8 @@ export const usePrinterStore = create<PrinterState>()(
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');
             throwIfTenantChanged();
+            const languages = opts?.languages ?? (await resolveReadyBillPrintLanguages());
+            throwIfTenantChanged();
             windowTransferred = true;
             const browserWarnings = await printWebBill(
               bill,
@@ -375,7 +377,7 @@ export const usePrinterStore = create<PrinterState>()(
                 paperSize: printerPaperSize,
                 textSize: activeTextSize,
                 columns: billColumns,
-                languages: opts?.languages ?? resolveBillPrintLanguages(),
+                languages,
                 includeTaxId: billShowTaxId,
                 taxRegistrationNumber:
                   billShowTaxId && billTaxRegistrationNumber
@@ -463,7 +465,8 @@ export const usePrinterStore = create<PrinterState>()(
           activeConnectionType = 'webusb';
 
           // ESC/POS thermal path: load requested language bundles before resolving labels.
-          const languages = opts?.languages ?? resolveBillPrintLanguages();
+          const languages = opts?.languages ?? (await resolveReadyBillPrintLanguages());
+          throwIfTenantChanged();
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
           throwIfTenantChanged();
           // Surface failed locale loads as warnings when labels fall back to English.
@@ -679,7 +682,8 @@ export const usePrinterStore = create<PrinterState>()(
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
           const languages = opts?.language
             ? ([opts.language as Language] as const)
-            : resolveBillPrintLanguages();
+            : await resolveReadyBillPrintLanguages();
+          throwIfTenantChanged();
 
           // Fall back to browser print when no WebUSB thermal transport is connected.
           // Await any in-flight startup reconnect before checking connection status.
@@ -850,9 +854,10 @@ export const usePrinterStore = create<PrinterState>()(
 
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
-          const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+          const { resolveReadyKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
           throwIfTenantChanged();
-          const kotLanguage = resolveKotTicketLanguage();
+          const kotLanguage = await resolveReadyKotTicketLanguage();
+          throwIfTenantChanged();
           const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
           throwIfTenantChanged();
 
@@ -1053,7 +1058,7 @@ export const usePrinterStore = create<PrinterState>()(
           } = usePosSettingsStore.getState();
           // A settings change can swap the receipt language without loading its
           // bundle, so load it first rather than printing an English slip silently.
-          const slipLanguages = resolveBillPrintLanguages();
+          const slipLanguages = await resolveReadyBillPrintLanguages();
           const failedSlipLanguages = await ensurePrintLanguagesLoaded(slipLanguages);
           const tenant = useAuthStore.getState().currentTenant;
           const tenantTimezone = tenant?.timezone;
@@ -1185,7 +1190,7 @@ export const usePrinterStore = create<PrinterState>()(
           const html = generateDeliverySlipHtml(slipOrder, slipItems, slipContact, {
             paperWidth,
             textSize: activeTextSize,
-            language: resolveBillPrintLanguages()[0] as Language,
+            language: slipLanguages[0] as Language,
             ...(slipPayment ? { payment: slipPayment } : {}),
             ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
           });

@@ -43,9 +43,23 @@ export type PrinterStatusBody =
     }
   | { connection_type: 'webusb'; cause: null };
 
-/** True when the printer answered with a fault that drops the bytes it receives. */
+/** True when the printer answered with a fault or explicit offline state that drops the bytes it receives. */
 export function isPhysicalFault(cause: PrinterStatusBody['cause']): boolean {
-  return cause === 'paper_out' || cause === 'cover_open' || cause === 'printer_error';
+  return (
+    cause === 'paper_out' ||
+    cause === 'cover_open' ||
+    cause === 'printer_error' ||
+    cause === 'offline'
+  );
+}
+
+export function failureClassForStatusCause(
+  cause: PrinterStatusBody['cause'],
+): 'offline' | 'needs_attention' | 'not_configured' | null {
+  if (!cause) return null;
+  if (cause === 'offline' || cause === 'unreachable' || cause === 'queue_offline') return 'offline';
+  if (cause === 'queue_missing') return 'not_configured';
+  return 'needs_attention';
 }
 
 /** A network printer that answers with a physical fault dropped the bytes it was sent. */

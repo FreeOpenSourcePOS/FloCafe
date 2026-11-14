@@ -27,6 +27,7 @@ import {
 } from '../printers/thermal';
 import {
   discoverHandler,
+  failureClassForStatusCause,
   invalidatePrinterDetectCache,
   printerStatusHandler,
   testPrintCause,
@@ -638,7 +639,10 @@ router.post(
         res.status(502).json({
           error: result.detail || 'Printer did not respond or print failed',
           detail: result.detail,
-          failure_class: result.failureClass ?? classifyPrintFailure(result.detail),
+          failure_class:
+            result.failureClass ??
+            failureClassForStatusCause(cause) ??
+            classifyPrintFailure(result.detail),
           cause,
         });
       }
@@ -744,7 +748,7 @@ router.post(
         timezone,
         capabilities,
       );
-      let result: { ok: boolean; detail?: string } = { ok: false };
+      let result: { ok: boolean; detail?: string; failureClass?: string } = { ok: false };
 
       switch (printer.connection_type) {
         case 'network':
@@ -772,14 +776,23 @@ router.post(
           return res.status(400).json({ error: 'Unsupported printer connection type' });
       }
 
-      if (result.ok) {
+      const cause = await testPrintCause(printer, getHttpRequestSignal(req));
+
+      if (result.ok && !isPhysicalFault(cause)) {
         res.json({ success: true });
       } else {
         console.error(
           '[Printer] Active test print failed:',
-          result.detail || 'Printer did not respond or print failed',
+          result.detail || cause || 'Printer did not respond or print failed',
         );
-        res.status(502).json({ error: 'Test print failed' });
+        res.status(502).json({
+          error: 'Test print failed',
+          failure_class:
+            result.failureClass ??
+            failureClassForStatusCause(cause) ??
+            classifyPrintFailure(result.detail),
+          cause,
+        });
       }
     } catch (error: unknown) {
       res.locals.postHogError = error;

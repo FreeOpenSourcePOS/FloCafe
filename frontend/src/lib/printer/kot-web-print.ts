@@ -4,6 +4,7 @@ import type { Order } from '@/lib/types';
 import { createTranslator } from 'use-intl/core';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
+import { awaitPrintPolicyBootstrap } from '@/lib/print-policy-bootstrap';
 import { defaultPrintLanguagePolicy, resolveKotLanguage } from '@print/policy';
 import { directionalText, isKotItemPending, type DirectionalText } from '@print/document';
 import { containsRtlScript } from '@print/direction';
@@ -43,6 +44,13 @@ export function resolveKotTicketLanguage(language?: Language): Language {
   } catch {
     return 'en';
   }
+}
+
+/** Waits for any in-flight auth print-policy bootstrap before resolving the KOT ticket language. */
+export async function resolveReadyKotTicketLanguage(language?: Language): Promise<Language> {
+  if (language) return language;
+  await awaitPrintPolicyBootstrap();
+  return resolveKotTicketLanguage();
 }
 function translatorFor(lang: Language): (key: string) => string {
   const locale = LANGUAGES[lang]?.locale ?? 'en';

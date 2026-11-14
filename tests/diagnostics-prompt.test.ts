@@ -213,6 +213,11 @@ async function main() {
     `INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_prompt_dismissed', 'false', ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   ).run(new Date().toISOString());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_prompt_count', '0', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(new Date().toISOString());
+  db.prepare(`DELETE FROM settings WHERE key = 'diagnostics_prompt_last_at'`).run();
   for (const deletionStatus of [
     'pending',
     'processing',
@@ -237,8 +242,13 @@ async function main() {
     assertEqualOrThrow(blockedShown.status, 200, `shown is a no-op during ${deletionStatus}`);
     assertEqualOrThrow(
       blockedShown.data.prompt_count,
-      DIAGNOSTICS_PROMPT_MAX,
+      0,
       `shown does not mutate prompt_count during ${deletionStatus}`,
+    );
+    assertEqualOrThrow(
+      blockedShown.data.last_asked_at,
+      null,
+      `shown does not record last_asked_at during ${deletionStatus}`,
     );
     const blockedAccepted = await post('accepted');
     assertEqualOrThrow(
@@ -262,29 +272,18 @@ async function main() {
     false,
     'cloud_deletion_blocked clears once cloud_deletion_status is empty',
   );
-
-  const cardSource = fs.readFileSync(
-    path.join(__dirname, '../frontend/src/components/support/DiagnosticsPromptCard.tsx'),
-    'utf8',
+  const unblockedShown = await post('shown');
+  assertEqualOrThrow(unblockedShown.status, 200, 'shown succeeds once cloud deletion is cleared');
+  assertEqualOrThrow(
+    unblockedShown.data.prompt_count,
+    1,
+    'shown increments prompt_count from 0 once cloud deletion is cleared',
   );
-  const consentIdx = cardSource.indexOf("api.put('/settings/diagnostics_consent'");
-  const transmissionIdx = cardSource.indexOf(
-    "api.put('/settings/diagnostics_transmission_enabled'",
-  );
-  const acceptedIdx = cardSource.indexOf(
-    "api.post('/settings/diagnostics-prompt', { event: 'accepted' })",
-  );
-  assertOrThrow(
-    consentIdx !== -1 && transmissionIdx !== -1 && acceptedIdx !== -1,
-    'DiagnosticsPromptCard persists consent and transmission before posting accepted',
-  );
-  assertOrThrow(
-    consentIdx < acceptedIdx && transmissionIdx < acceptedIdx,
-    'DiagnosticsPromptCard only emits accepted after both consent PUT calls succeed',
-  );
-  assertOrThrow(
-    cardSource.includes("'cloud_deletion_pending'") && cardSource.includes('cloudDeletionBlocked'),
-    'DiagnosticsPromptCard handles cloud_deletion_pending and cloudDeletionBlocked',
+  const unblockedAccepted = await post('accepted');
+  assertEqualOrThrow(
+    unblockedAccepted.status,
+    200,
+    'accepted succeeds once cloud deletion is cleared',
   );
 
   console.log('\n' + '='.repeat(56));

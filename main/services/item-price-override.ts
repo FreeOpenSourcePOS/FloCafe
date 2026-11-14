@@ -28,7 +28,10 @@ export function parsePriceOverrideInput(raw: unknown, decimals: number): PriceOv
   const input = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const price = typeof input.price === 'string' ? Number(input.price) : input.price;
   if (typeof price !== 'number' || !Number.isFinite(price) || price < 0) {
-    throw Object.assign(new Error('price must be a non-negative number'), { statusCode: 400 });
+    throw Object.assign(new Error('price must be a non-negative number'), {
+      statusCode: 400,
+      diagnosticCode: 'PRICE_INVALID',
+    });
   }
   const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
   if (reason.length === 0) {

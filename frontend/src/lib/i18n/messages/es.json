@@ -1372,6 +1372,31 @@
     "genericHint": "Las líneas siguientes contienen caracteres que esta impresora térmica no puede mostrar.",
     "moreLines": "…y {count} más",
     "languageLoadError": "No se pudieron cargar los paquetes de idioma de impresión \"{languages}\". Revisa el paquete de idioma y vuelve a cargar la aplicación para intentarlo de nuevo.",
+    "fix": {
+      "cause": {
+        "paper_out": "Cargá papel en la impresora y volvé a imprimir.",
+        "cover_open": "Cerrá la tapa de la impresora y volvé a imprimir.",
+        "printer_error": "Apagá y volvé a encender la impresora, y después imprimí de nuevo.",
+        "offline": "La impresora dice que está sin conexión. Revisá el papel, la tapa y el interruptor de encendido.",
+        "unreachable": "Verificá que la impresora esté encendida y que el cable esté conectado. Si su dirección cambió, elegila de nuevo entre las impresoras encontradas en la red.",
+        "queue_offline": "La cola de impresión de esta computadora está sin conexión. Reanudala e imprimí de nuevo.",
+        "queue_missing": "Esta impresora cambió de nombre o se quitó. Elegila de nuevo entre las impresoras encontradas en esta computadora.",
+        "queue_offline_snmp": "Windows marca esta impresora como sin conexión porque no responde a SNMP. Abrí Propiedades de la impresora > Puertos > Configurar puerto, desactivá \"Estado SNMP habilitado\" y hacé clic en Aceptar."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows tiene esta impresora configurada para trabajar sin conexión. Abrí la cola de la impresora y desactivá \"Usar impresora sin conexión\".",
+          "darwin": "Puede que la cola de impresión esté en pausa. Abrí Ajustes del Sistema > Impresoras y escáneres, abrí la cola de esta impresora y hacé clic en Reanudar.",
+          "linux": "Puede que la cola de CUPS esté deshabilitada. Ejecutá \"cupsenable [nombre de la impresora]\" en una terminal o habilitala en la configuración de la impresora."
+        },
+        "queue_unavailable": "La cola de impresión no acepta trabajos. Habilitá o reanudá la cola en esta computadora e imprimí de nuevo.",
+        "driver_error": "El controlador de impresión rechazó los datos sin procesar. En Windows, configurá el controlador de esta impresora como \"Generic / Text Only\".",
+        "spooler_error": "El servicio Cola de impresión de Windows se detuvo. Reiniciá el servicio Cola de impresión e imprimí de nuevo.",
+        "permission_denied": "Esta computadora no tiene permiso para imprimir aquí. Revisá los permisos de la impresora o consultá con un administrador.",
+        "timeout": "La impresora no respondió a tiempo. Verificá que esté encendida y en la misma red, y volvé a imprimir.",
+        "needs_attention": "La impresora necesita atención. Revisá el papel, la tapa y cualquier mensaje en la impresora."
+      }
+    },
     "printerOfflineHint": "La impresora no responde. Fijate que esté encendida y conectada, y en Windows verificá que la opción \"Usar impresora sin conexión\" esté desactivada.",
     "templateFallback": "La plantilla de factura seleccionada no es compatible con esta ruta de impresión; se utilizó el diseño de recibo integrado."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Acerca de FloCafe",
     "aboutGithub": "Repositorio de GitHub",
     "aboutWebsite": "Sitio web de la aplicación",
+    "printerProfileCredit": "Perfiles de impresora de escpos-printer-db (CC BY 4.0)",
     "account": "Cuenta",
     "accountAndApp": "Cuenta y Aplicación",
     "actionFailed": "Falló",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Se muestra en los comprobantes impresos, si lo configurás",
     "instagramPlaceholder": "@tuCafe",
     "installedOnThisComputer": "Instaladas en esta computadora",
+    "foundOnNetwork": "Impresoras encontradas en la red",
     "invalidExportFile": "Archivo de exportación de Flo Cafe inválido",
     "invalidPhoneFormat": "Formato de número de teléfono no válido",
     "invoiceNumberIncludePeriod": "Incluir período en el número de factura",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Todavía no hay cuentas de chef activas. Agregá primero un chef en Personal.",
     "noCloudContactEmail": "Sin correo de contacto en la nube",
     "noInstalledPrinters": "No se encontraron impresoras instaladas. Instalá tu impresora desde la configuración del sistema y luego hacé clic en Actualizar, o usá Agregar manualmente para una impresora de red.",
+    "noNetworkPrinters": "No se encontraron impresoras en la red.",
     "noPairedDevices": "Todavía no hay dispositivos emparejados.",
     "noPrintersConfigured": "No hay impresoras configuradas todavía.",
     "noStaffYet": "Todavía no hay logins de personal.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Impresora configurada",
     "printerOnline": "En línea",
     "printerPrinting": "Imprimiendo",
+    "printerStatusReady": "Lista",
+    "printerStatusPaperLow": "Poco papel",
+    "printerStatusUnknown": "Estado desconocido",
     "printerQuickAdded": "{name} agregada",
     "printerSaveFailed": "No se pudo guardar la impresora",
     "printerSaved": "Impresora agregada",
@@ -2436,6 +2467,7 @@
     "saving": "Guardando...",
     "savingCloud": "Guardando…",
     "scanningForPrinters": "Buscando impresoras instaladas…",
+    "scanAgain": "Escanear de nuevo",
     "secondLanguageNone": "Ninguno",
     "secondReceiptLanguage": "Segundo idioma del recibo",
     "zReportLanguage": "Idioma del informe Z",

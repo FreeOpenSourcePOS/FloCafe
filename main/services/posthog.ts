@@ -22,6 +22,7 @@ import {
   type PostHogEnvironment,
 } from './posthog-config';
 import { getOfflineModeAbortSignal, onOfflineModeEnabled } from './offline-mode';
+import { queueRefusalFromDetail } from '../printers/print-failure-facts';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
 import {
@@ -644,6 +645,8 @@ export interface PrintFailureFacts {
   detail?: string;
   /** Removed from the text before it is sent; the queue name itself never leaves the machine. */
   printer_name?: string;
+  /** Enum-only facts about the queue and the failing step. */
+  diagnostics?: Record<string, string | number>;
 }
 
 /** Sends a failed print job while error sending is on. Make and model are not known here. */
@@ -669,6 +672,41 @@ export function capturePostHogPrintFailure(facts: PrintFailureFacts): void {
         ...(facts.detail
           ? { error_text: scrubPrinterErrorText(facts.detail, facts.printer_name) }
           : {}),
+        ...(facts.diagnostics ?? {}),
+      },
+    });
+  } catch {
+    // A failed PostHog send is dropped. There is no outbox.
+  }
+}
+
+/** A print the Windows queue refused and the direct print to its own port saved. */
+export function capturePostHogPrintRecovered(facts: {
+  kind: string;
+  transport?: 'direct_tcp_fallback';
+  detail?: string;
+  queuePort?: { kind: string };
+}): void {
+  try {
+    if (facts.transport !== 'direct_tcp_fallback') return;
+    if (!getConsentState().diagnosticsEnabled) return;
+    const current = activeClient();
+    if (!current) return;
+    const who = identity();
+    const queueRefusal = queueRefusalFromDetail(facts.detail);
+    current.capture({
+      distinctId: who.distinctId,
+      event: 'printer_recovered',
+      properties: {
+        ...readSuperProperties(who),
+        ...readOsProperties(),
+        process_type: 'main',
+        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
+        capture_point: 'printer',
+        via: 'direct_tcp',
+        kind: facts.kind,
+        port_kind: facts.queuePort?.kind ?? 'unknown',
+        ...(queueRefusal ? { queue_refusal: queueRefusal } : {}),
       },
     });
   } catch {

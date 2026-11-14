@@ -1372,6 +1372,31 @@
     "genericHint": "Larik ing ngisor isi aksara sing ora bisa dirender printer termal iki.",
     "moreLines": "…lan {count} maneh",
     "languageLoadError": "Bundel basa cetak \"{languages}\" ora bisa dimuat. Priksa bundel lokal lan muat maneh aplikasi kanggo nyoba maneh.",
+    "fix": {
+      "cause": {
+        "paper_out": "Lebokake kertas ing printer, banjur cetak maneh.",
+        "cover_open": "Tutup tutupe printer, banjur cetak maneh.",
+        "printer_error": "Pateni printer banjur uripake maneh, banjur cetak maneh.",
+        "offline": "Printer ngandhani yen lagi offline. Priksa kertas, tutup, lan saklar daya.",
+        "unreachable": "Priksa printer urip lan kabele nyambung. Yen alamate ganti, pilih maneh saka printer sing ditemokake ing jaringan.",
+        "queue_offline": "Antrian cetak ing komputer iki lagi offline. Lanjutake antrian, banjur cetak maneh.",
+        "queue_missing": "Printer iki diganti jenenge utawa wis dibusak. Pilih maneh saka printer sing ditemokake ing komputer iki.",
+        "queue_offline_snmp": "Windows ndadekake printer iki offline amarga ora mangsuli SNMP. Bukak Printer properties > Ports > Configure Port, copot \"SNMP Status Enabled\", banjur klik OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows nyetel printer iki supaya bisa offline. Bukak antrian printer lan pateni \"Use Printer Offline\".",
+          "darwin": "Antrian cetak bisa uga mandheg. Bukak System Settings > Printers & Scanners, bukak antrian printer iki, banjur klik Resume.",
+          "linux": "Antrian CUPS bisa uga dipateni. Lakokake \"cupsenable [jeneng printer]\" ing terminal, utawa uripake ing setelan printer."
+        },
+        "queue_unavailable": "Antrian cetak ora nampa tugas. Uripake utawa lanjutake antrian ing komputer iki, banjur cetak maneh.",
+        "driver_error": "Driver cetak nolak data mentah. Ing Windows, setel driver printer iki dadi \"Generic / Text Only\".",
+        "spooler_error": "Layanan Print Spooler Windows mandheg. Wiwiti maneh layanan Print Spooler, banjur cetak maneh.",
+        "permission_denied": "Komputer iki ora diidini nyetak ing kene. Priksa idin printer, utawa takon marang administrator.",
+        "timeout": "Printer ora mangsuli pas wektune. Priksa urip lan ana ing jaringan sing padha, banjur cetak maneh.",
+        "needs_attention": "Printer butuh perhatian. Priksa kertas, tutup, lan pesen apa wae ing printer."
+      }
+    },
     "printerOfflineHint": "Printer ora mangsuli. Pasthekake printer murup lan nyambung, banjur ing Windows bukak antrian printer lan pateni \"Use Printer Offline\".",
     "templateFallback": "Templat tagihan sing dipilih ora disengkuyung ing dalan panyetakan iki, saengga tata papan struk gawan digunakake."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Babagan FloCafe",
     "aboutGithub": "Repositori GitHub",
     "aboutWebsite": "Situs Aplikasi",
+    "printerProfileCredit": "Profil printer saka escpos-printer-db (CC BY 4.0)",
     "account": "Akun",
     "accountAndApp": "Akun & Aplikasi",
     "actionFailed": "Gagal",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Dituduhake ing tagihan cetak, yen diatur",
     "instagramPlaceholder": "@kafepanjenengan",
     "installedOnThisComputer": "Kapasang ing komputer iki",
+    "foundOnNetwork": "Printer sing ditemokake ing jaringan",
     "invalidExportFile": "Berkas ekspor FloCafe ora sah",
     "invalidPhoneFormat": "Format nomer telepon ora sah",
     "invoiceNumberIncludePeriod": "Katutake periode ing nomer faktur",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Durung ana akun juru masak aktif. Tambahake juru masak ing Staf dhisik.",
     "noCloudContactEmail": "Ora ana email kontak cloud",
     "noInstalledPrinters": "Ora ditemokake printer kapasang. Pasang printer Panjenengan liwat pangaturan sistem, banjur klik muat maneh — utawa gunakake Tambah Manual kanggo printer jaringan.",
+    "noNetworkPrinters": "Ora ana printer sing ditemokake ing jaringan.",
     "noPairedDevices": "Durung ana piranti sing dipasangake.",
     "noPrintersConfigured": "Durung ana printer sing dikonfigurasi.",
     "noStaffYet": "Durung ana login staf.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Printer dikonfigurasi",
     "printerOnline": "Daring",
     "printerPrinting": "Nyetak",
+    "printerStatusReady": "Siap",
+    "printerStatusPaperLow": "Kertas meh entek",
+    "printerStatusUnknown": "Status ora dingerteni",
     "printerQuickAdded": "{name} ditambahake",
     "printerSaveFailed": "Gagal nyimpen printer",
     "printerSaved": "Printer ditambahake",
@@ -2435,6 +2466,7 @@
     "saving": "Nyimpen...",
     "savingCloud": "Nyimpen…",
     "scanningForPrinters": "Mindhai printer kapasang…",
+    "scanAgain": "Pindai maneh",
     "secondLanguageNone": "Ora ana",
     "secondReceiptLanguage": "Basa struk kapindho",
     "zReportLanguage": "Basa laporan Z",

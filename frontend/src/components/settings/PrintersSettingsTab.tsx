@@ -22,6 +22,10 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
+import { LanPrinterDiscovery } from '@/components/settings/LanPrinterDiscovery';
+import { PrinterStatusBadge } from '@/components/settings/PrinterStatusBadge';
+import { printFailureHint } from '@/lib/printer/print-failure-help';
+import { extractPrintErrorToastOptions } from '@/lib/printer/warnings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import {
   isTemplateCardSelected,
@@ -129,6 +133,14 @@ export interface TemplateCard {
     | 'billTemplateMerchantCloned';
 }
 
+const SHIPPED_PROFILE_IDS = new Set([
+  'escpos-impact-76',
+  'epson-tm-series',
+  'xprinter-xp-v320m-v330m',
+  'generic-escpos-80',
+  'generic-escpos-58',
+]);
+
 const emptyPrinterForm: PrinterForm = {
   name: '',
   connection_type: 'network',
@@ -189,6 +201,7 @@ export function PrintersSettingsTab({
 }: PrintersSettingsTabProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const tAll = useTranslations();
   const { refreshHardwarePrinter, setPrintMethod } = usePrinterStore();
   const canEditPrintingOptions = canManagePrinters && printingHydrated && !printingHydrationFailed;
 
@@ -198,6 +211,9 @@ export function PrintersSettingsTab({
   const [editingPrinterId, setEditingPrinterId] = useState<string | null>(null);
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
+  const [statusVersion, setStatusVersion] = useState(0);
+  const [discoveryVersion, setDiscoveryVersion] = useState(0);
+  const [editingProfileName, setEditingProfileName] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
   const [detectingPrinters, setDetectingPrinters] = useState(false);
   const [detectionSucceeded, setDetectionSucceeded] = useState(false);
@@ -219,6 +235,11 @@ export function PrintersSettingsTab({
   };
 
   const printerErrorMessage = (err: unknown, fallback: string): string => {
+    const hint = printFailureHint(
+      { ...extractPrintErrorToastOptions(err), platform: window.electronAPI?.platform },
+      tAll,
+    );
+    if (hint) return hint;
     if (axios.isAxiosError(err)) {
       const apiError = err.response?.data?.error;
       if (typeof apiError === 'string' && apiError.trim()) return `${fallback}: ${apiError}`;
@@ -229,7 +250,9 @@ export function PrintersSettingsTab({
   const fetchPrinters = async (signal?: AbortSignal) => {
     try {
       const res = await api.get('/printers', signal ? { signal } : undefined);
-      if (!signal?.aborted) setHwPrinters(res.data.printers || []);
+      if (signal?.aborted) return;
+      setHwPrinters(res.data.printers || []);
+      setStatusVersion((version) => version + 1);
     } catch {
       // ignore
     }
@@ -264,23 +287,27 @@ export function PrintersSettingsTab({
     return () => controller.abort();
   }, [canManagePrinters, fetchDetectedPrinters, isActive]);
 
-  const quickAddDetected = async (p: DetectedPrinter) => {
-    if (!canManagePrinters) return;
+  const quickAddDetected = async (
+    p: Partial<DetectedPrinter> & Pick<DetectedPrinter, 'name' | 'connectionType'>,
+  ): Promise<boolean> => {
+    if (!canManagePrinters) return false;
     setAddingDetectedName(p.name);
     try {
       const payload: {
         name: string;
+        model?: string;
         connection_type: 'network' | 'usb';
-        paper_width: string;
+        paper_width?: string;
         profile_id?: string;
         ip_address?: string;
         port?: number;
       } = {
         name: p.name,
         connection_type: p.connectionType === 'network' ? 'network' : 'usb',
-        paper_width: normalizePrinterWidthValue(p.paperWidth),
+        ...(p.model ? { model: p.model } : {}),
+        ...(p.paperWidth ? { paper_width: normalizePrinterWidthValue(p.paperWidth) } : {}),
       };
-      if (p.profileId === 'escpos-impact-76') {
+      if (p.profileId && SHIPPED_PROFILE_IDS.has(p.profileId)) {
         payload.profile_id = p.profileId;
       }
       if (p.connectionType === 'network') {
@@ -291,8 +318,10 @@ export function PrintersSettingsTab({
       toast.success(t('printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
+      return true;
     } catch {
       toast.error(t('printerAddFailed'));
+      return false;
     } finally {
       setAddingDetectedName(null);
     }
@@ -302,6 +331,7 @@ export function PrintersSettingsTab({
     if (!canManagePrinters) return;
     setPrinterForm(emptyPrinterForm);
     setPaperWidthTouched(false);
+    setEditingProfileName(null);
     setEditingPrinterId(null);
     setShowPrinterForm(true);
   };
@@ -318,6 +348,7 @@ export function PrintersSettingsTab({
       profile_id: p.configured_profile_id || '',
     });
     setPaperWidthTouched(false);
+    setEditingProfileName(p.profile_name || null);
     setEditingPrinterId(p.id);
     setShowPrinterForm(true);
   };
@@ -335,7 +366,10 @@ export function PrintersSettingsTab({
         connection_type: printerForm.connection_type,
         ip_address: printerForm.connection_type === 'network' ? printerForm.ip_address : undefined,
         port: printerForm.connection_type === 'network' ? Number(printerForm.port) : undefined,
-        paper_width: printerForm.paper_width,
+        paper_width:
+          !editingPrinterId && !paperWidthTouched && !printerForm.profile_id
+            ? undefined
+            : printerForm.paper_width,
         text_size: printerForm.text_size,
         profile_id: printerForm.profile_id || null,
       };
@@ -370,6 +404,7 @@ export function PrintersSettingsTab({
       toast.success(t('printerDeleted'));
       fetchPrinters();
       refreshHardwarePrinter();
+      setDiscoveryVersion((version) => version + 1);
     } catch {
       toast.error(t('printerDeleteFailed'));
     }
@@ -401,6 +436,7 @@ export function PrintersSettingsTab({
       toast.error(printerErrorMessage(err, t('testPrintFailed')));
     } finally {
       setTestingPrinterId(null);
+      setStatusVersion((version) => version + 1);
     }
   };
 
@@ -421,6 +457,8 @@ export function PrintersSettingsTab({
                 <button
                   onClick={() => {
                     void fetchDetectedPrinters();
+                    setStatusVersion((version) => version + 1);
+                    setDiscoveryVersion((version) => version + 1);
                   }}
                   disabled={detectingPrinters}
                   title={t('refreshList')}
@@ -438,6 +476,14 @@ export function PrintersSettingsTab({
               </div>
             )}
           </div>
+
+          {canManagePrinters && !showPrinterForm && (
+            <LanPrinterDiscovery
+              enabled={isActive}
+              refreshKey={discoveryVersion}
+              onAdd={quickAddDetected}
+            />
+          )}
 
           {/* Detected (OS-installed) printers - one-click add */}
           {canManagePrinters && !showPrinterForm && (
@@ -626,6 +672,14 @@ export function PrintersSettingsTab({
                         {t('defaultPrinter')}
                       </span>
                     )}
+                    {canManagePrinters && (
+                      <PrinterStatusBadge
+                        printerId={p.id}
+                        connectionType={p.connection_type}
+                        enabled={isActive}
+                        refreshKey={statusVersion}
+                      />
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {p.connection_type === 'network' ? (
@@ -802,6 +856,13 @@ export function PrintersSettingsTab({
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                   >
                     <option value="">{t('printerProfileAuto')}</option>
+                    {editingPrinterId &&
+                      printerForm.profile_id &&
+                      !SHIPPED_PROFILE_IDS.has(printerForm.profile_id) && (
+                        <option value={printerForm.profile_id}>
+                          {editingProfileName || printerForm.profile_id}
+                        </option>
+                      )}
                     <option value="escpos-impact-76">{t('printerProfileImpact76')}</option>
                     <option value="epson-tm-series">{t('printerProfileEpsonTm')}</option>
                     <option value="xprinter-xp-v320m-v330m">{t('printerProfileXprinter')}</option>

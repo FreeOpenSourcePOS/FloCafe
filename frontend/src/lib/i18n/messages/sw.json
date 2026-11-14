@@ -1372,6 +1372,31 @@
     "genericHint": "Mistari iliyo hapa chini ina herufi ambazo printa hii ya joto haiwezi kuzichapisha.",
     "moreLines": "…na {count} zaidi",
     "languageLoadError": "Kifurushi cha lugha ya uchapishaji \"{languages}\" hakikuweza kupakiwa. Angalia kifurushi cha lugha na upakie upya programu ili kujaribu tena.",
+    "fix": {
+      "cause": {
+        "paper_out": "Weka karatasi kwenye printa, kisha chapisha tena.",
+        "cover_open": "Funga kifuniko cha printa, kisha chapisha tena.",
+        "printer_error": "Zima printa na kuiwasha tena, kisha chapisha tena.",
+        "offline": "Printa inasema iko nje ya mtandao. Angalia karatasi, kifuniko na swichi ya umeme.",
+        "unreachable": "Hakikisha printa imewashwa na kebo imeunganishwa. Kama anwani yake imebadilika, ichague tena kutoka printa zilizopatikana kwenye mtandao.",
+        "queue_offline": "Foleni ya uchapishaji kwenye kompyuta hii iko nje ya mtandao. Iendelee tena, kisha chapisha tena.",
+        "queue_missing": "Printa hii ilibadilishwa jina au iliondolewa. Ichague tena kutoka printa zilizopatikana kwenye kompyuta hii.",
+        "queue_offline_snmp": "Windows inaonyesha printa hii ikiwa nje ya mtandao kwa sababu haijibu SNMP. Fungua Printer properties > Ports > Configure Port, ondoa \"SNMP Status Enabled\", na bofya OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows imeweka printa hii ifanye kazi nje ya mtandao. Fungua foleni ya printa na uzime \"Tumia Printa Nje ya Mtandao\".",
+          "darwin": "Foleni ya uchapishaji inaweza kuwa imesitishwa. Fungua System Settings > Printers & Scanners, fungua foleni ya printa hii, na bofya Resume.",
+          "linux": "Foleni ya CUPS inaweza kuwa imezimwa. Endesha \"cupsenable [jina la printa]\" kwenye terminal, au iwashe kwenye mipangilio ya printa."
+        },
+        "queue_unavailable": "Foleni ya uchapishaji haipokei kazi. Iwashe au iendelee foleni kwenye kompyuta hii, kisha chapisha tena.",
+        "driver_error": "Dereva wa uchapishaji alikataa data ghafi. Kwenye Windows, weka dereva wa printa hii kuwa \"Generic / Text Only\".",
+        "spooler_error": "Huduma ya Print Spooler ya Windows imesimama. Anzisha tena huduma ya Print Spooler, kisha chapisha tena.",
+        "permission_denied": "Kompyuta hii hairuhusiwi kuchapisha hapa. Angalia ruhusa za printa, au muulize msimamizi.",
+        "timeout": "Printa haikujibu kwa wakati. Hakikisha imewashwa na iko kwenye mtandao mmoja, kisha chapisha tena.",
+        "needs_attention": "Printa inahitaji uangalizi. Angalia karatasi, kifuniko na ujumbe wowote kwenye printa."
+      }
+    },
     "printerOfflineHint": "Printa haijibu. Hakikisha imewashwa na kuunganishwa, kisha kwenye Windows fungua foleni ya printa na uzime \"Tumia Printa Nje ya Mtandao\".",
     "templateFallback": "Kiolezo cha bili kilichochaguliwa hakiauniwi kwenye njia hii ya uchapishaji, kwa hivyo mpangilio wa risiti uliojengewa ndani ulitumika."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Kuhusu FloCafe",
     "aboutGithub": "Hazina ya GitHub",
     "aboutWebsite": "Tovuti ya Programu",
+    "printerProfileCredit": "Wasifu wa printa kutoka escpos-printer-db (CC BY 4.0)",
     "account": "Akaunti",
     "accountAndApp": "Akaunti na Programu",
     "actionFailed": "Imeshindikana",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Huonyeshwa kwenye bili zilizochapishwa, ikiwa imewekwa",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "Imesakinishwa kwenye kompyuta hii",
+    "foundOnNetwork": "Printa zinazopatikana kwenye mtandao",
     "invalidExportFile": "Faili ya uhamishaji ya FloCafe si sahihi",
     "invalidPhoneFormat": "Umbizo la nambari ya simu si sahihi",
     "invoiceNumberIncludePeriod": "Jumuisha kipindi katika nambari ya ankara",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Hakuna akaunti hai za mpishi bado. Ongeza mpishi chini ya Wafanyakazi kwanza.",
     "noCloudContactEmail": "Hakuna barua pepe ya mawasiliano ya wingu",
     "noInstalledPrinters": "Hakuna printa zilizosakinishwa zilizopatikana. Sakinisha printa yako kupitia mipangilio ya mfumo, kisha ubofye Sasisha — au utumie Ongeza kwa Mkono kwa printa ya mtandao.",
+    "noNetworkPrinters": "Hakuna printa zilizopatikana kwenye mtandao.",
     "noPairedDevices": "Hakuna vifaa vilivyounganishwa bado.",
     "noPrintersConfigured": "Hakuna printa zilizosanidiwa bado.",
     "noStaffYet": "Hakuna akaunti za wafanyakazi bado.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Printa imesanidiwa",
     "printerOnline": "Mtandaoni",
     "printerPrinting": "Inachapisha",
+    "printerStatusReady": "Tayari",
+    "printerStatusPaperLow": "Karatasi inaisha",
+    "printerStatusUnknown": "Hali haijulikani",
     "printerQuickAdded": "{name} imeongezwa",
     "printerSaveFailed": "Imeshindikana kuhifadhi printa",
     "printerSaved": "Printa imeongezwa",
@@ -2435,6 +2466,7 @@
     "saving": "Inahifadhi...",
     "savingCloud": "Inahifadhi…",
     "scanningForPrinters": "Inatafuta printa zilizosakinishwa…",
+    "scanAgain": "Changanua tena",
     "secondLanguageNone": "Hakuna",
     "secondReceiptLanguage": "Lugha ya pili ya risiti",
     "zReportLanguage": "Lugha ya ripoti ya Z",

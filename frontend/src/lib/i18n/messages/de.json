@@ -1372,6 +1372,31 @@
     "genericHint": "Die folgenden Zeilen enthalten Zeichen, die dieser Thermodrucker nicht darstellen kann.",
     "moreLines": "…und {count} weitere",
     "languageLoadError": "Die Drucksprachpakete \"{languages}\" konnten nicht geladen werden. Prüfen Sie das Sprachpaket und laden Sie die App erneut, um es noch einmal zu versuchen.",
+    "fix": {
+      "cause": {
+        "paper_out": "Legen Sie Papier in den Drucker ein und drucken Sie erneut.",
+        "cover_open": "Schließen Sie die Abdeckung des Druckers und drucken Sie erneut.",
+        "printer_error": "Schalten Sie den Drucker aus und wieder ein und drucken Sie erneut.",
+        "offline": "Der Drucker meldet, dass er offline ist. Prüfen Sie Papier, Abdeckung und Netzschalter.",
+        "unreachable": "Prüfen Sie, ob der Drucker eingeschaltet und das Kabel angeschlossen ist. Wenn sich seine Adresse geändert hat, wählen Sie ihn erneut aus den im Netzwerk gefundenen Druckern.",
+        "queue_offline": "Die Druckerwarteschlange auf diesem Computer ist offline. Setzen Sie sie fort und drucken Sie erneut.",
+        "queue_missing": "Dieser Drucker wurde umbenannt oder entfernt. Wählen Sie ihn erneut aus den auf diesem Computer gefundenen Druckern.",
+        "queue_offline_snmp": "Windows zeigt diesen Drucker als offline, weil er nicht auf SNMP antwortet. Öffnen Sie Druckereigenschaften > Anschlüsse > Anschluss konfigurieren, deaktivieren Sie „SNMP-Status aktiviert“ und klicken Sie auf OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows hat diesen Drucker auf offline gesetzt. Öffnen Sie die Warteschlange des Druckers und deaktivieren Sie „Drucker offline verwenden“.",
+          "darwin": "Die Druckwarteschlange ist möglicherweise angehalten. Öffnen Sie Systemeinstellungen > Drucker & Scanner, öffnen Sie die Warteschlange dieses Druckers und klicken Sie auf Fortsetzen.",
+          "linux": "Die CUPS-Warteschlange ist möglicherweise deaktiviert. Führen Sie „cupsenable [Druckername]“ in einem Terminal aus oder aktivieren Sie sie in den Druckereinstellungen."
+        },
+        "queue_unavailable": "Die Druckerwarteschlange nimmt keine Aufträge an. Aktivieren oder setzen Sie die Warteschlange auf diesem Computer fort und drucken Sie erneut.",
+        "driver_error": "Der Druckertreiber hat die Rohdaten abgelehnt. Stellen Sie unter Windows den Treiber dieses Druckers auf „Generic / Text Only“ ein.",
+        "spooler_error": "Der Windows-Druckspooler wurde beendet. Starten Sie den Dienst Druckspooler neu und drucken Sie erneut.",
+        "permission_denied": "Dieser Computer darf hier nicht drucken. Prüfen Sie die Berechtigungen des Druckers oder fragen Sie einen Administrator.",
+        "timeout": "Der Drucker hat nicht rechtzeitig geantwortet. Prüfen Sie, ob er eingeschaltet und im selben Netzwerk ist, und drucken Sie erneut.",
+        "needs_attention": "Der Drucker braucht Aufmerksamkeit. Prüfen Sie Papier, Abdeckung und alle Meldungen am Drucker."
+      }
+    },
     "printerOfflineHint": "Der Drucker reagiert nicht. Stellen Sie sicher, dass er eingeschaltet und verbunden ist, und deaktivieren Sie in Windows die Option „Drucker offline verwenden“.",
     "templateFallback": "Die gewählte Druckvorlage wird auf diesem Pfad nicht unterstützt. Das integrierte Standard-Layout wurde verwendet."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Über FloCafe",
     "aboutGithub": "GitHub-Repository",
     "aboutWebsite": "App-Website",
+    "printerProfileCredit": "Druckerprofile von escpos-printer-db (CC BY 4.0)",
     "account": "Konto",
     "accountAndApp": "Konto & App",
     "actionFailed": "Fehlgeschlagen",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Wird auf gedruckten Rechnungen angezeigt, wenn festgelegt",
     "instagramPlaceholder": "@ihrcafe",
     "installedOnThisComputer": "Auf diesem Computer installiert",
+    "foundOnNetwork": "Im Netzwerk gefundene Drucker",
     "invalidExportFile": "Ungültige FloCafe-Exportdatei",
     "invalidPhoneFormat": "Ungültiges Telefonnummernformat",
     "invoiceNumberIncludePeriod": "Zeitraum in Rechnungsnummer aufnehmen",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Noch keine aktiven Kochkonten. Fügen Sie zuerst unter Personal einen Koch hinzu.",
     "noCloudContactEmail": "Keine Kontakt-E-Mail für die Cloud",
     "noInstalledPrinters": "Keine installierten Drucker gefunden. Installieren Sie den Drucker in den Systemeinstellungen und klicken Sie dann auf Aktualisieren – oder fügen Sie einen Netzwerkdrucker manuell hinzu.",
+    "noNetworkPrinters": "Keine Drucker im Netzwerk gefunden.",
     "noPairedDevices": "Noch keine Geräte gekoppelt.",
     "noPrintersConfigured": "Noch keine Drucker konfiguriert.",
     "noStaffYet": "Noch keine Personalzugänge.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Drucker konfiguriert",
     "printerOnline": "Online",
     "printerPrinting": "Druckt…",
+    "printerStatusReady": "Bereit",
+    "printerStatusPaperLow": "Wenig Papier",
+    "printerStatusUnknown": "Status unbekannt",
     "printerQuickAdded": "{name} hinzugefügt",
     "printerSaveFailed": "Drucker konnte nicht gespeichert werden",
     "printerSaved": "Drucker erfolgreich gespeichert",
@@ -2436,6 +2467,7 @@
     "saving": "Wird gespeichert…",
     "savingCloud": "Wird gespeichert…",
     "scanningForPrinters": "Suche nach installierten Druckern…",
+    "scanAgain": "Erneut suchen",
     "secondLanguageNone": "Keine",
     "secondReceiptLanguage": "Zweite Belegsprache",
     "zReportLanguage": "Z-Berichtssprache",

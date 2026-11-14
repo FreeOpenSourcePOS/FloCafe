@@ -1372,6 +1372,31 @@
     "genericHint": "De onderstaande regels bevatten tekens die deze thermische printer niet kan weergeven.",
     "moreLines": "…en {count} meer",
     "languageLoadError": "Afdruktaalbundels \"{languages}\" konden niet worden geladen. Controleer de taalbundels en herlaad de app om het opnieuw te proberen.",
+    "fix": {
+      "cause": {
+        "paper_out": "Doe papier in de printer en print opnieuw.",
+        "cover_open": "Sluit de klep van de printer en print opnieuw.",
+        "printer_error": "Zet de printer uit en weer aan en print opnieuw.",
+        "offline": "De printer meldt dat hij offline is. Controleer het papier, de klep en de aan-uitschakelaar.",
+        "unreachable": "Controleer of de printer aan staat en de kabel is aangesloten. Is het adres veranderd, kies hem dan opnieuw uit de printers die op het netwerk zijn gevonden.",
+        "queue_offline": "De printerwachtrij op deze computer is offline. Hervat de wachtrij en print opnieuw.",
+        "queue_missing": "Deze printer is hernoemd of verwijderd. Kies hem opnieuw uit de printers die op deze computer zijn gevonden.",
+        "queue_offline_snmp": "Windows zet deze printer op offline omdat hij niet op SNMP reageert. Open Printereigenschappen > Poorten > Poort configureren, schakel \"SNMP-status ingeschakeld\" uit en klik op OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows heeft deze printer op offline gezet. Open de wachtrij van de printer en schakel \"Gebruik printer offline\" uit.",
+          "darwin": "De printerwachtrij staat mogelijk gepauzeerd. Open Systeeminstellingen > Printers en scanners, open de wachtrij van deze printer en klik op Hervatten.",
+          "linux": "De CUPS-wachtrij is mogelijk uitgeschakeld. Voer \"cupsenable [printernaam]\" uit in een terminal of schakel de wachtrij in bij de printerinstellingen."
+        },
+        "queue_unavailable": "De printerwachtrij accepteert geen opdrachten. Schakel de wachtrij op deze computer in of hervat hem en print opnieuw.",
+        "driver_error": "Het printerstuurprogramma weigerde de onbewerkte gegevens. Stel in Windows het stuurprogramma van deze printer in op \"Generic / Text Only\".",
+        "spooler_error": "De Windows-afdrukspooler is gestopt. Start de service Afdrukspooler opnieuw en print opnieuw.",
+        "permission_denied": "Deze computer mag hier niet printen. Controleer de rechten van de printer of vraag een beheerder.",
+        "timeout": "De printer antwoordde niet op tijd. Controleer of hij aan staat en op hetzelfde netwerk zit en print opnieuw.",
+        "needs_attention": "De printer vraagt aandacht. Controleer het papier, de klep en eventuele meldingen op de printer."
+      }
+    },
     "printerOfflineHint": "Printer reageert niet. Zorg ervoor dat de printer is ingeschakeld en aangesloten, open vervolgens in Windows de wachtrij van de printer en schakel \"Gebruik printer offline\" uit.",
     "templateFallback": "Het geselecteerde bonsjabloon wordt niet ondersteund op dit afdrukpad, daarom is de ingebouwde kassabonindeling gebruikt."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Over FloCafe",
     "aboutGithub": "GitHub-opslagplaats",
     "aboutWebsite": "App-website",
+    "printerProfileCredit": "Printerprofielen van escpos-printer-db (CC BY 4.0)",
     "account": "Account",
     "accountAndApp": "Account & app",
     "actionFailed": "Mislukt",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Wordt weergegeven op afgedrukte bonnen, indien ingesteld",
     "instagramPlaceholder": "@uwcafé",
     "installedOnThisComputer": "Geïnstalleerd op deze computer",
+    "foundOnNetwork": "Printers gevonden op het netwerk",
     "invalidExportFile": "Ongeldig FloCafe exportbestand",
     "invalidPhoneFormat": "Ongeldig telefoonnummerformaat",
     "invoiceNumberIncludePeriod": "Periode opnemen in factuurnummer",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Nog geen actieve chefkokaccounts. Voeg eerst een chef toe onder Personeel.",
     "noCloudContactEmail": "Geen e-mailadres voor cloudcontact",
     "noInstalledPrinters": "Geen geïnstalleerde printers gevonden. Installeer uw printer via systeeminstellingen en klik vervolgens op Vernieuwen — of gebruik Handmatig toevoegen voor een netwerkprinter.",
+    "noNetworkPrinters": "Geen printers gevonden op het netwerk.",
     "noPairedDevices": "Er zijn nog geen apparaten gekoppeld.",
     "noPrintersConfigured": "Nog geen printers geconfigureerd.",
     "noStaffYet": "Nog geen personeelslogins.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Printer ingesteld",
     "printerOnline": "Online",
     "printerPrinting": "Afdrukken",
+    "printerStatusReady": "Gereed",
+    "printerStatusPaperLow": "Weinig papier",
+    "printerStatusUnknown": "Status onbekend",
     "printerQuickAdded": "{name} toegevoegd",
     "printerSaveFailed": "Kan printer niet opslaan",
     "printerSaved": "Printer toegevoegd",
@@ -2435,6 +2466,7 @@
     "saving": "Opslaan...",
     "savingCloud": "Opslaan…",
     "scanningForPrinters": "Scannen naar geïnstalleerde printers...",
+    "scanAgain": "Opnieuw zoeken",
     "secondLanguageNone": "Geen",
     "secondReceiptLanguage": "Tweede taal voor bonnen",
     "zReportLanguage": "Z-rapporttaal",

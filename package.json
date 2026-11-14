@@ -143,10 +143,17 @@
     "test:recovery-cloud": "node tests/run-electron-node-test.cjs tests/recovery-legacy-fk.test.ts && node tests/run-electron-node-test.cjs tests/cloud-deletion-recovery.test.ts",
     "test:cloud-account-status": "node tests/run-electron-node-test.cjs tests/cloud-account-status.test.ts",
     "test:cloud-live-orders-batching": "node tests/run-electron-node-test.cjs tests/cloud-live-orders-batching.test.ts",
-    "test:printer": "ts-node --transpile-only -P tests/tsconfig.json tests/printer.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/ipp-client.test.ts && npm run test:printer-api && npm run test:print-menu-printer-selection && npm run test:printer-ipc",
+    "test:printer": "ts-node --transpile-only -P tests/tsconfig.json tests/printer.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/ipp-client.test.ts && npm run test:printer-api && npm run test:printer-zero-setup-api && npm run test:print-menu-printer-selection && npm run test:printer-ipc && npm run test:escpos-status && npm run test:lan-discovery && npm run test:capability-db && npm run test:print-failure-help && npm run test:windows-queue-bypass && npm run test:print-failure-facts",
+    "test:print-failure-help": "ts-node --transpile-only -P tests/tsconfig.json tests/print-failure-help.test.ts",
+    "test:escpos-status": "ts-node --transpile-only -P tests/tsconfig.json tests/escpos-status.test.ts",
+    "test:lan-discovery": "ts-node --transpile-only -P tests/tsconfig.json tests/lan-discovery.test.ts",
+    "test:capability-db": "ts-node --transpile-only -P tests/tsconfig.json tests/capability-db.test.ts",
     "test:impact-printer": "node tests/run-electron-node-test.cjs tests/impact-printer-support.test.ts",
     "test:printing-settings": "node tests/run-electron-node-test.cjs tests/printing-settings.test.ts",
+    "test:windows-queue-bypass": "ts-node --transpile-only -P tests/tsconfig.json tests/windows-queue-bypass.test.ts",
+    "test:print-failure-facts": "ts-node --transpile-only -P tests/tsconfig.json tests/print-failure-facts.test.ts",
     "test:printer-api": "node tests/run-electron-node-test.cjs tests/printer-api.test.ts",
+    "test:printer-zero-setup-api": "node tests/run-electron-node-test.cjs tests/printer-zero-setup-api.test.ts",
     "test:print-menu-printer-selection": "node tests/run-electron-node-test.cjs tests/print-menu-printer-selection.test.ts",
     "test:printer-ipc": "node tests/run-electron-node-test.cjs tests/printer-ipc.test.ts",
     "test:charges": "ts-node --transpile-only -P tests/tsconfig.json tests/charges-calculation.test.ts",
@@ -534,7 +541,10 @@
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Flo Cafe connects to thermal printers, KDS displays, and the Waiter & Table Terminal on your local network.",
         "NSBonjourServices": [
-          "_http._tcp"
+          "_http._tcp",
+          "_pdl-datastream._tcp",
+          "_ipp._tcp",
+          "_printer._tcp"
         ]
       }
     },
@@ -552,7 +562,10 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "Flo Cafe connects to thermal printers, KDS displays, and the Waiter & Table Terminal on your local network.",
         "NSBonjourServices": [
-          "_http._tcp"
+          "_http._tcp",
+          "_pdl-datastream._tcp",
+          "_ipp._tcp",
+          "_printer._tcp"
         ]
       },
       "target": [

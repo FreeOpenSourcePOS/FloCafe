@@ -63,11 +63,19 @@ for (const dbPath of targets) {
 
   const section = (name: string) => console.log('\n── ' + name + ' ──');
   const ok = (msg: string) => console.log('   ✓ ' + msg);
-  const warn = (msg: string) => { console.log('   ⚠ ' + msg); issues++; };
-  const fail = (msg: string) => { console.log('   ✗ ' + msg); issues++; };
+  const warn = (msg: string) => {
+    console.log('   ⚠ ' + msg);
+    issues++;
+  };
+  const fail = (msg: string) => {
+    console.log('   ✗ ' + msg);
+    issues++;
+  };
 
   const tableExists = (name: string): boolean => {
-    const row = db.prepare(`SELECT 1 as x FROM sqlite_master WHERE type='table' AND name = ?`).get(name);
+    const row = db
+      .prepare(`SELECT 1 as x FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name);
     return !!row;
   };
 
@@ -82,17 +90,21 @@ for (const dbPath of targets) {
   const count = (sql: string, params: any[] = []): number => {
     try {
       const row = db.prepare(sql).get(...params) as any;
-      return row ? Object.values(row)[0] as number : 0;
+      return row ? (Object.values(row)[0] as number) : 0;
     } catch (err: any) {
       warn('query failed: ' + sql + ' — ' + err.message);
       return 0;
     }
   };
 
-  const tables = (db.prepare(`
+  const tables = (
+    db
+      .prepare(`
     SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
     ORDER BY name
-  `).all() as any[]).map((r) => r.name);
+  `)
+      .all() as any[]
+  ).map((r) => r.name);
 
   section('Schema');
   console.log('   Tables found: ' + tables.length);
@@ -117,7 +129,8 @@ for (const dbPath of targets) {
   if (fkCheck.length === 0) {
     ok('no declared-FK violations');
   } else {
-    for (const r of fkCheck) fail(`FK violation in ${r.table} rowid=${r.rowid} → ${r.parent}.${r.fkid}`);
+    for (const r of fkCheck)
+      fail(`FK violation in ${r.table} rowid=${r.rowid} → ${r.parent}.${r.fkid}`);
   }
 
   section('NULL / empty ids');
@@ -138,7 +151,10 @@ for (const dbPath of targets) {
     { table: 'loyalty_ledger', pk: 'id' },
   ];
   for (const { table, pk } of pkTables) {
-    if (!tableExists(table)) { warn(table + ' — table missing'); continue; }
+    if (!tableExists(table)) {
+      warn(table + ' — table missing');
+      continue;
+    }
     const nulls = count(`SELECT COUNT(*) FROM ${table} WHERE ${pk} IS NULL`);
     const empties = count(`SELECT COUNT(*) FROM ${table} WHERE CAST(${pk} AS TEXT) = ''`);
     const total = count(`SELECT COUNT(*) FROM ${table}`);
@@ -156,7 +172,13 @@ for (const dbPath of targets) {
   }
 
   section('Orphaned foreign keys');
-  const relations: { child: string; childCol: string; parent: string; parentCol?: string; label?: string }[] = [
+  const relations: {
+    child: string;
+    childCol: string;
+    parent: string;
+    parentCol?: string;
+    label?: string;
+  }[] = [
     { child: 'products', childCol: 'category_id', parent: 'categories' },
     { child: 'addons', childCol: 'addon_group_id', parent: 'addon_groups' },
     { child: 'addon_group_product', childCol: 'product_id', parent: 'products' },
@@ -206,7 +228,9 @@ for (const dbPath of targets) {
       const noEmail = count(`SELECT COUNT(*) FROM users WHERE email IS NULL OR email = ''`);
       if (noEmail > 0) warn(noEmail + ' user(s) without email');
 
-      const noPassword = count(`SELECT COUNT(*) FROM users WHERE password IS NULL OR password = ''`);
+      const noPassword = count(
+        `SELECT COUNT(*) FROM users WHERE password IS NULL OR password = ''`,
+      );
       if (noPassword > 0) fail(noPassword + ' user(s) without password hash');
     }
   }
@@ -222,7 +246,9 @@ for (const dbPath of targets) {
 
   if (tableExists('settings')) {
     const setupPending = tableExists('users') && count(`SELECT COUNT(*) FROM users`) === 0;
-    const required = setupPending ? ['currency', 'timezone'] : ['business_name', 'currency', 'timezone'];
+    const required = setupPending
+      ? ['currency', 'timezone']
+      : ['business_name', 'currency', 'timezone'];
     for (const key of required) {
       const r = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as any;
       if (!r || r.value === null || r.value === '') warn('settings missing required key: ' + key);
@@ -238,13 +264,40 @@ for (const dbPath of targets) {
     if (billsNoOrder > 0) fail(billsNoOrder + ' bills reference a non-existent order');
     else ok('all bills point to a real order');
 
-    const multiBill = count(`
-      SELECT COUNT(*) FROM (
-        SELECT order_id FROM bills GROUP BY order_id HAVING COUNT(*) > 1
-      )
-    `);
-    if (multiBill > 0) warn(multiBill + ' order(s) have multiple bills');
-    else ok('each order has at most one bill');
+    const hasSplitGroupId = columns('bills').includes('split_group_id');
+    const multiBill = hasSplitGroupId
+      ? count(`
+          SELECT COUNT(*) FROM (
+            SELECT order_id FROM bills
+            GROUP BY order_id
+            HAVING COUNT(*) > 1
+              AND SUM(
+                CASE
+                  WHEN split_group_id IS NULL OR TRIM(CAST(split_group_id AS TEXT)) = '' THEN 1
+                  ELSE 0
+                END
+              ) > 0
+          )
+        `)
+      : count(`
+          SELECT COUNT(*) FROM (
+            SELECT order_id FROM bills GROUP BY order_id HAVING COUNT(*) > 1
+          )
+        `);
+    if (multiBill > 0) {
+      warn(
+        multiBill +
+          (hasSplitGroupId
+            ? ' order(s) have multiple non-split bills'
+            : ' order(s) have multiple bills'),
+      );
+    } else {
+      ok(
+        hasSplitGroupId
+          ? 'each order has at most one non-split bill'
+          : 'each order has at most one bill',
+      );
+    }
   }
 
   if (tableExists('orders') && tableExists('order_items')) {
@@ -264,7 +317,8 @@ for (const dbPath of targets) {
       SELECT COUNT(*) FROM bills
       WHERE ABS(COALESCE(total,0) - (COALESCE(subtotal,0) + COALESCE(tax_amount,0) + COALESCE(packaging_charge,0) + COALESCE(delivery_charge,0)${serviceChargeTerm} - COALESCE(discount_amount,0) + COALESCE(round_off,0))) > 0.02
     `);
-    if (badTotals > 0) warn(badTotals + ' bills where total ≠ subtotal+tax+charges-discount+round_off');
+    if (badTotals > 0)
+      warn(badTotals + ' bills where total ≠ subtotal+tax+charges-discount+round_off');
     else ok('bill totals match component sums');
 
     const balanceMismatch = count(`
@@ -286,23 +340,35 @@ for (const dbPath of targets) {
     // Migration v30 removed the legacy addons column after normalizing it.
     // Keep the audit compatible with both pre- and post-migration databases.
     const orderItemColumns = columns('order_items');
-    const jsonColumns = ['addons', 'variant_selection', 'modifier_selection', 'tax_breakdown']
-      .filter((column) => orderItemColumns.includes(column));
-    const rows = jsonColumns.length > 0
-      ? db.prepare(`SELECT id, ${jsonColumns.join(', ')} FROM order_items`).all() as any[]
-      : [];
+    const jsonColumns = [
+      'addons',
+      'variant_selection',
+      'modifier_selection',
+      'tax_breakdown',
+    ].filter((column) => orderItemColumns.includes(column));
+    const rows =
+      jsonColumns.length > 0
+        ? (db.prepare(`SELECT id, ${jsonColumns.join(', ')} FROM order_items`).all() as any[])
+        : [];
     let badJson = 0;
     for (const r of rows) {
       for (const col of jsonColumns) {
         const val = r[col];
         if (val == null || val === '') continue;
-        try { JSON.parse(val); } catch { badJson++; fail(`order_items.${r.id}.${col}: invalid JSON`); }
+        try {
+          JSON.parse(val);
+        } catch {
+          badJson++;
+          fail(`order_items.${r.id}.${col}: invalid JSON`);
+        }
       }
     }
     if (badJson === 0) {
-      ok(jsonColumns.length > 0
-        ? 'all available JSON fields parse cleanly'
-        : 'no JSON fields present');
+      ok(
+        jsonColumns.length > 0
+          ? 'all available JSON fields parse cleanly'
+          : 'no JSON fields present',
+      );
     }
   }
 
@@ -314,16 +380,23 @@ for (const dbPath of targets) {
     `);
     const total = count(`SELECT COUNT(*) FROM kds_pairing_tokens`);
     if (total === 0) ok('no tokens (clean)');
-    else if (expired > 0) warn(expired + '/' + total + ' pairing tokens expired (consider pruning)');
+    else if (expired > 0)
+      warn(expired + '/' + total + ' pairing tokens expired (consider pruning)');
     else ok(total + ' active pairing token(s)');
   }
 
   db.close();
   console.log('\n' + '─'.repeat(60));
-  console.log(issues === 0 ? '   ✅ Clean — no cracks found.' : '   ⚠ ' + issues + ' issue(s) in this DB.');
+  console.log(
+    issues === 0 ? '   ✅ Clean — no cracks found.' : '   ⚠ ' + issues + ' issue(s) in this DB.',
+  );
   totalIssues += issues;
 }
 
 console.log('\n' + '='.repeat(60));
-console.log(totalIssues === 0 ? '🏁 All databases clean.' : '🏁 ' + totalIssues + ' total issue(s) across ' + targets.length + ' database(s).');
+console.log(
+  totalIssues === 0
+    ? '🏁 All databases clean.'
+    : '🏁 ' + totalIssues + ' total issue(s) across ' + targets.length + ' database(s).',
+);
 process.exit(totalIssues === 0 ? 0 : 1);

@@ -14,6 +14,8 @@ export interface DiagnosticsPromptFacts {
   enabled: boolean;
   /** The person chose "Don't ask again". */
   dismissed: boolean;
+  /** Cloud account deletion is active or completed, blocking consent enablement. */
+  cloudDeletionBlocked?: boolean;
   /** How many times the card was shown on this device. */
   promptCount: number;
   /** ISO time of the last ask, or null when it was never shown. */
@@ -24,7 +26,7 @@ export interface DiagnosticsPromptFacts {
 }
 
 export function shouldShowDiagnosticsPrompt(facts: DiagnosticsPromptFacts): boolean {
-  if (facts.enabled || facts.dismissed) return false;
+  if (facts.enabled || facts.dismissed || facts.cloudDeletionBlocked) return false;
   if (facts.problemsSince < 1) return false;
   if (facts.promptCount >= DIAGNOSTICS_PROMPT_MAX) return false;
   if (!facts.lastAskedAt) return true;

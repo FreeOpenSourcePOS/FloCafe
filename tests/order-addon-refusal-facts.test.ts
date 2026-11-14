@@ -154,6 +154,128 @@ async function main() {
       'the add-on item refusal is filed as not applied',
     );
 
+    // Single-line tracked add-on stock exhaustion routes through stock_validation
+    // so stock_scope='addon' and stock_shortfall facts reach POS and support.
+    db.prepare(
+      `INSERT INTO addon_groups (id, name, min_selection, max_selection, allow_multiple_quantities, is_required, is_active, created_at, updated_at)
+       VALUES ('grp-toppings', 'Toppings', 0, 5, 1, 0, 1, ?, ?)`,
+    ).run(now(), now());
+    db.prepare(
+      `INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('combo-burger', 'grp-toppings')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO addons (id, addon_group_id, name, price, is_active, track_inventory, stock_quantity, created_at, updated_at)
+       VALUES ('addon-bacon-zero', 'grp-toppings', 'Extra Bacon', 3, 1, 1, 0, ?, ?)`,
+    ).run(now(), now());
+    db.prepare(
+      `INSERT INTO addons (id, addon_group_id, name, price, is_active, track_inventory, stock_quantity, created_at, updated_at)
+       VALUES ('addon-cheese-partial', 'grp-toppings', 'Aged Cheese', 2, 1, 1, 1, ?, ?)`,
+    ).run(now(), now());
+
+    const outOfStockAddon = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        type: 'takeaway',
+        items: [
+          {
+            product_id: 'combo-burger',
+            quantity: 1,
+            addons: [
+              { id: 'addon-regular', quantity: 1 },
+              { id: 'addon-bacon-zero', quantity: 1 },
+            ],
+          },
+        ],
+      },
+    });
+    assertEqualOrThrow(
+      outOfStockAddon.status,
+      400,
+      'single-line zero-stock tracked add-on is refused',
+    );
+    assertEqualOrThrow(
+      outOfStockAddon.data.reason_code,
+      'order.stock_insufficient',
+      'zero-stock tracked add-on emits order.stock_insufficient',
+    );
+    assertEqualOrThrow(
+      outOfStockAddon.data.facts?.stock_scope,
+      'addon',
+      'zero-stock tracked add-on preserves stock_scope=addon',
+    );
+    assertEqualOrThrow(
+      outOfStockAddon.data.facts?.stock_shortfall,
+      'out_of_stock',
+      'zero-stock tracked add-on preserves stock_shortfall=out_of_stock',
+    );
+    const classifiedOutOfStock = classifyOrderRequestFailure(
+      { response: { status: 400, data: outOfStockAddon.data } },
+      { operation: 'order.create', correlationId: String(outOfStockAddon.data.correlation_id) },
+    );
+    assertEqualOrThrow(
+      classifiedOutOfStock.trusted,
+      true,
+      'POS trusts zero-stock tracked add-on refusal',
+    );
+    assertEqualOrThrow(
+      classifiedOutOfStock.reasonCode,
+      'order.stock_insufficient',
+      'POS keeps order.stock_insufficient for zero-stock tracked add-on',
+    );
+
+    const partialStockAddon = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        type: 'takeaway',
+        items: [
+          {
+            product_id: 'combo-burger',
+            quantity: 2,
+            addons: [
+              { id: 'addon-regular', quantity: 1 },
+              { id: 'addon-cheese-partial', quantity: 1 },
+            ],
+          },
+        ],
+      },
+    });
+    assertEqualOrThrow(
+      partialStockAddon.status,
+      400,
+      'single-line partial-stock tracked add-on is refused',
+    );
+    assertEqualOrThrow(
+      partialStockAddon.data.reason_code,
+      'order.stock_insufficient',
+      'partial-stock tracked add-on emits order.stock_insufficient',
+    );
+    assertEqualOrThrow(
+      partialStockAddon.data.facts?.stock_scope,
+      'addon',
+      'partial-stock tracked add-on preserves stock_scope=addon',
+    );
+    assertEqualOrThrow(
+      partialStockAddon.data.facts?.stock_shortfall,
+      'partial',
+      'partial-stock tracked add-on preserves stock_shortfall=partial',
+    );
+    const classifiedPartial = classifyOrderRequestFailure(
+      { response: { status: 400, data: partialStockAddon.data } },
+      { operation: 'order.create', correlationId: String(partialStockAddon.data.correlation_id) },
+    );
+    assertEqualOrThrow(
+      classifiedPartial.trusted,
+      true,
+      'POS trusts partial-stock tracked add-on refusal',
+    );
+    assertEqualOrThrow(
+      classifiedPartial.reasonCode,
+      'order.stock_insufficient',
+      'POS keeps order.stock_insufficient for partial-stock tracked add-on',
+    );
+
     const posSource = fs.readFileSync(
       path.join(__dirname, '../frontend/src/app/(dashboard)/pos/page.tsx'),
       'utf8',

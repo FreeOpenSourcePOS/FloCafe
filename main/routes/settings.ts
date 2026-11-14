@@ -14,6 +14,7 @@ import {
   CloudRequestError,
   cloudSync,
   DEFAULT_CLOUD_SERVER_URL,
+  isCloudDeletionBlocking,
   normalizeCloudServerUrl,
 } from '../services/cloud-sync';
 import {
@@ -2504,9 +2505,7 @@ router.put(
       if (
         diagnosticsChoice &&
         valueToPersist === 'true' &&
-        ['pending', 'processing', 'approved', 'completed', 'deleted', 'failed', 'unknown'].includes(
-          getAllSettings(db).cloud_deletion_status || '',
-        )
+        isCloudDeletionBlocking(getAllSettings(db).cloud_deletion_status)
       ) {
         return res.status(409).json({ error: 'cloud_deletion_pending' });
       }

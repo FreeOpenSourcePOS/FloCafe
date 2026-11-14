@@ -18,13 +18,18 @@ export type LanPrinter = {
 };
 
 export function LanPrinterDiscovery({
+  enabled = true,
+  refreshKey = 0,
   onAdd,
 }: {
+  enabled?: boolean;
+  refreshKey?: number;
   onAdd: (printer: {
     name: string;
     connectionType: 'network';
     ipAddress: string;
     port: number;
+    model?: string;
   }) => Promise<boolean>;
 }) {
   const t = useTranslations('settings');
@@ -35,9 +40,13 @@ export function LanPrinterDiscovery({
   const [addingAddress, setAddingAddress] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
-    api
-      .get('/printers/discover', { signal: controller.signal })
+    Promise.resolve()
+      .then(() => {
+        if (!controller.signal.aborted) setPrinters(null);
+        return api.get('/printers/discover', { signal: controller.signal });
+      })
       .then((res) => {
         if (!controller.signal.aborted) setPrinters(res.data.printers || []);
       })
@@ -45,7 +54,7 @@ export function LanPrinterDiscovery({
         if (!controller.signal.aborted) setPrinters([]);
       });
     return () => controller.abort();
-  }, [scanCount]);
+  }, [enabled, scanCount, refreshKey]);
 
   const addPrinter = async (printer: LanPrinter) => {
     setAddingAddress(printer.address);
@@ -55,6 +64,7 @@ export function LanPrinterDiscovery({
         connectionType: 'network',
         ipAddress: printer.address,
         port: printer.port,
+        ...(printer.model ? { model: printer.model } : {}),
       });
       if (!added) return;
       setPrinters(

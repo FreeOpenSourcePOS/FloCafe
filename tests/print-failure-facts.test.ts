@@ -122,6 +122,20 @@ async function cupsLookup(): Promise<void> {
   });
   assertEqualOrThrow(failed.kind, 'unknown', 'a failed lookup stays unknown');
   assertEqualOrThrow((await cupsQueuePort(undefined, {})).kind, 'unknown', 'no queue, no lookup');
+  let flagInvoked = false;
+  assertEqualOrThrow(
+    (
+      await cupsQueuePort('-p', {
+        run: async () => {
+          flagInvoked = true;
+          return { stdout: 'device for -p: usb://EPSON/TM-T20\n' };
+        },
+      })
+    ).kind,
+    'unknown',
+    'leading-hyphen printer name is rejected before calling lpstat',
+  );
+  assertEqualOrThrow(flagInvoked, false, 'lpstat is never executed for leading-hyphen queue name');
   assertEqualOrThrow(
     (await cupsQueuePort('Kitchen', { isMas: true })).kind,
     'unknown',

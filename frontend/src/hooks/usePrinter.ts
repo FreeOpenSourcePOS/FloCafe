@@ -1113,7 +1113,12 @@ export const usePrinterStore = create<PrinterState>()(
               if (errorMsg.includes('No default printer configured')) {
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
               } else {
-                throw new Error(errorMsg);
+                throw toPrinterOperationError(err, {
+                  kind: 'receipt',
+                  connectionType: hw.connection_type,
+                  stage: 'dispatch',
+                  fallbackDetail: 'Delivery slip print failed',
+                });
               }
             }
           }

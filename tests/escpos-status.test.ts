@@ -15,6 +15,7 @@ import {
   probeNetworkPrinterStatus,
   statusToFailureCause,
 } from '../main/printers/escpos-status';
+import { printViaNetwork } from '../main/printers/thermal';
 import { start } from './helpers/fake-escpos-printer';
 
 const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
@@ -269,6 +270,81 @@ async function testSocketClosedAfterProbe() {
   }
 }
 
+async function testConcurrentPrintAndProbeSerialized() {
+  const printer = await start({ state: {}, singleConnection: true });
+  try {
+    // 10KB payload forces multi-chunk transmission (>4096 bytes) with 10ms delays between chunks.
+    const payload = Buffer.alloc(10000, 0x41);
+    const printPromise = printViaNetwork('127.0.0.1', printer.port, payload);
+    // Start a concurrent status probe while printViaNetwork is mid-chunk.
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    const probePromise = probeNetworkPrinterStatus('127.0.0.1', printer.port, { timeoutMs: 800 });
+
+    const [printResult, probeResult] = await Promise.all([printPromise, probePromise]);
+    assertEqualOrThrow(printResult.ok, true, 'concurrent multi-chunk print succeeds');
+    assertEqualOrThrow(
+      probeResult.reachable,
+      true,
+      'concurrent probe is serialized and stays reachable',
+    );
+    assertEqualOrThrow(probeResult.answered, true, 'concurrent probe receives status reply');
+    assertEqualOrThrow(
+      statusToFailureCause(probeResult),
+      null,
+      'concurrent probe never reports false unreachable',
+    );
+    assertEqualOrThrow(
+      printer.rejectedConnections,
+      0,
+      'single-connection printer never saw a concurrent second socket',
+    );
+    assertEqualOrThrow(
+      printer.maxConcurrentConnections,
+      1,
+      'print and probe never opened concurrent connections',
+    );
+    assertEqualOrThrow(
+      printer.printed.length,
+      payload.length,
+      'all multi-chunk receipt bytes were printed intact',
+    );
+    // Verify 0x10 0x04 was never interleaved inside the 0x41 payload run.
+    const receivedBuf = Buffer.from(printer.received);
+    const firstPayloadIdx = receivedBuf.indexOf(0x41);
+    const lastPayloadIdx = receivedBuf.lastIndexOf(0x41);
+    const payloadSlice = receivedBuf.subarray(firstPayloadIdx, lastPayloadIdx + 1);
+    assertEqualOrThrow(
+      payloadSlice.includes(Buffer.from([0x10, 0x04])),
+      false,
+      'DLE EOT bytes never interleaved inside multi-chunk receipt payload',
+    );
+  } finally {
+    await printer.close();
+  }
+}
+
+async function testPrintWaitsForSocketCloseBeforeResolving() {
+  const printer = await start({ state: {}, singleConnection: true });
+  try {
+    const payload = Buffer.from('RECEIPT_TEST_CLOSE\n');
+    const result = await printViaNetwork('127.0.0.1', printer.port, payload);
+    assertEqualOrThrow(result.ok, true, 'print succeeds');
+    const probe = await probeNetworkPrinterStatus('127.0.0.1', printer.port, { timeoutMs: 500 });
+    assertEqualOrThrow(
+      probe.reachable,
+      true,
+      'immediate post-print probe finds socket already closed and port free',
+    );
+    assertEqualOrThrow(
+      printer.rejectedConnections,
+      0,
+      'immediate post-print probe never hits single-connection refusal',
+    );
+  } finally {
+    await printer.close();
+  }
+}
+
 async function main() {
   testRequestBytesAndValidity();
   testDecoders();
@@ -284,6 +360,8 @@ async function main() {
   await testProbeGarbageReply();
   await testProbeConnectionRefused();
   await testSocketClosedAfterProbe();
+  await testConcurrentPrintAndProbeSerialized();
+  await testPrintWaitsForSocketCloseBeforeResolving();
   console.log('✓ All ESC/POS status tests passed.');
 }
 

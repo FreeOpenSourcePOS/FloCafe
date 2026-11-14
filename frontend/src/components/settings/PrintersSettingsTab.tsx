@@ -133,6 +133,14 @@ export interface TemplateCard {
     | 'billTemplateMerchantCloned';
 }
 
+const SHIPPED_PROFILE_IDS = new Set([
+  'escpos-impact-76',
+  'epson-tm-series',
+  'xprinter-xp-v320m-v330m',
+  'generic-escpos-80',
+  'generic-escpos-58',
+]);
+
 const emptyPrinterForm: PrinterForm = {
   name: '',
   connection_type: 'network',
@@ -204,6 +212,8 @@ export function PrintersSettingsTab({
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
   const [statusVersion, setStatusVersion] = useState(0);
+  const [discoveryVersion, setDiscoveryVersion] = useState(0);
+  const [editingProfileName, setEditingProfileName] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
   const [detectingPrinters, setDetectingPrinters] = useState(false);
   const [detectionSucceeded, setDetectionSucceeded] = useState(false);
@@ -285,17 +295,19 @@ export function PrintersSettingsTab({
     try {
       const payload: {
         name: string;
+        model?: string;
         connection_type: 'network' | 'usb';
-        paper_width: string;
+        paper_width?: string;
         profile_id?: string;
         ip_address?: string;
         port?: number;
       } = {
         name: p.name,
         connection_type: p.connectionType === 'network' ? 'network' : 'usb',
-        paper_width: normalizePrinterWidthValue(p.paperWidth),
+        ...(p.model ? { model: p.model } : {}),
+        ...(p.paperWidth ? { paper_width: normalizePrinterWidthValue(p.paperWidth) } : {}),
       };
-      if (p.profileId === 'escpos-impact-76') {
+      if (p.profileId && SHIPPED_PROFILE_IDS.has(p.profileId)) {
         payload.profile_id = p.profileId;
       }
       if (p.connectionType === 'network') {
@@ -319,6 +331,7 @@ export function PrintersSettingsTab({
     if (!canManagePrinters) return;
     setPrinterForm(emptyPrinterForm);
     setPaperWidthTouched(false);
+    setEditingProfileName(null);
     setEditingPrinterId(null);
     setShowPrinterForm(true);
   };
@@ -335,6 +348,7 @@ export function PrintersSettingsTab({
       profile_id: p.configured_profile_id || '',
     });
     setPaperWidthTouched(false);
+    setEditingProfileName(p.profile_name || null);
     setEditingPrinterId(p.id);
     setShowPrinterForm(true);
   };
@@ -352,7 +366,10 @@ export function PrintersSettingsTab({
         connection_type: printerForm.connection_type,
         ip_address: printerForm.connection_type === 'network' ? printerForm.ip_address : undefined,
         port: printerForm.connection_type === 'network' ? Number(printerForm.port) : undefined,
-        paper_width: printerForm.paper_width,
+        paper_width:
+          !editingPrinterId && !paperWidthTouched && !printerForm.profile_id
+            ? undefined
+            : printerForm.paper_width,
         text_size: printerForm.text_size,
         profile_id: printerForm.profile_id || null,
       };
@@ -387,6 +404,7 @@ export function PrintersSettingsTab({
       toast.success(t('printerDeleted'));
       fetchPrinters();
       refreshHardwarePrinter();
+      setDiscoveryVersion((version) => version + 1);
     } catch {
       toast.error(t('printerDeleteFailed'));
     }
@@ -440,6 +458,7 @@ export function PrintersSettingsTab({
                   onClick={() => {
                     void fetchDetectedPrinters();
                     setStatusVersion((version) => version + 1);
+                    setDiscoveryVersion((version) => version + 1);
                   }}
                   disabled={detectingPrinters}
                   title={t('refreshList')}
@@ -459,7 +478,11 @@ export function PrintersSettingsTab({
           </div>
 
           {canManagePrinters && !showPrinterForm && (
-            <LanPrinterDiscovery onAdd={quickAddDetected} />
+            <LanPrinterDiscovery
+              enabled={isActive}
+              refreshKey={discoveryVersion}
+              onAdd={quickAddDetected}
+            />
           )}
 
           {/* Detected (OS-installed) printers - one-click add */}
@@ -649,11 +672,14 @@ export function PrintersSettingsTab({
                         {t('defaultPrinter')}
                       </span>
                     )}
-                    <PrinterStatusBadge
-                      printerId={p.id}
-                      connectionType={p.connection_type}
-                      refreshKey={statusVersion}
-                    />
+                    {canManagePrinters && (
+                      <PrinterStatusBadge
+                        printerId={p.id}
+                        connectionType={p.connection_type}
+                        enabled={isActive}
+                        refreshKey={statusVersion}
+                      />
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {p.connection_type === 'network' ? (
@@ -830,6 +856,13 @@ export function PrintersSettingsTab({
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                   >
                     <option value="">{t('printerProfileAuto')}</option>
+                    {editingPrinterId &&
+                      printerForm.profile_id &&
+                      !SHIPPED_PROFILE_IDS.has(printerForm.profile_id) && (
+                        <option value={printerForm.profile_id}>
+                          {editingProfileName || printerForm.profile_id}
+                        </option>
+                      )}
                     <option value="escpos-impact-76">{t('printerProfileImpact76')}</option>
                     <option value="epson-tm-series">{t('printerProfileEpsonTm')}</option>
                     <option value="xprinter-xp-v320m-v330m">{t('printerProfileXprinter')}</option>

@@ -20,10 +20,12 @@ type PrinterStatus = {
 export function PrinterStatusBadge({
   printerId,
   connectionType,
+  enabled = true,
   refreshKey = 0,
 }: {
   printerId: string;
   connectionType: 'network' | 'usb' | 'webusb';
+  enabled?: boolean;
   /** Bumped after a reload or a test print, so the badge reads the printer again. */
   refreshKey?: number;
 }) {
@@ -32,10 +34,13 @@ export function PrinterStatusBadge({
   const [status, setStatus] = useState<PrinterStatus | null>(null);
 
   useEffect(() => {
-    if (connectionType === 'webusb') return;
+    if (!enabled || connectionType === 'webusb') return;
     const controller = new AbortController();
     api
-      .get(`/printers/${printerId}/status`, { signal: controller.signal })
+      .get(`/printers/${printerId}/status`, {
+        signal: controller.signal,
+        ...(refreshKey > 0 ? { params: { fresh: '1' } } : {}),
+      })
       .then((res) => {
         if (!controller.signal.aborted) setStatus(res.data);
       })
@@ -44,7 +49,7 @@ export function PrinterStatusBadge({
           setStatus({ connection_type: connectionType, answered: false });
       });
     return () => controller.abort();
-  }, [printerId, connectionType, refreshKey]);
+  }, [enabled, printerId, connectionType, refreshKey]);
 
   if (!status) return null;
 

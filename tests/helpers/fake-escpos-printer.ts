@@ -18,6 +18,8 @@ export interface FakeEscposPrinterOptions {
   silent?: boolean;
   /** Answer with a byte that fails the validity rule. */
   garbage?: boolean;
+  /** Reject any second concurrent connection, like budget W5500/lwIP port-9100 printers. */
+  singleConnection?: boolean;
 }
 
 export interface FakeEscposPrinter {
@@ -27,6 +29,9 @@ export interface FakeEscposPrinter {
   /** Bytes kept because the printer was ready (offline, cover open or paper out drops them). */
   printed: number[];
   connections: number;
+  openConnections: number;
+  maxConcurrentConnections: number;
+  rejectedConnections: number;
   close(): Promise<void>;
 }
 
@@ -56,10 +61,20 @@ export function start(options: FakeEscposPrinterOptions = {}): Promise<FakeEscpo
   const printed: number[] = [];
   const sockets = new Set<net.Socket>();
   let connections = 0;
+  let maxConcurrentConnections = 0;
+  let rejectedConnections = 0;
 
   const server = net.createServer((socket) => {
+    if (options.singleConnection && sockets.size >= 1) {
+      rejectedConnections++;
+      socket.destroy();
+      return;
+    }
     connections++;
     sockets.add(socket);
+    if (sockets.size > maxConcurrentConnections) {
+      maxConcurrentConnections = sockets.size;
+    }
     socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => {});
     let buffer = Buffer.alloc(0);
@@ -99,6 +114,15 @@ export function start(options: FakeEscposPrinterOptions = {}): Promise<FakeEscpo
         },
         get connections() {
           return connections;
+        },
+        get openConnections() {
+          return sockets.size;
+        },
+        get maxConcurrentConnections() {
+          return maxConcurrentConnections;
+        },
+        get rejectedConnections() {
+          return rejectedConnections;
         },
         close: () =>
           new Promise<void>((done) => {

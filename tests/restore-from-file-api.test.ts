@@ -290,6 +290,24 @@ async function run() {
       'unversioned preflight does not consume the selection',
     );
 
+    const zeroMetaBackup = path.join(testDir, 'zero-meta.db');
+    fs.copyFileSync(backupSource, zeroMetaBackup);
+    {
+      const zeroMetaDb = new Database(zeroMetaBackup);
+      zeroMetaDb.prepare("UPDATE _flo_meta SET value = '0' WHERE key = 'schema_version'").run();
+      zeroMetaDb.close();
+    }
+    const zeroMetaSelection = rememberRestoreFileSelection(zeroMetaBackup);
+    const zeroMeta = await request(app)
+      .post('/api/auth/setup/restore')
+      .send({ confirmation: RESTORE_CONFIRMATION, selection_token: zeroMetaSelection.token });
+    assert.equal(zeroMeta.status, 400, 'zero metadata schema_version fails preflight with 400');
+    assert.equal(
+      consumeRestoreFileSelection(zeroMetaSelection.token),
+      zeroMetaBackup,
+      'zero metadata preflight does not consume the selection',
+    );
+
     const legacyBackup = path.join(testDir, 'legacy-v56.db');
     fs.copyFileSync(
       path.join(__dirname, 'fixtures/upgrade-snapshots/schema-v56-pre-tax-registration-rename.db'),

@@ -46,6 +46,7 @@ import {
   getDatabase,
   getDbPath,
   initDatabase,
+  listBackups,
   restoreBackup,
   validateInventoryLedgerDatabase,
   buildIdealSchemaDb,
@@ -194,6 +195,24 @@ async function run() {
       'malformed metadata cannot be restored',
     );
 
+    const zeroMetadata = path.join(testDir, 'zero-schema-metadata.db');
+    fs.copyFileSync(sameSchemaBackup, zeroMetadata);
+    {
+      const zeroDb = new Database(zeroMetadata);
+      zeroDb.prepare("UPDATE _flo_meta SET value = '0' WHERE key = 'schema_version'").run();
+      zeroDb.close();
+    }
+    assert.equal(
+      getSchemaVersionFromBackup(zeroMetadata),
+      null,
+      'zero metadata version is rejected instead of passing preflight or falling back',
+    );
+    assert.equal(
+      restoreBackup(zeroMetadata, true).success,
+      false,
+      'zero metadata version cannot be restored',
+    );
+
     const conflictingMetadata = path.join(testDir, 'conflicting-schema-metadata.db');
     fs.copyFileSync(sameSchemaBackup, conflictingMetadata);
     {
@@ -301,6 +320,32 @@ async function run() {
     } finally {
       fs.chmodSync(walLegacyDir, 0o700);
     }
+
+    const managedWalLegacyName = 'flo-backup-2026-08-15T00-00-00-000Z-wallegacy.db';
+    const managedWalLegacyPath = path.join(testDir, 'backups', managedWalLegacyName);
+    fs.copyFileSync(walLegacyPath, managedWalLegacyPath);
+    const listedWalLegacy = listBackups().find((entry) => entry.fileName === managedWalLegacyName);
+    assert.equal(
+      listedWalLegacy?.schemaVersion,
+      currentVersion,
+      'listBackups reads positive user_version for managed WAL-mode backups without _flo_meta',
+    );
+    assert.equal(
+      fs.existsSync(`${managedWalLegacyPath}-wal`),
+      false,
+      'listing a managed WAL-mode backup creates no WAL sidecar',
+    );
+    assert.equal(
+      fs.existsSync(`${managedWalLegacyPath}-shm`),
+      false,
+      'listing a managed WAL-mode backup creates no SHM sidecar',
+    );
+    assert.equal(
+      restoreBackup(managedWalLegacyPath, true).success,
+      true,
+      'managed WAL-mode backup remains restorable after listing',
+    );
+    fs.unlinkSync(managedWalLegacyPath);
 
     const walSidecarSource = path.join(testDir, 'wal-sidecar-source.db');
     const walSidecarTarget = path.join(testDir, 'wal-sidecar-probed.db');

@@ -3469,21 +3469,6 @@ function parseCanonicalSchemaVersion(value: unknown): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function readBackupSchemaVersion(fullPath: string): number | null {
-  let backupDb: Database.Database | undefined;
-  try {
-    backupDb = new Database(fullPath, { readonly: true, fileMustExist: true });
-    const row = backupDb
-      .prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`)
-      .get() as { value: string } | undefined;
-    return row ? parseCanonicalSchemaVersion(row.value) : null;
-  } catch {
-    return null;
-  } finally {
-    backupDb?.close();
-  }
-}
-
 export type BackupMetadata = {
   schemaVersion: number | null;
   appVersion: string | null;
@@ -3662,7 +3647,7 @@ export function listBackupsPage(options: BackupPaginationOptions = {}): BackupPa
     sizeBytes: entry.sizeBytes,
     createdAt: entry.createdAt,
     kind: entry.kind,
-    schemaVersion: readBackupSchemaVersion(entry.fullPath),
+    schemaVersion: getSchemaVersionFromBackup(entry.fullPath),
   }));
   const last = backups[backups.length - 1];
   const nextCursor = hasMore && last ? encodeBackupCursor(last.createdAt, last.fileName) : null;
@@ -6918,7 +6903,10 @@ export function getSchemaVersionFromBackup(backupPath: string): number | null {
             | { value: string }
             | undefined)
         : undefined;
-      if (metaRow) return parseCanonicalSchemaVersion(metaRow.value);
+      if (metaRow) {
+        const version = parseCanonicalSchemaVersion(metaRow.value);
+        return version !== null && version > 0 ? version : null;
+      }
       const version = Number(backupDb.pragma('user_version', { simple: true }));
       return Number.isSafeInteger(version) && version > 0 ? version : null;
     });

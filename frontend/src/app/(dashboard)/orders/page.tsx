@@ -72,6 +72,8 @@ import { cn } from '@/lib/utils';
 import { classifyOrderRequestFailure } from '@/lib/order-attempt';
 import {
   getCancelOrderFailureKind,
+  getOrderBills,
+  isBillPayableForCheckout,
   isOrderItemEditLocked,
   isScheduledEditLockedError,
   isScheduledOrder,
@@ -577,6 +579,19 @@ export default function OrdersPage() {
         setSelectedOrderSnapshot(refreshedOrder);
         setSelectedOrderMissing(!refreshedOrder);
         setSelectedOrderNotInCurrentList(Boolean(refreshedOrder));
+        if (refreshedOrder) {
+          const stillHasPayableBills = getOrderBills(refreshedOrder).some(isBillPayableForCheckout);
+          setSettledTransition((prev) => {
+            if (!prev || prev.orderId !== orderId) return prev;
+            if (
+              prev.kind === 'completed' &&
+              (stillHasPayableBills || refreshedOrder.status !== 'completed')
+            ) {
+              return null;
+            }
+            return prev;
+          });
+        }
         if (refreshedOrder?.bill?.id && !fetchedBillIdsRef.current.has(refreshedOrder.bill.id)) {
           fetchedBillIdsRef.current.add(refreshedOrder.bill.id);
           fetchPrintHistory(refreshedOrder.bill.id);
@@ -1263,6 +1278,24 @@ export default function OrdersPage() {
     setTabFilter('all');
   };
 
+  const syncOrderBillInState = (orderId: number, billToSync: Bill) => {
+    const applyBillToOrder = (order: Order): Order => {
+      if (order.id !== orderId) return order;
+      const updatedBills = order.bills?.some((candidate) => candidate.id === billToSync.id)
+        ? order.bills.map((candidate) => (candidate.id === billToSync.id ? billToSync : candidate))
+        : order.bills;
+      return {
+        ...order,
+        bill: !order.bill || order.bill.id === billToSync.id ? billToSync : order.bill,
+        ...(updatedBills ? { bills: updatedBills } : {}),
+      };
+    };
+    setOrders((prev) => prev.map(applyBillToOrder));
+    if (selectedOrderIdRef.current === orderId) {
+      setSelectedOrderSnapshot((prev) => (prev ? applyBillToOrder(prev) : prev));
+    }
+  };
+
   const handleCheckout = async (orderId: number) => {
     setGeneratingBill(orderId);
     const operationId = createOperationReference();
@@ -1272,7 +1305,9 @@ export default function OrdersPage() {
         { order_id: orderId },
         { headers: operationHeaders(operationId) },
       );
-      setPaymentBill(data.bill);
+      const generatedBill = data.bill as Bill;
+      syncOrderBillInState(orderId, generatedBill);
+      setPaymentBill(generatedBill);
     } catch (error) {
       const failure = classifyOrderRequestFailure(error, {
         operation: 'bill.generate',
@@ -1308,7 +1343,26 @@ export default function OrdersPage() {
     const bill = paymentBill; // capture before clearing state
     const paidOrderId = bill?.order_id != null ? Number(bill.order_id) : null;
     setPaymentBill(null);
+    if (bill && paidOrderId !== null && Number.isFinite(paidOrderId)) {
+      syncOrderBillInState(paidOrderId, {
+        ...bill,
+        payment_status: 'paid',
+        balance: 0,
+        paid_amount: bill.total,
+      });
+    }
+    const candidateOrders = selectedOrderSnapshot ? [selectedOrderSnapshot, ...orders] : orders;
+    const paidOrderRecord =
+      paidOrderId !== null && Number.isFinite(paidOrderId)
+        ? candidateOrders.find((o) => o.id === paidOrderId)
+        : undefined;
+    const hasRemainingPayableBills = paidOrderRecord
+      ? getOrderBills(paidOrderRecord).some(
+          (candidate) => candidate.id !== bill?.id && isBillPayableForCheckout(candidate),
+        )
+      : false;
     if (
+      !hasRemainingPayableBills &&
       ordersLayout === 'split' &&
       paidOrderId !== null &&
       Number.isFinite(paidOrderId) &&
@@ -1329,7 +1383,6 @@ export default function OrdersPage() {
     if (bill && autoPrintBill) {
       const tenantIdAtStart = currentTenant?.id ?? null;
       try {
-        const candidateOrders = selectedOrderSnapshot ? [...orders, selectedOrderSnapshot] : orders;
         const fallbackOrder = candidateOrders.find(
           (o) => o.bill?.id === bill.id || o.bills?.some((b) => b.id === bill.id),
         );
@@ -1337,7 +1390,11 @@ export default function OrdersPage() {
         if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
           return;
         }
-        const latestBill = preferChildScopedBill(data.bill as Bill, fallbackOrder);
+        const fetchedBill = data.bill as Bill;
+        if (paidOrderId !== null && Number.isFinite(paidOrderId)) {
+          syncOrderBillInState(paidOrderId, fetchedBill);
+        }
+        const latestBill = preferChildScopedBill(fetchedBill, fallbackOrder);
         const printWarnings = await printBill(
           latestBill,
           {
@@ -1368,7 +1425,7 @@ export default function OrdersPage() {
   };
 
   const handlePrint = async (billId: number) => {
-    const candidateOrders = selectedOrderSnapshot ? [...orders, selectedOrderSnapshot] : orders;
+    const candidateOrders = selectedOrderSnapshot ? [selectedOrderSnapshot, ...orders] : orders;
     const order = candidateOrders.find(
       (o) => o.bill?.id === billId || o.bills?.some((b) => b.id === billId),
     );
@@ -1440,12 +1497,7 @@ export default function OrdersPage() {
         { headers: operationHeaders(operationId) },
       );
       const bill = data.bill as Bill;
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
-      if (selectedOrderIdRef.current === order.id) {
-        setSelectedOrderSnapshot((prev) =>
-          prev && prev.id === order.id ? { ...prev, bill } : prev,
-        );
-      }
+      syncOrderBillInState(order.id, bill);
       await fetchOrders(undefined, { refreshLoadedPages: true });
       setConfirmPrintBillId(bill.id);
     } catch (error) {

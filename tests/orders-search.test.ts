@@ -156,6 +156,7 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
   let pendingOrdersResponse: Promise<{ data: { orders: unknown[]; nextCursor: null } }> | null =
     null;
   const Icon = () => null;
+  const setTablesRequired = () => undefined;
   const ButtonStub = (props: Record<string, unknown>) => ({ type: 'button', props });
   const MasterListStub = (props: Record<string, unknown>) => ({ type: 'OrdersMasterList', props });
   const jsxElement = (type: unknown, props: Record<string, unknown>, key?: unknown) => ({
@@ -276,7 +277,7 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
     },
     '@/store/pos-settings': {
       usePosSettingsStore: () => ({
-        setTablesRequired: () => undefined,
+        setTablesRequired,
         autoPrintBill: false,
         printerUseUnicode: true,
         printerArabicShaping: false,
@@ -568,6 +569,7 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
   let mockTablesRequired = false;
   const orderRequests: Array<Record<string, unknown>> = [];
   const Icon = () => null;
+  const setTablesRequired = () => undefined;
   const ButtonStub = (props: Record<string, unknown>) => ({ type: 'button', props });
   const MasterListStub = (props: Record<string, unknown>) => ({ type: 'OrdersMasterList', props });
   const jsxElement = (type: unknown, props: Record<string, unknown>, key?: unknown) => ({
@@ -703,7 +705,7 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
     },
     '@/store/pos-settings': {
       usePosSettingsStore: () => ({
-        setTablesRequired: () => undefined,
+        setTablesRequired,
         autoPrintBill: false,
         printerUseUnicode: true,
         printerArabicShaping: false,
@@ -1165,6 +1167,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
   const orderRequests: Array<Record<string, unknown>> = [];
   const toastErrors: string[] = [];
   const printedBillIds: number[] = [];
+  const printOrderStatuses: Array<string | undefined> = [];
   const order101 = {
     id: 101,
     order_number: 'ORD-101',
@@ -1175,7 +1178,21 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     total: 20,
     created_at: '2026-01-01 00:00:00',
     items: [],
-    bill: { id: 501, order_id: 101, total: 20, payment_status: 'unpaid' },
+  };
+  const order103 = {
+    id: 103,
+    order_number: 'ORD-103',
+    status: 'pending',
+    type: 'dine_in',
+    table_id: 'tbl-42',
+    subtotal: 30,
+    total: 30,
+    created_at: '2026-01-01 00:02:00',
+    items: [],
+    bills: [
+      { id: 701, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
+      { id: 702, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
+    ],
   };
   let activeOrders: Array<Record<string, any>> = [
     order101,
@@ -1189,6 +1206,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       created_at: '2026-01-01 00:01:00',
       items: [],
     },
+    order103,
   ];
   const completedOrder = {
     id: 201,
@@ -1204,6 +1222,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
   };
 
   const Icon = () => null;
+  const setTablesRequired = () => undefined;
   const ButtonStub = (props: Record<string, unknown>) => ({ type: 'button', props });
   const MasterListStub = (props: Record<string, unknown>) => ({ type: 'OrdersMasterList', props });
   const DetailPanelStub = (props: Record<string, unknown>) => ({ type: 'OrderDetailPanel', props });
@@ -1292,9 +1311,29 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
               },
             };
           }
-          if (url === '/bills/501' || url === '/bills/502') {
-            const id = url.endsWith('/502') ? 502 : 501;
-            return { data: { bill: { id, order_id: 101, total: 20, payment_status: 'paid' } } };
+          if (url === '/orders/103') {
+            return {
+              data: {
+                order: {
+                  ...order103,
+                  status: 'pending',
+                  bills: [
+                    { id: 701, order_id: 103, total: 15, balance: 0, payment_status: 'paid', split_group_id: 'sg-1' },
+                    { id: 702, order_id: 103, total: 15, balance: 15, payment_status: 'unpaid', split_group_id: 'sg-1' },
+                  ],
+                },
+              },
+            };
+          }
+          if (url === '/bills/501' || url === '/bills/502' || url === '/bills/701') {
+            const id = url.endsWith('/502') ? 502 : url.endsWith('/701') ? 701 : 501;
+            const orderId = id === 701 ? 103 : 101;
+            const paymentStatus = id === 701 ? 'unpaid' : 'paid';
+            return {
+              data: {
+                bill: { id, order_id: orderId, total: 20, balance: id === 701 ? 15 : 0, payment_status: paymentStatus },
+              },
+            };
           }
           if (url === '/tables') {
             return {
@@ -1357,7 +1396,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     },
     '@/store/pos-settings': {
       usePosSettingsStore: () => ({
-        setTablesRequired: () => undefined,
+        setTablesRequired,
         autoPrintBill: false,
         printerUseUnicode: true,
         printerArabicShaping: false,
@@ -1403,6 +1442,12 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       formatReceiptErrorToast: () => '',
       extractPrinterErrorMessage: () => '',
       extractPrintErrorToastOptions: () => ({}),
+    },
+    '@/lib/printer/tax-components': {
+      preferChildScopedBill: (bill: Record<string, unknown>, order?: { status?: string }) => {
+        printOrderStatuses.push(order?.status);
+        return bill;
+      },
     },
     '@/lib/utils': { cn: (...args: unknown[]) => args.filter(Boolean).join(' ') },
     '@/components/orders/OrderCard': { OrderCard: () => null },
@@ -1658,16 +1703,22 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       masterList.props.onSelect(101);
       tree = renderPage();
 
-      // Trigger checkout to populate paymentBill
+      // Trigger checkout to populate paymentBill and sync generated bill onto selectedOrderSnapshot
       const detailEl1 = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
       assert.ok(detailEl1, 'OrderDetailPanel renders');
       await detailEl1.props.onCheckout(101);
       tree = renderPage();
+      const detailAfterCheckout = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      assert.equal(
+        detailAfterCheckout.props.order?.bill?.id,
+        501,
+        'handleCheckout syncs generated bill onto selectedOrderSnapshot',
+      );
       const paymentEl = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
       assert.ok(paymentEl, 'PaymentModal opens with bill 501');
 
-      // Simulate order 101 leaving Active list upon payment
-      activeOrders = [activeOrders[1]];
+      // Keep a stale active order 101 around while verifying snapshot precedence, then drop on refresh
+      activeOrders = [activeOrders[1], activeOrders[2]];
       await paymentEl.props.onPaid();
       tree = await flushAll(50);
 
@@ -1719,6 +1770,29 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         printedBillIds,
         [501, 502],
         'handlePrint prints both order.bill and split order.bills from selectedOrderSnapshot',
+      );
+      assert.deepEqual(
+        printOrderStatuses,
+        ['completed', 'completed'],
+        'handlePrint prefers completed selectedOrderSnapshot ahead of any stale list entry',
+      );
+
+      // 6. Paying one split bill while sibling split bill 702 remains unpaid must NOT show settledTransition
+      const masterListSplit = collectElements(tree, (el) => el.type === MasterListStub)[0];
+      masterListSplit.props.onSelect(103);
+      tree = renderPage();
+      const splitDetail = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      await splitDetail.props.onPayBill(order103.bills[0]);
+      tree = renderPage();
+      const splitPaymentModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(splitPaymentModal, 'PaymentModal opens for split bill 701');
+      await splitPaymentModal.props.onPaid();
+      tree = await flushAll(50);
+      const splitDetailAfter = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      assert.equal(
+        splitDetailAfter.props.settledTransition,
+        null,
+        'Split-bill partial payment keeps settledTransition null while sibling bill remains unpaid',
       );
     } finally {
       for (const entry of effectEntries) {

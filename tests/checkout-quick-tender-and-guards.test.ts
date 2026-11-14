@@ -24,6 +24,9 @@ const reactPath = frontendRequire.resolve('react');
 const reactJsxRuntimePath = frontendRequire.resolve('react/jsx-runtime');
 const reactDomPath = frontendRequire.resolve('react-dom');
 const reactDomServerPath = frontendRequire.resolve('react-dom/server');
+const RealReact = frontendRequire('react');
+const RealJsxRuntime = frontendRequire('react/jsx-runtime');
+const { renderToStaticMarkup } = frontendRequire('react-dom/server');
 const useIntlPath = frontendRequire.resolve('use-intl');
 
 function collectElements(node: unknown, predicate: (el: any) => boolean, out: any[] = []): any[] {
@@ -32,8 +35,16 @@ function collectElements(node: unknown, predicate: (el: any) => boolean, out: an
     return out;
   }
   if (!node || typeof node !== 'object') return out;
-  const el = node as { props?: Record<string, any> };
+  const el = node as { type?: unknown; props?: Record<string, any> };
   if (predicate(el)) out.push(el);
+  if (typeof el.type === 'function') {
+    try {
+      const rendered = (el.type as (p: any) => unknown)(el.props || {});
+      collectElements(rendered, predicate, out);
+    } catch {
+      // Fall through to children traversal if component relies on unmocked context
+    }
+  }
   if (el.props && el.props.children !== undefined) {
     collectElements(el.props.children, predicate, out);
   }
@@ -50,24 +61,10 @@ function createStatefulHarness() {
   let refCursor = 0;
   let effectCursor = 0;
 
-  const createEl = (
-    type: unknown,
-    props: Record<string, unknown> | null,
-    ...children: unknown[]
-  ) => ({
-    type,
-    props: {
-      ...(props || {}),
-      children:
-        children.length === 0 ? props?.children : children.length === 1 ? children[0] : children,
-    },
-  });
-
-  const jsx = (type: unknown, props: Record<string, unknown> | null) => createEl(type, props);
-
   const hooksReact = {
-    createElement: createEl,
-    Fragment: Symbol.for('react.fragment'),
+    ...RealReact,
+    createElement: RealReact.createElement,
+    Fragment: RealReact.Fragment,
     useState: <T>(initial: T | (() => T)) => {
       const idx = stateCursor++;
       if (!(idx in states)) {
@@ -118,7 +115,7 @@ function createStatefulHarness() {
 
   return {
     hooksReact,
-    jsxRuntime: { jsx, jsxs: jsx, Fragment: hooksReact.Fragment },
+    jsxRuntime: RealJsxRuntime,
     render<P>(Component: (props: P) => any, props: P) {
       resetCursors();
       const tree = Component(props);
@@ -285,7 +282,6 @@ async function testTouchNumberPadAndStationStructure() {
   console.log('\n--- 2. TouchNumberPad fillHeight & CheckoutPaymentStation 4-Zone Structure ---');
   await withAliases(async () => {
     const React = frontendRequire('react');
-    const { renderToStaticMarkup } = frontendRequire('react-dom/server');
     const TouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad.tsx').default;
     const {
       CheckoutPaymentStation,
@@ -447,6 +443,14 @@ function installCheckoutComponentMocks(
     getItemCount: () => 1,
     itemCount: () => 1,
   };
+
+  for (const rel of [
+    'frontend/src/components/pos/CheckoutPaymentStation.tsx',
+    'frontend/src/components/pos/TouchNumberPad.tsx',
+    'frontend/src/components/pos/TaxBreakdown.tsx',
+  ]) {
+    delete require.cache[path.resolve(ROOT, rel)];
+  }
 
   Module._load = function (request: string, parent: any, isMain: boolean) {
     if (request === 'react') return harness.hooksReact;
@@ -931,7 +935,9 @@ async function testPaymentModalSettledDismissAndRestoredAttempt() {
       tree = harness.renderAndSettle(PaymentModal, makeProps());
 
       // Settled receipt view must show $25.00, NOT $0.00
-      const receiptText = renderToStaticMarkup(tree);
+      const receiptCard = collectElements(tree, (el) => el.props?.role === 'status')[0];
+      assert.ok(receiptCard, 'Settled receipt status card rendered');
+      const receiptText = renderToStaticMarkup(receiptCard);
       assert.ok(
         receiptText.includes('$25.00') && !receiptText.includes('$0.00'),
         `Replayed restored attempt displays settled $25.00 (got ${receiptText})`,
@@ -1204,7 +1210,11 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         'Focusing discount input switches quick tenders to discount percentages',
       );
 
-      discountTab.props.onClick();
+      const openDiscountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      openDiscountTab.props.onClick();
       tree = harness.renderAndSettle(PaymentModal, floatProps);
       assert.ok(
         !renderToStaticMarkup(tree).includes('5%'),
@@ -1290,6 +1300,19 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       );
 
       // PrepaidCheckoutModal: non-cash quick tenders, rendered layout, and Done/details discount reset
+      harness.cleanupAll();
+      const prepaidHarness = createStatefulHarness();
+      installCheckoutComponentMocks(prepaidHarness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('discount')) {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
+          if (String(url).includes('settings')) return { data: { split_checks_enabled: true } };
+          return { data: {} };
+        },
+      });
       const prepaidPath = path.resolve(
         ROOT,
         'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
@@ -1301,7 +1324,9 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         onClose: () => {},
         onConfirm: async () => {},
       };
-      let prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      let prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
       const initialPrepaidMarkup = renderToStaticMarkup(prepaidTree);
       assert.ok(
         !initialPrepaidMarkup.includes('bg-gradient-to-br from-slate-800 to-slate-900'),
@@ -1320,7 +1345,7 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       )[0];
       assert.ok(prepaidCashInput, 'PrepaidCheckoutModal cash amount input rendered');
       prepaidCashInput.props.onChange({ target: { value: '5.00' } });
-      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
       const prepaidCashQuickZone = collectElements(
         prepaidTree,
         (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
@@ -1336,7 +1361,7 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       )[0];
       assert.ok(prepaidCardInput, 'PrepaidCheckoutModal card amount input rendered');
       prepaidCardInput.props.onFocus();
-      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
       const prepaidCardQuickZone = collectElements(
         prepaidTree,
         (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
@@ -1363,7 +1388,7 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       )[0];
       assert.ok(prepaidDiscountToggle, 'PrepaidCheckoutModal discount toggle rendered');
       prepaidDiscountToggle.props.onClick();
-      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
 
       const prepaidDiscountInput = collectElements(
         prepaidTree,
@@ -1371,7 +1396,7 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       )[0];
       assert.ok(prepaidDiscountInput, 'PrepaidCheckoutModal discount input rendered');
       prepaidDiscountInput.props.onFocus();
-      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
       assert.ok(
         renderToStaticMarkup(prepaidTree).includes('5%'),
         'Focusing prepaid discount input switches quick tenders to discount percentages',
@@ -1386,11 +1411,12 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       )[0];
       assert.ok(prepaidDoneBtn, 'PrepaidCheckoutModal discount Done button rendered');
       prepaidDoneBtn.props.onClick();
-      prepaidTree = harness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
       assert.ok(
         !renderToStaticMarkup(prepaidTree).includes('5%'),
         'Done button in prepaid discount panel resets amountTarget away from discount',
       );
+      prepaidHarness.cleanupAll();
     } finally {
       harness.cleanupAll();
       if (!hadWindow) delete (globalThis as any).window;

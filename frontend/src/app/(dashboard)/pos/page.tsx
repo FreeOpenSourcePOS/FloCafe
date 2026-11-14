@@ -4,6 +4,7 @@ import { classifyTransportFailure } from '@/lib/transport-failure';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
+import { getSessionBoundaryEpoch } from '@/store/session-events';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -420,9 +421,14 @@ export default function POSPage() {
     initialStoreIdRef.current = currentTenant.id;
   }
   const sessionEpochRef = useRef(0);
-  const lastActiveSessionRef = useRef<{ userId: string | null; token: string | null }>({
+  const lastActiveSessionRef = useRef<{
+    userId: string | null;
+    token: string | null;
+    boundaryEpoch: number;
+  }>({
     userId: activeUserId,
     token: activeToken,
+    boundaryEpoch: getSessionBoundaryEpoch(),
   });
   const activeSubmissionTokenRef = useRef<symbol | null>(null);
   const prepaidSubmissionTokenRef = useRef<symbol | null>(null);
@@ -452,7 +458,7 @@ export default function POSPage() {
       initialStoreId: initialStoreIdRef.current,
       userId: liveUserId,
       token: liveToken,
-      sessionEpoch: sessionEpochRef.current,
+      sessionEpoch: sessionEpochRef.current + getSessionBoundaryEpoch(),
     };
   };
   const clearSupportErrorState = () => {
@@ -464,9 +470,11 @@ export default function POSPage() {
   };
 
   useEffect(() => {
+    const currentBoundaryEpoch = getSessionBoundaryEpoch();
     if (
       lastActiveSessionRef.current.userId === activeUserId &&
-      lastActiveSessionRef.current.token === activeToken
+      lastActiveSessionRef.current.token === activeToken &&
+      lastActiveSessionRef.current.boundaryEpoch === currentBoundaryEpoch
     ) {
       return;
     }
@@ -474,8 +482,13 @@ export default function POSPage() {
       Boolean(activeUserId) &&
       lastActiveSessionRef.current.userId === activeUserId &&
       Boolean(lastActiveSessionRef.current.token) &&
-      Boolean(activeToken);
-    lastActiveSessionRef.current = { userId: activeUserId, token: activeToken };
+      Boolean(activeToken) &&
+      lastActiveSessionRef.current.boundaryEpoch === currentBoundaryEpoch;
+    lastActiveSessionRef.current = {
+      userId: activeUserId,
+      token: activeToken,
+      boundaryEpoch: currentBoundaryEpoch,
+    };
     if (sameAuthenticatedUser) {
       return;
     }
@@ -4574,16 +4587,16 @@ export default function POSPage() {
               // pay against the remainder source bill during the fetch window.
               setPaymentBill(null);
               setCheckoutOverridePin(undefined);
-              const originEpoch = sessionEpochRef.current;
+              const originEpoch = sessionEpochRef.current + getSessionBoundaryEpoch();
               void api
                 .get(`/bills/${departingBill.id}`)
                 .then(({ data }) => {
-                  if (sessionEpochRef.current === originEpoch) {
+                  if (sessionEpochRef.current + getSessionBoundaryEpoch() === originEpoch) {
                     setPaymentBill((data?.bill as Bill) ?? departingBill);
                   }
                 })
                 .catch(() => {
-                  if (sessionEpochRef.current === originEpoch) {
+                  if (sessionEpochRef.current + getSessionBoundaryEpoch() === originEpoch) {
                     setPaymentBill(departingBill);
                   }
                 });

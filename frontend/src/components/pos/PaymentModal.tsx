@@ -618,8 +618,6 @@ export default function PaymentModal({
     setSyncedBill(bill);
     if (billIdChanged) {
       const restored = readRestoredPostpaidAttempt(bill, postpaidAttemptKey);
-      pendingAttemptRef.current = restored;
-      inFlightRef.current = false;
       setPendingAttempt(restored);
       setSyncedRemaining(remaining);
       setPayments([
@@ -2751,7 +2749,11 @@ export default function PaymentModal({
                     <button
                       type="button"
                       disabled={
-                        processing || attemptLocked || justPaid || !walletBalance || walletBalance <= 0
+                        processing ||
+                        attemptLocked ||
+                        justPaid ||
+                        !walletBalance ||
+                        walletBalance <= 0
                       }
                       onClick={() => {
                         if (attemptLocked || justPaid || !walletBalance) return;
@@ -2826,9 +2828,11 @@ export default function PaymentModal({
               {!justPaid && (remainingMinor > 0 || hasSplitChecksPanel) && (
                 <div
                   className={`flex flex-col rounded-xl border border-border max-lg:shrink-0 lg:flex-1 lg:overflow-hidden ${
-                    (hasSplitChecksPanel
-                      ? !splitSectionCollapsed
-                      : showEqualShare || Boolean(equalShareNotice))
+                    (
+                      hasSplitChecksPanel
+                        ? !splitSectionCollapsed
+                        : showEqualShare || Boolean(equalShareNotice)
+                    )
                       ? 'lg:min-h-[168px]'
                       : 'lg:min-h-[52px]'
                   }`}

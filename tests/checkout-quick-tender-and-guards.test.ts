@@ -316,49 +316,47 @@ async function testTouchNumberPadAndStationStructure() {
     );
 
     const stationMarkup = renderToStaticMarkup(
-      React.createElement(CheckoutPaymentStation, {
-        readout: {
-          activeLabel: 'Cash',
-          amountText: '$14.20',
-          paidSummaryText: 'Paid: $14.20',
-          dueSummaryText: 'Total Due: $14.20',
-          statusPillText: 'Exact',
-          statusTone: 'settled',
-        },
-        quickTenders: [
-          { label: '$14.20', subLabel: 'Exact due', active: true, onClick: () => {} },
-          { label: '$15.00', active: false, onClick: () => {} },
-          { label: '$20.00', active: false, onClick: () => {} },
-          { label: '$50.00', active: false, onClick: () => {} },
-        ],
-        keypad: React.createElement(TouchNumberPad, {
-          value: '14.20',
-          onChange: () => {},
-          ariaLabel: 'Keypad',
-          clearLabel: 'Clear amount',
-          backspaceLabel: 'Backspace',
-          fillHeight: true,
-        }),
-        changeDisplay: {
-          label: 'Change Returned',
-          formattedAmount: '$0.00',
-          visible: false,
-        },
-        statusBanner: {
-          tone: 'error',
-          message: 'Payment attempt unclear',
-          nextStep: 'Check payment status before retrying.',
-          technicalDetails: '{"operation":"payment.create"}',
-          technicalDetailsLabel: 'Technical details',
-          closeLabel: 'Close',
-        },
-      },
       React.createElement(
-        'button',
-        { type: 'button', onClick: () => {} },
-        'Pay $14.20',
+        CheckoutPaymentStation,
+        {
+          readout: {
+            activeLabel: 'Cash',
+            amountText: '$14.20',
+            paidSummaryText: 'Paid: $14.20',
+            dueSummaryText: 'Total Due: $14.20',
+            statusPillText: 'Exact',
+            statusTone: 'settled',
+          },
+          quickTenders: [
+            { label: '$14.20', subLabel: 'Exact due', active: true, onClick: () => {} },
+            { label: '$15.00', active: false, onClick: () => {} },
+            { label: '$20.00', active: false, onClick: () => {} },
+            { label: '$50.00', active: false, onClick: () => {} },
+          ],
+          keypad: React.createElement(TouchNumberPad, {
+            value: '14.20',
+            onChange: () => {},
+            ariaLabel: 'Keypad',
+            clearLabel: 'Clear amount',
+            backspaceLabel: 'Backspace',
+            fillHeight: true,
+          }),
+          changeDisplay: {
+            label: 'Change Returned',
+            formattedAmount: '$0.00',
+            visible: false,
+          },
+          statusBanner: {
+            tone: 'error',
+            message: 'Payment attempt unclear',
+            nextStep: 'Check payment status before retrying.',
+            technicalDetails: '{"operation":"payment.create"}',
+            technicalDetailsLabel: 'Technical details',
+            closeLabel: 'Close',
+          },
+        },
+        React.createElement('button', { type: 'button', onClick: () => {} }, 'Pay $14.20'),
       ),
-    ),
     );
 
     assert.ok(
@@ -853,19 +851,27 @@ async function testPaymentModalSettledDismissAndRestoredAttempt() {
 
     const harness = createStatefulHarness();
     try {
-      const storageKey = orderAttempt.getPostpaidPaymentAttemptStorageKey('u-1', 1, 'bill-restored');
-      orderAttempt.savePostpaidPaymentAttempt((globalThis as any).window.sessionStorage, storageKey, {
-        userId: 'u-1',
-        storeId: 1,
-        billId: 'bill-restored',
-        idempotencyKey: '33333333-3333-4333-8333-333333333333',
-        key: '33333333-3333-4333-8333-333333333333',
-        operationId: '44444444-4444-4444-8444-444444444444',
-        zeroBalance: false,
-        lines: [{ method: 'cash', amount: 30 }],
-        customerId: null,
-        paymentFingerprint: '[{"method":"cash","amount":30}]',
-      });
+      const storageKey = orderAttempt.getPostpaidPaymentAttemptStorageKey(
+        'u-1',
+        1,
+        'bill-restored',
+      );
+      orderAttempt.savePostpaidPaymentAttempt(
+        (globalThis as any).window.sessionStorage,
+        storageKey,
+        {
+          userId: 'u-1',
+          storeId: 1,
+          billId: 'bill-restored',
+          idempotencyKey: '33333333-3333-4333-8333-333333333333',
+          key: '33333333-3333-4333-8333-333333333333',
+          operationId: '44444444-4444-4444-8444-444444444444',
+          zeroBalance: false,
+          lines: [{ method: 'cash', amount: 30 }],
+          customerId: null,
+          paymentFingerprint: '[{"method":"cash","amount":30}]',
+        },
+      );
 
       const restoredBill = makeBill('bill-restored', 25);
       installCheckoutComponentMocks(harness, {
@@ -1160,10 +1166,7 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         tree,
         (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
       )[0];
-      const cashQuickButtons = collectElements(
-        cashQuickZone,
-        (el) => el.type === 'button',
-      );
+      const cashQuickButtons = collectElements(cashQuickZone, (el) => el.type === 'button');
       assert.ok(
         cashQuickButtons.length > 1,
         'Cash row quick-tender strip offers rounded denomination pills in addition to exact',
@@ -1175,10 +1178,7 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         tree,
         (el) => el.props?.['data-checkout-zone'] === 'quick-tender',
       )[0];
-      const cardQuickButtons = collectElements(
-        cardQuickZone,
-        (el) => el.type === 'button',
-      );
+      const cardQuickButtons = collectElements(cardQuickZone, (el) => el.type === 'button');
       assert.equal(
         cardQuickButtons.length,
         1,
@@ -1564,7 +1564,11 @@ async function testPosPageEscapeAndSessionGuards() {
         'function',
         'PaymentModal registers an Escape dismiss handler on mount',
       );
-      assert.equal(registeredDismiss?.(), true, 'Registered dismiss handler returns true when idle');
+      assert.equal(
+        registeredDismiss?.(),
+        true,
+        'Registered dismiss handler returns true when idle',
+      );
       assert.equal(closedCount, 1, 'Registered dismiss handler invokes onClose when idle');
       harness.cleanupAll();
       assert.equal(

@@ -1326,11 +1326,7 @@ export default function POSPage() {
     originContext?: SupportErrorContextSnapshot,
   ) => {
     const origin = originContext || readLiveSupportContext();
-    if (
-      !currentTenant ||
-      !checkSessionCurrent(origin) ||
-      (!force && !autoPrintBill)
-    ) {
+    if (!currentTenant || !checkSessionCurrent(origin) || (!force && !autoPrintBill)) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       return;
     }

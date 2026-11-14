@@ -141,7 +141,8 @@ transient notices and ignores late-settling responses from another order.
 ### Split-check availability is a state, not a hidden button
 
 The POS payment modal consolidates equal-amount shares and item-based check splitting into a unified
-Split card above the payment action, rather than splitting controls across separate panels. It derives
+Split card inside the tender column of the three-column checkout workspace, rather than splitting
+controls across separate panels. It derives
 item-based split-check availability through explicit states rather than a boolean that silently hid the
 control. The feature setting (`split_checks_enabled`) lookup reports loading, ready, and error states:
 while loading the item-split panel stays hidden, on failure it displays an inline error with a retry

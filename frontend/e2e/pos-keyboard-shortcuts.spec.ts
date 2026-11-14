@@ -203,7 +203,95 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(tableModal).not.toBeVisible();
   });
 
-  test('F4 opens checkout modal, and Space tenders cash to complete order', async ({ page }) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 600 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`checkout keeps the payment station visible at ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }) => {
+      await page.getByRole('button', { name: 'Takeaway' }).click();
+      await page.getByTestId('pos-product-card').first().click();
+      await page.locator('body').click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press('F4');
+      const modal = page.getByTestId('prepaid-checkout-modal');
+      await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible();
+      await page.setViewportSize(viewport);
+      const keypad = modal.getByLabel('Numeric keypad');
+      const clear = keypad.getByRole('button', { name: 'Clear amount' });
+      const before = await clear.boundingBox();
+      expect(before).not.toBeNull();
+      expect(before!.y).toBeGreaterThanOrEqual(0);
+      expect(before!.y + before!.height).toBeLessThanOrEqual(viewport.height);
+      const cash = modal.getByRole('button', { name: 'Cash', exact: true });
+      const card = modal.getByRole('button', { name: 'Card', exact: true });
+      await cash.click();
+      const cashInput = cash.locator('..').locator('input');
+      await cashInput.fill('5');
+      await card.click();
+      await cash.click();
+      await expect(cashInput).toHaveValue('5');
+      const inputBounds = await cashInput.boundingBox();
+      expect(inputBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(inputBounds!.x + inputBounds!.width).toBeLessThanOrEqual(viewport.width);
+      const after = await clear.boundingBox();
+      expect(after!.y).toBe(before!.y);
+      if (viewport.width < 1024) {
+        await modal.getByRole('button', { name: 'Items', exact: true }).click();
+        await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible();
+        expect((await clear.boundingBox())!.y).toBe(before!.y);
+      }
+      await modal.getByRole('button', { name: 'Discounts', exact: true }).click();
+      expect((await clear.boundingBox())!.y).toBe(before!.y);
+    });
+  }
+
+  test('prepaid checkout stays visible and locked while submission is pending', async ({
+    page,
+  }) => {
+    let releaseRequest!: () => void;
+    let markStarted!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const requestGate = new Promise<void>((resolve) => {
+      releaseRequest = resolve;
+    });
+    await page.route('**/api/orders', async (route) => {
+      if (route.request().method() === 'POST') {
+        markStarted();
+        await requestGate;
+      }
+      await route.continue();
+    });
+    try {
+      await page.getByRole('button', { name: 'Takeaway' }).click();
+      await page.getByTestId('pos-product-card').first().click();
+      await page.locator('body').click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press('F4');
+      const modal = page.getByTestId('prepaid-checkout-modal');
+      await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible();
+      await modal.getByRole('button', { name: 'Cash', exact: true }).click();
+      await modal.getByRole('button', { name: /Confirm Payment/ }).click();
+      await requestStarted;
+      await expect(modal).toBeVisible();
+      await expect(modal.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+      await expect(modal.getByLabel('Numeric keypad').locator('button:not(:disabled)')).toHaveCount(
+        0,
+      );
+      await page.keyboard.press('Escape');
+      await expect(modal).toBeVisible();
+      releaseRequest();
+      await modal.getByRole('button', { name: 'Done', exact: true }).click({ timeout: 15000 });
+      await expect(modal).not.toBeVisible({ timeout: 15000 });
+    } finally {
+      releaseRequest();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+
+  test('F4 opens checkout and payment requires the confirmation button', async ({ page }) => {
     // Select Takeaway mode so checkout does not require table selection
     await page.getByRole('button', { name: 'Takeaway' }).click();
 
@@ -226,10 +314,16 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     // Wait for tax preview calculation to settle
     await expect(checkoutModal.getByText(/Total Due/i)).toBeVisible({ timeout: 5_000 });
 
-    // Press Space inside checkout modal to tender cash and complete
+    // Space on the workspace does not submit a payment.
     await page.keyboard.press('Space');
+    await expect(checkoutModal).toBeVisible();
+    await expect(checkoutModal.getByText(/Balance Due:/)).toBeVisible();
+    await checkoutModal.getByRole('button', { name: 'Cash', exact: true }).click();
+    await expect(checkoutModal.getByText(/Balance Due:/)).toHaveCount(0);
+    await checkoutModal.getByRole('button', { name: /Confirm Payment/ }).click();
 
-    // Order settles and checkout modal closes
+    // Order settles and the cashier dismisses the confirmation.
+    await checkoutModal.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(checkoutModal).not.toBeVisible({ timeout: 10_000 });
 
     // Take screenshot of completed state
@@ -273,7 +367,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(checkoutModal).toBeVisible({ timeout: 5_000 });
   });
 
-  test('holding Space to open checkout or repeating Space/Enter inside modal does not auto-confirm until a fresh press', async ({
+  test('holding Space to open checkout or repeating Space/Enter inside modal does not auto-confirm', async ({
     page,
   }) => {
     await page.getByRole('button', { name: 'Takeaway' }).click();
@@ -404,7 +498,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       const billsMidData = await billsMidRes.json();
       expect(billsMidData.pagination.total).toBe(paidBillsBeforeCount);
 
-      // Release key (keyup) then press a fresh non-repeat Space to confirm once
+      // Release the key and verify a fresh Space cannot submit payment.
       await page.evaluate(() => {
         window.dispatchEvent(
           new KeyboardEvent('keyup', {
@@ -416,11 +510,17 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
         );
       });
 
+      await confirmBtn.blur();
+      await page.keyboard.press('Space');
+      await expect(checkoutModal).toBeVisible();
+      expect(orderCreateRequests).toBe(0);
+      expect(paymentCreateRequests).toBe(0);
       const paymentDonePromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && res.url().includes('/payments'),
       );
-      await page.keyboard.press('Space');
+      await checkoutModal.getByRole('button', { name: /Confirm Payment/ }).click();
       await paymentDonePromise;
+      await checkoutModal.getByRole('button', { name: 'Done', exact: true }).click();
       await expect(checkoutModal).not.toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('cart-item')).toHaveCount(0, { timeout: 10_000 });
       expect(orderCreateRequests).toBe(1);
@@ -432,7 +532,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       const billsAfterData = await billsAfterRes.json();
       expect(billsAfterData.pagination.total).toBe(paidBillsBeforeCount + 1);
 
-      // Also verify fresh non-repeat Enter after keyup confirms once on a second order
+      // Verify Enter also requires an explicit payment action on a second order.
       await page.getByRole('button', { name: 'Takeaway' }).click();
       await productCard.click();
       await expect(page.getByTestId('cart-item').first()).toBeVisible({ timeout: 5_000 });
@@ -466,11 +566,17 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       expect(orderCreateRequests).toBe(1);
       expect(paymentCreateRequests).toBe(1);
 
+      await page.keyboard.press('Enter');
+      await expect(checkoutModal).toBeVisible();
+      expect(orderCreateRequests).toBe(1);
+      expect(paymentCreateRequests).toBe(1);
+      await checkoutModal.getByRole('button', { name: 'Cash', exact: true }).click();
       const enterPaymentDonePromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && res.url().includes('/payments'),
       );
-      await page.keyboard.press('Enter');
+      await checkoutModal.getByRole('button', { name: /Confirm Payment/ }).click();
       await enterPaymentDonePromise;
+      await checkoutModal.getByRole('button', { name: 'Done', exact: true }).click();
       await expect(checkoutModal).not.toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('cart-item')).toHaveCount(0, { timeout: 10_000 });
       expect(orderCreateRequests).toBe(2);

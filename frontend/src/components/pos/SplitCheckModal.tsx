@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Minus, Plus, RotateCcw, X } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -90,11 +90,13 @@ export function SplitCheckModal({
   order,
   onClose,
   onSplit,
+  onSubmittingChange,
 }: {
   bill: Bill;
   order: Order;
   onClose: () => void;
   onSplit: (bills: Bill[], departingBill: Bill | null) => void;
+  onSubmittingChange?: (submitting: boolean) => void;
 }) {
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
@@ -131,6 +133,11 @@ export function SplitCheckModal({
     (bill.split_label || t('remainingCheckLabel')).slice(0, MAX_LABEL_LENGTH),
   );
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    onSubmittingChange?.(saving);
+    return () => onSubmittingChange?.(false);
+  }, [saving, onSubmittingChange]);
 
   const resize = (next: number) => {
     if (!canSplitTable) return;
@@ -180,6 +187,24 @@ export function SplitCheckModal({
 
   const selectedUnits = items.reduce((sum, item) => sum + (selected[item.id] || 0), 0);
   const remainingUnits = availableUnits - selectedUnits;
+  const unassignedUnits = items.reduce(
+    (sum, item) =>
+      sum +
+      Math.max(
+        0,
+        Number(item.quantity) -
+          (allocations[item.id] || []).reduce((total, value) => total + value, 0),
+      ),
+    0,
+  );
+  const invalidTableAllocation =
+    items.some(
+      (item) =>
+        (allocations[item.id] || []).reduce((sum, value) => sum + value, 0) !== item.quantity,
+    ) ||
+    Array.from({ length: count }, (_, check) =>
+      items.every((item) => !(allocations[item.id]?.[check] > 0)),
+    ).some(Boolean);
   const guestEstimate = items.reduce(
     (sum, item) => sum + (Number(item.total) * (selected[item.id] || 0)) / Number(item.quantity),
     0,
@@ -231,15 +256,7 @@ export function SplitCheckModal({
   }, [bill.id, count]);
 
   const submitAllItems = async () => {
-    const invalid =
-      items.some(
-        (item) =>
-          (allocations[item.id] || []).reduce((sum, value) => sum + value, 0) !== item.quantity,
-      ) ||
-      Array.from({ length: count }, (_, check) =>
-        items.every((item) => !(allocations[item.id]?.[check] > 0)),
-      ).some(Boolean);
-    if (invalid) return toast.error(t('allocateAllItems'));
+    if (invalidTableAllocation) return toast.error(t('allocateAllItems'));
     setSaving(true);
     try {
       const checks = Array.from({ length: count }, (_, checkIndex) => ({
@@ -296,16 +313,24 @@ export function SplitCheckModal({
   const allSelected = selectedUnits > 0 && remainingUnits === 0;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
-      <div className="bg-card rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-0 sm:p-4">
+      <div className="bg-card flex h-[100dvh] w-full max-w-[1400px] flex-col overflow-hidden sm:h-[95dvh] sm:rounded-2xl">
         <div className="p-5 border-b flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold">{t('splitCheck')}</h2>
             <p className="text-sm text-muted-foreground">
+              {t('billNumber', { number: bill.bill_number })}
+              {bill.split_label ? ` · ${bill.split_label}` : ''}
+              {' · '}
               {mode === 'guest' ? t('selectItemsHint') : t('splitCheckHint')}
             </p>
           </div>
-          <button onClick={onClose} disabled={saving} aria-label={tCommon('close')}>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            aria-label={tCommon('close')}
+            className="touch-target"
+          >
             <X size={20} />
           </button>
         </div>
@@ -313,6 +338,7 @@ export function SplitCheckModal({
           <Button
             variant={mode === 'guest' ? 'default' : 'outline'}
             size="sm"
+            className="min-h-11"
             onClick={() => setMode('guest')}
             disabled={saving}
           >
@@ -321,6 +347,7 @@ export function SplitCheckModal({
           <Button
             variant={mode === 'table' ? 'default' : 'outline'}
             size="sm"
+            className="min-h-11"
             onClick={() => setMode('table')}
             disabled={saving || !canSplitTable}
           >
@@ -332,6 +359,7 @@ export function SplitCheckModal({
                 type="button"
                 variant="outline"
                 size="sm"
+                className="min-h-11"
                 onClick={distributeEvenly}
                 disabled={saving || !canSplitTable || items.length === 0}
                 data-testid="split-distribute-evenly"
@@ -347,7 +375,7 @@ export function SplitCheckModal({
                   data-testid="split-check-count-decrement"
                   onClick={() => resize(count - 1)}
                   disabled={saving || count <= MIN_CHECKS}
-                  className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                  className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
                 >
                   <Minus size={15} />
                 </button>
@@ -365,7 +393,7 @@ export function SplitCheckModal({
                     const parsed = Number(e.target.value);
                     if (Number.isFinite(parsed) && parsed >= MIN_CHECKS) resize(Math.trunc(parsed));
                   }}
-                  className="min-h-9 w-14 rounded-lg border bg-card px-2 py-1 text-center font-semibold tabular-nums"
+                  className="min-h-11 w-14 rounded-lg border bg-card px-2 py-1 text-center font-semibold tabular-nums"
                 />
                 <button
                   type="button"
@@ -373,7 +401,7 @@ export function SplitCheckModal({
                   data-testid="split-check-count-increment"
                   onClick={() => resize(count + 1)}
                   disabled={saving || count >= maxTableChecks}
-                  className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                  className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
                 >
                   <Plus size={15} />
                 </button>
@@ -390,6 +418,7 @@ export function SplitCheckModal({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="min-h-11"
                   onClick={() => setSelected({})}
                   disabled={saving}
                   data-testid="guest-split-clear"
@@ -401,7 +430,7 @@ export function SplitCheckModal({
           )}
         </div>
         {mode === 'table' ? (
-          <div className="overflow-auto p-5">
+          <div className="min-h-0 flex-1 overflow-auto p-5">
             <table className="w-full text-sm">
               <thead>
                 <tr>
@@ -418,7 +447,7 @@ export function SplitCheckModal({
                             ),
                           )
                         }
-                        className="min-h-9 w-full text-center border rounded-lg px-2 py-1 bg-card"
+                        className="min-h-11 w-full text-center border rounded-lg px-2 py-1 bg-card"
                       />
                     </th>
                   ))}
@@ -461,7 +490,7 @@ export function SplitCheckModal({
                                 data-testid={`split-cell-dec-${item.id}-${i}`}
                                 disabled={saving || cellQty <= 0}
                                 onClick={() => updateTableCell(item, i, cellQty - 1)}
-                                className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                                className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
                               >
                                 <Minus size={15} />
                               </button>
@@ -477,7 +506,7 @@ export function SplitCheckModal({
                                 onChange={(e) =>
                                   updateTableCell(item, i, Number(e.target.value) || 0)
                                 }
-                                className="min-h-9 w-12 text-center border rounded-lg px-1 py-1 font-semibold tabular-nums bg-card"
+                                className="min-h-11 w-12 text-center border rounded-lg px-1 py-1 font-semibold tabular-nums bg-card"
                               />
                               <button
                                 type="button"
@@ -485,7 +514,7 @@ export function SplitCheckModal({
                                 data-testid={`split-cell-inc-${item.id}-${i}`}
                                 disabled={saving || cellQty >= maxItemQty}
                                 onClick={() => updateTableCell(item, i, cellQty + 1)}
-                                className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                                className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
                               >
                                 <Plus size={15} />
                               </button>
@@ -510,7 +539,7 @@ export function SplitCheckModal({
             </table>
           </div>
         ) : (
-          <div className="overflow-auto p-5">
+          <div className="min-h-0 flex-1 overflow-auto p-5">
             {items.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t('noSplitCheckItems')}</p>
             ) : (
@@ -547,7 +576,7 @@ export function SplitCheckModal({
                               data-testid={`guest-item-dec-${item.id}`}
                               disabled={saving || selectedQty <= 0}
                               onClick={() => setQuantity(item, selectedQty - 1)}
-                              className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                              className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
                             >
                               <Minus size={15} />
                             </button>
@@ -561,7 +590,7 @@ export function SplitCheckModal({
                               aria-label={t('selectedQuantity')}
                               value={selectedQty}
                               onChange={(e) => setQuantity(item, Number(e.target.value))}
-                              className="min-h-9 w-16 text-center border rounded-lg px-2 py-1 font-semibold tabular-nums bg-card"
+                              className="min-h-11 w-16 text-center border rounded-lg px-2 py-1 font-semibold tabular-nums bg-card"
                             />
                             <button
                               type="button"
@@ -569,7 +598,7 @@ export function SplitCheckModal({
                               data-testid={`guest-item-inc-${item.id}`}
                               disabled={saving || selectedQty >= maxItemQty}
                               onClick={() => setQuantity(item, selectedQty + 1)}
-                              className="size-9 min-h-9 min-w-9 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                              className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
                             >
                               <Plus size={15} />
                             </button>
@@ -627,23 +656,35 @@ export function SplitCheckModal({
             )}
           </div>
         )}
-        <div className="p-5 border-t flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={saving}>
+        <div className="shrink-0 p-5 border-t flex justify-end gap-2">
+          {mode === 'table' && unassignedUnits > 0 && (
+            <span
+              data-testid="split-unassigned-total"
+              className="me-auto self-center text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              {t('remainingCount', { count: unassignedUnits })}
+            </span>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={saving} className="min-h-11">
             {tCommon('cancel')}
           </Button>
           {mode === 'table' ? (
             <Button
+              className="min-h-11"
+              data-testid="split-create-checks"
               onClick={submitAllItems}
-              disabled={saving || !canSplitTable || items.length === 0}
+              disabled={saving || !canSplitTable || items.length === 0 || invalidTableAllocation}
             >
               {saving ? tCommon('saving') : t('createChecks')}
             </Button>
           ) : allSelected ? (
-            <Button onClick={onClose} disabled={saving}>
+            <Button onClick={onClose} disabled={saving} className="min-h-11">
               {t('payThisCheck')}
             </Button>
           ) : (
             <Button
+              className="min-h-11"
               onClick={submitLeavingGuest}
               disabled={saving || selectedUnits === 0 || items.length === 0}
             >

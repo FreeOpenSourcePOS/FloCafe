@@ -10,6 +10,7 @@ import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
 
 import { openSocket } from './escpos-status';
+import { withNetworkPortLock } from './network-port-lock';
 import { isKnownDriverOnlyPrinter } from './thermal';
 
 const SOCKET_PORT = 9100;
@@ -175,19 +176,43 @@ export function localScanTargets(
 }
 
 /** True when a TCP connection opens. Sends nothing and closes the socket at once. */
-export function probePort(
+export async function probePort(
   host: string,
   port: number,
   timeoutMs = 400,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  return openSocket(host, port, timeoutMs, signal).then(
-    (socket) => {
-      socket.destroy();
-      return true;
-    },
-    () => false,
-  );
+  try {
+    return await withNetworkPortLock(
+      host,
+      port,
+      async () => {
+        const socket = await openSocket(host, port, timeoutMs, signal);
+        await new Promise<void>((resolve) => {
+          if (socket.destroyed) {
+            resolve();
+            return;
+          }
+          const done = () => {
+            clearTimeout(closeTimer);
+            signal?.removeEventListener('abort', onAbort);
+            socket.destroy();
+            resolve();
+          };
+          const onAbort = () => done();
+          const closeTimer = setTimeout(done, 100);
+          closeTimer.unref?.();
+          signal?.addEventListener('abort', onAbort, { once: true });
+          socket.once('close', done);
+          socket.end();
+        });
+        return true;
+      },
+      signal,
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Probes the hosts with a concurrency limit and returns the ones that answered. */

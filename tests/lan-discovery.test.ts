@@ -6,6 +6,7 @@
  */
 import * as net from 'net';
 
+import { probeNetworkPrinterStatus, statusToFailureCause } from '../main/printers/escpos-status';
 import {
   browseMdns,
   discoverLanPrinters,
@@ -13,6 +14,9 @@ import {
   probePort,
   scanPort9100,
 } from '../main/printers/lan-discovery';
+import * as networkPortLock from '../main/printers/network-port-lock';
+import { printViaNetwork } from '../main/printers/thermal';
+import { start } from './helpers/fake-escpos-printer';
 
 const { assertEqualOrThrow, assertOrThrow } = require('./helpers/test-setup');
 
@@ -359,10 +363,158 @@ async function discoverLanPrintersTest() {
   );
 }
 
+async function networkPortLockWaiterAbortTest() {
+  const events: string[] = [];
+  let releaseOp1!: () => void;
+  const op1Hold = new Promise<void>((resolve) => {
+    releaseOp1 = resolve;
+  });
+
+  const op1 = networkPortLock.withNetworkPortLock('127.0.0.1', 19100, async () => {
+    events.push('op1:start');
+    await op1Hold;
+    events.push('op1:end');
+    return 'op1';
+  });
+
+  await waitFor(() => events.includes('op1:start'), 500);
+
+  const op2Controller = new AbortController();
+  let op2Ran = false;
+  const op2 = networkPortLock
+    .withNetworkPortLock(
+      '127.0.0.1',
+      19100,
+      async () => {
+        op2Ran = true;
+      },
+      op2Controller.signal,
+    )
+    .catch((error: Error) => error.message);
+
+  await delay(10);
+  op2Controller.abort();
+  assertEqualOrThrow(await op2, 'aborted', 'aborted waiter rejects immediately');
+  assertEqualOrThrow(op2Ran, false, 'aborted waiter never invokes callback');
+
+  let op3StartedWhileOp1Held = false;
+  const op3 = networkPortLock.withNetworkPortLock('127.0.0.1', 19100, async () => {
+    if (!events.includes('op1:end')) {
+      op3StartedWhileOp1Held = true;
+    }
+    events.push('op3:start');
+    await delay(10);
+    events.push('op3:end');
+    return 'op3';
+  });
+
+  await delay(30);
+  assertEqualOrThrow(
+    op3StartedWhileOp1Held,
+    false,
+    'Op 3 must not enter the lock while Op 1 still holds it after Op 2 aborts',
+  );
+  assertEqualOrThrow(events.includes('op3:start'), false, 'Op 3 stays queued until Op 1 finishes');
+
+  releaseOp1();
+  const [r1, r3] = await Promise.all([op1, op3]);
+  assertEqualOrThrow(r1, 'op1', 'Op 1 resolves cleanly');
+  assertEqualOrThrow(r3, 'op3', 'Op 3 resolves after Op 1');
+  assertEqualOrThrow(
+    events.join(','),
+    'op1:start,op1:end,op3:start,op3:end',
+    'FIFO exclusion holds across aborted waiters',
+  );
+
+  // Chained waiter aborts with no trailing caller must still clean up endpointChains once Op A settles.
+  let releaseOpA!: () => void;
+  const opAHold = new Promise<void>((resolve) => {
+    releaseOpA = resolve;
+  });
+  const opA = networkPortLock.withNetworkPortLock('127.0.0.1', 19101, () => opAHold);
+  const ctrlB = new AbortController();
+  const ctrlC = new AbortController();
+  const opB = networkPortLock
+    .withNetworkPortLock('127.0.0.1', 19101, async () => undefined, ctrlB.signal)
+    .catch(() => 'aborted');
+  const opC = networkPortLock
+    .withNetworkPortLock('127.0.0.1', 19101, async () => undefined, ctrlC.signal)
+    .catch(() => 'aborted');
+  await delay(10);
+  ctrlB.abort();
+  ctrlC.abort();
+  await Promise.all([opB, opC]);
+  releaseOpA();
+  await opA;
+  await delay(10);
+
+  const pendingCountFn = (networkPortLock as { pendingNetworkEndpointCount?: () => number })
+    .pendingNetworkEndpointCount;
+  assertEqualOrThrow(
+    typeof pendingCountFn === 'function' ? pendingCountFn() : -1,
+    0,
+    'endpoint lock map has zero leaked entries once all chains settle',
+  );
+}
+
+async function singleConnectionPrintProbeAndDiscoveryTest() {
+  const printer = await start({ state: {}, singleConnection: true });
+  try {
+    // 64 KB forces multi-chunk TCP streaming (~240 ms) so discovery and status arrive mid-print.
+    const payload = Buffer.alloc(64 * 1024, 0x41);
+    const printPromise = printViaNetwork('127.0.0.1', printer.port, payload);
+    await waitFor(() => printer.connections >= 1, 1000);
+
+    // Discovery's per-socket connect timeout (100 ms) is shorter than the remaining print time,
+    // proving probePort waits for the endpoint lock before starting its connect timeout.
+    const statusPromise = probeNetworkPrinterStatus('127.0.0.1', printer.port, { timeoutMs: 600 });
+    const scanPromise = scanPort9100(['127.0.0.1'], { port: printer.port, timeoutMs: 100 });
+
+    const [printResult, statusResult, discovered] = await Promise.all([
+      printPromise,
+      statusPromise,
+      scanPromise,
+    ]);
+
+    assertEqualOrThrow(printResult.ok, true, 'concurrent receipt/KOT print job succeeds');
+    assertEqualOrThrow(
+      printer.printed.length,
+      payload.length,
+      'single-connection printer keeps every receipt byte intact',
+    );
+    assertEqualOrThrow(statusResult.reachable, true, 'concurrent status probe stays reachable');
+    assertEqualOrThrow(statusResult.answered, true, 'concurrent status probe gets DLE EOT reply');
+    assertEqualOrThrow(
+      statusToFailureCause(statusResult),
+      null,
+      'concurrent status probe reports no false fault',
+    );
+    assertEqualOrThrow(
+      discovered.join(','),
+      '127.0.0.1',
+      'scanPort9100 still discovers the busy single-connection printer',
+    );
+    assertEqualOrThrow(
+      printer.rejectedConnections,
+      0,
+      'single-connection printer saw zero colliding TCP connections',
+    );
+    assertEqualOrThrow(
+      printer.maxConcurrentConnections,
+      1,
+      'print, status probe, and LAN discovery never overlapped on the socket',
+    );
+  } finally {
+    await printer.close();
+  }
+}
+
 async function main() {
   scanTargetsTest();
   await probePortTest();
   await scanPort9100Test();
+  await networkPortLockWaiterAbortTest();
+  await singleConnectionPrintProbeAndDiscoveryTest();
   await browseMdnsTest();
   await discoverLanPrintersTest();
   console.log('\nAll assertions passed');

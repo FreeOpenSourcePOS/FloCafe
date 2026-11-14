@@ -1,6 +1,10 @@
-// Per-endpoint FIFO mutex for raw TCP printer connections (print jobs and DLE EOT probes).
+// Per-endpoint FIFO mutex for raw TCP printer connections (print jobs, status probes, and discovery).
 
 const endpointChains = new Map<string, Promise<void>>();
+
+export function pendingNetworkEndpointCount(): number {
+  return endpointChains.size;
+}
 
 export function normalizeNetworkHost(host: string): string {
   const trimmed = host.trim();
@@ -33,7 +37,11 @@ export async function withNetworkPortLock<T>(
   const current = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const tail = prev.then(() => current);
+  let prevSettled = false;
+  const tail = prev.then(() => {
+    prevSettled = true;
+    return current;
+  });
   endpointChains.set(key, tail);
 
   try {
@@ -63,8 +71,16 @@ export async function withNetworkPortLock<T>(
     return await fn();
   } finally {
     release();
-    if (endpointChains.get(key) === tail) {
-      endpointChains.delete(key);
+    if (prevSettled) {
+      if (endpointChains.get(key) === tail) {
+        endpointChains.delete(key);
+      }
+    } else {
+      void tail.then(() => {
+        if (endpointChains.get(key) === tail) {
+          endpointChains.delete(key);
+        }
+      });
     }
   }
 }

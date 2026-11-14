@@ -1244,6 +1244,18 @@ async function testExactQuickValuesAndDiscountTargetReset() {
         'PaymentModal Tax sub-panel renders each tax component row once',
       );
 
+      // Same-bill update on an undiscounted bill preserves open 'tax' panel instead of resetting to 'items'
+      const refreshedSameBillProps = {
+        ...taxBillProps,
+        bill: { ...taxBillProps.bill, total: 55.78 },
+      };
+      tree = harness.renderAndSettle(PaymentModal, refreshedSameBillProps);
+      assert.equal(
+        renderToStaticMarkup(tree).split('VAT (5%)').length - 1,
+        1,
+        'Same-bill update preserves open Tax sub-panel when bill has no discount',
+      );
+
       // PrepaidCheckoutModal: non-cash quick tenders, rendered layout, and Done/details discount reset
       const prepaidPath = path.resolve(
         ROOT,
@@ -1350,6 +1362,46 @@ async function testExactQuickValuesAndDiscountTargetReset() {
       harness.cleanupAll();
       if (!hadWindow) delete (globalThis as any).window;
       else (globalThis as any).window = prevWindow;
+    }
+
+    // Opening PaymentModal with initialOverridePin opens mobile details drawer so kitchen-override is visible <lg
+    const overrideHarness = createStatefulHarness();
+    const prevWindowOverride = (globalThis as any).window;
+    if (!hadWindow) {
+      (globalThis as any).window = { addEventListener: () => {}, removeEventListener: () => {} };
+    }
+    try {
+      installCheckoutComponentMocks(overrideHarness);
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const OverridePaymentModal = require(pmPath).default;
+      const overrideTree = overrideHarness.renderAndSettle(OverridePaymentModal, {
+        bill: makeBill('bill-override', 25.0),
+        currency: 'USD',
+        initialOverridePin: '1234',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const overrideDetailsToggle = collectElements(
+        overrideTree,
+        (el) =>
+          el.type === 'button' &&
+          typeof el.props?.['aria-expanded'] === 'boolean' &&
+          String(el.props?.className || '').includes('lg:hidden'),
+      )[0];
+      assert.equal(
+        overrideDetailsToggle?.props?.['aria-expanded'],
+        true,
+        'PaymentModal with initialOverridePin starts with mobile details expanded',
+      );
+      assert.ok(
+        renderToStaticMarkup(overrideTree).includes('kitchenDeliveryOverridePrompt'),
+        'PaymentModal with initialOverridePin renders kitchen-override alert panel',
+      );
+    } finally {
+      overrideHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindowOverride;
     }
   });
   console.log('  ✓ Exact quick-value precision and discount amountTarget reset verified');

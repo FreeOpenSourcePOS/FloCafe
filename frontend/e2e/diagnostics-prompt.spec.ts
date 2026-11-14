@@ -100,13 +100,14 @@ async function setupDiagnosticsPromptRoutes(page: Page, options: PromptRouteOpti
 
 async function openPromptOnSupport(page: Page) {
   await loginAsOwner(page);
-  const shownRequest = page.waitForRequest(
-    (request) =>
-      request.url().includes('/api/settings/diagnostics-prompt') && request.method() === 'POST',
+  const shownResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/settings/diagnostics-prompt') &&
+      response.request().method() === 'POST',
   );
   await page.goto(`${BASE}/support`);
   await expect(page.getByTestId('diagnostics-prompt')).toBeVisible();
-  await shownRequest;
+  await shownResponse;
 }
 
 test('suppresses diagnostics prompt and shown event when cloud deletion blocks consent', async ({

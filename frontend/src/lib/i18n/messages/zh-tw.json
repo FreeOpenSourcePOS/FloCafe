@@ -1372,6 +1372,31 @@
     "genericHint": "以下行包含此熱敏印表機無法渲染的字元。",
     "moreLines": "…以及另外 {count} 行",
     "languageLoadError": "無法載入列印語言套件 \"{languages}\"。請檢查語言套件並重新載入應用程式後重試。",
+    "fix": {
+      "cause": {
+        "paper_out": "在印表機中裝好紙張，然後重新列印。",
+        "cover_open": "關好印表機上蓋，然後重新列印。",
+        "printer_error": "關閉印表機再開啟，然後重新列印。",
+        "offline": "印表機回報處於離線狀態。請檢查紙張、上蓋和電源開關。",
+        "unreachable": "請確認印表機已開機並接好線材。如果位址有變，請從網路上找到的印表機中重新選擇。",
+        "queue_offline": "這台電腦上的列印佇列處於離線狀態。請恢復佇列，然後重新列印。",
+        "queue_missing": "這台印表機已重新命名或移除。請從這台電腦上找到的印表機中重新選擇。",
+        "queue_offline_snmp": "這台印表機不回應 SNMP，因此 Windows 將它標為離線。請開啟印表機內容 > 連接埠 > 設定連接埠，清除「啟用 SNMP 狀態」，然後按一下確定。"
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows 已將這台印表機設為離線工作。請開啟印表機佇列，關閉“使用離線印表機”。",
+          "darwin": "列印佇列可能已暫停。請開啟「系統設定 > 印表機與掃描器」，開啟這台印表機的佇列，然後按一下「繼續」。",
+          "linux": "CUPS 佇列可能已停用。請在終端機執行「cupsenable [印表機名稱]」，或在印表機設定中啟用。"
+        },
+        "queue_unavailable": "列印佇列不接受工作。請在這台電腦上啟用或恢復佇列，然後重新列印。",
+        "driver_error": "列印驅動程式拒絕了原始資料。在 Windows 中，把這台印表機的驅動程式設為「Generic / Text Only」。",
+        "spooler_error": "Windows 列印多工緩衝處理器已停止。請重新啟動列印多工緩衝處理器服務，然後重新列印。",
+        "permission_denied": "這台電腦沒有在此列印的權限。請檢查印表機權限，或詢問系統管理員。",
+        "timeout": "印表機沒有及時回應。請確認它已開機並在同一個網路上，然後重新列印。",
+        "needs_attention": "印表機需要處理。請檢查紙張、上蓋以及印表機上的任何訊息。"
+      }
+    },
     "printerOfflineHint": "印表機無響應。請確認已開機並連線，然後在 Windows 中開啟印表機佇列並關閉“使用離線印表機”。",
     "templateFallback": "所選帳單模板不支援此列印路徑，已使用內建收據版式。"
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "關於 FloCafe",
     "aboutGithub": "GitHub 倉庫",
     "aboutWebsite": "應用程式官網",
+    "printerProfileCredit": "印表機設定資料來自 escpos-printer-db（CC BY 4.0）",
     "account": "帳戶",
     "accountAndApp": "帳戶與應用程式",
     "actionFailed": "失敗",
@@ -2177,6 +2203,7 @@
     "instagramHint": "如已設定，將顯示在列印帳單上",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "安裝在此電腦上",
+    "foundOnNetwork": "在網路上找到的印表機",
     "invalidExportFile": "無效的 FloCafe 匯出檔案",
     "invalidPhoneFormat": "電話號碼格式無效",
     "invoiceNumberIncludePeriod": "發票號包含週期",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "還沒有啟用中的廚師帳戶。請先在員工中新增廚師。",
     "noCloudContactEmail": "無雲端聯絡電子郵件",
     "noInstalledPrinters": "未找到已安裝的印表機。請透過系統設定安裝印表機，然後點選重新整理——網路印表機請使用手動新增。",
+    "noNetworkPrinters": "網路上找不到印表機。",
     "noPairedDevices": "尚未配對任何裝置。",
     "noPrintersConfigured": "尚未設定印表機。",
     "noStaffYet": "尚無員工登入。",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "印表機已設定",
     "printerOnline": "線上",
     "printerPrinting": "列印中",
+    "printerStatusReady": "就緒",
+    "printerStatusPaperLow": "紙張不足",
+    "printerStatusUnknown": "狀態未知",
     "printerQuickAdded": "已新增 {name}",
     "printerSaveFailed": "儲存印表機失敗",
     "printerSaved": "印表機已新增",
@@ -2435,6 +2466,7 @@
     "saving": "儲存中…",
     "savingCloud": "儲存中…",
     "scanningForPrinters": "正在掃描已安裝的印表機…",
+    "scanAgain": "重新掃描",
     "secondLanguageNone": "無",
     "secondReceiptLanguage": "第二收據語言",
     "zReportLanguage": "Z 報表語言",

@@ -38,6 +38,7 @@ import {
   formatKotErrorToast,
   formatReceiptErrorToast,
   extractPrinterErrorMessage,
+  extractPrintErrorToastOptions,
 } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
@@ -403,7 +404,11 @@ export default function OrdersPage() {
     } catch (printErr) {
       if (!isPrintCancelledOnTenantChangeError(printErr)) {
         toast.error(
-          formatKotErrorToast(extractPrinterErrorMessage(printErr), tPos('kotPrintFailed')),
+          formatKotErrorToast(
+            extractPrinterErrorMessage(printErr),
+            tPos('kotPrintFailed'),
+            extractPrintErrorToastOptions(printErr),
+          ),
         );
       }
     }
@@ -1195,7 +1200,7 @@ export default function OrdersPage() {
         if (isPrintCancelledOnTenantChangeError(err)) return;
         const msg = extractPrinterErrorMessage(err);
         toast.error(
-          `${tPos('saleCompletePrintFailed')} ${tPos('saleCompleteReprintNextStep')} ${formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint'))}`,
+          `${tPos('saleCompletePrintFailed')} ${tPos('saleCompleteReprintNextStep')} ${formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint'), extractPrintErrorToastOptions(err))}`,
         );
       }
     }
@@ -1242,7 +1247,13 @@ export default function OrdersPage() {
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
       const detail = extractPrinterErrorMessage(err);
-      toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
+      toast.error(
+        formatReceiptErrorToast(
+          detail,
+          tOrders('printReceiptFailed'),
+          extractPrintErrorToastOptions(err),
+        ),
+      );
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
@@ -1305,7 +1316,13 @@ export default function OrdersPage() {
       fetchOrders();
     } catch (err) {
       const detail = extractPrinterErrorMessage(err);
-      toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
+      toast.error(
+        formatReceiptErrorToast(
+          detail,
+          tOrders('printReceiptFailed'),
+          extractPrintErrorToastOptions(err),
+        ),
+      );
     } finally {
       setPrintingSlipOrderId(null);
     }

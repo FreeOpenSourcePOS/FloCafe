@@ -1372,6 +1372,31 @@
     "genericHint": "Layukan da ke ƙasa suna ɗauke da haruffan da wannan firintar thermal ba za ta iya bugawa ba.",
     "moreLines": "…da ƙarin {count}",
     "languageLoadError": "Ba a iya loda kundin harshen bugawa \"{languages}\" ba. Duba kundin harshen kuma ka sake loda manhajar don sake gwadawa.",
+    "fix": {
+      "cause": {
+        "paper_out": "Saka takarda a firinta, sannan sake bugawa.",
+        "cover_open": "Rufe murfin firinta, sannan sake bugawa.",
+        "printer_error": "Kashe firinta sannan ka kunna ta, sannan sake bugawa.",
+        "offline": "Firinta ta ce ba ta kan layi. Duba takarda, murfi, da makullin wuta.",
+        "unreachable": "Tabbatar firinta a kunne kuma an haɗa igiyar. Idan adireshinta ya canza, sake zaɓe ta daga firintocin da aka samu a cibiyar sadarwa.",
+        "queue_offline": "Layin bugawa a wannan kwamfuta ba ya kan layi. Sake ci gaba da shi, sannan sake bugawa.",
+        "queue_missing": "An canza sunan wannan firinta ko an cire ta. Sake zaɓe ta daga firintocin da aka samu a wannan kwamfuta.",
+        "queue_offline_snmp": "Windows na nuna wannan firinta a matsayin ba ta kan layi domin ba ta amsa SNMP. Buɗe Properties na firinta > Ports > Configure Port, cire \"SNMP Status Enabled\", ka danna OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows ya sa wannan firinta ta yi aiki ba tare da layi ba. Buɗe layin firinta ka kashe \"Use Printer Offline\".",
+          "darwin": "Wataƙila an dakatar da layin bugawa. Buɗe System Settings > Printers & Scanners, buɗe layin wannan firinta, ka danna Resume.",
+          "linux": "Wataƙila an kashe layin CUPS. A terminal gudanar da \"cupsenable [sunan firinta]\", ko ka kunna shi a saitunan firinta."
+        },
+        "queue_unavailable": "Layin bugawa ba ya karɓar ayyuka. Kunna ko sake ci gaba da layin a wannan kwamfuta, sannan sake bugawa.",
+        "driver_error": "Direban bugawa ya ƙi bayanan danyen. A Windows, saita direban wannan firinta zuwa \"Generic / Text Only\".",
+        "spooler_error": "Sabis ɗin Print Spooler na Windows ya tsaya. Sake kunna sabis ɗin Print Spooler, sannan sake bugawa.",
+        "permission_denied": "Ba a ba wannan kwamfuta izinin bugawa a nan ba. Duba izinin firinta, ko ka tambayi mai gudanarwa.",
+        "timeout": "Firinta ba ta amsa cikin lokaci ba. Tabbatar tana kunne kuma tana cikin wannan cibiyar sadarwa, sannan sake bugawa.",
+        "needs_attention": "Firinta na buƙatar kulawa. Duba takarda, murfi, da duk wani saƙo a kan firinta."
+      }
+    },
     "printerOfflineHint": "Firinta ba ta amsawa. Tabbatar a kunne take kuma a haɗe take, sannan a Windows ka buɗe layin firintar ka kashe \"Use Printer Offline\".",
     "templateFallback": "Samfurin lissafin da aka zaɓa ba ya aiki a wannan hanyar bugawa, don haka an yi amfani da tsarin rasiti na cikin manhaja."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Game da FloCafe",
     "aboutGithub": "Ma'adanar GitHub",
     "aboutWebsite": "Shafin Yanar Gizo na Manhaja",
+    "printerProfileCredit": "Bayanan firinta daga escpos-printer-db (CC BY 4.0)",
     "account": "Asusu",
     "accountAndApp": "Asusu da Manhaja",
     "actionFailed": "Ya gaza",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Ana nunawa a kan lissafan da aka buga, idan an saita",
     "instagramPlaceholder": "@kofinka",
     "installedOnThisComputer": "An girka a kan wannan kwamfutar",
+    "foundOnNetwork": "Firintocin da aka samu a cibiyar sadarwa",
     "invalidExportFile": "Fayil ɗin fitarwa na FloCafe ba daidai ba ne",
     "invalidPhoneFormat": "Tsarin lambar waya ba daidai ba ne",
     "invoiceNumberIncludePeriod": "Saka lokaci a cikin lambar lissafi",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Babu asusun masu girki masu aiki tukuna. Ƙara mai girki a ƙarƙashin Ma'aikata da farko.",
     "noCloudContactEmail": "Babu imel na tuntuɓar girgije",
     "noInstalledPrinters": "Ba a sami firintocin da aka girka ba. Girka firintarka ta saitunan kwamfuta, sannan ka danna Sabunta — ko yi amfani da Ƙara da Hannu don firintar hanyar sadarwa.",
+    "noNetworkPrinters": "Ba a sami firinta a cibiyar sadarwa ba.",
     "noPairedDevices": "Ba a haɗa na'ura ko ɗaya ba tukuna.",
     "noPrintersConfigured": "Ba a saita firinta ko ɗaya ba tukuna.",
     "noStaffYet": "Babu asusun shiga na ma'aikata tukuna.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "An saita firinta",
     "printerOnline": "Tana kan layi",
     "printerPrinting": "Ana bugawa",
+    "printerStatusReady": "A shirye",
+    "printerStatusPaperLow": "Takarda ta yi kadan",
+    "printerStatusUnknown": "Ba a san yanayi ba",
     "printerQuickAdded": "An ƙara {name}",
     "printerSaveFailed": "An kasa adana firinta",
     "printerSaved": "An ƙara firinta",
@@ -2435,6 +2466,7 @@
     "saving": "Ana adanawa...",
     "savingCloud": "Ana adanawa…",
     "scanningForPrinters": "Ana nema firintocin da aka girka…",
+    "scanAgain": "Sake dubawa",
     "secondLanguageNone": "Babu",
     "secondReceiptLanguage": "Harshen rasiti na biyu",
     "zReportLanguage": "Harshen rahoton Z",

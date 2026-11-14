@@ -1122,7 +1122,10 @@ export default function POSPage() {
       });
       const fallbackKotLabel = t('kotPrintFailed');
       const userMessage = printFailure.hasSpecificDetail
-        ? formatKotErrorToast(printFailure.detail, t('saleCompletePrintFailed'))
+        ? formatKotErrorToast(printFailure.detail, t('saleCompletePrintFailed'), {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          })
         : t('saleCompletePrintFailed');
       reportOrderFailure({
         code: printFailure.code,
@@ -1150,6 +1153,10 @@ export default function POSPage() {
         formatKotErrorToast(
           printFailure.hasSpecificDetail ? printFailure.detail : fallbackKotLabel,
           t('saleCompletePrintFailed'),
+          {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          },
         ),
       );
     }
@@ -1241,7 +1248,10 @@ export default function POSPage() {
       });
       const fallbackReceiptLabel = t('receiptPrintFailed');
       const userMessage = printFailure.hasSpecificDetail
-        ? formatReceiptErrorToast(printFailure.detail, t('saleCompletePrintFailed'))
+        ? formatReceiptErrorToast(printFailure.detail, t('saleCompletePrintFailed'), {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          })
         : t('saleCompletePrintFailed');
       reportOrderFailure({
         code: printFailure.code,
@@ -1269,6 +1279,10 @@ export default function POSPage() {
         formatReceiptErrorToast(
           printFailure.hasSpecificDetail ? printFailure.detail : fallbackReceiptLabel,
           t('saleCompletePrintFailed'),
+          {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          },
         ),
       );
     }

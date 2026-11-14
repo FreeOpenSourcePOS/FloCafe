@@ -1372,6 +1372,31 @@
     "genericHint": "Các dòng bên dưới chứa ký tự mà máy in nhiệt này không thể hiển thị.",
     "moreLines": "…và {count} dòng khác",
     "languageLoadError": "Không thể tải (các) gói ngôn ngữ in \"{languages}\". Hãy kiểm tra gói ngôn ngữ và tải lại ứng dụng để thử lại.",
+    "fix": {
+      "cause": {
+        "paper_out": "Cho giấy vào máy in, rồi in lại.",
+        "cover_open": "Đóng nắp máy in, rồi in lại.",
+        "printer_error": "Tắt rồi bật lại máy in, sau đó in lại.",
+        "offline": "Máy in báo đang ngoại tuyến. Kiểm tra giấy, nắp máy và công tắc nguồn.",
+        "unreachable": "Kiểm tra máy in đã bật và cáp đã kết nối. Nếu địa chỉ đã thay đổi, hãy chọn lại máy in trong danh sách máy in tìm thấy trên mạng.",
+        "queue_offline": "Hàng đợi in trên máy tính này đang ngoại tuyến. Hãy tiếp tục hàng đợi rồi in lại.",
+        "queue_missing": "Máy in này đã được đổi tên hoặc bị xóa. Hãy chọn lại trong danh sách máy in tìm thấy trên máy tính này.",
+        "queue_offline_snmp": "Windows đánh dấu máy in này là ngoại tuyến vì máy không trả lời SNMP. Mở Thuộc tính máy in > Cổng > Cấu hình cổng, bỏ chọn \"Bật trạng thái SNMP\" và bấm OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows đang đặt máy in này ở chế độ ngoại tuyến. Mở hàng đợi của máy in và tắt \"Dùng máy in ngoại tuyến\".",
+          "darwin": "Hàng đợi in có thể đang tạm dừng. Mở System Settings > Printers & Scanners, mở hàng đợi của máy in này và bấm Resume.",
+          "linux": "Hàng đợi CUPS có thể đang bị tắt. Chạy \"cupsenable [tên máy in]\" trong terminal, hoặc bật lại trong phần cài đặt máy in."
+        },
+        "queue_unavailable": "Hàng đợi in không nhận việc. Hãy bật hoặc tiếp tục hàng đợi trên máy tính này rồi in lại.",
+        "driver_error": "Trình điều khiển in từ chối dữ liệu thô. Trên Windows, đặt trình điều khiển của máy in này thành \"Generic / Text Only\".",
+        "spooler_error": "Dịch vụ Print Spooler của Windows đã dừng. Khởi động lại dịch vụ Print Spooler rồi in lại.",
+        "permission_denied": "Máy tính này không được phép in ở đây. Kiểm tra quyền của máy in, hoặc hỏi quản trị viên.",
+        "timeout": "Máy in không trả lời kịp. Kiểm tra máy đã bật và cùng mạng, rồi in lại.",
+        "needs_attention": "Máy in cần được chú ý. Kiểm tra giấy, nắp máy và thông báo trên máy in."
+      }
+    },
     "printerOfflineHint": "Máy in không phản hồi. Hãy đảm bảo máy in đã bật và kết nối, rồi trên Windows mở hàng đợi máy in và tắt \"Dùng máy in ngoại tuyến\".",
     "templateFallback": "Mẫu hóa đơn đã chọn không được hỗ trợ trên đường dẫn in này, nên đã dùng bố cục biên nhận tích hợp."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Giới thiệu FloCafe",
     "aboutGithub": "Kho mã nguồn GitHub",
     "aboutWebsite": "Trang web ứng dụng",
+    "printerProfileCredit": "Hồ sơ máy in từ escpos-printer-db (CC BY 4.0)",
     "account": "Tài khoản",
     "accountAndApp": "Tài khoản và ứng dụng",
     "actionFailed": "Thất bại",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Hiển thị trên hóa đơn đã in nếu được đặt",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "Đã cài đặt trên máy tính này",
+    "foundOnNetwork": "Máy in tìm thấy trên mạng",
     "invalidExportFile": "Tệp xuất FloCafe không hợp lệ",
     "invalidPhoneFormat": "Định dạng số điện thoại không hợp lệ",
     "invoiceNumberIncludePeriod": "Đưa kỳ vào số hóa đơn",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Chưa có tài khoản đầu bếp đang hoạt động. Hãy thêm đầu bếp trong Nhân viên trước.",
     "noCloudContactEmail": "Chưa có email liên hệ đám mây",
     "noInstalledPrinters": "Không tìm thấy máy in đã cài đặt. Hãy cài máy in qua cài đặt hệ thống rồi nhấn Làm mới, hoặc dùng Thêm thủ công cho máy in mạng.",
+    "noNetworkPrinters": "Không tìm thấy máy in nào trên mạng.",
     "noPairedDevices": "Chưa có thiết bị nào được ghép nối.",
     "noPrintersConfigured": "Chưa cấu hình máy in.",
     "noStaffYet": "Chưa có tài khoản nhân viên.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Máy in đã được cấu hình",
     "printerOnline": "Trực tuyến",
     "printerPrinting": "Đang in",
+    "printerStatusReady": "Sẵn sàng",
+    "printerStatusPaperLow": "Sắp hết giấy",
+    "printerStatusUnknown": "Không rõ trạng thái",
     "printerQuickAdded": "Đã thêm {name}",
     "printerSaveFailed": "Không thể lưu máy in",
     "printerSaved": "Đã thêm máy in",
@@ -2446,6 +2477,7 @@
     "saving": "Đang lưu...",
     "savingCloud": "Đang lưu…",
     "scanningForPrinters": "Đang tìm máy in đã cài đặt…",
+    "scanAgain": "Quét lại",
     "secondLanguageNone": "Không có",
     "secondReceiptLanguage": "Ngôn ngữ biên nhận thứ hai",
     "zReportLanguage": "Ngôn ngữ báo cáo Z",

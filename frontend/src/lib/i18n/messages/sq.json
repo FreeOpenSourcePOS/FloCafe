@@ -1372,6 +1372,31 @@
     "genericHint": "Vijat më poshtë përmbajnë karaktere që ky printer termik nuk mund t’i rendërtojë.",
     "moreLines": "...dhe {count} të tjera",
     "languageLoadError": "Paketat e gjuhëve të printimit \"{languages}\" nuk mund të ngarkohen. Kontrolloni paketën e gjuhës dhe ringarkoni aplikacionin për të riprovuar.",
+    "fix": {
+      "cause": {
+        "paper_out": "Vendosni letër në printer dhe shtypni përsëri.",
+        "cover_open": "Mbyllni kapakun e printerit dhe shtypni përsëri.",
+        "printer_error": "Fikeni printerin dhe ndizeni përsëri, pastaj shtypni përsëri.",
+        "offline": "Printeri raporton se është jashtë linje. Kontrolloni letrën, kapakun dhe çelësin e ndezjes.",
+        "unreachable": "Kontrolloni që printeri të jetë ndezur dhe kablloja e lidhur. Nëse adresa ka ndryshuar, zgjidheni përsëri nga printerat e gjetur në rrjet.",
+        "queue_offline": "Radha e shtypjes në këtë kompjuter është jashtë linje. Riktheni atë dhe shtypni përsëri.",
+        "queue_missing": "Ky printer u riemërua ose u hoq. Zgjidheni përsëri nga printerat e gjetur në këtë kompjuter.",
+        "queue_offline_snmp": "Windows e shënon këtë printer si jashtë linje sepse nuk përgjigjet ndaj SNMP. Hapni Printer properties > Ports > Configure Port, hiqni \"SNMP Status Enabled\" dhe klikoni OK."
+      },
+      "class": {
+        "offline": {
+          "win32": "Windows e ka vendosur këtë printer të punojë jashtë linje. Hapni radhën e printerit dhe çaktivizoni \"Përdorni printerin jashtë linje\".",
+          "darwin": "Radha e shtypjes mund të jetë ndalur. Hapni System Settings > Printers & Scanners, hapni radhën e këtij printeri dhe klikoni Resume.",
+          "linux": "Radha CUPS mund të jetë çaktivizuar. Ekzekutoni \"cupsenable [emri i printerit]\" në terminal ose aktivizojeni në cilësimet e printerit."
+        },
+        "queue_unavailable": "Radha e shtypjes nuk pranon punë. Aktivizoni ose riktheni radhën në këtë kompjuter dhe shtypni përsëri.",
+        "driver_error": "Drejtuesi i shtypjes refuzoi të dhënat e papërpunuara. Në Windows, vendosni drejtuesin e këtij printeri në \"Generic / Text Only\".",
+        "spooler_error": "Shërbimi Print Spooler i Windows u ndal. Rinisni shërbimin Print Spooler dhe shtypni përsëri.",
+        "permission_denied": "Ky kompjuter nuk ka leje të shtypë këtu. Kontrolloni lejet e printerit ose pyesni një administrator.",
+        "timeout": "Printeri nuk u përgjigj në kohë. Kontrolloni që të jetë ndezur dhe në të njëjtin rrjet, pastaj shtypni përsëri.",
+        "needs_attention": "Printeri kërkon vëmendje. Kontrolloni letrën, kapakun dhe çdo mesazh në printer."
+      }
+    },
     "printerOfflineHint": "Printeri nuk po përgjigjet. Sigurohuni që të jetë ndezur dhe lidhur, më pas në Windows hapni radhën e printerit dhe çaktivizoni \"Përdorni printerin jashtë linje\".",
     "templateFallback": "Shablloni i zgjedhur i dëftesës nuk mbështetet në këtë shteg printimi, prandaj u përdor paraqitja e integruar e dëftesës."
   },
@@ -1809,6 +1834,7 @@
     "aboutFloCafe": "Rreth FloCafe",
     "aboutGithub": "Repozitori GitHub",
     "aboutWebsite": "Uebfaqja e aplikacionit",
+    "printerProfileCredit": "Profile printeri nga escpos-printer-db (CC BY 4.0)",
     "account": "Llogaria",
     "accountAndApp": "Llogaria dhe aplikacioni",
     "actionFailed": "Dështoi",
@@ -2177,6 +2203,7 @@
     "instagramHint": "Shfaqet në dëftesat e printuara, nëse është vendosur",
     "instagramPlaceholder": "@yourcafe",
     "installedOnThisComputer": "Instaluar në këtë kompjuter",
+    "foundOnNetwork": "Printera të gjetur në rrjet",
     "invalidExportFile": "Skedar i pavlefshëm i eksportit FloCafe",
     "invalidPhoneFormat": "Format i pavlefshëm i numrit të telefonit",
     "invoiceNumberIncludePeriod": "Përfshini periudhën në numrin e faturës",
@@ -2291,6 +2318,7 @@
     "noChefsYet": "Ende nuk ka llogari aktive të kuzhinierëve. Fillimisht shtoni një kuzhinier nën Stafi.",
     "noCloudContactEmail": "Nuk ka email kontakti në renë kompjuterike",
     "noInstalledPrinters": "Nuk u gjetën printera të instaluar. Instaloni printerin tuaj nëpërmjet cilësimeve të sistemit, më pas klikoni Rifresko — ose përdorni Shto manualisht për një printer rrjeti.",
+    "noNetworkPrinters": "Nuk u gjet asnjë printer në rrjet.",
     "noPairedDevices": "Asnjë pajisje nuk është çiftuar ende.",
     "noPrintersConfigured": "Nuk është konfiguruar ende asnjë printer.",
     "noStaffYet": "Ende nuk ka hyrje të stafit.",
@@ -2385,6 +2413,9 @@
     "printerConfigured": "Printeri është konfiguruar",
     "printerOnline": "Në lidhje",
     "printerPrinting": "Shtypje",
+    "printerStatusReady": "Gati",
+    "printerStatusPaperLow": "Letra po mbaron",
+    "printerStatusUnknown": "Statusi i panjohur",
     "printerQuickAdded": "{name} u shtua",
     "printerSaveFailed": "Ruajtja e printerit dështoi",
     "printerSaved": "Printeri u shtua",
@@ -2446,6 +2477,7 @@
     "saving": "Po ruan...",
     "savingCloud": "Po ruan…",
     "scanningForPrinters": "Po skanon për printera të instaluar…",
+    "scanAgain": "Kërko përsëri",
     "secondLanguageNone": "Asnjë",
     "secondReceiptLanguage": "Gjuha e dytë e dëftesës",
     "zReportLanguage": "Gjuha e raportit Z",

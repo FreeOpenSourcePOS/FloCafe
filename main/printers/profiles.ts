@@ -1,3 +1,4 @@
+import { findDbProfile, findDbProfileById } from './capability-db';
 import {
   GENERIC_THERMAL_CAPABILITIES,
   LATIN_THERMAL_CAPABILITIES,
@@ -249,12 +250,19 @@ export function matchSupportedPrinterProfile(
 export function resolvePrinterProfile(printer: any): SupportedPrinterProfile {
   const explicit = printer?.profile_id || printer?.profileId;
   if (explicit) {
-    const profile = SUPPORTED_PRINTER_PROFILES.find((p) => p.id === explicit);
+    const profile =
+      SUPPORTED_PRINTER_PROFILES.find((p) => p.id === explicit) ?? findDbProfileById(explicit);
     if (profile) return profile;
   }
 
   const matched = matchSupportedPrinterProfile(printer?.name, printer?.make, printer?.model);
   if (matched) return matched;
+
+  // Fallback only: shipped profiles always win, and an unmatched name still reaches the width step.
+  const dbProfile = findDbProfile(
+    [printer?.name, printer?.make, printer?.model].filter(Boolean).join(' '),
+  );
+  if (dbProfile) return dbProfile;
 
   const paperWidth = printer?.paper_width || printer?.paperWidth;
   return String(paperWidth || '').startsWith('58mm')

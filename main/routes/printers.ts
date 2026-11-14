@@ -23,7 +23,15 @@ import {
   escPosToText,
   printMenuDocument,
   validateNetworkPrinterTarget,
+  classifyPrintFailure,
 } from '../printers/thermal';
+import {
+  discoverHandler,
+  invalidatePrinterDetectCache,
+  printerStatusHandler,
+  testPrintCause,
+  isPhysicalFault,
+} from './printer-diagnostics';
 import {
   buildDeliverySlipPrintData,
   type DeliverySlipOrderRow,
@@ -52,6 +60,7 @@ import {
   capabilitiesForPrinter,
   isValidPrinterProfileId,
 } from '../printers/profiles';
+import { findDbProfileById } from '../printers/capability-db';
 import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
 import { getOpenSession, listOpenSessions } from '../services/shift-session-gate';
 import {
@@ -116,7 +125,12 @@ function validatePrinterFields(body: any, existing?: any): string | null {
     body.profile_id !== undefined &&
     body.profile_id !== null &&
     body.profile_id !== '' &&
-    !isValidPrinterProfileId(body.profile_id)
+    !isValidPrinterProfileId(body.profile_id) &&
+    !(
+      existing?.profile_id &&
+      body.profile_id === existing.profile_id &&
+      Boolean(findDbProfileById(body.profile_id))
+    )
   ) {
     return 'profile_id must be a supported printer profile ID';
   }
@@ -268,6 +282,7 @@ router.get(
   requirePermission('printers.manage'),
   asyncHandler(async (req: Request, res: Response) => {
     try {
+      invalidatePrinterDetectCache();
       const printers = await detectConnectedPrinters(getHttpRequestSignal(req));
       console.log('[Printer] Detected printers:', printers);
       res.json({ printers });
@@ -289,6 +304,12 @@ router.get(
 router.get('/supported', requirePermission('printers.manage'), (_req: Request, res: Response) => {
   res.json({ printers: getSupportedPrinterProfiles() });
 });
+
+// GET /api/printers/discover — LAN scan; must stay above /:id
+router.get('/discover', requirePermission('printers.manage'), asyncHandler(discoverHandler));
+
+// GET /api/printers/:id/status
+router.get('/:id/status', requirePermission('printers.manage'), asyncHandler(printerStatusHandler));
 
 // GET /api/printers/:id
 router.get('/:id', requirePermission('printers.manage'), (req: Request, res: Response) => {
@@ -341,13 +362,36 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
 
     const db = getDatabase();
     const id = randomUUID();
+    const model =
+      typeof req.body.model === 'string' && req.body.model.trim().length > 0
+        ? req.body.model.trim()
+        : undefined;
     const normalizedProfileId =
       typeof profile_id === 'string' && profile_id.trim().length > 0 ? profile_id.trim() : null;
     const resolvedProfile = resolvePrinterProfile({
       name,
+      model,
       profile_id: normalizedProfileId,
     });
+    let persistedProfileId = normalizedProfileId;
+    if (
+      !persistedProfileId &&
+      model &&
+      resolvedProfile.id !== 'generic-escpos-80' &&
+      resolvedProfile.id !== 'generic-escpos-58'
+    ) {
+      const nameOnlyProfile = resolvePrinterProfile({ name });
+      if (nameOnlyProfile.id !== resolvedProfile.id) {
+        persistedProfileId = resolvedProfile.id;
+      }
+    }
     const resolvedPaperWidth = paper_width ?? resolvedProfile.defaultPaperWidth ?? 'cols-42';
+    const normalizedIp =
+      connection_type === 'network' &&
+      typeof ip_address === 'string' &&
+      ip_address.trim().length > 0
+        ? ip_address.trim()
+        : null;
 
     db.transaction(() => {
       const existingPrinters = db.prepare('SELECT COUNT(*) as count FROM printers').get() as any;
@@ -361,11 +405,11 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
         id,
         name,
         connection_type,
-        ip_address ?? null,
+        normalizedIp,
         port ?? 9100,
         resolvedPaperWidth,
         text_size ?? 'normal',
-        normalizedProfileId,
+        persistedProfileId,
         shouldBeDefault ? 1 : 0,
         cash_drawer_pulse_enabled === true ? 1 : 0,
         now(),
@@ -408,7 +452,12 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
     db.transaction(() => {
       const updatedConnectionType =
         connection_type !== undefined ? connection_type : existing.connection_type;
-      const updatedIpAddress = ip_address !== undefined ? ip_address : existing.ip_address;
+      const rawUpdatedIp = ip_address !== undefined ? ip_address : existing.ip_address;
+      const trimmedUpdatedIp =
+        typeof rawUpdatedIp === 'string' && rawUpdatedIp.trim().length > 0
+          ? rawUpdatedIp.trim()
+          : null;
+      const updatedIpAddress = updatedConnectionType === 'network' ? trimmedUpdatedIp : null;
       const updatedProfileId =
         profile_id !== undefined
           ? typeof profile_id === 'string' && profile_id.trim().length > 0
@@ -424,7 +473,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
       `).run(
         name !== undefined ? name : existing.name,
         updatedConnectionType,
-        updatedIpAddress === undefined ? null : updatedIpAddress,
+        updatedIpAddress,
         port !== undefined ? port : existing.port,
         paper_width !== undefined ? paper_width : existing.paper_width,
         text_size !== undefined ? text_size : existing.text_size,
@@ -557,7 +606,7 @@ router.post(
         capabilities,
         { rasterProbe: req.body?.rasterProbe === true },
       );
-      let result: { ok: boolean; detail?: string } = { ok: false };
+      let result: { ok: boolean; detail?: string; failureClass?: string } = { ok: false };
 
       switch (printer.connection_type) {
         case 'network':
@@ -572,19 +621,25 @@ router.post(
           break;
         case 'usb':
           result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
+          invalidatePrinterDetectCache();
           break;
         case 'webusb':
           // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
           return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
       }
 
-      if (result.ok) {
+      // A network printer that answers with a fault that drops bytes did not print.
+      const cause = await testPrintCause(printer, getHttpRequestSignal(req));
+
+      if (result.ok && !isPhysicalFault(cause)) {
         res.json({ success: true });
       } else {
         // Surface the specific printer failure reason rather than a generic message.
         res.status(502).json({
           error: result.detail || 'Printer did not respond or print failed',
           detail: result.detail,
+          failure_class: result.failureClass ?? classifyPrintFailure(result.detail),
+          cause,
         });
       }
     } catch (error: any) {
@@ -704,6 +759,7 @@ router.post(
           break;
         case 'usb':
           result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
+          invalidatePrinterDetectCache();
           break;
         case 'webusb':
           return res.json({
@@ -1226,11 +1282,13 @@ router.post(
       if (result.ok) {
         res.json({ success: true, warnings: result.warnings || [] });
       } else {
+        const rawConnectionType = (printer as { connection_type?: unknown } | null | undefined)
+          ?.connection_type;
         const connectionType =
-          (printer as any)?.connection_type === 'network' ||
-          (printer as any)?.connection_type === 'usb' ||
-          (printer as any)?.connection_type === 'webusb'
-            ? (printer as any).connection_type
+          rawConnectionType === 'network' ||
+          rawConnectionType === 'usb' ||
+          rawConnectionType === 'webusb'
+            ? rawConnectionType
             : 'unknown';
         res.status(502).json({
           error: result.detail || 'Print failed. Check printer connection and settings.',
@@ -1618,10 +1676,17 @@ router.post(
       if (result.ok) {
         return res.json({ success: true, warnings: result.warnings || [] });
       }
+      const connectionType =
+        (printer as any)?.connection_type === 'network' ||
+        (printer as any)?.connection_type === 'usb' ||
+        (printer as any)?.connection_type === 'webusb'
+          ? (printer as any).connection_type
+          : 'unknown';
       return res.status(502).json({
         error: result.detail || 'Delivery slip print failed. Check printer connection.',
         detail: result.detail,
         failure_class: result.failureClass,
+        connection_type: connectionType,
         code: result.code,
         correlation_id: result.correlationId,
         stage: result.stage,

@@ -1062,6 +1062,16 @@ async function main() {
       true,
       'Idempotency-Key replay sets idempotentReplay = true',
     );
+    assertEqualOrThrow(
+      Array.isArray(idemReplay.data.bill.payment_details),
+      true,
+      'Idempotency-Key replay returns parsed payment_details array',
+    );
+    assertEqualOrThrow(
+      idemReplay.data.bill.payment_details[0]?.method,
+      'card',
+      'Idempotency-Key replay returns parsed payment line method',
+    );
 
     // Natural replay without Idempotency-Key
     const naturalReplay = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
@@ -1472,6 +1482,16 @@ async function main() {
       idemReplayAfterShiftClose.data.bill.payment_method_correction?.reason,
       'shift_closed',
       'Idempotency-Key replay after shift close refreshes payment_method_correction.reason to shift_closed',
+    );
+    assertEqualOrThrow(
+      Array.isArray(idemReplayAfterShiftClose.data.bill.payment_details),
+      true,
+      'Idempotency-Key replay after shift close returns parsed payment_details array',
+    );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.bill.payment_details[0]?.method,
+      'card',
+      'Idempotency-Key replay after shift close returns parsed payment line method',
     );
 
     // ── 12. Open shift 2, pay splitBillB, and verify split-sibling guard ──

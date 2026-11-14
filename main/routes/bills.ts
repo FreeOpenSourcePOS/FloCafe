@@ -6335,7 +6335,7 @@ router.patch(
             const cached = JSON.parse(existingIdem.response_json);
             const refreshedBill =
               cached?.bill && typeof cached.bill === 'object'
-                ? withPaymentMethodCorrection(db, bill)
+                ? withPaymentMethodCorrection(db, parseRowJson(bill))
                 : cached?.bill;
             return {
               ...cached,

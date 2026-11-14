@@ -1,3 +1,5 @@
+import { ORDER_CREATE_DISPLAY_CODES } from './order-create-display-codes';
+
 export type OperationOutcome = 'not_applied' | 'applied' | 'partial' | 'unknown' | 'not_applicable';
 export type OperationFailureClass = 'expected_rejection' | 'unexpected_failure';
 
@@ -309,13 +311,31 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     },
   },
   {
+    capture_point: 'fc.backend.order.create.addon_group_validation',
+    reason_code: 'order.addon_selection_required',
+    operation: 'order.create',
+    stage: 'validation',
+    classification: 'expected_rejection',
+    outcomes: ['not_applied'],
+    facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.order.create.addon_item_validation',
+    reason_code: 'order.addon_unavailable',
+    operation: 'order.create',
+    stage: 'validation',
+    classification: 'expected_rejection',
+    outcomes: ['not_applied'],
+    facts: NO_FACTS,
+  },
+  {
     capture_point: 'fc.backend.order.create.other_validation',
     reason_code: 'validation.rejected',
     operation: 'order.create',
     stage: 'validation',
     classification: 'expected_rejection',
     outcomes: ['not_applied'],
-    facts: NO_FACTS,
+    facts: { display_code: { type: 'enum', values: ORDER_CREATE_DISPLAY_CODES } },
   },
   {
     capture_point: 'fc.backend.order.create.persistence',

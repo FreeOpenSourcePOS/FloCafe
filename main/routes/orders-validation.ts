@@ -11,12 +11,21 @@ const DEFAULT_MAX_DELIVERY_NOTE_LENGTH = 200;
 /** Built-in methods a courier can collect at the door; wallet and loyalty settle in-store. */
 const COURIER_COLLECTIBLE_METHODS = ['cash', 'card'];
 
+/** A refusal the create path reads by code instead of matching on the message. */
+function diagnosticError(message: string, diagnosticCode: string, statusCode?: number): Error {
+  return Object.assign(new Error(message), {
+    ...(statusCode ? { statusCode } : {}),
+    diagnosticCode,
+  });
+}
+
 function validateNoteLength(
   db: SettingsLookup,
   settingKey: string,
   defaultLimit: number,
   notes: string | null | undefined,
   label: string,
+  diagnosticCode: string,
 ): void {
   if (!notes) return;
   const rawValue = (
@@ -27,7 +36,10 @@ function validateNoteLength(
   const parsed = parseInt(rawValue || '', 10);
   const maxLength = Number.isFinite(parsed) && parsed > 0 ? parsed : defaultLimit;
   if (notes.length > maxLength) {
-    throw new Error(`${label} exceed maximum length of ${maxLength} characters`);
+    throw diagnosticError(
+      `${label} exceed maximum length of ${maxLength} characters`,
+      diagnosticCode,
+    );
   }
 }
 
@@ -38,6 +50,7 @@ export function validateOrderNotes(db: SettingsLookup, notes: string | null | un
     DEFAULT_MAX_ORDER_NOTES_LENGTH,
     notes,
     'Order notes',
+    'ORDER_NOTES_TOO_LONG',
   );
 }
 
@@ -48,6 +61,7 @@ export function validateItemNotes(db: SettingsLookup, notes: string | null | und
     DEFAULT_MAX_ITEM_NOTES_LENGTH,
     notes,
     'Item notes',
+    'ITEM_NOTES_TOO_LONG',
   );
 }
 
@@ -62,6 +76,7 @@ export function validateCustomerAddress(
     DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH,
     address,
     'Customer address',
+    'CUSTOMER_ADDRESS_TOO_LONG',
   );
 }
 
@@ -76,6 +91,7 @@ export function validateDeliveryAddress(
     DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH,
     address,
     'Delivery address',
+    'DELIVERY_ADDRESS_TOO_LONG',
   );
 }
 
@@ -87,6 +103,7 @@ export function validateDeliveryNote(db: SettingsLookup, note: string | null | u
     DEFAULT_MAX_DELIVERY_NOTE_LENGTH,
     note,
     'Delivery note',
+    'DELIVERY_NOTE_TOO_LONG',
   );
 }
 
@@ -96,7 +113,12 @@ export function validateDeliveryNote(db: SettingsLookup, note: string | null | u
  */
 export function resolveExpectedPaymentMethod(db: SettingsLookup, value: unknown): string | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string') throw new Error('expected_payment_method must be a string');
+  if (typeof value !== 'string') {
+    throw diagnosticError(
+      'expected_payment_method must be a string',
+      'EXPECTED_PAYMENT_METHOD_INVALID',
+    );
+  }
   const method = value.trim();
   const normalized = method.toLowerCase();
   if (normalized === '' || normalized === 'unknown') return null;
@@ -106,8 +128,9 @@ export function resolveExpectedPaymentMethod(db: SettingsLookup, value: unknown)
     .prepare('SELECT name FROM payment_methods WHERE name = ? COLLATE NOCASE AND is_active = 1')
     .get(method) as { name?: string } | undefined;
   if (!custom?.name) {
-    throw new Error(
+    throw diagnosticError(
       'expected_payment_method must be unknown, pending, cash, card, or an active payment method',
+      'EXPECTED_PAYMENT_METHOD_INVALID',
     );
   }
   return custom.name;
@@ -127,20 +150,32 @@ export function resolveExpectedPaymentMethodIdentity(
 ): { id: number; name: string } | null {
   if (methodId === undefined || methodId === null) return null;
   if (typeof methodId !== 'number' || !Number.isSafeInteger(methodId) || methodId <= 0) {
-    throw new Error('expected_payment_method_id must be a positive integer');
+    throw diagnosticError(
+      'expected_payment_method_id must be a positive integer',
+      'EXPECTED_PAYMENT_METHOD_INVALID',
+    );
   }
   const method = db
     .prepare('SELECT id, name FROM payment_methods WHERE id = ? AND is_active = 1')
     .get(methodId) as { id: number; name: string } | undefined;
   if (!method) {
-    throw new Error('expected_payment_method_id must reference an active payment method');
+    throw diagnosticError(
+      'expected_payment_method_id must reference an active payment method',
+      'EXPECTED_PAYMENT_METHOD_INVALID',
+    );
   }
   if (methodName !== undefined && methodName !== null && typeof methodName !== 'string') {
-    throw new Error('expected_payment_method must be a string');
+    throw diagnosticError(
+      'expected_payment_method must be a string',
+      'EXPECTED_PAYMENT_METHOD_INVALID',
+    );
   }
   const suppliedName = typeof methodName === 'string' ? methodName.trim() : '';
   if (suppliedName && suppliedName.toLowerCase() !== method.name.toLowerCase()) {
-    throw new Error('expected_payment_method does not match expected_payment_method_id');
+    throw diagnosticError(
+      'expected_payment_method does not match expected_payment_method_id',
+      'EXPECTED_PAYMENT_METHOD_INVALID',
+    );
   }
   return { id: method.id, name: method.name };
 }
@@ -156,9 +191,10 @@ export function validateProductQuantity(
 ): asserts quantity is number {
   const productName = product.name || 'product';
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
-    throw Object.assign(
-      new Error(`Invalid quantity for ${productName}: must be a positive number`),
-      { statusCode: 400, diagnosticCode: 'quantity_invalid' },
+    throw diagnosticError(
+      `Invalid quantity for ${productName}: must be a positive number`,
+      'quantity_invalid',
+      400,
     );
   }
   if (Number.isInteger(quantity)) return;
@@ -166,9 +202,10 @@ export function validateProductQuantity(
     !['kg', 'g', 'lb', 'ml', 'cl', 'l', 'fl oz', 'oz'].includes(product.sale_unit || 'each') ||
     Number(product.allow_fractional_quantity) !== 1
   ) {
-    throw Object.assign(
-      new Error(`Invalid quantity for ${productName}: fractional quantities are not allowed`),
-      { statusCode: 400, diagnosticCode: 'quantity_invalid' },
+    throw diagnosticError(
+      `Invalid quantity for ${productName}: fractional quantities are not allowed`,
+      'quantity_invalid',
+      400,
     );
   }
 
@@ -177,9 +214,10 @@ export function validateProductQuantity(
     : 3;
   const scale = 10 ** precision;
   if (Math.abs(quantity * scale - Math.round(quantity * scale)) > 1e-8) {
-    throw Object.assign(
-      new Error(`Invalid quantity for ${productName}: use at most ${precision} decimal places`),
-      { statusCode: 400, diagnosticCode: 'quantity_invalid' },
+    throw diagnosticError(
+      `Invalid quantity for ${productName}: use at most ${precision} decimal places`,
+      'quantity_invalid',
+      400,
     );
   }
 }

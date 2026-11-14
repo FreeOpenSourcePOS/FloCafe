@@ -78,6 +78,8 @@ export function LanPrinterDiscovery({
     }
   };
 
+  if (!enabled) return null;
+
   return (
     <div
       data-setting-section="printers-found-on-network"

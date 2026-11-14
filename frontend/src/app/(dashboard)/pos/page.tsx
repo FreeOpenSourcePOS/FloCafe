@@ -526,16 +526,21 @@ export default function POSPage() {
   ): Record<string, string> => {
     const liveContext = readLiveSupportContext();
     const tokenToUse =
-      liveContext.userId === originContext.userId &&
-      liveContext.storeId === originContext.storeId &&
-      liveContext.sessionEpoch === originContext.sessionEpoch &&
-      liveContext.token
+      checkSessionCurrent(originContext) && liveContext.token
         ? liveContext.token
         : originContext.token;
     return pinnedAuthHeaders(tokenToUse);
   };
   const checkSessionCurrent = (originContext: SupportErrorContextSnapshot): boolean => {
-    return isSupportErrorContextCurrent(originContext, readLiveSupportContext());
+    const liveContext = readLiveSupportContext();
+    const tokenMatchesOrRotated =
+      (originContext.token ?? null) === (liveContext.token ?? null) ||
+      (Boolean(originContext.token) && Boolean(liveContext.token));
+    if (!tokenMatchesOrRotated) return false;
+    return isSupportErrorContextCurrent(
+      { ...originContext, token: liveContext.token },
+      liveContext,
+    );
   };
   const paymentModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
   const registerPaymentModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
@@ -839,7 +844,7 @@ export default function POSPage() {
   }) => {
     const liveContext = readLiveSupportContext();
     const originContext = entry.originContext || liveContext;
-    if (!isSupportErrorContextCurrent(originContext, liveContext)) {
+    if (!checkSessionCurrent(originContext)) {
       return;
     }
     if (
@@ -929,10 +934,10 @@ export default function POSPage() {
       ticketCorrelationId,
       clientTicketId,
       context: {
-        storeId: originContext.storeId,
-        userId: originContext.userId,
-        token: originContext.token,
-        sessionEpoch: originContext.sessionEpoch,
+        storeId: liveContext.storeId,
+        userId: liveContext.userId,
+        token: liveContext.token,
+        sessionEpoch: liveContext.sessionEpoch,
       },
       presentation,
       payload: {
@@ -1196,7 +1201,7 @@ export default function POSPage() {
   const printKotIfEnabled = async (order: Order, originContext?: SupportErrorContextSnapshot) => {
     const origin = originContext || readLiveSupportContext();
     if (order.release_status && order.release_status !== 'released') return;
-    if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) {
+    if (!checkSessionCurrent(origin)) {
       return;
     }
     // Master kot_printing_enabled check gates both manual and automatic prints.
@@ -1208,7 +1213,7 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
-      if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) return;
+      if (!checkSessionCurrent(origin)) return;
       console.error('[POS] KOT print failed:', err);
       const printFailure = buildPrinterOperationFailureSupportPayload(err, {
         kind: 'kot',
@@ -1321,7 +1326,7 @@ export default function POSPage() {
     const origin = originContext || readLiveSupportContext();
     if (
       !currentTenant ||
-      !isSupportErrorContextCurrent(origin, readLiveSupportContext()) ||
+      !checkSessionCurrent(origin) ||
       (!force && !autoPrintBill)
     ) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
@@ -1333,7 +1338,7 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
-      if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) return;
+      if (!checkSessionCurrent(origin)) return;
       // Non-fatal: print failure should not block the checkout flow.
       console.error('[POS] Receipt print failed:', err);
       const printFailure = buildPrinterOperationFailureSupportPayload(err, {
@@ -2101,6 +2106,10 @@ export default function POSPage() {
       } catch {
         // Storage failures are reported when checkout is confirmed.
       }
+      prepaidRecoveryRef.current = null;
+      prepaidFailureRef.current = null;
+      setPrepaidRecovery(null);
+      setPrepaidFailure(null);
       setPrepaidModalAttempt(matchingAttempt);
       setShowPrepaidCheckout(true);
       return;
@@ -2740,6 +2749,15 @@ export default function POSPage() {
         activeSubmissionTokenRef.current = null;
       }
     }
+  };
+
+  const closePrepaidCheckoutModal = () => {
+    prepaidRecoveryRef.current = null;
+    prepaidFailureRef.current = null;
+    setPrepaidRecovery(null);
+    setPrepaidFailure(null);
+    setPrepaidModalAttempt(null);
+    setShowPrepaidCheckout(false);
   };
 
   // Handle prepaid checkout - place order and pay in one step
@@ -3918,10 +3936,7 @@ export default function POSPage() {
         }
         if (showPrepaidCheckout) {
           if (!submitting && !prepaidRecovery) {
-            prepaidFailureRef.current = null;
-            setPrepaidFailure(null);
-            setPrepaidModalAttempt(null);
-            setShowPrepaidCheckout(false);
+            closePrepaidCheckoutModal();
           }
           return true;
         }
@@ -4700,17 +4715,13 @@ export default function POSPage() {
               setPrepaidRecovery(recovery);
             }
           }}
-          onClose={() => {
-            prepaidFailureRef.current = null;
-            setPrepaidFailure(null);
-            setPrepaidModalAttempt(null);
-            setShowPrepaidCheckout(false);
-          }}
+          onClose={closePrepaidCheckoutModal}
           onConfirm={(...args) => {
             const originContext = readLiveSupportContext();
             if (prepaidRecovery || prepaidFailure) clearSupportErrorState();
             prepaidRecoveryRef.current = null;
             prepaidFailureRef.current = null;
+            setPrepaidRecovery(null);
             setPrepaidFailure(null);
             const submission = handlePrepaidCheckout(...args);
             const submissionToken = prepaidSubmissionTokenRef.current;
@@ -4722,7 +4733,7 @@ export default function POSPage() {
               })
               .catch(() => {
                 if (!checkSessionCurrent(originContext)) return;
-                const recovery = prepaidRecovery || {
+                const recovery = prepaidRecoveryRef.current || {
                   message: t('operationOutcomeUnknown'),
                   statusChecked: false,
                   details: {
@@ -4740,11 +4751,11 @@ export default function POSPage() {
                   prepaidSubmissionTokenRef.current = null;
                 }
                 if (!checkSessionCurrent(originContext)) return;
-                if (prepaidFailureRef.current) {
+                if (!prepaidRecoveryRef.current) {
                   setPrepaidRecovery(null);
-                } else if (!prepaidRecoveryRef.current && !completed) {
-                  setPrepaidRecovery(null);
-                  setShowPrepaidCheckout(false);
+                  if (!prepaidFailureRef.current && !completed) {
+                    setShowPrepaidCheckout(false);
+                  }
                 }
               });
           }}

@@ -238,6 +238,7 @@ export default function PaymentModal({
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 
   const [justPaid, setJustPaid] = useState(false);
+  const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
   const [payments, setPayments] = useState<Payment[]>(
@@ -595,11 +596,16 @@ export default function PaymentModal({
   // Sync state with active bill discount during render before paint
   // to prevent flashing stale values.
   const [syncedBill, setSyncedBill] = useState(bill);
+  const [syncedRemaining, setSyncedRemaining] = useState(remaining);
+  const billIdChanged = bill !== syncedBill && bill.id !== syncedBill.id;
   if (bill !== syncedBill) {
     setSyncedBill(bill);
-    if (bill.id !== syncedBill.id) {
+    if (billIdChanged) {
       const restored = readRestoredPostpaidAttempt(bill, postpaidAttemptKey);
+      pendingAttemptRef.current = restored;
+      inFlightRef.current = false;
       setPendingAttempt(restored);
+      setSyncedRemaining(remaining);
       setPayments([
         ...PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
         ...customMethods.map((method) => ({
@@ -615,9 +621,21 @@ export default function PaymentModal({
       setAppliedEqualShare(null);
       setShowEqualShare(false);
       setEqualShareNotice(null);
+      setEqualSharePayers(
+        String(
+          Math.min(
+            MAX_EQUAL_SHARE_PAYERS,
+            Math.max(
+              MIN_EQUAL_SHARE_PAYERS,
+              Number(bill.order?.guest_count) || MIN_EQUAL_SHARE_PAYERS,
+            ),
+          ),
+        ),
+      );
       setSplitCheckOrder(null);
       setSplitCheckBill(null);
       setSplitOpenReason(null);
+      setSplitSectionCollapsed(false);
       setKitchenOverrideRequired(false);
       setKitchenOverridePin('');
       setKitchenApproverId(null);
@@ -627,6 +645,13 @@ export default function PaymentModal({
       setRequestFailure(null);
       setPaymentOutcomeUnknown(Boolean(restored));
       setJustPaid(false);
+      setPaidAmount(null);
+      setPointsEarned(0);
+      setDiscountPin('');
+      setDiscountApproverId(null);
+      setShowDetails(false);
+      setChargeStateUncertain(false);
+      setUpdatingChargeId(null);
       setChargeApprovalId(null);
       setChargeApprovalPin('');
       setChargeApproverId(null);
@@ -691,8 +716,7 @@ export default function PaymentModal({
 
   // Proportionally update payment inputs when remaining balance changes,
   // unless cashier has already edited inputs manually.
-  const [syncedRemaining, setSyncedRemaining] = useState(remaining);
-  if (!attemptLocked && remaining !== syncedRemaining) {
+  if (!billIdChanged && !attemptLocked && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
     const remainingTargetMinor = toMinorUnits(remaining);
     if (autoFilledSingleIndex !== null && payments[autoFilledSingleIndex]) {
@@ -975,6 +999,7 @@ export default function PaymentModal({
   // typed themselves is left alone. Reconciled during render, like the balance
   // rescale above, so the stale share never reaches a paint.
   if (
+    !billIdChanged &&
     appliedEqualShare &&
     (appliedEqualShare.balanceMinor !== remainingMinor ||
       appliedEqualShare.payers !== equalShareCount) &&
@@ -1481,6 +1506,12 @@ export default function PaymentModal({
       } else {
         toast.success(t('paymentRecorded'));
       }
+      const attemptAmount = attempt.zeroBalance ? 0 : attemptTotalMinor(attempt) / minorFactor;
+      const maxSettleable =
+        remaining > 0
+          ? remaining
+          : Math.max(0, Number(updatedBill.paid_amount ?? updatedBill.total ?? attemptAmount));
+      setPaidAmount(attempt.zeroBalance ? 0 : Math.min(attemptAmount, maxSettleable));
       setJustPaid(true);
     } catch (error: unknown) {
       const response = (
@@ -1824,7 +1855,11 @@ export default function PaymentModal({
         setChargeApprovalPin('');
         return true;
       }
-      onClose();
+      if (justPaid) {
+        onPaid();
+      } else {
+        onClose();
+      }
       return true;
     };
   });
@@ -2009,7 +2044,7 @@ export default function PaymentModal({
               {showDetails ? t('close') : t('items')}
             </button>
             <button
-              onClick={onClose}
+              onClick={justPaid ? onPaid : onClose}
               disabled={processing || attemptLocked}
               className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
               aria-label={t('close')}
@@ -3081,7 +3116,7 @@ export default function PaymentModal({
                   <CheckCircle2 className="mx-auto text-emerald-600" size={36} />
                   <p className="font-semibold text-foreground">{t('paymentRecorded')}</p>
                   <p className="text-2xl font-bold tabular-nums text-foreground">
-                    {currencyFmt(Math.min(totalPayment, remaining))}
+                    {currencyFmt(paidAmount ?? Math.min(totalPayment, remaining))}
                   </p>
                   <p className="text-sm text-muted-foreground">{t('paid')}</p>
                 </div>

@@ -24,6 +24,8 @@ import {
   hasUserKdsStationAssignments,
   isKdsStationItemAllowed,
 } from '../db';
+import type { OrderCreateDisplayCode } from '../lib/order-create-display-codes';
+import { orderCreateDisplayCodeFromError } from '../lib/order-create-display-codes';
 import { asyncHandler } from '../middleware/async-handler';
 import {
   calculateDocumentTaxes,
@@ -276,18 +278,38 @@ export function malformedOrderBodyPayload(req: Request): Record<string, unknown>
   if (req.method !== 'POST') return null;
   const pathname = req.originalUrl.split('?')[0].replace(/\/+$/, '').toLowerCase();
   let capturePoint: string;
-  if (pathname === '/api/orders') capturePoint = 'fc.backend.order.create.other_validation';
-  else if (/^\/api\/orders\/[^/]+\/items$/.test(pathname))
+  let displayCode: OrderCreateDisplayCode | undefined;
+  if (pathname === '/api/orders') {
+    capturePoint = 'fc.backend.order.create.other_validation';
+    displayCode = 'malformed_body';
+  } else if (/^\/api\/orders\/[^/]+\/items$/.test(pathname)) {
     capturePoint = 'fc.backend.order.append.validation';
-  else return null;
+  } else return null;
   return structuredOperationFailure(
     req,
     capturePoint,
     'not_applied',
     'Malformed JSON request body',
-    undefined,
+    displayCode,
     undefined,
     { capture: false },
+  );
+}
+
+/** Only an unclassified refusal carries a code from the thrown error. */
+const otherValidationCode = (point: string, error: unknown) =>
+  point === 'fc.backend.order.create.other_validation'
+    ? orderCreateDisplayCodeFromError(error)
+    : undefined;
+
+/** A pre-storage order refusal: the closed code says which check refused it. */
+function orderRefusal(req: Request, message: string, displayCode: OrderCreateDisplayCode) {
+  return structuredOperationFailure(
+    req,
+    'fc.backend.order.create.other_validation',
+    'not_applied',
+    message,
+    displayCode,
   );
 }
 
@@ -380,7 +402,7 @@ function getStoredOrderReplay(
   if (prior.request_hash !== requestHash) {
     throw Object.assign(
       new Error('Idempotency-Key was already used for a different order request'),
-      { statusCode: 409 },
+      { statusCode: 409, diagnosticCode: 'IDEMPOTENCY_KEY_REUSED' },
     );
   }
   try {
@@ -605,7 +627,10 @@ function resolveItemAddons(
 
     const quantity = addon.quantity ?? 1;
     if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity <= 0) {
-      throw new Error(`Invalid add-on quantity for "${catalog.name}": must be a positive integer`);
+      throw Object.assign(
+        new Error(`Invalid add-on quantity for "${catalog.name}": must be a positive integer`),
+        { statusCode: 400, diagnosticCode: 'ADDON_QUANTITY_INVALID' },
+      );
     }
 
     // One tracked add-on on a line consumes a whole item's worth: three burgers
@@ -1912,26 +1937,16 @@ router.post(
       const authenticatedUserId = (req as any).user.userId;
 
       if (!Array.isArray(items) || items.length === 0) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
-              'At least one item is required',
-            ),
-          );
+        return res.status(400).json(orderRefusal(req, 'At least one item is required', 'no_items'));
       }
       if (items.length > MAX_ORDER_ITEMS) {
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request`,
+              'too_many_items',
             ),
           );
       }
@@ -1940,11 +1955,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               'Valid type is required (dine_in, takeaway, delivery, online)',
+              'invalid_type',
             ),
           );
       }
@@ -1957,11 +1971,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               'Valid dispatch_policy is required (immediate, on_payment)',
+              'invalid_dispatch_policy',
             ),
           );
       }
@@ -1970,11 +1983,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               'Multi-counter payment flow is not supported for delivery orders',
+              'dispatch_policy_unsupported',
             ),
           );
       }
@@ -1982,11 +1994,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               'Multi-counter payment flow is only supported for takeaway and dine-in orders',
+              'dispatch_policy_unsupported',
             ),
           );
       }
@@ -2000,11 +2011,10 @@ router.post(
           return res
             .status(400)
             .json(
-              structuredOperationFailure(
+              orderRefusal(
                 req,
-                'fc.backend.order.create.other_validation',
-                'not_applied',
                 `Invalid checkout_stage: expected '${derivedCheckoutStage}' for dispatch_policy '${isOnPayment ? 'on_payment' : 'immediate'}'`,
+                'invalid_checkout_stage',
               ),
             );
         }
@@ -2017,11 +2027,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               'guest_count must be a whole number between 1 and 99',
+              'invalid_guest_count',
             ),
           );
       }
@@ -2043,16 +2052,7 @@ router.post(
             ? error.statusCode
             : 400;
         const message = error instanceof Error ? error.message : 'Invalid charge amount';
-        return res
-          .status(statusCode)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
-              message,
-            ),
-          );
+        return res.status(statusCode).json(orderRefusal(req, message, 'invalid_charge_amount'));
       }
 
       // Cashier charge decisions taken in the cart travel with the order, so the
@@ -2068,11 +2068,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               'waived_charge_ids and opted_in_charge_ids must be arrays of charge ids',
+              'invalid_charge_selection',
             ),
           );
       }
@@ -2086,14 +2085,7 @@ router.post(
       ) {
         return res
           .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
-              'online_platform must be a string',
-            ),
-          );
+          .json(orderRefusal(req, 'online_platform must be a string', 'invalid_online_platform'));
       }
       if (
         external_order_id !== undefined &&
@@ -2103,12 +2095,7 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
-              'external_order_id must be a string',
-            ),
+            orderRefusal(req, 'external_order_id must be a string', 'invalid_external_order_id'),
           );
       }
       if (
@@ -2118,14 +2105,7 @@ router.post(
       ) {
         return res
           .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
-              'delivery_address must be a string',
-            ),
-          );
+          .json(orderRefusal(req, 'delivery_address must be a string', 'invalid_delivery_address'));
       }
       const deliveryAddress =
         typeof delivery_address === 'string' ? delivery_address.trim() || null : null;
@@ -2136,14 +2116,7 @@ router.post(
       ) {
         return res
           .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
-              'delivery_note must be a string',
-            ),
-          );
+          .json(orderRefusal(req, 'delivery_note must be a string', 'invalid_delivery_note'));
       }
       // Courier-only details: other order types never store them.
       const isDelivery = type === 'delivery';
@@ -2203,6 +2176,7 @@ router.post(
             'fc.backend.order.create.other_validation',
             'not_applied',
             message,
+            'invalid_scheduled_release',
           ),
           ...(code ? { code } : {}),
         });
@@ -2240,11 +2214,10 @@ router.post(
         return res
           .status(400)
           .json(
-            structuredOperationFailure(
+            orderRefusal(
               req,
-              'fc.backend.order.create.other_validation',
-              'not_applied',
               err instanceof Error ? err.message : 'Invalid delivery details',
+              orderCreateDisplayCodeFromError(err) ?? 'invalid_delivery_details',
             ),
           );
       }
@@ -2274,7 +2247,17 @@ router.post(
           : isAddonUnavailable
             ? 'fc.backend.order.create.addon_item_validation'
             : 'fc.backend.order.create.other_validation';
-        return res.status(400).json(structuredOperationFailure(req, point, 'not_applied', msg));
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              point,
+              'not_applied',
+              msg,
+              otherValidationCode(point, err),
+            ),
+          );
       }
       const result = withTxn(() => {
         if (idempotencyKey) {
@@ -2293,7 +2276,7 @@ router.post(
             if (prior.request_hash !== requestHash) {
               throw Object.assign(
                 new Error('Idempotency-Key was already used for a different order request'),
-                { statusCode: 409 },
+                { statusCode: 409, diagnosticCode: 'IDEMPOTENCY_KEY_REUSED' },
               );
             }
             try {
@@ -2449,6 +2432,7 @@ router.post(
           if (!product) {
             throw Object.assign(new Error(`Product ${item.product_id} not found`), {
               statusCode: 404,
+              diagnosticCode: 'PRODUCT_NOT_FOUND',
             });
           }
 
@@ -2468,6 +2452,7 @@ router.post(
             if (!hasPermission(authenticatedUserId, ITEM_PRICE_OVERRIDE_PERMISSION)) {
               throw Object.assign(new Error('Only the owner can override item prices'), {
                 statusCode: 403,
+                diagnosticCode: 'PRICE_OVERRIDE_FORBIDDEN',
               });
             }
             priceOverride = parsePriceOverrideInput(
@@ -2482,7 +2467,7 @@ router.post(
           if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
             throw Object.assign(
               new Error(`Invalid price for ${product.name}: must be a non-negative number`),
-              { statusCode: 400 },
+              { statusCode: 400, diagnosticCode: 'PRICE_INVALID' },
             );
           }
 
@@ -2500,7 +2485,7 @@ router.post(
                     new Error(
                       `Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`,
                     ),
-                    { statusCode: 400 },
+                    { statusCode: 400, diagnosticCode: 'ADDON_QUANTITY_INVALID' },
                   );
                 }
               }
@@ -2852,7 +2837,7 @@ router.post(
           point,
           operationCommitted ? 'applied' : 'not_applied',
           error.statusCode ? error.message : 'Internal server error',
-          undefined,
+          otherValidationCode(point, error),
           point === 'fc.backend.order.create.persistence'
             ? { failure_class: classifySqlitePersistenceFailure(error) }
             : point === 'fc.backend.order.create.stock_validation' && error.refusal

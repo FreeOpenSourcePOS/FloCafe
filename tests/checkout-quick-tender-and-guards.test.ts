@@ -478,6 +478,7 @@ function installCheckoutComponentMocks(
   };
 
   for (const rel of [
+    'frontend/src/components/pos/checkout-ui.tsx',
     'frontend/src/components/pos/CheckoutPaymentStation.tsx',
     'frontend/src/components/pos/TouchNumberPad.tsx',
     'frontend/src/components/pos/TaxBreakdown.tsx',
@@ -2283,6 +2284,356 @@ async function testReviewFixRegressions() {
   );
 }
 
+async function testVisualHierarchyAndPrematurePaidGuards() {
+  console.log('\n--- 7. Premature Paid Fix, 3-State Tender Focus & Hallmark Craft ---');
+
+  await withAliases(async () => {
+    const unpaidBill = {
+      id: 'bill-life-1',
+      bill_number: 'BILL-0099',
+      order_id: 'ord-99',
+      subtotal: 14.2,
+      discount_amount: 0,
+      discounted_subtotal: 14.2,
+      tax_amount: 0,
+      total: 14.2,
+      paid_amount: 0,
+      balance: 14.2,
+      payment_status: 'unpaid',
+      order: {
+        id: 'ord-99',
+        order_number: '99',
+        order_type: 'dine_in',
+        table_name: 'T4',
+        customer: { id: 'cust-1', name: 'Ava Chen', phone: '5550199', loyalty_points: 0 },
+        items: [{ id: 'it-1', product_name: 'Flat White', quantity: 2, subtotal: 14.2 }],
+      },
+    };
+
+    // A. PaymentModal unpaid check invariants
+    const pmHarness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(pmHarness, {});
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+
+      // Header uses structured metadata chips without dot-joined subtitle strings
+      const headerChips = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-header-chips',
+      )[0];
+      assert.ok(headerChips, 'PaymentModal renders structured checkout-header-chips');
+      assert.ok(
+        !JSON.stringify(headerChips).includes(' · '),
+        'PaymentModal header chips do not join metadata with middle dots',
+      );
+
+      // Idle ($0.00 entered): status strip is idle-due with balanceDue, CTA disabled & neutral
+      let statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-due',
+        'Unpaid PaymentModal at $0.00 uses idle-due status tone',
+      );
+      let readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.ok(
+        !JSON.stringify(readoutZone).includes('"paid"'),
+        'Unpaid PaymentModal readout does not render premature paid label at $0.00',
+      );
+
+      // Default focus is Cash (index 0) at $0.00 -> Cash row has focused brand state, Card is idle
+      const cashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      let cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      assert.ok(
+        String(cashBtn?.props?.className || '').includes('bg-brand'),
+        'Focused Cash tender button at $0.00 shows brand focus state',
+      );
+      assert.ok(
+        !String(cardBtn?.props?.className || '').includes('bg-brand '),
+        'Unfocused Card tender button at $0.00 stays in idle surface state',
+      );
+
+      // Focus Card input at $0.00 -> Card immediately shows focused brand highlight even at $0.00
+      let cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      cardInput.props.onFocus();
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      assert.ok(
+        String(cardBtn?.props?.className || '').includes('bg-brand'),
+        'Focusing Card at $0.00 highlights Card tender button immediately',
+      );
+
+      // Enter partial Cash ($5.00) while Card is $0.00 -> status stays idle-due ($9.20 remaining)
+      let cashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashInput.props.onChange({ target: { value: '5' } });
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-due',
+        'Partial tender ($5.00 of $14.20) keeps idle-due tone',
+      );
+      assert.ok(
+        JSON.stringify(statusStrip).includes('9.20'),
+        'Partial tender status strip displays remaining $9.20 balanceDue',
+      );
+
+      // Clicking Card when Cash has $5.00 auto-fills remaining $9.20 onto Card (total $14.20 === remaining $14.20)
+      // BEFORE submitting: MUST use idle-ready + exactAmount, NEVER idle-settled or paid!
+      cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      cardBtn.props.onClick();
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'Exact tender before submit uses idle-ready tone instead of premature idle-settled',
+      );
+      assert.ok(
+        !JSON.stringify(statusStrip).includes('"paid"'),
+        'Exact tender status strip never displays premature paid text before submit',
+      );
+      assert.ok(
+        JSON.stringify(readoutZone).includes('exactAmount') &&
+          !JSON.stringify(readoutZone).includes('"paid"'),
+        'Exact tender Zone 3A readout shows exactAmount pill and never premature paid',
+      );
+
+      // Active Primary Pay CTA uses bg-brand
+      const footerZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'footer',
+      )[0];
+      const payButtons = collectElements(footerZone, (el) => el.type === 'button');
+      const primaryPayBtn = payButtons[payButtons.length - 1];
+      assert.ok(
+        String(primaryPayBtn?.props?.className || '').includes('bg-brand'),
+        'Enabled Primary Pay CTA uses FloCafe bg-brand styling',
+      );
+
+      // Overpayment ($20.00 Cash, $0.00 Card -> $5.80 change) BEFORE submitting:
+      cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      cardInput.props.onChange({ target: { value: '' } });
+      const cashInputEl = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashInputEl.props.onChange({ target: { value: '20' } });
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'Cash overpayment before submit uses idle-ready tone instead of premature idle-settled',
+      );
+      assert.ok(
+        !JSON.stringify(statusStrip).includes('"paid"') &&
+          !JSON.stringify(readoutZone).includes('"paid"'),
+        'Cash overpayment never shows premature paid text in readout or status strip',
+      );
+      assert.equal(
+        readoutZone?.props?.['data-readout-tone'],
+        'change',
+        'Cash overpayment sets readout statusTone to change',
+      );
+    } finally {
+      pmHarness.cleanupAll();
+    }
+
+    // B. Already-settled zero-balance check DOES show idle-settled / paid
+    const settledHarness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(settledHarness, {});
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const zeroSettledBill = {
+        ...unpaidBill,
+        id: 'bill-life-settled',
+        total: 14.2,
+        paid_amount: 14.2,
+        balance: 0,
+        payment_status: 'paid',
+      };
+      const settledTree = settledHarness.renderAndSettle(PaymentModal, {
+        bill: zeroSettledBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const settledStrip = collectElements(
+        settledTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        settledStrip?.props?.['data-status-tone'],
+        'idle-settled',
+        'Already-settled zero-balance check renders idle-settled status strip',
+      );
+    } finally {
+      settledHarness.cleanupAll();
+    }
+
+    // C. PrepaidCheckoutModal: auto-filled exact tender uses idle-ready + exactAmount, never paid!
+    const prepaidHarness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    if (!hadWindow) {
+      (globalThis as any).window = { addEventListener: () => {}, removeEventListener: () => {} };
+    }
+    try {
+      installCheckoutComponentMocks(prepaidHarness, {});
+      const prepaidPath = path.resolve(
+        ROOT,
+        'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
+      );
+      delete require.cache[prepaidPath];
+      const PrepaidCheckoutModal = require(prepaidPath).default;
+      const prepaidProps = {
+        currency: 'USD',
+        onClose: () => {},
+        onConfirm: async () => {},
+        initialDiscount: null,
+      };
+      let prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      let prepaidStrip = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        prepaidStrip?.props?.['data-status-tone'],
+        'idle-due',
+        'PrepaidCheckoutModal starts at idle-due before tender is entered',
+      );
+      const prepaidCashBtn = collectElements(
+        prepaidTree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      prepaidCashBtn.props.onClick();
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidStrip = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const prepaidReadout = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        prepaidStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'PrepaidCheckoutModal with exact auto-filled tender uses idle-ready instead of idle-settled',
+      );
+      assert.ok(
+        !JSON.stringify(prepaidStrip).includes('"paid"') &&
+          !JSON.stringify(prepaidReadout).includes('"paid"'),
+        'PrepaidCheckoutModal never displays premature paid text before payment submission',
+      );
+      const prepaidChips = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-header-chips',
+      )[0];
+      assert.ok(prepaidChips, 'PrepaidCheckoutModal renders structured checkout-header-chips');
+    } finally {
+      prepaidHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+
+  // D. Source craft check: no tracked-uppercase eyebrows in checkout files
+  const nodeFs = require('node:fs') as typeof import('node:fs');
+  for (const rel of [
+    'frontend/src/components/pos/CheckoutPaymentStation.tsx',
+    'frontend/src/components/pos/TouchNumberPad.tsx',
+    'frontend/src/components/pos/PaymentModal.tsx',
+    'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
+    'frontend/src/components/pos/SplitCheckModal.tsx',
+    'frontend/src/components/pos/TableCheckoutModal.tsx',
+    'frontend/src/components/pos/TaxBreakdown.tsx',
+  ]) {
+    const src = nodeFs.readFileSync(path.resolve(ROOT, rel), 'utf8');
+    assert.ok(
+      !/uppercase\s+tracking-wider|uppercase\s+tracking-wide/.test(src),
+      `${rel} contains zero tracked-uppercase eyebrows`,
+    );
+  }
+
+  console.log('  ✓ Premature Paid fix, 3-state tender focus, and Hallmark craft verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -2292,6 +2643,7 @@ async function run() {
   await testExactQuickValuesAndDiscountTargetReset();
   await testPosPageEscapeAndSessionGuards();
   await testReviewFixRegressions();
+  await testVisualHierarchyAndPrematurePaidGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

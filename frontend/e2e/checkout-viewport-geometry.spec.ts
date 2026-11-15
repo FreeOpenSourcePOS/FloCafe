@@ -1,4 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import {
   E2E_PASSWORD,
@@ -290,6 +292,8 @@ test('PrepaidCheckoutModal maintains 3-column geometry across viewports and stat
     const modal = page.getByTestId('prepaid-checkout-modal');
     await expect(modal).toBeVisible();
     await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible({ timeout: 10000 });
+    await expect(modal.getByTestId('checkout-header-chips')).toBeVisible();
+    await expect(modal.getByTestId('checkout-header-chips')).not.toContainText(' · ');
     const shell = modal.locator('> div').first();
 
     for (const vp of DESKTOP_VIEWPORTS) {
@@ -300,6 +304,12 @@ test('PrepaidCheckoutModal maintains 3-column geometry across viewports and stat
       await modal.getByRole('button', { name: 'Card', exact: true }).first().click();
       await expect(modal.locator('#prepaid-card-transaction-id')).toBeVisible();
       await expect(modal.locator('#prepaid-card-transaction-id')).toBeEnabled();
+      await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+        'data-status-tone',
+        'idle-ready',
+      );
+      await expect(modal.getByTestId('checkout-status-strip')).not.toHaveText(/\bPaid\b/);
+      await expect(modal.locator('[data-checkout-zone="readout"]')).not.toHaveText(/\bPaid\b/);
       expectZeroShift(
         baseline,
         await assertColumnAndStationGeometry(shell),
@@ -313,6 +323,11 @@ test('PrepaidCheckoutModal maintains 3-column geometry across viewports and stat
       if (pillCount > 1) {
         await pills.last().click();
       }
+      await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+        'data-status-tone',
+        'idle-ready',
+      );
+      await expect(modal.getByTestId('checkout-status-strip')).not.toHaveText(/\bPaid\b/);
       expectZeroShift(
         baseline,
         await assertColumnAndStationGeometry(shell),
@@ -355,6 +370,26 @@ test('PrepaidCheckoutModal maintains 3-column geometry across viewports and stat
       44,
     );
 
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const prepaidShotDir = process.env.CHECKOUT_SCREENSHOT_DIR?.trim() || '';
+    if (prepaidShotDir) {
+      fs.mkdirSync(prepaidShotDir, { recursive: true });
+      await page.emulateMedia({ colorScheme: 'light' });
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
+      await page.screenshot({
+        path: path.join(prepaidShotDir, '19-prepaid-light-1280x800.png'),
+        animations: 'disabled',
+      });
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      await page.screenshot({
+        path: path.join(prepaidShotDir, '20-prepaid-dark-1280x800.png'),
+        animations: 'disabled',
+      });
+      await page.emulateMedia({ colorScheme: 'light' });
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
+    }
+
     await modal.getByRole('button', { name: 'Close' }).first().click();
     await expect(modal).toBeHidden();
   } finally {
@@ -382,14 +417,26 @@ test('PaymentModal holds zero-scroll and <=1px shift with 20 items, 20-payer Equ
       .locator('..')
       .locator('..');
     await expect(modal).toBeVisible();
+    await expect(modal.getByTestId('checkout-header-chips')).toBeVisible();
+    await expect(modal.getByTestId('checkout-header-chips')).not.toContainText(' · ');
+    await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+      'data-status-tone',
+      'idle-due',
+    );
 
     for (const vp of DESKTOP_VIEWPORTS) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       const baseline = await assertColumnAndStationGeometry(modal);
 
-      // Card terminal reference slot
+      // Card terminal reference slot + no premature Paid badge when auto-filled
       await modal.getByRole('button', { name: 'Card', exact: true }).first().click();
       await expect(modal.locator('#payment-card-transaction-id')).toBeEnabled();
+      await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+        'data-status-tone',
+        'idle-ready',
+      );
+      await expect(modal.getByTestId('checkout-status-strip')).not.toHaveText(/\bPaid\b/);
+      await expect(modal.locator('[data-checkout-zone="readout"]')).not.toHaveText(/\bPaid\b/);
       expectZeroShift(
         baseline,
         await assertColumnAndStationGeometry(modal),
@@ -520,6 +567,252 @@ test('PaymentModal holds zero-scroll and <=1px shift with 20 items, 20-payer Equ
       }
     }
   } finally {
+    await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
+    await restoreBusinessSettings(page, saved);
+  }
+});
+
+test('Checkout modals hold Light/Dark parity, RTL geometry, 3-state tender focus, and post-pay completion', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const screenshotDir = process.env.CHECKOUT_SCREENSHOT_DIR?.trim() || '';
+  if (screenshotDir) {
+    fs.mkdirSync(screenshotDir, { recursive: true });
+  }
+  const snap = async (filename: string) => {
+    if (!screenshotDir) return;
+    await page.screenshot({ path: path.join(screenshotDir, filename), animations: 'disabled' });
+  };
+  const applyColorScheme = async (scheme: 'light' | 'dark') => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.evaluate((s) => {
+      document.documentElement.classList.toggle('dark', s === 'dark');
+    }, scheme);
+  };
+
+  const originalOrdersLayout: E2EOrdersLayout = await readOrdersLayout(page, BASE, MANAGER_TOKEN);
+  const splitSettingRes = await page.request.get(`${BASE}/api/settings/split_checks_enabled`, {
+    headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+  });
+  const originalSplitSetting = splitSettingRes.ok()
+    ? String((await splitSettingRes.json())?.setting?.value ?? 'false')
+    : 'false';
+  const saved = await setBusinessSettings(page, {
+    billing_type: 'postpaid',
+    card_transaction_id_required: true,
+  });
+
+  try {
+    await page.request.put(`${BASE}/api/settings/split_checks_enabled`, {
+      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+      data: { value: 'true' },
+    });
+    await setOrdersLayout(page, 'split', BASE, MANAGER_TOKEN);
+    await applyColorScheme('light');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAndOpenPos(page);
+
+    // Create a dine-in multi-unit order so inline Split Check + Equal Share are both active
+    const prodRes = await page.request.get(`${BASE}/api/products`, {
+      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+    });
+    const prodData = await prodRes.json();
+    const products = (prodData.products || prodData) as Array<{ id: number; name: string }>;
+    const orderRes = await page.request.post(`${BASE}/api/orders`, {
+      headers: {
+        Authorization: `Bearer ${MANAGER_TOKEN}`,
+        'Idempotency-Key': `life-visual-${Date.now()}-${Math.random()}`,
+      },
+      data: {
+        type: 'dine_in',
+        guest_count: 2,
+        items: [
+          { product_id: products[0].id, quantity: 2, notes: 'Extra hot' },
+          ...(products[1] ? [{ product_id: products[1].id, quantity: 1 }] : []),
+        ],
+      },
+    });
+    expect(orderRes.ok()).toBeTruthy();
+    const { order } = await orderRes.json();
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: order.order_number }).first();
+    await expect(masterRow).toBeVisible({ timeout: 10000 });
+    await masterRow.click();
+    await page
+      .getByRole('button', { name: /Checkout|Take Payment/ })
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 10000 });
+
+    const modal = page
+      .locator('[data-testid="checkout-payment-station"]')
+      .locator('..')
+      .locator('..')
+      .locator('..');
+
+    // 1. Light 1440x900 idle ($0.00): Cash focused, Card idle, CTA disabled, idle-due
+    await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+      'data-status-tone',
+      'idle-due',
+    );
+    const footerCta = modal.locator('[data-checkout-zone="footer"]').locator('button').last();
+    await expect(footerCta).toBeDisabled();
+    await snap('01-payment-light-1440x900-idle.png');
+
+    // 2. Focus Card input at $0.00 -> Card button highlights with bg-brand & zero shift
+    const baseline1440 = await assertColumnAndStationGeometry(modal);
+    await modal.getByLabel('Card amount').focus();
+    await expect(modal.getByRole('button', { name: 'Card', exact: true }).first()).toHaveClass(
+      /\bbg-brand\b/,
+    );
+    expectZeroShift(
+      baseline1440,
+      await assertColumnAndStationGeometry(modal),
+      'Card $0.00 focus border/ring',
+    );
+    await snap('02-payment-light-1440x900-card-zero-focus.png');
+
+    // 3. Partial tender ($5.00 Cash, $0.00 Card) -> idle-due (never Paid)
+    await modal.getByLabel('Cash amount').fill('5');
+    await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+      'data-status-tone',
+      'idle-due',
+    );
+    await expect(modal.getByTestId('checkout-status-strip')).not.toHaveText(/\bPaid\b/);
+    await snap('03-payment-light-1440x900-partial-due.png');
+
+    // 4. Click Card button to auto-fill remaining -> exact due -> idle-ready + bg-brand CTA (never Paid)
+    await modal.getByRole('button', { name: 'Card', exact: true }).first().click();
+    await modal.locator('#payment-card-transaction-id').fill('TXN-482910');
+    await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+      'data-status-tone',
+      'idle-ready',
+    );
+    await expect(modal.getByTestId('checkout-status-strip')).not.toHaveText(/\bPaid\b/);
+    await expect(modal.locator('[data-checkout-zone="readout"]')).toContainText('Exact due');
+    await expect(footerCta).toBeEnabled();
+    await expect(footerCta).toHaveClass(/\bbg-brand\b/);
+    await snap('04-payment-light-1440x900-exact-ready.png');
+
+    // 5. Dark mode 1440x900 exact ready + Equal Share preview
+    await applyColorScheme('dark');
+    await assertColumnAndStationGeometry(modal);
+    await snap('05-payment-dark-1440x900-exact-ready.png');
+
+    if (await modal.getByTestId('split-mode-equal-tab').count()) {
+      await modal.getByTestId('split-mode-equal-tab').click();
+      await snap('06-payment-dark-1440x900-equal-share.png');
+      await modal.getByTestId('split-mode-items-tab').click();
+    }
+
+    // 6. Cash overpayment in Light & Dark -> emerald Change Returned, idle-ready, never Paid
+    await applyColorScheme('light');
+    await modal.getByLabel('Card amount').fill('');
+    await modal.getByRole('button', { name: 'Cash', exact: true }).first().click();
+    const quickPills = modal.locator('[data-checkout-zone="quick-tender"] button');
+    if ((await quickPills.count()) > 1) {
+      await quickPills.last().click();
+    }
+    await expect(modal.getByTestId('checkout-status-strip')).toHaveAttribute(
+      'data-status-tone',
+      'idle-ready',
+    );
+    await expect(modal.getByTestId('checkout-status-strip')).not.toHaveText(/\bPaid\b/);
+    await snap('07-payment-light-1440x900-cash-overpay.png');
+
+    // 7. Discount sub-panel in Column 1
+    if (await modal.getByTestId('col1-tab-discount').count()) {
+      await modal.getByTestId('col1-tab-discount').click();
+      await snap('08-payment-light-1440x900-discount-panel.png');
+      await modal.getByRole('button', { name: /Back/i }).first().click();
+    }
+
+    // 8. SplitCheckModal in Light & Dark modes (structured chips, zero middle dots)
+    await modal
+      .getByTestId('split-check-section')
+      .getByRole('button', { name: /Split Check/i })
+      .click();
+    const splitHeading = page.getByRole('heading', { name: /Split Check/i });
+    await expect(splitHeading).toBeVisible();
+    await snap('09-splitcheck-table-light-1440x900.png');
+    await page.getByRole('button', { name: /Selected items/i }).click();
+    await page.locator('[data-testid^="guest-item-inc-"]').first().click();
+    await applyColorScheme('dark');
+    await snap('10-splitcheck-guest-dark-1440x900.png');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(splitHeading).toBeHidden();
+
+    // 9. Compact 1024x600 & Mobile 390x844 in Light & Dark
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await applyColorScheme('light');
+    await snap('11-payment-light-1024x600-compact.png');
+    await applyColorScheme('dark');
+    await snap('12-payment-dark-1024x600-compact.png');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await applyColorScheme('light');
+    await snap('13-payment-light-390x844-mobile.png');
+    await applyColorScheme('dark');
+    await snap('14-payment-dark-390x844-mobile.png');
+
+    // 10. RTL (Persian `fa`) at 1280x800 in Light & Dark
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await setLanguage(page, 'fa');
+    await page.goto(`${BASE}/orders`);
+    const faRow = page.getByRole('button').filter({ hasText: order.order_number }).first();
+    await expect(faRow).toBeVisible({ timeout: 10000 });
+    await faRow.click();
+    await page
+      .getByRole('button', { name: /^(پرداخت|دریافت پرداخت)$/ })
+      .first()
+      .click();
+    await expect(page.getByTestId('checkout-payment-station')).toBeVisible({ timeout: 10000 });
+    const rtlModal = page
+      .locator('[data-testid="checkout-payment-station"]')
+      .locator('..')
+      .locator('..')
+      .locator('..');
+    await applyColorScheme('light');
+    await assertColumnAndStationGeometry(rtlModal);
+    await snap('15-payment-rtl-fa-1280x800-light.png');
+    await applyColorScheme('dark');
+    await assertColumnAndStationGeometry(rtlModal);
+    await snap('16-payment-rtl-fa-1280x800-dark.png');
+
+    // Restore English, submit real payment, and verify server-confirmed post-payment emerald completion screen
+    await setLanguage(page, 'en');
+    await applyColorScheme('light');
+    await page.goto(`${BASE}/orders`);
+    await page.getByRole('button').filter({ hasText: order.order_number }).first().click();
+    await page
+      .getByRole('button', { name: /Checkout|Take Payment/ })
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 10000 });
+    const settleModal = page
+      .locator('[data-testid="checkout-payment-station"]')
+      .locator('..')
+      .locator('..')
+      .locator('..');
+    await settleModal.getByRole('button', { name: 'Cash', exact: true }).first().click();
+    await settleModal.locator('[data-checkout-zone="footer"]').locator('button').last().click();
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await snap('17-payment-postpay-settled-light.png');
+    await applyColorScheme('dark');
+    await snap('18-payment-postpay-settled-dark.png');
+    await applyColorScheme('light');
+  } finally {
+    await setLanguage(page, 'en').catch(() => {});
+    await page.request
+      .put(`${BASE}/api/settings/split_checks_enabled`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+        data: { value: originalSplitSetting },
+      })
+      .catch(() => {});
     await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
     await restoreBusinessSettings(page, saved);
   }

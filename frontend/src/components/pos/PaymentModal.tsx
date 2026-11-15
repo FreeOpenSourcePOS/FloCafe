@@ -47,6 +47,16 @@ import {
   type CheckoutQuickTenderOption,
   type CheckoutStatusBanner,
 } from '@/components/pos/CheckoutPaymentStation';
+import {
+  CHECKOUT_PRIMARY_CTA_CLASS,
+  CheckoutHeaderChips,
+  CheckoutQtyBadge,
+  CheckoutShieldIcon,
+  CheckoutTagIcon,
+  type CheckoutHeaderChipItem,
+  getCardReferenceSlotClasses,
+  getTenderRowClasses,
+} from '@/components/pos/checkout-ui';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -2121,15 +2131,34 @@ export default function PaymentModal({
         closeLabel: t('close'),
       };
     }
-    if (totalPaymentMinor < remainingMinor && remainingMinor > 0) {
+    if (remainingMinor <= 0) {
+      return {
+        tone: 'idle-settled',
+        message: t('paid'),
+      };
+    }
+    if (totalPaymentMinor === 0) {
       return {
         tone: 'idle-due',
+        message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
+      };
+    }
+    if (totalPaymentMinor < remainingMinor) {
+      return {
+        tone: 'idle-due',
+        partial: true,
         message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
       };
     }
+    if (change > 0) {
+      return {
+        tone: 'idle-ready',
+        message: `${t('totalDue')}: ${currencyFmt(remaining)}`,
+      };
+    }
     return {
-      tone: 'idle-settled',
-      message: t('paid'),
+      tone: 'idle-ready',
+      message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
     };
   })();
 
@@ -2140,8 +2169,68 @@ export default function PaymentModal({
         : currencyFmt(toStoredUnit(parseFloat(discountValue) || 0))
       : currencyFmt(toStoredUnit(parseFloat(activeAmountValue) || 0));
 
-  const readoutStatusTone: 'settled' | 'due' | 'change' =
-    change > 0 ? 'change' : totalPaymentMinor >= remainingMinor ? 'settled' : 'due';
+  const readoutStatusTone: 'settled' | 'ready' | 'due' | 'partial' | 'change' =
+    remainingMinor <= 0
+      ? 'settled'
+      : change > 0
+        ? 'change'
+        : totalPaymentMinor >= remainingMinor
+          ? 'ready'
+          : totalPaymentMinor > 0
+            ? 'partial'
+            : 'due';
+
+  const readoutStatusPillText =
+    remainingMinor <= 0
+      ? t('paid')
+      : change > 0
+        ? `${t('changeReturned')}: ${currencyFmt(change)}`
+        : totalPaymentMinor >= remainingMinor
+          ? t('exactAmount')
+          : undefined;
+
+  const rawOrderType =
+    contextOrder?.type || (contextOrder as { order_type?: string } | undefined)?.order_type;
+  const orderTypeKey =
+    rawOrderType && rawOrderType in ORDER_TYPE_KEYS
+      ? ORDER_TYPE_KEYS[rawOrderType as keyof typeof ORDER_TYPE_KEYS]
+      : null;
+  const headerTableName =
+    contextOrder?.table?.name || (contextOrder as { table_name?: string } | undefined)?.table_name;
+  const headerChips: CheckoutHeaderChipItem[] = [
+    { key: 'bill', label: t('billNumber', { number: bill.bill_number }), variant: 'neutral' },
+    ...(bill.split_label
+      ? [{ key: 'split', label: bill.split_label, variant: 'brand' as const }]
+      : []),
+    ...(contextOrder?.order_number
+      ? [
+          {
+            key: 'order',
+            label: t('orderNumber', { number: contextOrder.order_number }),
+            variant: 'neutral' as const,
+          },
+        ]
+      : []),
+    ...(orderTypeKey
+      ? [{ key: 'type', label: t(orderTypeKey), variant: 'brand' as const }]
+      : []),
+    ...(headerTableName
+      ? [
+          {
+            key: 'table',
+            label: t('tableLabel', { name: headerTableName }),
+            variant: 'neutral' as const,
+          },
+        ]
+      : []),
+    ...(cartCustomer?.name
+      ? [{ key: 'customer', label: cartCustomer.name, variant: 'customer' as const }]
+      : []),
+  ];
+
+  const visibleOrderItems = (detailOrder?.items || []).filter(
+    (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
+  );
 
   const taxComponents = resolveTaxComponents(bill);
 
@@ -2176,21 +2265,14 @@ export default function PaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3">
-      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden bg-card shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl">
+      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden border-border bg-background shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl sm:border dark:border-white/12">
         {/* Compact Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5">
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-foreground sm:text-lg">{t('payment')}</h2>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {t('billNumber', { number: bill.bill_number })}
-              {bill.split_label ? ` · ${bill.split_label}` : ''}
-              {contextOrder?.order_number
-                ? ` · ${t('orderNumber', { number: contextOrder.order_number })}`
-                : ''}
-              {contextOrder?.type ? ` · ${t(ORDER_TYPE_KEYS[contextOrder.type])}` : ''}
-              {contextOrder?.table?.name ? ` · ${contextOrder.table.name}` : ''}
-              {cartCustomer ? ` · ${cartCustomer.name}` : ''}
-            </p>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card/85 px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5 dark:bg-card/55">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="shrink-0 text-base font-bold tracking-tight text-foreground sm:text-lg">
+              {t('payment')}
+            </h2>
+            <CheckoutHeaderChips chips={headerChips} />
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -2203,10 +2285,10 @@ export default function PaymentModal({
                 }
               }}
               aria-expanded={showDetails}
-              className={`touch-target rounded-lg border px-3 text-sm font-medium lg:hidden ${
+              className={`touch-target rounded-lg border px-3 text-sm font-medium transition-colors lg:hidden ${
                 !showDetails && kitchenOverrideRequired
-                  ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
-                  : 'border-border'
+                  ? 'border-amber-500/60 bg-amber-500/12 text-amber-800 dark:text-amber-200'
+                  : 'border-border bg-card hover:bg-muted dark:border-white/10'
               }`}
             >
               {showDetails ? t('close') : kitchenOverrideRequired ? t('managerPin') : t('items')}
@@ -2222,7 +2304,7 @@ export default function PaymentModal({
                 chargeStateUncertain ||
                 splitCheckSaving
               }
-              className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+              className="touch-target rounded-full border border-border/70 bg-muted/70 text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground active:scale-[0.98] dark:border-white/10"
               aria-label={t('close')}
             >
               <X size={16} />
@@ -2233,21 +2315,25 @@ export default function PaymentModal({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(280px,1fr)_minmax(310px,1.08fr)_minmax(320px,0.96fr)] lg:overflow-hidden">
           {/* Column 1: Contained Panel Swap (Items / Discount / Tax / Kitchen Override) + Pinned Totals Footer */}
           <div
-            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
               {activeCol1Panel === 'items' ? (
-                <h3 className="text-sm font-semibold text-foreground">{t('items')}</h3>
+                <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <span>{t('items')}</span>
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border/80 bg-muted px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:border-white/10">
+                    {fmtNum(visibleOrderItems.length)}
+                  </span>
+                </h3>
               ) : (
                 <button
                   type="button"
                   onClick={() => setCol1Panel('items')}
-                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-muted/60 px-2.5 text-xs font-semibold text-foreground hover:bg-muted"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground shadow-2xs transition-colors hover:border-brand/40 hover:bg-muted/60 dark:border-white/10"
                 >
-                  <span>&larr;</span>
+                  <span className="rtl-flip">&larr;</span>
                   <span>{tCommon('back')}</span>
-                  <span className="text-muted-foreground">
-                    ·{' '}
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                     {activeCol1Panel === 'discount'
                       ? t('discount')
                       : activeCol1Panel === 'kitchen-override'
@@ -2265,12 +2351,13 @@ export default function PaymentModal({
                         panel === 'kitchen-override' ? 'items' : 'kitchen-override',
                       )
                     }
-                    className={`inline-flex h-8 items-center rounded-lg border px-2 text-xs font-semibold transition-colors ${
+                    className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                       activeCol1Panel === 'kitchen-override'
-                        ? 'border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200'
-                        : 'border-amber-400/60 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
+                        ? 'border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200'
+                        : 'border-amber-500/45 bg-amber-500/10 text-amber-800 hover:bg-amber-500/18 dark:text-amber-200'
                     }`}
                   >
+                    <CheckoutShieldIcon className="size-3.5" />
                     {t('managerPin')}
                   </button>
                 )}
@@ -2281,12 +2368,15 @@ export default function PaymentModal({
                     disabled={processing || attemptLocked || justPaid}
                     onClick={() => setShowDiscount((open) => !open)}
                     aria-expanded={showDiscount}
-                    className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       showDiscount
-                        ? 'border-brand bg-brand/10 text-brand'
-                        : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'
+                        ? 'border-brand bg-brand-light text-brand shadow-2xs dark:border-indigo-400/50 dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                        : Number(bill.discount_amount) > 0
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:border-emerald-500/60 dark:text-emerald-300'
+                          : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
                     }`}
                   >
+                    <CheckoutTagIcon className="size-3.5" />
                     <span>
                       {Number(bill.discount_amount) > 0
                         ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`
@@ -2301,20 +2391,22 @@ export default function PaymentModal({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3">
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               {activeCol1Panel === 'kitchen-override' && kitchenOverrideRequired ? (
                 <div
                   role="alert"
-                  className="space-y-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-200"
+                  className="space-y-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-900 dark:border-amber-400/35 dark:bg-amber-500/12 dark:text-amber-200"
                 >
                   {kitchenUndeliveredCount > 0 && (
-                    <p className="text-sm font-medium">
+                    <p className="text-sm font-semibold">
                       {t('kitchenItemsPendingWarning', { count: kitchenUndeliveredCount })}
                     </p>
                   )}
                   <p className="text-sm">{t('kitchenDeliveryOverridePrompt')}</p>
                   {kitchenUndeliveredItems.length > 0 && (
-                    <p className="break-words text-xs">{kitchenUndeliveredItems.join(', ')}</p>
+                    <p className="break-words text-xs opacity-90">
+                      {kitchenUndeliveredItems.join(', ')}
+                    </p>
                   )}
                   <div className="space-y-2 text-start">
                     <ApproverSelect
@@ -2343,11 +2435,11 @@ export default function PaymentModal({
                       }}
                       placeholder={t('managerPin')}
                       aria-label={t('managerPin')}
-                      className="min-h-11 w-full rounded-lg border border-amber-300 bg-card px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-amber-700"
+                      className="min-h-11 w-full rounded-lg border border-amber-500/45 bg-card px-3 py-2 text-center text-lg font-semibold tracking-[0.5em] text-foreground outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                     />
                   </div>
                   {kitchenDeliveryError && (
-                    <p className="text-xs text-red-700 dark:text-red-300">{kitchenDeliveryError}</p>
+                    <p className="text-xs font-medium text-destructive">{kitchenDeliveryError}</p>
                   )}
                 </div>
               ) : activeCol1Panel === 'discount' &&
@@ -2355,13 +2447,17 @@ export default function PaymentModal({
                 !scheduledOrderEditLocked &&
                 discountMode !== 'none' ? (
                 <div className="space-y-2.5">
-                  <div className="flex overflow-hidden rounded-lg border border-border">
+                  <div className="flex gap-1 rounded-xl border border-border/80 bg-muted/60 p-1 dark:border-white/10 dark:bg-muted/35">
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
                       <button
                         type="button"
                         disabled={processing || attemptLocked || justPaid}
                         onClick={() => setDiscountType('percentage')}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all sm:text-sm ${
+                          discountType === 'percentage'
+                            ? 'bg-brand text-white shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       >
                         <Percent size={14} />
                         {t('percentage')}
@@ -2372,14 +2468,18 @@ export default function PaymentModal({
                         type="button"
                         disabled={processing || attemptLocked || justPaid}
                         onClick={() => setDiscountType('amount')}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all sm:text-sm ${
+                          discountType === 'amount'
+                            ? 'bg-brand text-white shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       >
                         {t('flatAmount')}
                       </button>
                     )}
                   </div>
                   <div className="relative">
-                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-brand dark:text-indigo-300">
                       {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                     </span>
                     <input
@@ -2395,7 +2495,11 @@ export default function PaymentModal({
                       }
                       step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                       inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                      className="min-h-11 w-full rounded-lg border border-border bg-card pe-3 ps-8 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                      className={`min-h-11 w-full rounded-xl border bg-card pe-3 ps-9 py-2 text-base font-bold tabular-nums text-foreground outline-none transition-colors ${
+                        amountTarget?.kind === 'discount'
+                          ? 'border-brand ring-2 ring-brand/20'
+                          : 'border-border focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10'
+                      }`}
                     />
                   </div>
                   <input
@@ -2404,10 +2508,10 @@ export default function PaymentModal({
                     disabled={processing || attemptLocked || justPaid}
                     onChange={(e) => setDiscountReason(e.target.value)}
                     placeholder={t('discountReasonPlaceholder')}
-                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    className="min-h-11 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                   />
                   {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 rounded-xl border border-amber-500/35 bg-amber-500/8 p-2.5 dark:border-amber-400/30 dark:bg-amber-500/10">
                       <ApproverSelect
                         id="paymentDiscountApprover"
                         approvers={managerApprovers.approvers}
@@ -2429,7 +2533,7 @@ export default function PaymentModal({
                         onChange={(e) => setDiscountPin(e.target.value)}
                         placeholder={t('managerPin')}
                         maxLength={6}
-                        className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                        className="min-h-11 w-full rounded-lg border border-amber-500/40 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                       />
                     </div>
                   )}
@@ -2452,7 +2556,7 @@ export default function PaymentModal({
                           managerApprovers.approvers.length === 0 ||
                           !(discountApproverId ?? managerApprovers.selectedApproverId)))
                     }
-                    className="w-full bg-brand text-white hover:bg-brand/90"
+                    className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   >
                     {applyingDiscount
                       ? t('applyingDiscount')
@@ -2463,7 +2567,7 @@ export default function PaymentModal({
                   {Number(bill.discount_amount) > 0 && (
                     <Button
                       variant="outline"
-                      className="w-full"
+                      className="min-h-10 w-full rounded-xl"
                       disabled={
                         justPaid ||
                         processing ||
@@ -2487,13 +2591,13 @@ export default function PaymentModal({
                   )}
                 </div>
               ) : activeCol1Panel === 'tax' ? (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
                     <span>{t('tax')}</span>
                     <span className="tabular-nums">{currencyFmt(Number(bill.tax_amount))}</span>
                   </div>
                   {taxComponents.length > 0 && (
-                    <div className="space-y-1.5 border-t border-border pt-2 text-xs">
+                    <div className="space-y-1.5 border-t border-border pt-2 text-xs tabular-nums dark:border-white/10">
                       {taxComponents.map((component, idx) => (
                         <div
                           key={`${component.title}-${idx}`}
@@ -2502,7 +2606,7 @@ export default function PaymentModal({
                           <span className="text-muted-foreground">
                             {component.title} ({component.rate ?? 0}%)
                           </span>
-                          <span className="font-medium tabular-nums">
+                          <span className="font-medium text-foreground">
                             {currencyFmt(component.amount)}
                           </span>
                         </div>
@@ -2515,54 +2619,60 @@ export default function PaymentModal({
                   {billDetails?.id === bill.id && billDetails.failed && (
                     <p className="text-sm text-muted-foreground">{t('loadOrderFailed')}</p>
                   )}
-                  {(detailOrder?.items || [])
-                    .filter(
-                      (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
-                    )
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        data-testid="payment-order-item"
-                        className="border-b border-border pb-2 text-sm last:border-b-0 last:pb-0"
-                      >
-                        <div className="flex justify-between gap-3 font-medium">
-                          <span>
-                            {item.quantity} × {item.product_name}
+                  {visibleOrderItems.map((item) => (
+                    <div
+                      key={item.id}
+                      data-testid="payment-order-item"
+                      className="border-b border-border/75 pb-2 text-sm last:border-b-0 last:pb-0 dark:border-white/8"
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <CheckoutQtyBadge>{fmtNum(Number(item.quantity))}</CheckoutQtyBadge>
+                          <span className="min-w-0 font-semibold leading-snug text-foreground">
+                            {item.product_name}
                             {item.variant_selection ? ` (${item.variant_selection.name})` : ''}
                           </span>
-                          <span className="shrink-0 tabular-nums">
-                            {currencyFmt(Number(item.total))}
-                          </span>
                         </div>
-                        {Number(item.quantity) > 1 && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.quantity} × {currencyFmt(Number(item.unit_price))}
-                          </p>
-                        )}
-                        {(item.addons || []).map((addon, index) => (
-                          <p key={addon.id ?? index} className="text-xs text-muted-foreground">
-                            + {addon.name}
-                            {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
-                          </p>
-                        ))}
-                        {item.special_instructions && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.special_instructions}
-                          </p>
-                        )}
-                        {Boolean(item.price_overridden) && item.original_unit_price != null && (
-                          <p className="text-xs text-muted-foreground">
-                            {tOrders('priceOverriddenMenu', {
-                              price: currencyFmt(Number(item.original_unit_price)),
-                            })}
-                          </p>
-                        )}
+                        <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                          {currencyFmt(Number(item.total))}
+                        </span>
                       </div>
-                    ))}
+                      {(Number(item.quantity) > 1 ||
+                        (item.addons || []).length > 0 ||
+                        Boolean(item.special_instructions) ||
+                        (Boolean(item.price_overridden) && item.original_unit_price != null)) && (
+                        <div className="space-y-0.5 ps-7 pt-0.5">
+                          {Number(item.quantity) > 1 && (
+                            <p className="text-xs tabular-nums text-muted-foreground">
+                              {item.quantity} × {currencyFmt(Number(item.unit_price))}
+                            </p>
+                          )}
+                          {(item.addons || []).map((addon, index) => (
+                            <p key={addon.id ?? index} className="text-xs text-muted-foreground">
+                              + {addon.name}
+                              {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
+                            </p>
+                          ))}
+                          {item.special_instructions && (
+                            <p className="text-xs italic text-muted-foreground">
+                              {item.special_instructions}
+                            </p>
+                          )}
+                          {Boolean(item.price_overridden) && item.original_unit_price != null && (
+                            <p className="text-xs text-muted-foreground">
+                              {tOrders('priceOverriddenMenu', {
+                                price: currencyFmt(Number(item.original_unit_price)),
+                              })}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
 
                   {(appliedCharges.length > 0 || (canEditCharges && addableCharges.length > 0)) && (
                     <div
-                      className="space-y-1.5 border-t border-border pt-2 text-xs"
+                      className="space-y-1.5 border-t border-border pt-2 text-xs tabular-nums dark:border-white/10"
                       data-testid="payment-charges"
                     >
                       {appliedCharges.map((charge) => {
@@ -2573,11 +2683,13 @@ export default function PaymentModal({
                             data-testid={`payment-charge-${charge.id}`}
                             className="flex items-center justify-between gap-2 text-muted-foreground"
                           >
-                            <span className={charge.waived ? 'line-through' : undefined}>
+                            <span className={charge.waived ? 'line-through opacity-70' : undefined}>
                               {charge.name}
                             </span>
                             <span className="flex items-center gap-1.5">
-                              <span className={charge.waived ? 'line-through' : undefined}>
+                              <span
+                                className={`font-medium text-foreground ${charge.waived ? 'line-through opacity-60' : ''}`}
+                              >
                                 {currencyFmt(charge.amount)}
                               </span>
                               {canEditCharges && definition?.is_optional && (
@@ -2597,7 +2709,7 @@ export default function PaymentModal({
                                     }
                                   }}
                                   aria-pressed={charge.waived}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-light/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-indigo-300"
                                 >
                                   {charge.waived ? t('applyCharge') : t('waiveCharge')}
                                 </button>
@@ -2607,7 +2719,7 @@ export default function PaymentModal({
                                   type="button"
                                   disabled={Boolean(updatingChargeId)}
                                   onClick={() => void updateCharge(charge.id, { applied: false })}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10"
                                 >
                                   {t('removeCharge')}
                                 </button>
@@ -2628,7 +2740,7 @@ export default function PaymentModal({
                               type="button"
                               disabled={Boolean(updatingChargeId)}
                               onClick={() => void updateCharge(charge.id, { applied: true })}
-                              className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-light/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-indigo-300"
                             >
                               {t('addCharge')}
                             </button>
@@ -2641,16 +2753,18 @@ export default function PaymentModal({
             </div>
 
             {/* Pinned Totals Footer */}
-            <div className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/20 p-2.5 text-xs tabular-nums">
+            <div className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/35 p-3 text-xs tabular-nums dark:border-white/10 dark:bg-muted/20">
               <div className="flex justify-between text-muted-foreground">
                 <span>{t('subtotal')}</span>
-                <span>{currencyFmt(Number(bill.subtotal))}</span>
+                <span className="font-medium text-foreground">
+                  {currencyFmt(Number(bill.subtotal))}
+                </span>
               </div>
               {Number(bill.discount_amount) > 0 && (
-                <div className="flex justify-between font-medium text-emerald-600 dark:text-emerald-400">
+                <div className="flex justify-between font-semibold text-emerald-600 dark:text-emerald-400">
                   <span className="truncate">
                     {t('discount')}
-                    {bill.discount_reason ? ` · ${bill.discount_reason}` : ''}
+                    {bill.discount_reason ? ` - ${bill.discount_reason}` : ''}
                   </span>
                   <span className="shrink-0">− {currencyFmt(Number(bill.discount_amount))}</span>
                 </div>
@@ -2659,7 +2773,7 @@ export default function PaymentModal({
                 type="button"
                 onClick={() => setCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
                 aria-expanded={activeCol1Panel === 'tax'}
-                className="flex w-full items-center justify-between text-muted-foreground hover:text-foreground"
+                className="flex w-full items-center justify-between text-muted-foreground transition-colors hover:text-foreground"
               >
                 <span className="inline-flex items-center gap-1">
                   <span>{t('tax')}</span>
@@ -2670,47 +2784,57 @@ export default function PaymentModal({
                     />
                   )}
                 </span>
-                <span>{currencyFmt(Number(bill.tax_amount))}</span>
+                <span className="font-medium text-foreground">
+                  {currencyFmt(Number(bill.tax_amount))}
+                </span>
               </button>
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('delivery')}</span>
-                  <span>{currencyFmt(Number(bill.delivery_charge))}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(Number(bill.delivery_charge))}
+                  </span>
                 </div>
               )}
               {Number(bill.packaging_charge) > 0 &&
                 !appliedCharges.some((charge) => charge.id === 'packaging_charge') && (
                   <div className="flex justify-between text-muted-foreground">
                     <span>{t('packaging')}</span>
-                    <span>{currencyFmt(Number(bill.packaging_charge))}</span>
+                    <span className="font-medium text-foreground">
+                      {currencyFmt(Number(bill.packaging_charge))}
+                    </span>
                   </div>
                 )}
               {Number(bill.service_charge) > 0 &&
                 !appliedCharges.some((charge) => charge.id === 'service_charge') && (
                   <div className="flex justify-between text-muted-foreground">
                     <span>{tReceipt('serviceCharge')}</span>
-                    <span>{currencyFmt(Number(bill.service_charge))}</span>
+                    <span className="font-medium text-foreground">
+                      {currencyFmt(Number(bill.service_charge))}
+                    </span>
                   </div>
                 )}
               {Number(bill.round_off) !== 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('roundOff')}</span>
-                  <span>
+                  <span className="font-medium text-foreground">
                     {Number(bill.round_off) > 0 ? '+' : ''}
                     {currencyFmt(Number(bill.round_off))}
                   </span>
                 </div>
               )}
-              <div className="flex items-end justify-between border-t border-border pt-1.5 font-bold text-foreground">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {t('total')}
+              <div className="flex items-baseline justify-between border-t border-border/80 pt-2 font-bold text-foreground dark:border-white/10">
+                <span className="text-sm font-bold text-foreground">{t('total')}</span>
+                <span className="text-lg font-bold leading-none tabular-nums">
+                  {currencyFmt(Number(bill.total))}
                 </span>
-                <span className="text-lg leading-none">{currencyFmt(Number(bill.total))}</span>
               </div>
               {Number(bill.paid_amount) > 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('paid')}</span>
-                  <span>{currencyFmt(Number(bill.paid_amount))}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(Number(bill.paid_amount))}
+                  </span>
                 </div>
               )}
             </div>
@@ -2718,20 +2842,22 @@ export default function PaymentModal({
 
           {/* Column 2: Hero Balance, Core Tenders + Fixed Card Ref, Custom Tenders, Loyalty Wallet, Contained Split Card */}
           <div
-            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border bg-muted/20 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e dark:bg-background/45`}
           >
             {/* [2A] Hero Balance Header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
+            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="min-w-0">
-                <span className="text-xs font-medium text-muted-foreground">{t('totalDue')}</span>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {t('totalDue')}
+                </span>
                 {cartCustomer && (
-                  <p className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
-                    <User size={12} className="shrink-0 text-muted-foreground" />
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-medium text-foreground">
+                    <User size={12} className="shrink-0 text-brand dark:text-indigo-300" />
                     <span className="truncate">{cartCustomer.name}</span>
                   </p>
                 )}
               </div>
-              <span className="text-xl font-bold tabular-nums text-foreground sm:text-2xl">
+              <span className="text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
                 {currencyFmt(remaining)}
               </span>
             </div>
@@ -2743,46 +2869,55 @@ export default function PaymentModal({
                 const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method);
                 const label = tenderLabel(payment);
                 const Icon = builtIn?.icon;
-                const active = (parseFloat(payment.amount) || 0) > 0;
+                const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
                 const isAppliedShare = appliedEqualShare?.index === idx;
+                const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
+                const rowDisabled = processing || attemptLocked || justPaid;
+                const rowClasses = getTenderRowClasses({
+                  isFocused,
+                  isAllocated,
+                  disabled: rowDisabled,
+                });
                 return (
                   <div key={payment.method} className="space-y-0.5">
                     <div className="flex min-h-12">
                       <button
                         type="button"
                         title={label}
-                        disabled={processing || attemptLocked || justPaid}
+                        disabled={rowDisabled}
                         onClick={() => {
                           if (attemptLocked || justPaid) return;
                           setAmountTarget({ kind: 'payment', index: idx });
                           if (!payment.amount) allocateRemainingTo(idx);
                         }}
-                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
                       >
                         {Icon && <Icon size={15} />}
                         <span className="truncate">{label}</span>
                       </button>
-                      <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
-                        <span className="ps-3 text-xs text-muted-foreground">
+                      <div
+                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                      >
+                        <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                           {inputCurrencyLabel}
                         </span>
                         <input
                           type="number"
                           aria-label={`${label} amount`}
                           value={payment.amount}
-                          disabled={processing || attemptLocked || justPaid}
+                          disabled={rowDisabled}
                           onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                           onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                           placeholder="0.00"
                           inputMode="decimal"
-                          className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                          className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
                           step={inputCurrencyStep}
                           min="0"
                         />
                       </div>
                     </div>
                     {isAppliedShare && (
-                      <p className="px-1 text-[11px] font-medium text-brand">
+                      <p className="px-1 text-[11px] font-semibold text-brand dark:text-indigo-300">
                         {t('equalShareBadge')}
                       </p>
                     )}
@@ -2803,14 +2938,23 @@ export default function PaymentModal({
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses({
+                      isActive: true,
+                      isMissingRequired: Boolean(
+                        (parseFloat(cardPayment.amount) || 0) > 0 &&
+                          !cardPayment.transaction_id?.trim(),
+                      ),
+                    })}`}
                   />
                 ) : (
                   <div
                     aria-hidden="true"
-                    className="flex h-11 w-full items-center rounded-xl border border-dashed border-border/50 bg-muted/10 px-3 text-xs text-muted-foreground"
+                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses({
+                      isActive: false,
+                      isMissingRequired: false,
+                    })}`}
                   >
-                    <span className="truncate opacity-60">{t('cardTransactionIdLabel')}</span>
+                    <span className="truncate">{t('cardTransactionIdLabel')}</span>
                   </div>
                 )}
               </div>
@@ -2823,45 +2967,54 @@ export default function PaymentModal({
                   {payments.map((payment, idx) => {
                     if (payment.payment_method_id === undefined) return null;
                     const label = tenderLabel(payment);
-                    const active = (parseFloat(payment.amount) || 0) > 0;
+                    const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
                     const isAppliedShare = appliedEqualShare?.index === idx;
+                    const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
+                    const rowDisabled = processing || attemptLocked || justPaid;
+                    const rowClasses = getTenderRowClasses({
+                      isFocused,
+                      isAllocated,
+                      disabled: rowDisabled,
+                    });
                     return (
                       <div key={`custom:${payment.payment_method_id}`} className="space-y-0.5">
                         <div className="flex min-h-12">
                           <button
                             type="button"
                             title={label}
-                            disabled={processing || attemptLocked || justPaid}
+                            disabled={rowDisabled}
                             onClick={() => {
                               if (attemptLocked || justPaid) return;
                               setAmountTarget({ kind: 'payment', index: idx });
                               if (!payment.amount) allocateRemainingTo(idx);
                             }}
-                            className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                            className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
                           >
                             <span className="truncate">{label}</span>
                           </button>
-                          <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
-                            <span className="ps-3 text-xs text-muted-foreground">
+                          <div
+                            className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                          >
+                            <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                               {inputCurrencyLabel}
                             </span>
                             <input
                               type="number"
                               aria-label={`${label} amount`}
                               value={payment.amount}
-                              disabled={processing || attemptLocked || justPaid}
+                              disabled={rowDisabled}
                               onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                               onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                               placeholder="0.00"
                               inputMode="decimal"
-                              className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                              className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
                               step={inputCurrencyStep}
                               min="0"
                             />
                           </div>
                         </div>
                         {isAppliedShare && (
-                          <p className="px-1 text-[11px] font-medium text-brand">
+                          <p className="px-1 text-[11px] font-semibold text-brand dark:text-indigo-300">
                             {t('equalShareBadge')}
                           </p>
                         )}
@@ -2871,91 +3024,94 @@ export default function PaymentModal({
                 </div>
               )}
 
-              {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (
-                <div className="flex h-[74px] shrink-0 flex-col justify-between">
-                  <div className="flex min-h-12">
-                    <button
-                      type="button"
-                      disabled={
-                        processing ||
-                        attemptLocked ||
-                        justPaid ||
-                        !walletBalance ||
-                        walletBalance <= 0
-                      }
-                      onClick={() => {
-                        if (attemptLocked || justPaid || !walletBalance) return;
-                        const dueMinor = remainingWalletMinor();
-                        const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
-                        setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
-                        setAutoFilledSingleIndex(null);
-                        setAmountTarget({ kind: 'wallet' });
-                      }}
-                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold sm:w-36 ${walletAmt > 0 ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground disabled:border-border disabled:bg-muted disabled:text-muted-foreground'}`}
-                    >
-                      <Wallet size={15} />
-                      <span className="truncate">{t('loyaltyWallet')}</span>
-                    </button>
-                    <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:ring-2 focus-within:ring-brand">
-                      <span className="ps-3 text-xs text-muted-foreground">
-                        {inputCurrencyLabel}
-                      </span>
-                      <input
-                        type="number"
-                        value={walletAmount}
-                        disabled={
-                          processing ||
-                          attemptLocked ||
-                          justPaid ||
-                          !walletBalance ||
-                          walletBalance <= 0
-                        }
-                        onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                        onChange={(e) => {
-                          if (attemptLocked || justPaid) return;
-                          const v = e.target.value;
-                          const maxWalletCurrencyStored = Math.floor(
-                            (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
-                          );
-                          const maxDisplay = toDisplayUnit(
-                            Math.min(maxWalletCurrencyStored, remaining),
-                          );
-                          const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
-                          setWalletAmount(clamped);
+              {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (() => {
+                const walletDisabled =
+                  processing ||
+                  attemptLocked ||
+                  justPaid ||
+                  !walletBalance ||
+                  walletBalance <= 0;
+                const walletClasses = getTenderRowClasses({
+                  isFocused: amountTarget?.kind === 'wallet',
+                  isAllocated: walletAmt > 0,
+                  disabled: walletDisabled,
+                });
+                return (
+                  <div className="flex h-[74px] shrink-0 flex-col justify-between">
+                    <div className="flex min-h-12">
+                      <button
+                        type="button"
+                        disabled={walletDisabled}
+                        onClick={() => {
+                          if (attemptLocked || justPaid || !walletBalance) return;
+                          const dueMinor = remainingWalletMinor();
+                          const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+                          setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
                           setAutoFilledSingleIndex(null);
-                          setPaymentsTouched(true);
+                          setAmountTarget({ kind: 'wallet' });
                         }}
-                        placeholder="0.00"
-                        inputMode="decimal"
-                        className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none disabled:bg-muted"
-                        step={inputCurrencyStep}
-                        min="0"
-                        max={toDisplayUnit(
-                          Math.min(
-                            Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
-                            remaining,
-                          ),
-                        )}
-                      />
+                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
+                      >
+                        <Wallet size={15} />
+                        <span className="truncate">{t('loyaltyWallet')}</span>
+                      </button>
+                      <div
+                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
+                      >
+                        <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
+                          {inputCurrencyLabel}
+                        </span>
+                        <input
+                          type="number"
+                          value={walletAmount}
+                          disabled={walletDisabled}
+                          onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                          onChange={(e) => {
+                            if (attemptLocked || justPaid) return;
+                            const v = e.target.value;
+                            const maxWalletCurrencyStored = Math.floor(
+                              (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
+                            );
+                            const maxDisplay = toDisplayUnit(
+                              Math.min(maxWalletCurrencyStored, remaining),
+                            );
+                            const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
+                            setWalletAmount(clamped);
+                            setAutoFilledSingleIndex(null);
+                            setPaymentsTouched(true);
+                          }}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
+                          step={inputCurrencyStep}
+                          min="0"
+                          max={toDisplayUnit(
+                            Math.min(
+                              Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
+                              remaining,
+                            ),
+                          )}
+                        />
+                      </div>
                     </div>
+                    <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
+                      {walletBalance === null
+                        ? '…'
+                        : walletBalance > 0
+                          ? t('pointsApproxValue', {
+                              count: fmtNum(walletBalance),
+                              value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
+                            })
+                          : t('noBalance')}
+                    </p>
                   </div>
-                  <p className="min-h-4 truncate px-1 text-end text-[11px] text-muted-foreground">
-                    {walletBalance === null
-                      ? '…'
-                      : walletBalance > 0
-                        ? t('pointsApproxValue', {
-                            count: fmtNum(walletBalance),
-                            value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                          })
-                        : t('noBalance')}
-                  </p>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Unified Split section (contained internally so even 20 Equal Share rows never grow Column 2) */}
               {!justPaid && (remainingMinor > 0 || hasSplitChecksPanel) && (
                 <div
-                  className={`flex flex-col rounded-xl border border-border max-lg:shrink-0 lg:flex-1 lg:overflow-hidden ${
+                  className={`flex flex-col rounded-xl border border-border bg-card shadow-2xs max-lg:shrink-0 lg:flex-1 lg:overflow-hidden dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
                     (
                       hasSplitChecksPanel
                         ? !splitSectionCollapsed
@@ -2971,10 +3127,10 @@ export default function PaymentModal({
                       type="button"
                       onClick={() => setSplitSectionCollapsed((collapsed) => !collapsed)}
                       aria-expanded={!splitSectionCollapsed}
-                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted px-3 text-start"
+                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted/45 px-3 text-start transition-colors hover:bg-muted/70 dark:bg-muted/25"
                     >
-                      <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <Users size={15} className="text-muted-foreground" />
+                      <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Users size={15} className="text-brand dark:text-indigo-300" />
                         {t('splitPayment')}
                       </span>
                       <ChevronDown
@@ -2990,9 +3146,9 @@ export default function PaymentModal({
                         setEqualShareNotice(null);
                       }}
                       aria-expanded={showEqualShare}
-                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted px-3 text-start"
+                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted/45 px-3 text-start transition-colors hover:bg-muted/70 dark:bg-muted/25"
                     >
-                      <span className="text-sm font-medium text-foreground">
+                      <span className="text-sm font-semibold text-foreground">
                         {t('splitPaymentEqually')}
                       </span>
                       <ChevronDown
@@ -3005,15 +3161,15 @@ export default function PaymentModal({
                   {(!hasSplitChecksPanel || !splitSectionCollapsed) && (
                     <div className="min-h-0 flex-1 overflow-y-auto">
                       {hasSplitChecksPanel && remainingMinor > 0 && (
-                        <div className="grid grid-cols-2 gap-1 border-t border-border bg-muted/60 p-1">
+                        <div className="grid grid-cols-2 gap-1 border-t border-border bg-muted/55 p-1 dark:border-white/10 dark:bg-muted/30">
                           <button
                             type="button"
                             aria-pressed={!showEqualShare}
                             data-testid="split-mode-items-tab"
                             onClick={() => setShowEqualShare(false)}
-                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
                               !showEqualShare
-                                ? 'bg-card text-foreground shadow-sm'
+                                ? 'bg-brand text-white shadow-xs'
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
@@ -3027,9 +3183,9 @@ export default function PaymentModal({
                               setShowEqualShare(true);
                               setEqualShareNotice(null);
                             }}
-                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
                               showEqualShare
-                                ? 'bg-card text-foreground shadow-sm'
+                                ? 'bg-brand text-white shadow-xs'
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
@@ -3041,7 +3197,7 @@ export default function PaymentModal({
                       {equalShareNotice && (
                         <p
                           role="status"
-                          className="border-t border-border bg-muted px-3 py-2 text-[11px] text-muted-foreground"
+                          className="border-t border-border bg-amber-500/8 px-3 py-2 text-[11px] font-medium text-amber-800 dark:border-white/10 dark:text-amber-300"
                         >
                           {t(
                             equalShareNotice === 'lastPayer'
@@ -3052,11 +3208,11 @@ export default function PaymentModal({
                       )}
 
                       {showEqualShare && remainingMinor > 0 ? (
-                        <div className="space-y-2 border-t border-border bg-muted p-2.5">
+                        <div className="space-y-2 border-t border-border bg-card p-2.5 dark:border-white/10">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <label
                               htmlFor="equal-share-payers"
-                              className="text-xs font-medium text-foreground sm:text-sm"
+                              className="text-xs font-semibold text-foreground sm:text-sm"
                             >
                               {t('equalSharePayers')}
                             </label>
@@ -3067,7 +3223,7 @@ export default function PaymentModal({
                                 data-testid="equal-share-decrement"
                                 disabled={!canDecrementEqualShare}
                                 onClick={() => stepEqualSharePayers(-1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-all hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
                               >
                                 <Minus size={15} />
                               </button>
@@ -3084,7 +3240,7 @@ export default function PaymentModal({
                                   if (attemptLocked) return;
                                   setEqualSharePayers(event.target.value);
                                 }}
-                                className="min-h-11 w-14 rounded-lg border border-border bg-card px-2 py-1 text-center text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-brand"
+                                className="min-h-11 w-14 rounded-lg border border-border bg-card px-2 py-1 text-center text-sm font-bold tabular-nums text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                               />
                               <button
                                 type="button"
@@ -3092,7 +3248,7 @@ export default function PaymentModal({
                                 data-testid="equal-share-increment"
                                 disabled={!canIncrementEqualShare}
                                 onClick={() => stepEqualSharePayers(1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-all hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
                               >
                                 <Plus size={15} />
                               </button>
@@ -3112,10 +3268,10 @@ export default function PaymentModal({
                                     if (attemptLocked) return;
                                     setEqualSharePayers(String(preset));
                                   }}
-                                  className={`min-h-9 min-w-10 rounded-lg border px-2.5 py-1 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
+                                  className={`min-h-9 min-w-10 rounded-lg border px-2.5 py-1 text-xs font-semibold tabular-nums transition-all disabled:opacity-40 ${
                                     activePreset
-                                      ? 'border-brand bg-brand text-white'
-                                      : 'border-border bg-card text-foreground hover:border-brand hover:text-brand'
+                                      ? 'border-brand bg-brand text-white shadow-xs'
+                                      : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
                                   }`}
                                 >
                                   {preset}
@@ -3124,7 +3280,7 @@ export default function PaymentModal({
                             })}
                           </div>
                           {equalShareError ? (
-                            <p role="alert" className="text-[11px] text-red-700 dark:text-red-300">
+                            <p role="alert" className="text-[11px] font-medium text-destructive">
                               {t(
                                 equalShareError === 'tooManyPayers'
                                   ? 'equalShareTooManyPayers'
@@ -3135,17 +3291,27 @@ export default function PaymentModal({
                             <>
                               <ul
                                 data-testid="equal-share-shares"
-                                className="max-h-[104px] space-y-1 overflow-y-auto pe-0.5 text-sm"
+                                className="max-h-[104px] space-y-1 overflow-y-auto rounded-lg border border-border/75 bg-muted/25 p-2 text-sm dark:border-white/10 dark:bg-muted/15"
                               >
                                 {equalShareShares.map((shareMinor, index) => (
                                   <li
                                     key={index}
-                                    className="flex items-center justify-between gap-2"
+                                    className={`flex items-center justify-between gap-2 rounded-md px-1.5 py-0.5 ${
+                                      index === 0
+                                        ? 'bg-brand-light/55 font-medium text-brand dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                                        : ''
+                                    }`}
                                   >
-                                    <span className="text-muted-foreground">
+                                    <span
+                                      className={
+                                        index === 0
+                                          ? 'text-brand dark:text-indigo-300'
+                                          : 'text-muted-foreground'
+                                      }
+                                    >
                                       {index + 1}
                                       {index === 0 && (
-                                        <span className="ms-2 text-[11px] font-medium text-brand">
+                                        <span className="ms-2 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-semibold text-white">
                                           {t('equalShareNextShare')}
                                         </span>
                                       )}
@@ -3158,7 +3324,7 @@ export default function PaymentModal({
                                     </span>
                                   </li>
                                 ))}
-                                <li className="flex items-center justify-between gap-2 border-t border-border pt-1 font-semibold">
+                                <li className="flex items-center justify-between gap-2 border-t border-border/80 px-1.5 pt-1 font-semibold text-foreground dark:border-white/10">
                                   <span>{t('total')}</span>
                                   <span data-testid="equal-share-total" className="tabular-nums">
                                     {currencyFmt(remaining)}
@@ -3171,7 +3337,7 @@ export default function PaymentModal({
                                 </p>
                               )}
                               {equalShareConflict && (
-                                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
                                   {t('equalShareConflicts')}
                                 </p>
                               )}
@@ -3185,7 +3351,7 @@ export default function PaymentModal({
                                     }
                                     variant="outline"
                                     size="sm"
-                                    className="min-h-10"
+                                    className="min-h-10 border-brand/35 bg-brand-light/40 font-semibold text-brand hover:border-brand hover:bg-brand-light/80 dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300 dark:hover:bg-indigo-500/25"
                                     disabled={processing || attemptLocked}
                                     onClick={() => void applyEqualShare(idx)}
                                   >
@@ -3198,10 +3364,10 @@ export default function PaymentModal({
                         </div>
                       ) : (
                         hasSplitChecksPanel && (
-                          <div className="border-t border-border bg-card p-3">
+                          <div className="border-t border-border bg-card p-3 dark:border-white/10">
                             {splitSettingState === 'error' ? (
                               <div className="w-full space-y-2" data-testid="split-check-section">
-                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
                                   {splitSettingDenied
                                     ? t('splitCheckSettingDenied')
                                     : t('splitCheckAvailabilityFailed')}
@@ -3238,7 +3404,7 @@ export default function PaymentModal({
                                       Boolean(updatingChargeId) ||
                                       chargeStateUncertain
                                     }
-                                    className="w-full"
+                                    className="w-full border-brand/35 bg-brand-light/40 font-semibold text-brand hover:border-brand hover:bg-brand-light/75 dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300 dark:hover:bg-indigo-500/25"
                                     size="lg"
                                   >
                                     <Users size={16} className="me-2" />
@@ -3268,13 +3434,13 @@ export default function PaymentModal({
                                       <Users size={16} className="me-2" />
                                       {t('splitCheck')}
                                     </Button>
-                                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
                                       {t(splitEligibility.reason)}
                                     </p>
                                   </div>
                                 )}
                                 {splitOpenReason && (
-                                  <p className="text-xs text-red-600 dark:text-red-400">
+                                  <p className="text-xs font-medium text-destructive">
                                     {t(splitOpenReason)}
                                   </p>
                                 )}
@@ -3291,26 +3457,30 @@ export default function PaymentModal({
           </div>
 
           {/* Column 3: Full-Height 4-Zone Checkout Payment Station (or Receipt Share when settled) */}
-          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto">
+          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto dark:bg-card/25">
             {justPaid ? (
               <div className="flex h-full flex-col justify-center space-y-3">
                 <div
                   role="status"
-                  className="space-y-1 rounded-xl border border-border bg-card p-5 text-center"
+                  className="space-y-2.5 rounded-2xl border border-emerald-500/35 bg-card p-6 text-center shadow-xs dark:border-emerald-400/30 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                 >
-                  <CheckCircle2 className="mx-auto text-emerald-600" size={36} />
-                  <p className="font-semibold text-foreground">{t('paymentRecorded')}</p>
-                  <p className="text-2xl font-bold tabular-nums text-foreground">
+                  <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/12 text-emerald-600 ring-4 ring-emerald-500/10 dark:text-emerald-400">
+                    <CheckCircle2 size={30} />
+                  </div>
+                  <p className="text-base font-semibold text-foreground">{t('paymentRecorded')}</p>
+                  <p className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
                     {currencyFmt(paidAmount ?? Math.min(totalPayment, remaining))}
                   </p>
-                  <p className="text-sm text-muted-foreground">{t('paid')}</p>
+                  <span className="inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    {t('paid')}
+                  </span>
                 </div>
                 {cartCustomer?.phone &&
                   (isWhatsAppReady ? (
                     <Button
                       onClick={handleSendWhatsApp}
                       disabled={sendingWa}
-                      className="min-h-11 w-full bg-emerald-600 hover:bg-emerald-700"
+                      className="min-h-11 w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
                       size="lg"
                     >
                       <Send size={16} className="me-2" />
@@ -3320,14 +3490,18 @@ export default function PaymentModal({
                     <Button
                       onClick={handleShareWhatsApp}
                       variant="outline"
-                      className="min-h-11 w-full"
+                      className="min-h-11 w-full rounded-xl border-emerald-500/35 bg-emerald-500/8 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
                       size="lg"
                     >
                       <Send size={16} className="me-2" />
                       {tCommon('shareViaWhatsApp')}
                     </Button>
                   ))}
-                <Button onClick={onPaid} variant="outline" className="min-h-11 w-full" size="lg">
+                <Button
+                  onClick={onPaid}
+                  className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                  size="lg"
+                >
                   {tCommon('done')}
                 </Button>
               </div>
@@ -3336,13 +3510,14 @@ export default function PaymentModal({
                 readout={{
                   activeLabel: activeAmountLabel,
                   amountText: readoutFormattedAmount,
-                  paidSummaryText: `${t('paid')}: ${currencyFmt(totalPayment)}`,
+                  paidSummaryText:
+                    remainingMinor <= 0
+                      ? `${t('paid')}: ${currencyFmt(totalPayment)}`
+                      : `${t('payment')}: ${currencyFmt(totalPayment)}`,
                   dueSummaryText: `${t('total')}: ${currencyFmt(remaining)}`,
-                  statusPillText:
-                    totalPaymentMinor >= remainingMinor && remainingMinor > 0
-                      ? t('paid')
-                      : undefined,
+                  statusPillText: readoutStatusPillText,
                   statusTone: readoutStatusTone,
+                  isDiscountTarget: amountTarget?.kind === 'discount',
                 }}
                 quickTenders={quickTenderOptions}
                 keypad={
@@ -3375,7 +3550,7 @@ export default function PaymentModal({
                 <Button
                   onClick={handlePay}
                   disabled={payCtaDisabled}
-                  className="h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11"
+                  className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-all sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   size="lg"
                 >
                   {payCtaLabel}
@@ -3397,35 +3572,37 @@ export default function PaymentModal({
         >
           <DialogContent showCloseButton={false} aria-describedby={undefined}>
             <DialogTitle>{t('managerPin')}</DialogTitle>
-            <ApproverSelect
-              id="chargeApproverSelect"
-              approvers={managerApprovers.approvers}
-              selectedApproverId={chargeApproverId ?? managerApprovers.selectedApproverId}
-              onSelectApprover={(id) => {
-                setChargeApproverId(id);
-                setChargeApprovalPin('');
-              }}
-              loading={managerApprovers.loading}
-              loadFailed={managerApprovers.loadFailed}
-              disabled={processing || attemptLocked}
-            />
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={chargeApprovalPin}
-              onChange={(event) =>
-                setChargeApprovalPin(event.target.value.replace(/\D/g, '').slice(0, 6))
-              }
-              placeholder={t('managerPin')}
-              aria-label={t('managerPin')}
-              className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2"
-            />
+            <div className="space-y-2.5 rounded-xl border border-amber-500/35 bg-amber-500/8 p-3 dark:border-amber-400/30 dark:bg-amber-500/10">
+              <ApproverSelect
+                id="chargeApproverSelect"
+                approvers={managerApprovers.approvers}
+                selectedApproverId={chargeApproverId ?? managerApprovers.selectedApproverId}
+                onSelectApprover={(id) => {
+                  setChargeApproverId(id);
+                  setChargeApprovalPin('');
+                }}
+                loading={managerApprovers.loading}
+                loadFailed={managerApprovers.loadFailed}
+                disabled={processing || attemptLocked}
+              />
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={chargeApprovalPin}
+                onChange={(event) =>
+                  setChargeApprovalPin(event.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                placeholder={t('managerPin')}
+                aria-label={t('managerPin')}
+                className="min-h-11 w-full rounded-lg border border-amber-500/40 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+            </div>
             <div className="flex gap-2">
               <Button
                 data-testid="charge-approval-cancel"
                 variant="outline"
-                className="min-h-11 flex-1"
+                className="min-h-11 flex-1 rounded-xl"
                 onClick={() => {
                   setChargeApprovalId(null);
                   setChargeApprovalPin('');
@@ -3435,7 +3612,7 @@ export default function PaymentModal({
               </Button>
               <Button
                 data-testid="charge-approval-submit"
-                className="min-h-11 flex-1"
+                className={`min-h-11 flex-1 rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 disabled={
                   processing ||
                   attemptLocked ||

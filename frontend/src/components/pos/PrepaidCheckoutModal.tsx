@@ -28,6 +28,15 @@ import {
   type CheckoutQuickTenderOption,
   type CheckoutStatusBanner,
 } from '@/components/pos/CheckoutPaymentStation';
+import {
+  CHECKOUT_PRIMARY_CTA_CLASS,
+  CheckoutHeaderChips,
+  CheckoutQtyBadge,
+  CheckoutTagIcon,
+  type CheckoutHeaderChipItem,
+  getCardReferenceSlotClasses,
+  getTenderRowClasses,
+} from '@/components/pos/checkout-ui';
 import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
@@ -111,12 +120,11 @@ type PosKey = keyof AppConfig['Messages']['pos'];
 
 type OrderType = 'dine_in' | 'takeaway' | 'delivery' | 'online';
 
-// Exhaustively typed lookup for the order-type suffix (no template-literal keys).
-const ORDER_TYPE_SUFFIX_KEYS = {
-  dine_in: 'orderTypeSuffix_dine_in',
-  takeaway: 'orderTypeSuffix_takeaway',
-  delivery: 'orderTypeSuffix_delivery',
-  online: 'orderTypeSuffix_online',
+const ORDER_TYPE_KEYS = {
+  dine_in: 'orderTypeDineIn',
+  takeaway: 'orderTypeTakeaway',
+  delivery: 'orderTypeDelivery',
+  online: 'orderTypeOnline',
 } as const satisfies Record<OrderType, PosKey>;
 
 // Built-in payment method label keys mapped to typed `pos` leaf keys.
@@ -833,29 +841,38 @@ export default function PrepaidCheckoutModal({
       >
         <div
           role="status"
-          className="w-full max-w-md space-y-4 rounded-2xl bg-card p-6 text-center shadow-2xl"
+          className="w-full max-w-md space-y-4 rounded-2xl border border-emerald-500/35 bg-card p-6 text-center shadow-2xl dark:border-emerald-400/30 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
         >
-          <CheckCircle2 className="mx-auto text-emerald-600" size={40} />
+          <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/12 text-emerald-600 ring-4 ring-emerald-500/10 dark:text-emerald-400">
+            <CheckCircle2 size={32} />
+          </div>
           <p className="text-lg font-semibold text-foreground">
             {success.pointsEarned > 0
               ? t('paymentRecordedWithPoints', { points: success.pointsEarned })
               : t('paymentRecorded')}
           </p>
-          <p className="text-2xl font-bold tabular-nums text-foreground">
+          <p className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
             {currencyFmt(Number(success.bill.total) || 0)}
           </p>
-          <p className="text-sm text-muted-foreground">{t('paid')}</p>
+          <div>
+            <span className="inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              {t('paid')}
+            </span>
+          </div>
           {success.customer?.phone && (
             <Button
               onClick={() => void shareReceipt()}
               variant="outline"
-              className="min-h-11 w-full"
+              className="min-h-11 w-full rounded-xl border-emerald-500/35 bg-emerald-500/8 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
             >
               <Send size={16} className="me-2" />
               {tCommon('shareViaWhatsApp')}
             </Button>
           )}
-          <Button onClick={onClose} className="min-h-11 w-full">
+          <Button
+            onClick={onClose}
+            className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+          >
             {tCommon('done')}
           </Button>
         </div>
@@ -966,16 +983,29 @@ export default function PrepaidCheckoutModal({
         closeLabel: t('close'),
       };
     }
-    if (!taxLoading && preview && totalPaymentMinor < remainingMinor) {
+    if (!taxLoading && preview) {
+      if (totalPaymentMinor === 0 && remainingMinor > 0) {
+        return {
+          tone: 'idle-due',
+          message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
+        };
+      }
+      if (totalPaymentMinor < remainingMinor) {
+        return {
+          tone: 'idle-due',
+          partial: true,
+          message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
+        };
+      }
+      if (change > 0) {
+        return {
+          tone: 'idle-ready',
+          message: `${t('totalDue')}: ${currencyFmt(remaining)}`,
+        };
+      }
       return {
-        tone: 'idle-due',
-        message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
-      };
-    }
-    if (!taxLoading && preview && totalPaymentMinor >= remainingMinor) {
-      return {
-        tone: 'idle-settled',
-        message: t('paid'),
+        tone: 'idle-ready',
+        message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
       };
     }
     return null;
@@ -1001,8 +1031,32 @@ export default function PrepaidCheckoutModal({
         : currencyFmt(toStoredUnit(parseFloat(discountValue) || 0))
       : currencyFmt(toStoredUnit(parseFloat(activeAmountValue) || 0));
 
-  const readoutStatusTone: 'settled' | 'due' | 'change' =
-    change > 0 ? 'change' : totalPaymentMinor >= remainingMinor && preview ? 'settled' : 'due';
+  const readoutStatusTone: 'ready' | 'due' | 'partial' | 'change' =
+    change > 0
+      ? 'change'
+      : totalPaymentMinor >= remainingMinor && preview
+        ? 'ready'
+        : totalPaymentMinor > 0
+          ? 'partial'
+          : 'due';
+
+  const readoutStatusPillText = !preview
+    ? undefined
+    : change > 0
+      ? `${t('changeReturned')}: ${currencyFmt(change)}`
+      : totalPaymentMinor >= remainingMinor
+        ? t('exactAmount')
+        : undefined;
+
+  const headerChips: CheckoutHeaderChipItem[] = [
+    { key: 'type', label: t(ORDER_TYPE_KEYS[cart.orderType]), variant: 'brand' },
+    ...(cart.orderType === 'online' && cart.onlinePlatform?.trim()
+      ? [{ key: 'platform', label: cart.onlinePlatform.trim(), variant: 'neutral' as const }]
+      : []),
+    ...(customer?.name
+      ? [{ key: 'customer', label: customer.name, variant: 'customer' as const }]
+      : []),
+  ];
 
   const confirmDisabled =
     processing ||
@@ -1061,16 +1115,15 @@ export default function PrepaidCheckoutModal({
       data-testid="prepaid-checkout-modal"
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3"
     >
-      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden bg-card shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl">
+      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden border-border bg-background shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl sm:border dark:border-white/12">
         {/* Compact modal header */}
-        <div className="shrink-0 border-b border-border px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5">
+        <div className="shrink-0 border-b border-border bg-card/85 px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5 dark:bg-card/55">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-foreground sm:text-lg">{t('checkout')}</h2>
-              <p className="truncate text-xs capitalize text-muted-foreground">
-                {t(ORDER_TYPE_SUFFIX_KEYS[cart.orderType])}
-                {customer ? ` · ${customer.name}` : ''}
-              </p>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+              <h2 className="shrink-0 text-base font-bold tracking-tight text-foreground sm:text-lg">
+                {t('checkout')}
+              </h2>
+              <CheckoutHeaderChips chips={headerChips} />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button
@@ -1084,14 +1137,14 @@ export default function PrepaidCheckoutModal({
                 }}
                 disabled={locked}
                 aria-expanded={showDetails}
-                className="touch-target rounded-lg border border-border px-3 text-sm font-medium lg:hidden"
+                className="touch-target rounded-lg border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-muted lg:hidden dark:border-white/10"
               >
                 {showDetails ? t('close') : t('items')}
               </button>
               <button
                 onClick={onClose}
                 disabled={locked}
-                className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                className="touch-target rounded-full border border-border/70 bg-muted/70 text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground active:scale-[0.98] dark:border-white/10"
                 aria-label={t('close')}
               >
                 <X size={16} />
@@ -1104,21 +1157,26 @@ export default function PrepaidCheckoutModal({
           {/* Column 1: Contained Panel Swap (Items / Discount / Tax Details) + Pinned Totals Footer */}
           <fieldset
             disabled={locked}
-            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
               {activeCol1Panel === 'items' ? (
-                <h3 className="text-sm font-semibold text-foreground">{t('items')}</h3>
+                <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <span>{t('items')}</span>
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border/80 bg-muted px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:border-white/10">
+                    {fmtNum(cart.items.length)}
+                  </span>
+                </h3>
               ) : (
                 <button
                   type="button"
                   onClick={() => setCol1Panel('items')}
-                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-muted/60 px-2.5 text-xs font-semibold text-foreground hover:bg-muted"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground shadow-2xs transition-colors hover:border-brand/40 hover:bg-muted/60 dark:border-white/10"
                 >
-                  <span>&larr;</span>
+                  <span className="rtl-flip">&larr;</span>
                   <span>{tCommon('back')}</span>
-                  <span className="text-muted-foreground">
-                    · {activeCol1Panel === 'discount' ? t('discount') : t('tax')}
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {activeCol1Panel === 'discount' ? t('discount') : t('tax')}
                   </span>
                 </button>
               )}
@@ -1126,16 +1184,21 @@ export default function PrepaidCheckoutModal({
                 <button
                   type="button"
                   onClick={() => setDiscountOpen((open) => !open)}
-                  className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                     discountOpen
-                      ? 'border-brand bg-brand/10 text-brand'
-                      : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'
+                      ? 'border-brand bg-brand-light text-brand shadow-2xs dark:border-indigo-400/50 dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                      : preview?.discountAmount
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:border-emerald-500/60 dark:text-emerald-300'
+                        : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
                   }`}
                   aria-expanded={discountOpen}
                 >
-                  {preview?.discountAmount
-                    ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}`
-                    : t('discounts')}
+                  <CheckoutTagIcon className="size-3.5" />
+                  <span>
+                    {preview?.discountAmount
+                      ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}`
+                      : t('discounts')}
+                  </span>
                   <ChevronDown
                     size={12}
                     className={`transition-transform ${discountOpen ? 'rotate-180' : ''}`}
@@ -1144,10 +1207,10 @@ export default function PrepaidCheckoutModal({
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3">
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               {activeCol1Panel === 'discount' && discountModeLoaded && discountMode !== 'none' ? (
                 <div className="space-y-2.5">
-                  <div className="flex overflow-hidden rounded-lg border border-border">
+                  <div className="flex gap-1 rounded-xl border border-border/80 bg-muted/60 p-1 dark:border-white/10 dark:bg-muted/35">
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
                       <button
                         type="button"
@@ -1155,7 +1218,11 @@ export default function PrepaidCheckoutModal({
                         onClick={() => {
                           if (!locked && !discountCommitted) setDiscountType('percentage');
                         }}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${discountType === 'percentage' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm ${
+                          discountType === 'percentage'
+                            ? 'bg-brand text-white shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       >
                         <Percent size={14} />
                         {t('percentage')}
@@ -1168,14 +1235,18 @@ export default function PrepaidCheckoutModal({
                         onClick={() => {
                           if (!locked && !discountCommitted) setDiscountType('amount');
                         }}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${discountType === 'amount' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm ${
+                          discountType === 'amount'
+                            ? 'bg-brand text-white shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       >
                         {t('flatAmount')}
                       </button>
                     )}
                   </div>
                   <div className="relative">
-                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-brand dark:text-indigo-300">
                       {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                     </span>
                     <input
@@ -1199,7 +1270,11 @@ export default function PrepaidCheckoutModal({
                       }
                       step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                       inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                      className="min-h-11 w-full rounded-lg border border-border bg-card pe-3 ps-8 py-2 text-sm outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:bg-muted"
+                      className={`min-h-11 w-full rounded-xl border bg-card pe-3 ps-9 py-2 text-base font-bold tabular-nums text-foreground outline-none transition-colors disabled:cursor-not-allowed disabled:bg-muted ${
+                        amountTarget?.kind === 'discount'
+                          ? 'border-brand ring-2 ring-brand/20'
+                          : 'border-border focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10'
+                      }`}
                     />
                   </div>
                   <input
@@ -1210,10 +1285,10 @@ export default function PrepaidCheckoutModal({
                       if (!locked && !discountCommitted) setDiscountReason(e.target.value);
                     }}
                     placeholder={t('discountReasonPlaceholder')}
-                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:bg-muted"
+                    className="min-h-11 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:bg-muted dark:border-white/10"
                   />
                   {discountNeedsApprovalPin && parseFloat(discountValue) > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 rounded-xl border border-amber-500/35 bg-amber-500/8 p-2.5 dark:border-amber-400/30 dark:bg-amber-500/10">
                       <ApproverSelect
                         id="prepaidDiscountApprover"
                         approvers={managerApprovers.approvers}
@@ -1239,18 +1314,23 @@ export default function PrepaidCheckoutModal({
                         }}
                         placeholder={t('managerPin')}
                         maxLength={6}
-                        className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:bg-muted"
+                        className="min-h-11 w-full rounded-lg border border-amber-500/40 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:bg-muted"
                       />
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <Button type="button" className="flex-1" onClick={() => setCol1Panel('items')}>
+                    <Button
+                      type="button"
+                      className={`min-h-11 flex-1 rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                      onClick={() => setCol1Panel('items')}
+                    >
                       {tCommon('done')}
                     </Button>
                     {discountValue ? (
                       <Button
                         type="button"
                         variant="outline"
+                        className="min-h-11 rounded-xl"
                         disabled={locked || discountCommitted}
                         onClick={() => {
                           if (locked || discountCommitted) return;
@@ -1270,19 +1350,19 @@ export default function PrepaidCheckoutModal({
                   </div>
                 </div>
               ) : activeCol1Panel === 'tax' && preview ? (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
                     <span>{t('tax')}</span>
                     <span className="tabular-nums">{currencyFmt(preview.taxAmount)}</span>
                   </div>
                   {preview.taxBreakdown.length > 0 ? (
-                    <div className="space-y-1.5 border-t border-border pt-2 text-xs">
+                    <div className="space-y-1.5 border-t border-border pt-2 text-xs tabular-nums dark:border-white/10">
                       {preview.taxBreakdown.map((item, idx) => (
                         <div key={`${item.title}-${idx}`} className="flex justify-between gap-2">
                           <span className="text-muted-foreground">
                             {item.title} ({item.rate}%)
                           </span>
-                          <span className="font-medium tabular-nums">
+                          <span className="font-medium text-foreground">
                             {currencyFmt(item.amount)}
                           </span>
                         </div>
@@ -1304,45 +1384,55 @@ export default function PrepaidCheckoutModal({
                     return (
                       <div
                         key={item.id}
-                        className="border-b border-border pb-2 text-sm last:border-b-0 last:pb-0"
+                        className="border-b border-border/75 pb-2 text-sm last:border-b-0 last:pb-0 dark:border-white/8"
                       >
-                        <div className="flex justify-between gap-3 font-medium">
-                          <span>
-                            {item.quantity} × {item.product.name}
-                            {item.variant ? ` (${item.variant.name})` : ''}
-                          </span>
-                          <span className="shrink-0 tabular-nums">
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex min-w-0 items-start gap-2">
+                            <CheckoutQtyBadge>{fmtNum(item.quantity)}</CheckoutQtyBadge>
+                            <span className="min-w-0 font-semibold leading-snug text-foreground">
+                              {item.product.name}
+                              {item.variant ? ` (${item.variant.name})` : ''}
+                            </span>
+                          </div>
+                          <span className="shrink-0 font-semibold tabular-nums text-foreground">
                             {currencyFmt(unitPrice * item.quantity)}
                           </span>
                         </div>
-                        {item.quantity > 1 && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.quantity} × {currencyFmt(unitPrice)}
-                          </p>
-                        )}
-                        {item.addons.map((addon) => (
-                          <p key={addon.id} className="text-xs text-muted-foreground">
-                            + {addon.name}
-                            {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
-                          </p>
-                        ))}
-                        {item.special_instructions && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.special_instructions}
-                          </p>
-                        )}
-                        {item.price_override && (
-                          <p className="text-xs text-muted-foreground">
-                            {tOrders('priceOverriddenMenu', {
-                              price: currencyFmt(cartVariantUnitPrice(item, online)),
-                            })}
-                          </p>
+                        {(item.quantity > 1 ||
+                          item.addons.length > 0 ||
+                          Boolean(item.special_instructions) ||
+                          Boolean(item.price_override)) && (
+                          <div className="space-y-0.5 ps-7 pt-0.5">
+                            {item.quantity > 1 && (
+                              <p className="text-xs tabular-nums text-muted-foreground">
+                                {item.quantity} × {currencyFmt(unitPrice)}
+                              </p>
+                            )}
+                            {item.addons.map((addon) => (
+                              <p key={addon.id} className="text-xs text-muted-foreground">
+                                + {addon.name}
+                                {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
+                              </p>
+                            ))}
+                            {item.special_instructions && (
+                              <p className="text-xs italic text-muted-foreground">
+                                {item.special_instructions}
+                              </p>
+                            )}
+                            {item.price_override && (
+                              <p className="text-xs text-muted-foreground">
+                                {tOrders('priceOverriddenMenu', {
+                                  price: currencyFmt(cartVariantUnitPrice(item, online)),
+                                })}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
                   })}
                   {preview && (preview.charges.length > 0 || addableCharges.length > 0) && (
-                    <div className="space-y-1.5 border-t border-border pt-2 text-xs">
+                    <div className="space-y-1.5 border-t border-border pt-2 text-xs tabular-nums dark:border-white/10">
                       {preview.charges.map((charge) => {
                         const definition = applicableCharges.find(
                           (candidate) => candidate.id === charge.id,
@@ -1354,11 +1444,13 @@ export default function PrepaidCheckoutModal({
                             data-testid={`prepaid-charge-${charge.id}`}
                             className="flex items-center justify-between gap-2 text-muted-foreground"
                           >
-                            <span className={charge.waived ? 'line-through' : undefined}>
+                            <span className={charge.waived ? 'line-through opacity-70' : undefined}>
                               {charge.name}
                             </span>
                             <span className="flex items-center gap-1.5">
-                              <span className={charge.waived ? 'line-through' : undefined}>
+                              <span
+                                className={`font-medium text-foreground ${charge.waived ? 'line-through opacity-60' : ''}`}
+                              >
                                 {currencyFmt(charge.amount)}
                               </span>
                               {definition?.is_optional && (
@@ -1371,7 +1463,7 @@ export default function PrepaidCheckoutModal({
                                     }
                                   }}
                                   aria-pressed={charge.waived}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-light/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-indigo-300"
                                 >
                                   {charge.waived ? t('applyCharge') : t('waiveCharge')}
                                 </button>
@@ -1386,7 +1478,7 @@ export default function PrepaidCheckoutModal({
                                     }
                                   }}
                                   aria-pressed={optedIn}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10"
                                 >
                                   {t('removeCharge')}
                                 </button>
@@ -1410,7 +1502,7 @@ export default function PrepaidCheckoutModal({
                                 cart.toggleOptedInCharge(charge.id);
                               }
                             }}
-                            className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-light/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-indigo-300"
                           >
                             {t('addCharge')}
                           </button>
@@ -1427,31 +1519,35 @@ export default function PrepaidCheckoutModal({
               <div className="h-24 shrink-0 animate-pulse rounded-xl bg-muted" />
             ) : (
               <div
-                className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/20 p-2.5 text-xs tabular-nums"
+                className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/35 p-3 text-xs tabular-nums dark:border-white/10 dark:bg-muted/20"
                 data-testid="prepaid-checkout-summary"
               >
-                <div className="flex justify-between text-foreground">
+                <div className="flex justify-between text-muted-foreground">
                   <span>{t('itemCount', { count: cart.itemCount() })}</span>
-                  <span>{currencyFmt(preview.subtotal)}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(preview.subtotal)}
+                  </span>
                 </div>
                 {preview.discountAmount > 0 && (
-                  <div className="flex justify-between font-medium text-emerald-600">
+                  <div className="flex justify-between font-semibold text-emerald-600 dark:text-emerald-400">
                     <span className="truncate">
                       {t('discount')}
-                      {discountReason ? ` · ${discountReason}` : ''}
+                      {discountReason ? ` - ${discountReason}` : ''}
                     </span>
                     <span className="shrink-0">− {currencyFmt(preview.discountAmount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('subtotal')}</span>
-                  <span>{currencyFmt(preview.discountedSubtotal)}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(preview.discountedSubtotal)}
+                  </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
                   aria-expanded={activeCol1Panel === 'tax'}
-                  className="flex w-full items-center justify-between text-muted-foreground hover:text-foreground"
+                  className="flex w-full items-center justify-between text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <span className="inline-flex items-center gap-1">
                     <span>{t('tax')}</span>
@@ -1462,29 +1558,33 @@ export default function PrepaidCheckoutModal({
                       />
                     )}
                   </span>
-                  <span>{currencyFmt(preview.taxAmount)}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(preview.taxAmount)}
+                  </span>
                 </button>
                 {preview.packagingCharge > 0 &&
                   !preview.charges.some((charge) => charge.id === 'packaging_charge') && (
                     <div className="flex justify-between text-muted-foreground">
                       <span>{t('packaging')}</span>
-                      <span>{currencyFmt(preview.packagingCharge)}</span>
+                      <span className="font-medium text-foreground">
+                        {currencyFmt(preview.packagingCharge)}
+                      </span>
                     </div>
                   )}
                 {preview.roundOff !== 0 && (
                   <div className="flex justify-between text-muted-foreground">
                     <span>{t('roundOff')}</span>
-                    <span>
+                    <span className="font-medium text-foreground">
                       {preview.roundOff > 0 ? '+' : ''}
                       {currencyFmt(preview.roundOff)}
                     </span>
                   </div>
                 )}
-                <div className="flex items-end justify-between border-t border-border pt-1.5 font-bold text-foreground">
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {t('total')}
+                <div className="flex items-baseline justify-between border-t border-border/80 pt-2 font-bold text-foreground dark:border-white/10">
+                  <span className="text-sm font-bold text-foreground">{t('total')}</span>
+                  <span className="text-lg font-bold leading-none tabular-nums">
+                    {currencyFmt(remaining)}
                   </span>
-                  <span className="text-lg leading-none">{currencyFmt(remaining)}</span>
                 </div>
               </div>
             )}
@@ -1493,14 +1593,14 @@ export default function PrepaidCheckoutModal({
           {/* Column 2: Core Tenders, Constant Card Ref Slot, Custom Tenders & Loyalty Wallet */}
           <fieldset
             disabled={locked}
-            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border bg-muted/20 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e dark:bg-background/45`}
           >
             {/* [2A] Hero Balance Header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
-              <span className="text-xs font-medium text-muted-foreground">
+            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <span className="text-xs font-semibold text-muted-foreground">
                 {taxLoading || !preview ? t('calculatingTax') : t('totalDue')}
               </span>
-              <span className="text-xl font-bold tabular-nums text-foreground sm:text-2xl">
+              <span className="text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
                 {taxLoading || !preview ? '…' : currencyFmt(remaining)}
               </span>
             </div>
@@ -1512,7 +1612,13 @@ export default function PrepaidCheckoutModal({
                 const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method);
                 const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : tCommon('unknown');
                 const Icon = builtIn?.icon;
-                const active = (parseFloat(payment.amount) || 0) > 0;
+                const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
+                const isAllocated = (parseFloat(payment.amount) || 0) > 0;
+                const rowClasses = getTenderRowClasses({
+                  isFocused,
+                  isAllocated,
+                  disabled: locked,
+                });
                 return (
                   <div key={payment.method} className="flex min-h-12">
                     <button
@@ -1522,13 +1628,15 @@ export default function PrepaidCheckoutModal({
                         setAmountTarget({ kind: 'payment', index: idx });
                         if (!payment.amount) allocateRemainingTo(idx);
                       }}
-                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
                     >
                       {Icon && <Icon size={15} />}
                       <span className="truncate">{label}</span>
                     </button>
-                    <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
-                      <span className="ps-3 text-xs text-muted-foreground">
+                    <div
+                      className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                    >
+                      <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                         {inputCurrencyLabel}
                       </span>
                       <input
@@ -1539,7 +1647,7 @@ export default function PrepaidCheckoutModal({
                         onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                         placeholder="0.00"
                         inputMode="decimal"
-                        className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                        className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
                         step={inputCurrencyStep}
                         min="0"
                       />
@@ -1560,14 +1668,23 @@ export default function PrepaidCheckoutModal({
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses({
+                      isActive: true,
+                      isMissingRequired: Boolean(
+                        (parseFloat(cardPayment.amount) || 0) > 0 &&
+                          !cardPayment.transaction_id?.trim(),
+                      ),
+                    })}`}
                   />
                 ) : (
                   <div
                     aria-hidden="true"
-                    className="flex h-11 w-full items-center rounded-xl border border-dashed border-border/50 bg-muted/10 px-3 text-xs text-muted-foreground"
+                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses({
+                      isActive: false,
+                      isMissingRequired: false,
+                    })}`}
                   >
-                    <span className="truncate opacity-60">{t('cardTransactionIdLabel')}</span>
+                    <span className="truncate">{t('cardTransactionIdLabel')}</span>
                   </div>
                 )}
               </div>
@@ -1583,7 +1700,13 @@ export default function PrepaidCheckoutModal({
                       (method) => method.id === payment.payment_method_id,
                     );
                     const label = custom?.name || tCommon('unknown');
-                    const active = (parseFloat(payment.amount) || 0) > 0;
+                    const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
+                    const isAllocated = (parseFloat(payment.amount) || 0) > 0;
+                    const rowClasses = getTenderRowClasses({
+                      isFocused,
+                      isAllocated,
+                      disabled: locked,
+                    });
                     return (
                       <div key={`custom:${payment.payment_method_id}`} className="flex min-h-12">
                         <button
@@ -1593,12 +1716,14 @@ export default function PrepaidCheckoutModal({
                             setAmountTarget({ kind: 'payment', index: idx });
                             if (!payment.amount) allocateRemainingTo(idx);
                           }}
-                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
                         >
                           <span className="truncate">{label}</span>
                         </button>
-                        <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
-                          <span className="ps-3 text-xs text-muted-foreground">
+                        <div
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                        >
+                          <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                             {inputCurrencyLabel}
                           </span>
                           <input
@@ -1609,7 +1734,7 @@ export default function PrepaidCheckoutModal({
                             onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                             placeholder="0.00"
                             inputMode="decimal"
-                            className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                            className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
                             step={inputCurrencyStep}
                             min="0"
                           />
@@ -1620,78 +1745,88 @@ export default function PrepaidCheckoutModal({
                 </div>
               )}
 
-              {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (
-                <div className="flex h-[74px] shrink-0 flex-col justify-between">
-                  <div className="flex min-h-12">
-                    <button
-                      type="button"
-                      disabled={!walletBalance || walletBalance <= 0}
-                      onClick={() => {
-                        if (!walletBalance) return;
-                        const dueMinor = remainingWalletMinor();
-                        const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
-                        setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
-                        setAutoFilledSingleIndex(null);
-                        setAmountTarget({ kind: 'wallet' });
-                      }}
-                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold sm:w-36 ${walletAmt > 0 ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground disabled:border-border disabled:bg-muted disabled:text-muted-foreground'}`}
-                    >
-                      <Wallet size={15} />
-                      <span className="truncate">{t('loyaltyWallet')}</span>
-                    </button>
-                    <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:ring-2 focus-within:ring-brand">
-                      <span className="ps-3 text-xs text-muted-foreground">
-                        {inputCurrencyLabel}
-                      </span>
-                      <input
-                        type="number"
-                        value={walletAmount}
-                        onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          const maxWalletCurrencyStored = Math.floor(
-                            (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
-                          );
-                          const maxDisplay = toDisplayUnit(
-                            Math.min(maxWalletCurrencyStored, remaining),
-                          );
-                          const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
-                          setWalletAmount(clamped);
+              {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (() => {
+                const walletDisabled = locked || !walletBalance || walletBalance <= 0;
+                const walletClasses = getTenderRowClasses({
+                  isFocused: amountTarget?.kind === 'wallet',
+                  isAllocated: walletAmt > 0,
+                  disabled: walletDisabled,
+                });
+                return (
+                  <div className="flex h-[74px] shrink-0 flex-col justify-between">
+                    <div className="flex min-h-12">
+                      <button
+                        type="button"
+                        disabled={walletDisabled}
+                        onClick={() => {
+                          if (!walletBalance) return;
+                          const dueMinor = remainingWalletMinor();
+                          const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+                          setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
                           setAutoFilledSingleIndex(null);
-                          setPaymentsTouched(true);
+                          setAmountTarget({ kind: 'wallet' });
                         }}
-                        placeholder="0.00"
-                        disabled={!walletBalance || walletBalance <= 0}
-                        inputMode="decimal"
-                        className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none disabled:bg-muted"
-                        step={inputCurrencyStep}
-                        min="0"
-                        max={toDisplayUnit(
-                          Math.min(
-                            Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
-                            remaining,
-                          ),
-                        )}
-                      />
+                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
+                      >
+                        <Wallet size={15} />
+                        <span className="truncate">{t('loyaltyWallet')}</span>
+                      </button>
+                      <div
+                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
+                      >
+                        <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
+                          {inputCurrencyLabel}
+                        </span>
+                        <input
+                          type="number"
+                          value={walletAmount}
+                          onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const maxWalletCurrencyStored = Math.floor(
+                              (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
+                            );
+                            const maxDisplay = toDisplayUnit(
+                              Math.min(maxWalletCurrencyStored, remaining),
+                            );
+                            const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
+                            setWalletAmount(clamped);
+                            setAutoFilledSingleIndex(null);
+                            setPaymentsTouched(true);
+                          }}
+                          placeholder="0.00"
+                          disabled={walletDisabled}
+                          inputMode="decimal"
+                          className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
+                          step={inputCurrencyStep}
+                          min="0"
+                          max={toDisplayUnit(
+                            Math.min(
+                              Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
+                              remaining,
+                            ),
+                          )}
+                        />
+                      </div>
                     </div>
+                    <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
+                      {walletBalance === null
+                        ? '…'
+                        : walletBalance > 0
+                          ? t('pointsApproxValue', {
+                              count: fmtNum(walletBalance),
+                              value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
+                            })
+                          : t('noBalance')}
+                    </p>
                   </div>
-                  <p className="min-h-4 truncate px-1 text-end text-[11px] text-muted-foreground">
-                    {walletBalance === null
-                      ? '…'
-                      : walletBalance > 0
-                        ? t('pointsApproxValue', {
-                            count: fmtNum(walletBalance),
-                            value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                          })
-                        : t('noBalance')}
-                  </p>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </fieldset>
 
           {/* Column 3: Full-Height 4-Zone Checkout Payment Station (outer container must NOT be disabled so recovery actions stay clickable) */}
-          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto">
+          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto dark:bg-card/25">
             <CheckoutPaymentStation
               readout={{
                 activeLabel: activeAmountLabel,
@@ -1699,12 +1834,12 @@ export default function PrepaidCheckoutModal({
                 paidSummaryText:
                   taxLoading || !preview
                     ? t('calculatingTax')
-                    : `${t('paid')}: ${currencyFmt(totalPaymentMinor / minorFactor)}`,
+                    : `${t('payment')}: ${currencyFmt(totalPaymentMinor / minorFactor)}`,
                 dueSummaryText:
                   taxLoading || !preview ? '…' : `${t('total')}: ${currencyFmt(remaining)}`,
-                statusPillText:
-                  totalPaymentMinor >= remainingMinor && preview ? t('paid') : undefined,
+                statusPillText: readoutStatusPillText,
                 statusTone: readoutStatusTone,
+                isDiscountTarget: amountTarget?.kind === 'discount',
               }}
               quickTenders={quickTenderOptions}
               keypad={
@@ -1737,7 +1872,7 @@ export default function PrepaidCheckoutModal({
               <Button
                 onClick={handlePrimarySubmit}
                 disabled={confirmDisabled}
-                className="h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11"
+                className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-all sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 size="lg"
               >
                 {confirmLabel}

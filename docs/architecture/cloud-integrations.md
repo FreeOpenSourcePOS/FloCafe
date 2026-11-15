@@ -556,6 +556,21 @@ Issuing a pairing code is the endpoint that returns the stale claim message desc
 its failure is reported as HTTP 409 for an unregistered store and HTTP 502 for any other cloud
 failure, so a connectivity problem is distinguishable from a registration problem.
 
+**Live relay reports.** `CloudSyncService.runCommand()` in
+[`main/services/cloud-sync.ts`](../../main/services/cloud-sync.ts) serves five live report commands
+for RevFlo (`report.dashboard`, `report.hourly`, `report.sales`, `report.items`, `report.payments`),
+emitting `meta.report_contract_version: 1` payloads on `meta.basis: 'daily-sales-export'`. Store
+`currency`, optional `currency_symbol`, `fraction_digits`, and `timezone` come from
+`resolveRegionalSnapshot()` (see [regional settings](regional-settings.md)), and day bounds use
+`business_day_start_time` (see [business time](business-time.md)). Single-day views (`dashboard`,
+`hourly`) accept `date` or `range` (`today` or `yesterday`); range views (`sales`, `items`,
+`payments`) accept `range` (`today`, `yesterday`, `last7` default, `last30`) or paired `from`/`to`
+dates up to 370 inclusive days (`MAX_COMMAND_RANGE_DAYS`), plus `group_by` (`day`, `week`, `month`)
+on `sales` and `sort_by` (`revenue`, `qty`) and `limit` (`1` to `100`, default `50`) on `items`.
+`dashboard`, `sales`, `items`, and `payments` share `buildDailySalesExportDataset()` (see
+[daily sales export](../reference/daily-sales-export.md)), while `hourly` aggregates paid `bills`
+and `refunds` across the day's `[start, end)` UTC window bucketed by store-local hour.
+
 ## Support ticket outbox
 
 A support request is written to the `support_ticket_outbox` table with a `status` of `pending`,
@@ -646,5 +661,6 @@ npm run test:telemetry
 npm run test:support-ticket
 npm run test:cloud-account-status
 npm run test:cloud-live-orders-batching
+npm run test:cloud-live-reports
 npm run test:recovery-cloud   # includes tests/cloud-deletion-recovery.test.ts
 ```

@@ -258,7 +258,7 @@ function bool01Flag(value: unknown): string | undefined {
   return flag === undefined ? undefined : flag === 'true' ? '1' : '0';
 }
 
-function deriveCurrencySymbol(currency: string, country: string): string {
+export function deriveCurrencySymbol(currency: string, country: string): string {
   return getCurrencySymbol(currency || '', getCountryByCode(country)?.locale) || currency || '';
 }
 

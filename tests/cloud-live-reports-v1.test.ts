@@ -455,6 +455,16 @@ async function main() {
     // ── 1. Empty store zero-activity baseline + v1 relay envelope unwrapping ──
     console.log('\n─── 1. Empty state across all 5 views + envelope unwrapping ───');
     for (const view of VALID_REPORT_VIEWS) {
+      validateReportResponse(
+        {
+          result: (service as any).runCommand({
+            id: `cmd-null-${view}`,
+            type: `report.${view}`,
+            payload: null,
+          }),
+        },
+        { view },
+      );
       const env = invokeReport(view, undefined, true);
       const validated = validateReportResponse(env, { view });
       assertEqualOrThrow(validated.meta.timezone, 'Asia/Kolkata', `${view}: empty state timezone`);

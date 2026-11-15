@@ -1019,8 +1019,8 @@ function assertReportPayloadObject(
   view: LiveReportView,
   payload: unknown,
 ): Record<string, unknown> {
-  if (payload === undefined) return {};
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+  if (payload === undefined || payload === null) return {};
+  if (typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error(`Invalid report payload for ${view}`);
   }
   const record = payload as Record<string, unknown>;

@@ -62,5 +62,67 @@ assertOrThrow(
   'unknown symbol falls back to ISO code',
 );
 
+// Non-sterling pound currencies and SYP Arabic symbol thermal fallback
+assertEqualOrThrow(
+  resolveCurrencyPrefix(getCurrencySymbol('SYP', 'ar-SY'), false, undefined, false, 'SYP').trim(),
+  'SYP',
+  'SYP in ar-SY resolves to ASCII SYP on non-Unicode thermal printers',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix(getCurrencySymbol('SYP', 'en-US'), false, undefined, false, 'SYP').trim(),
+  'SYP',
+  'SYP in en-US resolves to ASCII SYP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('ل.س.', true, undefined, false, 'SYP').trim(),
+  'ل.س.',
+  'SYP preserves Arabic symbol on Unicode thermal printers',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('ل.س', false, undefined, false, 'SYP').trim(),
+  'SYP',
+  'SYP Arabic symbol without trailing period falls back to SYP',
+);
+assertEqualOrThrow(
+  normalizeCurrencyToAscii('١٬٥٠٠ ل.س.'),
+  '١٬٥٠٠ SYP',
+  'normalizeCurrencyToAscii maps ل.س. to SYP',
+);
+assertEqualOrThrow(
+  normalizeCurrencyToAscii('1500 ل.س'),
+  '1500 SYP',
+  'normalizeCurrencyToAscii maps ل.س without period to SYP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('£', false, undefined, false, 'SYP').trim(),
+  'SYP',
+  'bare £ with SYP currency code falls back to SYP instead of GBP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('£', false, undefined, false, 'SSP').trim(),
+  'SSP',
+  'bare £ with SSP currency code falls back to SSP instead of GBP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('£', false, undefined, false, 'FKP').trim(),
+  'FKP',
+  'bare £ with FKP currency code falls back to FKP instead of GBP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('£', false, undefined, false, 'GBP').trim(),
+  'GBP',
+  'bare £ with GBP currency code still falls back to GBP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix(getCurrencySymbol('SSP', 'ar-SY'), false, undefined, false, 'SSP').trim(),
+  'SSP',
+  'SSP in ar-SY resolves to ASCII SSP',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix(getCurrencySymbol('SSP', 'en-US'), false, undefined, false, 'SSP').trim(),
+  'SSP',
+  'SSP in en-US resolves to ASCII SSP',
+);
+
 const { passed, failed } = getResults();
 console.log(`${passed} counted, ${failed} failed; all throwing checks passed`);

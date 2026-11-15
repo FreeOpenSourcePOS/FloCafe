@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCurrency, formatCurrencyForTenant } from '../main/countries';
+import {
+  formatCurrency,
+  formatCurrencyForTenant,
+  formatMoney,
+  getCurrencyFractionDigits,
+  getCurrencyMinorUnitFactor,
+  getCurrencySymbol,
+  resolveIntlCurrencyDisplay,
+  resolveRegionalSnapshot,
+} from '../main/countries';
 
 test('formatCurrency: en-US / USD', () => {
   assert.equal(formatCurrency(1234.5, 'USD', 'en-US'), '$1,234.50');
@@ -132,4 +141,100 @@ test('getCurrencyUnitAdapter: zero-decimal currencies use whole integer steps', 
   assert.equal(usdAdapter.toDisplay(12.34), 12.34);
   assert.equal(usdAdapter.toStored(12.34), 12.34);
   assert.equal(usdAdapter.formatInput(12.34), '12.34');
+});
+
+test('SYP displays ل.س. in Arabic locales and SYP in non-Arabic locales instead of £', () => {
+  assert.equal(resolveIntlCurrencyDisplay('SYP', 'ar-SY'), 'symbol');
+  assert.equal(resolveIntlCurrencyDisplay('SYP', 'en-US'), 'symbol');
+
+  assert.equal(getCurrencySymbol('SYP', 'ar-SY'), 'ل.س.');
+  assert.equal(getCurrencySymbol('SYP', 'ar'), 'ل.س.');
+  assert.equal(getCurrencySymbol('SYP', 'en-US'), 'SYP');
+  assert.equal(getCurrencySymbol('SYP', 'fr-FR'), 'SYP');
+
+  assert.equal(getCurrencyFractionDigits('SYP'), 0);
+  assert.equal(getCurrencyMinorUnitFactor('SYP'), 1);
+
+  const arFormatted = formatCurrency(1500, 'SYP', 'ar-SY');
+  assert.match(arFormatted, /ل\.س\./);
+  assert.doesNotMatch(arFormatted, /£/);
+
+  const enFormatted = formatCurrency(1500, 'SYP', 'en-US');
+  assert.match(enFormatted, /SYP/);
+  assert.doesNotMatch(enFormatted, /£/);
+
+  const arMoney = formatMoney(1500, 'SYP', 'ar-SY');
+  assert.match(arMoney, /ل\.س\./);
+  assert.doesNotMatch(arMoney, /£/);
+
+  const enMoney = formatMoney(1500, 'SYP', 'en-US');
+  assert.match(enMoney, /SYP/);
+  assert.match(enMoney, /1,500/);
+  assert.doesNotMatch(enMoney, /\.00/);
+  assert.doesNotMatch(enMoney, /£/);
+
+  const tenantFormatted = formatCurrencyForTenant(1500, 'SY', 'SYP');
+  assert.match(tenantFormatted, /ل\.س\./);
+  assert.doesNotMatch(tenantFormatted, /£/);
+
+  const snap = resolveRegionalSnapshot({ country: 'SY', currency: 'SYP' });
+  assert.equal(snap.country, 'SY');
+  assert.equal(snap.locale, 'ar-SY');
+  assert.equal(snap.currency, 'SYP');
+  assert.equal(snap.currencySymbol, 'ل.س.');
+  assert.equal(snap.currencyFractionDigits, 0);
+  assert.equal(snap.timezone, 'Asia/Damascus');
+
+  const expectedParts = new Intl.NumberFormat('ar-SY', {
+    style: 'currency',
+    currency: 'SYP',
+    currencyDisplay: 'symbol',
+  }).formatToParts(1);
+  const expectedPos =
+    expectedParts.findIndex((p) => p.type === 'currency') <
+    expectedParts.findIndex((p) => p.type === 'integer')
+      ? 'prefix'
+      : 'suffix';
+  assert.equal(snap.currencyPosition, expectedPos);
+});
+
+test('SSP renders SSP in en-US and ar-SY instead of £', () => {
+  assert.notEqual(resolveIntlCurrencyDisplay('SSP', 'en-US'), 'narrowSymbol');
+  assert.notEqual(resolveIntlCurrencyDisplay('SSP', 'ar-SY'), 'narrowSymbol');
+
+  assert.equal(getCurrencySymbol('SSP', 'en-US'), 'SSP');
+  assert.equal(getCurrencySymbol('SSP', 'ar-SY'), 'SSP');
+
+  const enFormatted = formatCurrency(250, 'SSP', 'en-US');
+  assert.match(enFormatted, /SSP/);
+  assert.doesNotMatch(enFormatted, /£/);
+
+  const arMoney = formatMoney(250, 'SSP', 'ar-SY');
+  assert.match(arMoney, /SSP/);
+  assert.doesNotMatch(arMoney, /£/);
+
+  const snap = resolveRegionalSnapshot({ country: 'SY', currency: 'SSP' });
+  assert.equal(snap.currencySymbol, 'SSP');
+});
+
+test('standard narrow symbols are preserved for USD/CAD/AUD, Sterling-pegged, and other currencies', () => {
+  for (const code of ['USD', 'CAD', 'AUD']) {
+    assert.equal(resolveIntlCurrencyDisplay(code, 'en-US'), 'narrowSymbol');
+    assert.equal(getCurrencySymbol(code, 'en-US'), '$');
+    assert.match(formatMoney(10, code, 'en-US'), /^\$10\.00$/);
+  }
+  for (const code of ['GBP', 'FKP', 'GIP', 'SHP']) {
+    assert.equal(resolveIntlCurrencyDisplay(code, 'en-US'), 'narrowSymbol');
+    assert.equal(getCurrencySymbol(code, 'en-US'), '£');
+    assert.match(formatMoney(10, code, 'en-US'), /^£10\.00$/);
+  }
+  assert.equal(resolveIntlCurrencyDisplay('EGP', 'en-US'), 'narrowSymbol');
+  assert.equal(getCurrencySymbol('EGP', 'en-US'), 'E£');
+  assert.equal(resolveIntlCurrencyDisplay('LBP', 'en-US'), 'narrowSymbol');
+  assert.equal(getCurrencySymbol('LBP', 'en-US'), 'L£');
+  assert.equal(resolveIntlCurrencyDisplay('EUR', 'de-DE'), 'narrowSymbol');
+  assert.equal(getCurrencySymbol('EUR', 'de-DE'), '€');
+  assert.equal(resolveIntlCurrencyDisplay('INR', 'en-IN'), 'narrowSymbol');
+  assert.equal(getCurrencySymbol('INR', 'en-IN'), '₹');
+  assert.equal(resolveIntlCurrencyDisplay('JPY', 'ja-JP'), 'narrowSymbol');
 });

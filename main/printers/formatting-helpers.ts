@@ -1,7 +1,11 @@
 /** Thermal receipt formatting helpers and ESC/POS builder. Pure leaf module with no dependencies on document formatters. */
 
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
-import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
+import {
+  CURRENCY_ASCII_MAP,
+  isAmbiguousCurrencySymbol,
+  normalizeCurrencyToAscii,
+} from '../../shared/print/currency';
 import {
   displayCellWidth,
   fitThermalLine,
@@ -539,12 +543,9 @@ export function resolveCurrencyPrefix(
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
     : normalizedSymbol;
   const fallbackCurrency = currencyCode || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs';
-  const candidateFallback =
-    (normalizedSymbol === '¥' || normalizedSymbol === '\uFFE5') &&
-    currencyCode &&
-    currencyCode !== 'JPY'
-      ? fallbackCurrency
-      : CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency;
+  const candidateFallback = isAmbiguousCurrencySymbol(normalizedSymbol, currencyCode)
+    ? fallbackCurrency
+    : CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency;
   const mappedFallback = /^[\x00-\x7F]*$/.test(candidateFallback)
     ? candidateFallback
     : currencyCode || '';

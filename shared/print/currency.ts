@@ -71,6 +71,7 @@ export const CURRENCY_ASCII_MAP: Readonly<Record<string, string>> = Object.freez
   'ر.س.': 'SAR',
   'ج.س.': 'SDG',
   'ل.س.': 'SYP',
+  'ل.س': 'SYP',
   'د.ت.': 'TND',
   'ر.ي.': 'YER',
   'د.إ.': 'AED',
@@ -97,6 +98,14 @@ export function normalizeCurrencyToAscii(text: string): string {
 export const CURRENCY_TOKEN_PATTERN = CURRENCY_ASCII_ENTRIES.map(([symbol]) =>
   symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
 ).join('|');
+
+/** True when a narrow glyph (¥, £) must fall back to the ISO code rather than JPY/GBP. */
+export function isAmbiguousCurrencySymbol(symbol: string, currencyCode?: string): boolean {
+  if (!currencyCode) return false;
+  if ((symbol === '¥' || symbol === '\uFFE5') && currencyCode !== 'JPY') return true;
+  if (symbol === '£' && currencyCode !== 'GBP') return true;
+  return false;
+}
 
 /** Canonical tenant currency storage contract. */
 export const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;

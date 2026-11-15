@@ -51,6 +51,15 @@ try {
   assert.equal(getLocalizedCountryName('DE', 'fa-IR'), 'آلمان');
   assert.equal(getLocalizedCountryName('US', 'fa-IR'), 'ایالات متحده');
 
+  assert.equal(getLocalizedCountryName('SY', 'en'), 'Syria');
+  assert.equal(getLocalizedCountryName('SY', 'ar'), 'سوريا');
+  const syria = getCountryByCode('SY');
+  assert(syria, 'Syria country profile exists');
+  assert(countryMatchesQuery(syria, 'Syria', 'ar'), 'search matches English Syria in Arabic UI');
+  assert(countryMatchesQuery(syria, 'سوريا', 'ar'), 'search matches Arabic Syria name');
+  assert(countryMatchesQuery(syria, 'SYP', 'en'), 'search matches SYP currency');
+  assert(countryMatchesQuery(syria, 'SY', 'en'), 'search matches SY country code');
+
   const germany = getCountryByCode('DE');
   assert(germany, 'Germany country profile exists');
   assert(countryMatchesQuery(germany, 'Alemania', 'es'), 'search matches a localized Spanish name');
@@ -58,7 +67,10 @@ try {
   assert(countryMatchesQuery(germany, 'DE', 'es'), 'search matches the ISO country code');
   assert(countryMatchesQuery(germany, 'EUR', 'es'), 'search matches the currency');
   assert(countryMatchesQuery(germany, 'de-DE', 'es'), 'search matches the country locale');
-  assert(!countryMatchesQuery(germany, 'Brasil', 'es'), 'search excludes unrelated localized names');
+  assert(
+    !countryMatchesQuery(germany, 'Brasil', 'es'),
+    'search excludes unrelated localized names',
+  );
 
   assert.deepEqual(
     codes(sortCountriesByLocalizedName(selectedCountries(), 'es')),

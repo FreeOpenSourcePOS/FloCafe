@@ -493,6 +493,60 @@ async function testReconnectViaPropsAndConnectCallback() {
 
     harness.cleanupAll();
   });
+
+  // Reconnect when focus fires while onConnectDrive is awaiting confirmation before OAuth completes
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    let backendStatus = makeStatus({ connected: false });
+    let resolveConnect!: () => void;
+    const harness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, async (url) => {
+      if (url === '/settings/google-drive/qr-menu') return { data: backendStatus };
+      return { data: {} };
+    });
+
+    const props = {
+      canConnectDrive: true,
+      connectingDrive: false,
+      driveConnected: true,
+      driveAccountEmail: 'owner@cafe.com',
+      onConnectDrive: () =>
+        new Promise<void>((resolve) => {
+          resolveConnect = () => {
+            backendStatus = makeStatus({ connected: true, published: false });
+            resolve();
+          };
+        }),
+    };
+
+    harness.render(QrMenuSettingsTab, props);
+    await flushMicrotasks();
+    const tree = harness.render(QrMenuSettingsTab, props);
+    const connectBtn = collectElements(
+      tree,
+      (el) => el.type === 'button' && renderToStaticMarkup(el).includes('connectDrive'),
+    )[0];
+    assert.ok(connectBtn, 'connectDrive button rendered when driveConnected prop is stale');
+
+    const connectPromise = connectBtn.props.onClick();
+    dom.fakeWindow.dispatch('focus');
+    await flushMicrotasks();
+
+    resolveConnect();
+    await connectPromise;
+    await flushMicrotasks();
+
+    const afterTree = harness.render(QrMenuSettingsTab, props);
+    assert.ok(
+      renderToStaticMarkup(afterTree).includes('publishMenu'),
+      'Focus during connect confirmation does not cause handleConnectDrive to skip post-OAuth refresh',
+    );
+
+    harness.cleanupAll();
+  });
   console.log('  ✓ Reconnect via driveConnected prop and async onConnectDrive verified');
 }
 

@@ -179,9 +179,8 @@ export function QrMenuSettingsTab({
   }, [refreshQrMenuStatus]);
 
   const handleConnectDrive = async () => {
-    const startGeneration = refreshGenerationRef.current;
     await onConnectDrive();
-    if (mountedRef.current && refreshGenerationRef.current === startGeneration) {
+    if (mountedRef.current) {
       await refreshQrMenuStatus({ silent: true });
     }
   };

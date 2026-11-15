@@ -273,10 +273,7 @@ try {
   );
   cart().clearCart();
 
-  mockStorage.set(
-    'pos-auth',
-    JSON.stringify({ state: { tenant: { country: 'SY' } } }),
-  );
+  mockStorage.set('pos-auth', JSON.stringify({ state: { tenant: { country: 'SY' } } }));
   assert.equal(
     resolveActiveCurrencyDecimals(),
     0,

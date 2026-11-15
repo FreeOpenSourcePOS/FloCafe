@@ -462,6 +462,107 @@ async function run() {
     await useCloudAttentionStore.getState().refreshForTenant(customAccountOnlyTenant as any);
     assert.equal(apiCalls.length, 1);
 
+    // 13. syncAccount(..., true) invalidates loadedForTenantId so non-forced refresh retries
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        return {
+          data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+        };
+      }
+      return { data: { cloud_registration_status: 'registered', cloud_deletion_status: '' } };
+    };
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 1);
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, true);
+    assert.equal(apiCalls.length, 2);
+
+    useCloudAttentionStore.getState().syncAccount(1, null, true);
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, null);
+    assert.equal(useCloudAttentionStore.getState().accountLoadFailed, true);
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(apiCalls.length, 4);
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 1);
+    assert.equal(useCloudAttentionStore.getState().accountLoadFailed, false);
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, true);
+
+    // 14. Superseded in-flight refresh completing after a newer forced refresh preserves loadedForTenantId
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    const staleForcedAccount = createDeferred<{ data: any }>();
+    let forcedAttempt = 0;
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        forcedAttempt += 1;
+        if (forcedAttempt === 1) return staleForcedAccount.promise;
+        return {
+          data: { cloud_account_available: true, email: 'owner@flo.local', verified: true },
+        };
+      }
+      return { data: { cloud_registration_status: 'registered', cloud_deletion_status: '' } };
+    };
+    const olderRefresh = useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any, { force: true });
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 1);
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+
+    staleForcedAccount.resolve({
+      data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+    });
+    await olderRefresh;
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 1);
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().account?.verified, true);
+
+    const callsBeforeRepeat = apiCalls.length;
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(apiCalls.length, callsBeforeRepeat);
+
+    // Partial supersede: forced refresh with syncAccount(..., false) preserves loadedForTenantId,
+    // while syncAccount(..., true) keeps loadedForTenantId cleared.
+    const partialForcedCloud = createDeferred<{ data: any }>();
+    getHandler = async (url) => {
+      if (url === '/settings/cloud') return partialForcedCloud.promise;
+      return {
+        data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+      };
+    };
+    const partialForcedRefresh = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(ownerTenant as any, { force: true });
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'owner@flo.local',
+      verified: true,
+    });
+    partialForcedCloud.resolve({
+      data: { cloud_registration_status: 'registered', cloud_deletion_status: '' },
+    });
+    await partialForcedRefresh;
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 1);
+    assert.equal(useCloudAttentionStore.getState().account?.verified, true);
+
+    const failedSyncCloud = createDeferred<{ data: any }>();
+    getHandler = async (url) => {
+      if (url === '/settings/cloud') return failedSyncCloud.promise;
+      return {
+        data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+      };
+    };
+    const refreshDuringFailedSync = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(ownerTenant as any, { force: true });
+    useCloudAttentionStore.getState().syncAccount(1, null, true);
+    failedSyncCloud.resolve({
+      data: { cloud_registration_status: 'registered', cloud_deletion_status: '' },
+    });
+    await refreshDuringFailedSync;
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, null);
+    assert.equal(useCloudAttentionStore.getState().accountLoadFailed, true);
+
     console.log('settings-subnav-attention unit tests: all assertions passed');
   } finally {
     Module._resolveFilename = originalResolveFilename;

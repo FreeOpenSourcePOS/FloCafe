@@ -142,6 +142,7 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
     });
     set({
       tenantId,
+      loadedForTenantId: failed ? null : current.loadedForTenantId,
       account: nextAccount,
       accountLoadFailed: failed,
       cloud: current.cloud,
@@ -219,6 +220,7 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
 
       const applyAccount = acctGen === accountGeneration;
       const applyCloud = cldGen === cloudGeneration;
+      if (!applyAccount && !applyCloud) return;
 
       const nextAccount = applyAccount
         ? accountSucceeded
@@ -239,11 +241,17 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
         cloud: nextCloud,
       });
 
-      const fullyLoaded = accountSucceeded && cloudSucceeded && applyAccount && applyCloud;
+      const appliedFailure =
+        (applyAccount && !accountSucceeded) || (applyCloud && !cloudSucceeded);
+      const fullyLoaded = applyAccount && accountSucceeded && applyCloud && cloudSucceeded;
 
       set({
         tenantId,
-        loadedForTenantId: fullyLoaded ? tenantId : null,
+        loadedForTenantId: appliedFailure
+          ? null
+          : fullyLoaded
+            ? tenantId
+            : current.loadedForTenantId,
         account: nextAccount,
         accountLoadFailed: nextAccountLoadFailed,
         cloud: nextCloud,

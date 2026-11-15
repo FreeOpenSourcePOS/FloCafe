@@ -76,8 +76,11 @@ function expiresInSecondsFor(remember: boolean): number {
   return remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : JWT_EXPIRES_IN_SECONDS;
 }
 
-function tokenExpSeconds(remember = false): number {
-  return Math.floor(Date.now() / 1000) + expiresInSecondsFor(remember);
+export function tokenExpSeconds(remember: boolean, iatSeconds: number): number {
+  // Clamp to both issued iat and wall clock so second rollovers never inflate TTL
+  // and ahead-of-wall monotonic iat values stay wall-clock bounded.
+  const baseSeconds = Math.min(Math.floor(iatSeconds), Math.floor(Date.now() / 1000));
+  return baseSeconds + expiresInSecondsFor(remember);
 }
 
 export function signFreshSessionToken(
@@ -92,6 +95,7 @@ export function signFreshSessionToken(
     expSeconds - iatSeconds > JWT_EXPIRES_IN_SECONDS + 60 ||
     expSeconds - nowSeconds > JWT_EXPIRES_IN_SECONDS + 60;
   const remember = isLongLived;
+  const iat = nextTokenIatSeconds();
   const payload: Record<string, unknown> = {
     userId: user.id,
     email: user.email,
@@ -101,8 +105,8 @@ export function signFreshSessionToken(
     ...(decoded.scope !== undefined ? { scope: decoded.scope } : {}),
     ...(decoded.aud !== undefined ? { aud: decoded.aud } : {}),
     jti: randomUUID(),
-    iat: nextTokenIatSeconds(),
-    exp: tokenExpSeconds(remember),
+    iat,
+    exp: tokenExpSeconds(remember, iat),
   };
   return jwt.sign(payload, getJWTSecret());
 }
@@ -376,6 +380,7 @@ router.post(
       resetSuccessfulLogin(ip);
 
       const remember = !!rememberMe;
+      const iat = nextTokenIatSeconds();
       const token = jwt.sign(
         {
           userId: currentUser.id,
@@ -383,8 +388,8 @@ router.post(
           role: currentUser.role,
           remember,
           jti: randomUUID(),
-          iat: nextTokenIatSeconds(),
-          exp: tokenExpSeconds(remember),
+          iat,
+          exp: tokenExpSeconds(remember, iat),
         },
         getJWTSecret(),
       );
@@ -683,6 +688,7 @@ export async function authenticatePinLogin<TExtra = undefined>(opts: {
     },
   });
 
+  const iat = nextTokenIatSeconds();
   const token = jwt.sign(
     {
       userId: issuedUser.id,
@@ -690,8 +696,8 @@ export async function authenticatePinLogin<TExtra = undefined>(opts: {
       role: issuedUser.role,
       remember: opts.remember,
       jti: randomUUID(),
-      iat: nextTokenIatSeconds(),
-      exp: tokenExpSeconds(opts.remember),
+      iat,
+      exp: tokenExpSeconds(opts.remember, iat),
     },
     getJWTSecret(),
   );
@@ -814,6 +820,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
 
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
+    const iat = nextTokenIatSeconds();
     const newToken = jwt.sign(
       {
         userId: user.id,
@@ -822,8 +829,8 @@ router.post('/tenants/select', (req: Request, res: Response) => {
         tenantId: 1,
         remember,
         jti: randomUUID(),
-        iat: nextTokenIatSeconds(),
-        exp: tokenExpSeconds(remember),
+        iat,
+        exp: tokenExpSeconds(remember, iat),
       },
       getJWTSecret(),
     );
@@ -881,6 +888,7 @@ router.post('/refresh', (req: Request, res: Response) => {
     }
 
     const remember = !!decoded.remember;
+    const iat = nextTokenIatSeconds();
     const newToken = jwt.sign(
       {
         userId: decoded.userId,
@@ -889,8 +897,8 @@ router.post('/refresh', (req: Request, res: Response) => {
         tenantId: decoded.tenantId,
         remember,
         jti: randomUUID(),
-        iat: nextTokenIatSeconds(),
-        exp: tokenExpSeconds(remember),
+        iat,
+        exp: tokenExpSeconds(remember, iat),
       },
       getJWTSecret(),
     );
@@ -1903,14 +1911,15 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       business_type,
     });
 
+    const iat = nextTokenIatSeconds();
     const token = jwt.sign(
       {
         userId,
         email,
         role: INITIAL_ADMIN_ROLE,
         jti: randomUUID(),
-        iat: nextTokenIatSeconds(),
-        exp: tokenExpSeconds(false),
+        iat,
+        exp: tokenExpSeconds(false, iat),
       },
       getJWTSecret(),
     );

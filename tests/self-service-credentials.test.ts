@@ -1027,12 +1027,13 @@ async function run() {
   console.log('\n6. Token rotation expiration preservation and concurrency checks');
   // 6a: Test signFreshSessionToken preserving 10-day vs 24-hour expiration
   const testUser = { id: 'test-user', email: 'test@flo.local', role: 'server' };
+  const nowSec = Math.floor(Date.now() / 1000);
   const standardTokenPayload = {
     userId: testUser.id,
     email: testUser.email,
     role: testUser.role,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 86400,
+    iat: nowSec,
+    exp: nowSec + 86400,
   };
   const standardRotated = signFreshSessionToken(testUser, standardTokenPayload);
   const standardDecoded = jwt.verify(standardRotated, getJWTSecret()) as any;
@@ -1046,8 +1047,8 @@ async function run() {
     email: testUser.email,
     role: testUser.role,
     remember: true,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 10 * 86400,
+    iat: nowSec,
+    exp: nowSec + 10 * 86400,
   };
   const rememberedRotated = signFreshSessionToken(testUser, rememberedTokenPayload);
   const rememberedDecoded = jwt.verify(rememberedRotated, getJWTSecret()) as any;
@@ -1061,8 +1062,8 @@ async function run() {
     userId: testUser.id,
     email: testUser.email,
     role: testUser.role,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 10 * 86400,
+    iat: nowSec,
+    exp: nowSec + 10 * 86400,
   };
   const kdsRotated = signFreshSessionToken(testUser, kdsOrServerLongLivedPayload);
   const kdsDecoded = jwt.verify(kdsRotated, getJWTSecret()) as any;
@@ -1070,6 +1071,47 @@ async function run() {
     kdsDecoded.exp - kdsDecoded.iat >= 10 * 86400 - 10,
     'Rotated KDS/Server App 10-day token without explicit remember flag preserves 10-day expiration',
   );
+
+  // Deterministic sub-second UTC rollover regression check:
+  // Force nextTokenIatSeconds() to sample at .999 ms and any subsequent Date.now()
+  // call (such as an uncoupled exp lookup) to land 2 ms later at .001 ms of the next second.
+  const realDateNow = Date.now;
+  const rolloverCases = [
+    { label: 'standard 24h', remember: false, ttl: 86400, offsetSec: 10 },
+    { label: 'remembered 10d', remember: true, ttl: 10 * 86400, offsetSec: 20 },
+  ];
+  for (const { label, remember, ttl, offsetSec } of rolloverCases) {
+    const baseSec = Math.floor(realDateNow() / 1000) + offsetSec;
+    let calls = 0;
+    let rotatedToken = '';
+    try {
+      Date.now = () => {
+        calls += 1;
+        return calls <= 2 ? baseSec * 1000 + 999 : baseSec * 1000 + 1001;
+      };
+      rotatedToken = signFreshSessionToken(testUser, {
+        userId: testUser.id,
+        email: testUser.email,
+        role: testUser.role,
+        ...(remember ? { remember: true } : {}),
+        iat: baseSec,
+        exp: baseSec + ttl,
+      });
+    } finally {
+      Date.now = realDateNow;
+    }
+    const decoded = jwt.verify(rotatedToken, getJWTSecret()) as any;
+    const ttlDelta = decoded.exp - decoded.iat;
+    assertEqualOrThrow(
+      Math.round((decoded.iat % 1) * 1000),
+      999,
+      `Rollover regression (${label}) sampled sub-second iat at .999`,
+    );
+    assertOrThrow(
+      ttlDelta > ttl - 1 && ttlDelta <= ttl,
+      `Rollover regression (${label}) keeps exp - iat within (ttl - 1, ttl], got ${ttlDelta}`,
+    );
+  }
 
   // 6b: Concurrency check: in-flight password / PIN change fails if staff reset modified credentials
   clearLoginRateLimits();

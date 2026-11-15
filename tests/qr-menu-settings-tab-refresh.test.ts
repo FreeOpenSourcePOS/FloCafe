@@ -142,6 +142,10 @@ function createStatefulHarness() {
       const idx = effectCursor++;
       effects[idx] = { fn, deps };
     },
+    useLayoutEffect: (fn: () => void | (() => void), deps?: unknown[]) => {
+      const idx = effectCursor++;
+      effects[idx] = { fn, deps };
+    },
   };
 
   function flushEffects() {
@@ -232,6 +236,17 @@ function createDomEventEnv() {
       for (const handler of [...(windowListeners.get(type) || [])]) handler();
     },
     open() {},
+    setTimeout,
+    clearTimeout,
+    dispatchEvent() {
+      return true;
+    },
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    },
+    location: { search: '', pathname: '/settings', hash: '' },
   };
 
   const fakeDocument = {
@@ -250,6 +265,9 @@ function createDomEventEnv() {
     dispatch(type: string) {
       for (const handler of [...(documentListeners.get(type) || [])]) handler();
     },
+    getElementById: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
   };
 
   return { fakeWindow, fakeDocument, windowListeners, documentListeners };
@@ -766,11 +784,288 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
   console.log('  ✓ Disconnect, prefs preservation, and race safety verified');
 }
 
+async function testConnectGoogleDriveDoesNotBlockOnRemoteBackups() {
+  console.log('\n--- 4. SettingsPage connectGoogleDrive does not block on backups fetch ---');
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    let backendConnected = false;
+    let backupsRequests = 0;
+    let qrMenuCalls = 0;
+
+    const qrHarness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(qrHarness, async (url) => {
+      if (url === '/settings/google-drive/qr-menu') {
+        qrMenuCalls++;
+        return {
+          data: makeStatus({
+            connected: backendConnected,
+            published: backendConnected,
+            file_name: backendConnected ? 'Test Cafe - Menu (abc123).pdf' : null,
+          }),
+        };
+      }
+      return { data: {} };
+    });
+
+    const settingsHarness = createStatefulHarness();
+    const settingsPagePath = path.resolve(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx');
+    delete require.cache[settingsPagePath];
+
+    const StubComponent = ({ children }: any) =>
+      settingsHarness.hooksReact.createElement('div', null, children);
+    const noopProxy: any = new Proxy(() => null, {
+      get(_target, prop) {
+        if (prop === '__esModule') return true;
+        if (prop === 'default') return StubComponent;
+        return StubComponent;
+      },
+    });
+
+    const authState = {
+      currentTenant: {
+        id: 1,
+        business_name: 'Test Cafe',
+        country: 'US',
+        currency: 'USD',
+        role: 'owner',
+        permission_ids: ['google-drive.manage', 'settings.manage'],
+      },
+      user: { id: 'u-1', role: 'owner', name: 'Owner' },
+      updateCurrentTenant: () => {},
+    };
+    const posSettingsState = {
+      whatsappEnabled: false,
+      billTemplate: 'classic',
+      printerEnabled: false,
+      printerPaperSize: '80mm',
+      autoPrintKot: false,
+      autoPrintBill: false,
+      whatsappShareEnabled: false,
+      printerUseUnicode: false,
+      printerArabicShaping: false,
+      printerTrimDecimals: false,
+      billShowLogo: false,
+      billShowName: true,
+      billShowAddress: false,
+      billShowPhone: false,
+      billShowTaxId: false,
+      billShowTaxBreakdown: false,
+      billShowCustomerName: false,
+      billShowCustomerPhone: false,
+      billDeliveryShowCustomerPhoneAlways: false,
+      billShowTableNumber: false,
+      billShowLargeOrderNumber: false,
+      billLanguagePolicy: { primary: { mode: 'inherit' }, additional: [] },
+      kotLanguagePolicy: { primary: { mode: 'inherit' } },
+      setBillTemplate: () => {},
+      load: async () => {},
+    };
+    const printerState = { printMethod: 'system', setPrintMethod: () => {} };
+    const stableT = (key: string) => key;
+    const toastFn = Object.assign(() => {}, { success: () => {}, error: () => {} });
+
+    let capturedQrProps: {
+      canConnectDrive: boolean;
+      connectingDrive: boolean;
+      onConnectDrive: () => void | Promise<unknown>;
+    } | null = null;
+
+    Module._resolveFilename = function (
+      request: string,
+      parent: any,
+      isMain: boolean,
+      options?: any,
+    ) {
+      const resolved =
+        request === 'react'
+          ? reactPath
+          : request === 'react/jsx-runtime'
+            ? reactJsxRuntimePath
+            : request === 'react-dom'
+              ? reactDomPath
+              : request === 'react-dom/server'
+                ? reactDomServerPath
+                : request === 'use-intl'
+                  ? useIntlPath
+                  : request === '@countries'
+                    ? path.resolve(ROOT, 'main/countries.ts')
+                    : request.startsWith('@print/')
+                      ? path.resolve(ROOT, 'shared/print', request.slice(7))
+                      : request.startsWith('@shared/')
+                        ? path.resolve(ROOT, 'shared', request.slice(8))
+                        : request.startsWith('@/')
+                          ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+                          : request;
+      return originalResolveFilename.call(this, resolved, parent, isMain, options);
+    };
+
+    Module._load = function (request: string, parent: any, isMain: boolean) {
+      if (request === 'react') return settingsHarness.hooksReact;
+      if (request === 'react/jsx-runtime') return settingsHarness.jsxRuntime;
+      if (request === 'use-intl') return { useTranslations: () => stableT };
+      if (request === 'next/link') return StubComponent;
+      if (request === 'next/navigation') {
+        return {
+          useRouter: () => ({ push: () => {}, replace: () => {} }),
+          useSearchParams: () => new URLSearchParams('tab=qr-menu'),
+        };
+      }
+      if (request === 'lucide-react') return new Proxy({}, { get: () => () => null });
+      if (request === 'react-hot-toast') {
+        return { __esModule: true, default: toastFn, toast: toastFn };
+      }
+      if (request === 'axios') {
+        return {
+          __esModule: true,
+          default: { isCancel: () => false, isAxiosError: () => false },
+          isCancel: () => false,
+          isAxiosError: () => false,
+        };
+      }
+      if (request === '@/store/auth') {
+        return {
+          useAuthStore: (sel?: (s: any) => any) =>
+            typeof sel === 'function' ? sel(authState) : authState,
+        };
+      }
+      if (request === '@/store/pos-settings') {
+        return {
+          usePosSettingsStore: (sel?: (s: any) => any) =>
+            typeof sel === 'function' ? sel(posSettingsState) : posSettingsState,
+          normalizeAutoLockMinutesValue: (v: unknown) => Number(v) || 0,
+        };
+      }
+      if (request === '@/store/theme') {
+        return { useThemeMode: () => ({ themeMode: 'light', setThemeMode: () => {} }) };
+      }
+      if (request === '@/hooks/usePrinter') {
+        return { usePrinterStore: () => printerState };
+      }
+      if (request === '@/hooks/useOrdersLayout') {
+        return { useOrdersLayoutPreference: () => ({ layout: 'cards', setLayout: () => {} }) };
+      }
+      if (request === '@/hooks/usePosSort') {
+        return {
+          usePosSortPreference: () => ({
+            categorySort: 'default',
+            itemSort: 'default',
+            setCategorySort: () => {},
+            setItemSort: () => {},
+          }),
+        };
+      }
+      if (request === '@/hooks/use-confirm') {
+        return { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) };
+      }
+      if (request === '@/hooks/useFormatDate') {
+        return {
+          useFormatDate: () => ({
+            formatDate: (v: string) => v,
+            formatTime: (v: string) => v,
+            formatDateTime: (v: string) => v,
+          }),
+        };
+      }
+      if (request === '@/hooks/useUpdateStatus') {
+        return { useUpdateStatus: () => ({ status: 'idle' }) };
+      }
+      if (request === '@/components/settings/QrMenuSettingsTab') {
+        return {
+          QrMenuSettingsTab: (props: any) => {
+            capturedQrProps = props;
+            return null;
+          },
+        };
+      }
+      if (
+        request === '@/components/ui/tabs' ||
+        request === '@/components/ui/tooltip' ||
+        request === '@/components/ui/dialog' ||
+        request === '@/components/ui/button' ||
+        request === '@/components/layout/Ltr' ||
+        request.startsWith('@/components/settings/') ||
+        request.startsWith('@/components/analytics/')
+      ) {
+        return noopProxy;
+      }
+      if (request === '@/lib/api') {
+        return {
+          __esModule: true,
+          default: {
+            get: async (url: string) => {
+              if (url.startsWith('/settings/google-drive/backups')) {
+                backupsRequests++;
+                return new Promise(() => {});
+              }
+              return { data: {} };
+            },
+            post: async (url: string) => {
+              if (url === '/settings/google-drive/connect') {
+                backendConnected = true;
+                return { data: { connected: true, account_email: 'owner@cafe.com' } };
+              }
+              return { data: {} };
+            },
+            put: async () => ({ data: {} }),
+            delete: async () => ({ data: {} }),
+          },
+        };
+      }
+      return originalLoad.apply(this, [request, parent, isMain]);
+    };
+
+    const SettingsPage = require(settingsPagePath).default;
+    const settingsTree = settingsHarness.render(SettingsPage, {});
+    collectElements(settingsTree, () => false);
+    assert.ok(capturedQrProps, 'SettingsPage rendered QrMenuSettingsTab with props');
+
+    // Mount real QrMenuSettingsTab with the real onConnectDrive handler from SettingsPage
+    qrHarness.render(QrMenuSettingsTab, capturedQrProps!);
+    await flushMicrotasks();
+    const disconnectedTree = qrHarness.render(QrMenuSettingsTab, capturedQrProps!);
+    const connectBtn = collectElements(
+      disconnectedTree,
+      (el) => el.type === 'button' && renderToStaticMarkup(el).includes('connectDrive'),
+    )[0];
+    assert.ok(connectBtn, 'connectDrive button rendered');
+    assert.equal(qrMenuCalls, 1);
+
+    // Clicking Connect must resolve and refresh QrMenuSettingsTab even while backups fetch hangs
+    const clickPromise = Promise.resolve(connectBtn.props.onClick());
+    const outcome = await Promise.race([
+      clickPromise.then(() => 'resolved'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('timed_out'), 200)),
+    ]);
+    assert.equal(
+      outcome,
+      'resolved',
+      'connectGoogleDrive / handleConnectDrive must not block on pending /settings/google-drive/backups',
+    );
+    assert.equal(backupsRequests, 1, 'Remote backups fetch was still kicked off in the background');
+    await flushMicrotasks();
+    assert.equal(qrMenuCalls, 2, 'QrMenuSettingsTab refreshed immediately after connect');
+
+    const connectedTree = qrHarness.render(QrMenuSettingsTab, capturedQrProps!);
+    assert.ok(
+      renderToStaticMarkup(connectedTree).includes('liveMenu'),
+      'QrMenuSettingsTab renders connected liveMenu while backups fetch is still pending',
+    );
+
+    qrHarness.cleanupAll();
+    settingsHarness.cleanupAll();
+  });
+  console.log('  ✓ SettingsPage connectGoogleDrive non-blocking refresh verified');
+}
+
 async function main() {
   console.log('🧪 QR Menu Settings Tab Refresh Tests');
   await testReconnectViaConnectCallback();
   await testFocusAndVisibilityRefresh();
   await testDisconnectAndPrefsPreservationAndRaceSafety();
+  await testConnectGoogleDriveDoesNotBlockOnRemoteBackups();
 }
 
 main().catch((error) => {

@@ -33,6 +33,7 @@ const NON_TWO_DECIMAL_COUNTRY_CURRENCIES: Record<string, string> = {
   RS: 'RSD',
   RW: 'RWF',
   SN: 'XOF',
+  SY: 'SYP',
   TN: 'TND',
   UG: 'UGX',
   VN: 'VND',

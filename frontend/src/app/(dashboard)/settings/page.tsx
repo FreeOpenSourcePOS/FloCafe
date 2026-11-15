@@ -123,6 +123,16 @@ import { searchSettingsCatalog, type SettingsSearchResult } from '@/lib/settings
 
 const HIGHLIGHT_CLASSES = ['ring-2', 'ring-brand', 'ring-offset-2', 'transition-all'] as const;
 
+const INITIAL_CLOUD_STATUS = {
+  cloud_registration_status: 'unregistered',
+  cloud_services_disabled_by_user: false,
+  cloud_connected: false,
+  cloud_relay_mode: 'disconnected',
+  cloud_last_heartbeat: null as string | null,
+  cloud_last_error: null as string | null,
+  cloud_deletion_status: '',
+};
+
 const GOOGLE_DRIVE_JOB_POLL_INTERVAL_MS = 500;
 const GOOGLE_DRIVE_JOB_STATUS_RETRY_WINDOW_MS = 30_000;
 // Must match RESTORE_CONFIRMATION in main/routes/database.ts.
@@ -447,6 +457,8 @@ export default function SettingsPage() {
   const storeDeletionNeedsAttention = useCloudAttentionStore((s) => s.deletionNeedsAttention);
   const syncCloudAttentionAccount = useCloudAttentionStore((s) => s.syncAccount);
   const syncCloudAttentionStatus = useCloudAttentionStore((s) => s.syncCloudStatus);
+  const hasStoreAttentionForTenant =
+    currentTenant?.id != null && cloudAttentionTenantId === currentTenant.id;
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -511,7 +523,17 @@ export default function SettingsPage() {
     requireKitchenDelivered?: boolean;
   }>({ tenantId: currentTenant?.id ?? null });
   const getActiveTenantId = () =>
-    useAuthStore.getState()?.currentTenant?.id ?? currentTenantIdRef.current;
+    typeof useAuthStore.getState === 'function'
+      ? (useAuthStore.getState()?.currentTenant?.id ?? null)
+      : currentTenantIdRef.current;
+  const isOwnerForTenant = (tenantId: number | null) => {
+    if (tenantId === null) return false;
+    if (typeof useAuthStore.getState === 'function') {
+      const activeTenant = useAuthStore.getState()?.currentTenant;
+      return activeTenant?.id === tenantId && tenantCan(activeTenant, 'cloud.account.manage');
+    }
+    return currentTenantIdRef.current === tenantId && isOwner;
+  };
   const syncTenantTracking = (tenantId: number | null) => {
     if (currentTenantIdRef.current !== tenantId) {
       currentTenantIdRef.current = tenantId;
@@ -528,6 +550,17 @@ export default function SettingsPage() {
       setPrintingHydrationFailed(false);
       setZReportLanguagePolicyLoaded(false);
       setRefundPolicyHydrated(false);
+      loadedSettingsTabs.current.clear();
+      cloudHydrationTenant.current = tenantId;
+      cloudHydrationGeneration.current += 1;
+      cloudHydrated.current = false;
+      cloudHydrationSucceeded.current = false;
+      cloudHydrationPromise.current = null;
+      cloudRegistrationStatus.current = 'unregistered';
+      setCloudAccount(null);
+      setCloudAccountLoadFailed(false);
+      setCloudStatus(INITIAL_CLOUD_STATUS);
+      setCloudPrivacyHydrated(false);
     }
   };
   const markHydrationTouched = (field: string) => {
@@ -899,17 +932,18 @@ export default function SettingsPage() {
 
   const fetchCloudAccount = async (signal?: AbortSignal): Promise<boolean> => {
     const tenantId = getActiveTenantId();
+    if (tenantId === null) return false;
     try {
       const { data } = await api.get('/settings/cloud/account', signal ? { signal } : undefined);
-      if (signal?.aborted) return false;
+      if (signal?.aborted || getActiveTenantId() !== tenantId) return false;
       setCloudAccount(data);
       setCloudAccountLoadFailed(false);
-      if (isOwner && tenantId !== null) syncCloudAttentionAccount(tenantId, data, false);
+      if (isOwnerForTenant(tenantId)) syncCloudAttentionAccount(tenantId, data, false);
       return true;
     } catch (error) {
-      if (isRequestCancelled(error)) return false;
+      if (isRequestCancelled(error) || getActiveTenantId() !== tenantId) return false;
       setCloudAccountLoadFailed(true);
-      if (isOwner && tenantId !== null) syncCloudAttentionAccount(tenantId, null, true);
+      if (isOwnerForTenant(tenantId)) syncCloudAttentionAccount(tenantId, null, true);
       return false;
     }
   };
@@ -918,15 +952,19 @@ export default function SettingsPage() {
     product_updates?: boolean;
     marketing?: boolean;
   }) => {
+    const tenantId = getActiveTenantId();
+    if (tenantId === null) return;
     setCloudAccountBusy(true);
     try {
       const { data } = await api.put('/settings/cloud/account/preferences', patch);
+      if (getActiveTenantId() !== tenantId) return;
       const next = cloudAccount ? { ...cloudAccount, ...data } : data;
       setCloudAccount(next);
-      const tenantId = getActiveTenantId();
-      if (isOwner && tenantId !== null) syncCloudAttentionAccount(tenantId, next, false);
+      if (isOwnerForTenant(tenantId)) syncCloudAttentionAccount(tenantId, next, false);
     } catch {
-      toast.error(t('couldNotSavePreference'));
+      if (getActiveTenantId() === tenantId) {
+        toast.error(t('couldNotSavePreference'));
+      }
     } finally {
       setCloudAccountBusy(false);
     }
@@ -1176,28 +1214,36 @@ export default function SettingsPage() {
     }
 
     if (pinGate.mode === 'delete-cloud') {
+      const tenantId = getActiveTenantId();
       try {
         await api.post('/settings/cloud/delete-data', {
           master_pin: pin,
           confirmation: 'DELETE CLOUD DATA',
         });
+        if (tenantId === null || getActiveTenantId() !== tenantId) return { success: false };
         toast.success(t('cloudDeletionSubmitted'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        if (getActiveTenantId() !== tenantId) return { success: false };
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
       } catch {
-        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
-        notifyCloudAccountStatusChanged();
+        if (tenantId !== null && getActiveTenantId() === tenantId) {
+          await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+          if (getActiveTenantId() === tenantId) notifyCloudAccountStatusChanged();
+        }
         return { success: false, error: t('cloudDeletionFailed') };
       }
     }
 
     if (pinGate.mode === 'cancel-cloud-deletion') {
+      const tenantId = getActiveTenantId();
       try {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
+        if (tenantId === null || getActiveTenantId() !== tenantId) return { success: false };
         toast.success(t('cloudDeletionCancelled'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        if (getActiveTenantId() !== tenantId) return { success: false };
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
@@ -1964,15 +2010,7 @@ export default function SettingsPage() {
   });
   const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
   const cloudSettingsRef = useRef(cloudSettings);
-  const [cloudStatus, setCloudStatus] = useState({
-    cloud_registration_status: 'unregistered',
-    cloud_services_disabled_by_user: false,
-    cloud_connected: false,
-    cloud_relay_mode: 'disconnected',
-    cloud_last_heartbeat: null as string | null,
-    cloud_last_error: null as string | null,
-    cloud_deletion_status: '',
-  });
+  const [cloudStatus, setCloudStatus] = useState(INITIAL_CLOUD_STATUS);
   const [cloudPrivacyHydrated, setCloudPrivacyHydrated] = useState(false);
 
   const [savingCloud, setSavingCloud] = useState(false);
@@ -1994,8 +2032,10 @@ export default function SettingsPage() {
 
   const refreshCloudStatus = async () => {
     const tenantId = getActiveTenantId();
+    if (tenantId === null) return;
     try {
       const { data } = await api.get('/settings/cloud');
+      if (getActiveTenantId() !== tenantId) return;
       const nextCloudStatus = {
         cloud_registration_status: data.cloud_registration_status || 'unregistered',
         cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
@@ -2006,7 +2046,7 @@ export default function SettingsPage() {
         cloud_deletion_status: data.cloud_deletion_status || '',
       };
       setCloudStatus(nextCloudStatus);
-      if (isOwner && tenantId !== null) syncCloudAttentionStatus(tenantId, nextCloudStatus);
+      if (isOwnerForTenant(tenantId)) syncCloudAttentionStatus(tenantId, nextCloudStatus);
       setCloudSettings((previous) => ({
         ...previous,
         cloud_sync_enabled: !!data.cloud_sync_enabled,
@@ -2025,14 +2065,20 @@ export default function SettingsPage() {
   };
 
   const refreshDeletionStatus = async () => {
+    const tenantId = getActiveTenantId();
+    if (tenantId === null) return;
     setRefreshingDeletionStatus(true);
     try {
       await api.get('/settings/cloud/delete-data/status');
+      if (getActiveTenantId() !== tenantId) return;
       await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+      if (getActiveTenantId() !== tenantId) return;
       notifyCloudAccountStatusChanged();
       toast.success(t('cloudDeletionStatusRefreshed'));
     } catch {
-      toast.error(t('cloudDeletionStatusRefreshFailed'));
+      if (getActiveTenantId() === tenantId) {
+        toast.error(t('cloudDeletionStatusRefreshFailed'));
+      }
     } finally {
       setRefreshingDeletionStatus(false);
     }
@@ -2602,7 +2648,7 @@ export default function SettingsPage() {
     const loadCloud = async (required = false) => {
       const cloudSettingsAtHydrationStart = { ...cloudSettingsRef.current };
       let registrationStatus = cloudRegistrationStatus.current;
-      const tenantId = currentTenant?.id ?? null;
+      const tenantId = tenantIdAtHydrationStart;
       if (cloudHydrationTenant.current !== tenantId) {
         cloudHydrationTenant.current = tenantId;
         cloudHydrationGeneration.current += 1;
@@ -2672,7 +2718,7 @@ export default function SettingsPage() {
                 cloud_deletion_status: data.cloud_deletion_status || '',
               };
               setCloudStatus(nextCloudStatus);
-              if (isOwner && tenantId !== null) {
+              if (isOwnerForTenant(tenantId)) {
                 syncCloudAttentionStatus(tenantId, nextCloudStatus);
               }
               cloudHydrationSucceeded.current = true;
@@ -3389,6 +3435,8 @@ export default function SettingsPage() {
 
   const saveCloud = async (silent = false) => {
     if (!canManageCloud) return;
+    const tenantId = getActiveTenantId();
+    if (tenantId === null) return;
     setSavingCloud(true);
     try {
       const resumingStoppedCloud = cloudServicesStopped && cloudSettings.cloud_sync_enabled;
@@ -3398,6 +3446,7 @@ export default function SettingsPage() {
         cloud_reports_enabled: resumingStoppedCloud ? true : undefined,
         cloud_command_polling_enabled: resumingStoppedCloud ? true : undefined,
       });
+      if (getActiveTenantId() !== tenantId) return;
       const next = { ...cloudSettings, ...res.data };
       setCloudSettings(next);
       setSavedCloudSettings(next);
@@ -3411,13 +3460,13 @@ export default function SettingsPage() {
         cloud_deletion_status: res.data.cloud_deletion_status || '',
       };
       setCloudStatus(nextCloudStatus);
-      const tenantId = getActiveTenantId();
-      if (isOwner && tenantId !== null) syncCloudAttentionStatus(tenantId, nextCloudStatus);
+      if (isOwnerForTenant(tenantId)) syncCloudAttentionStatus(tenantId, nextCloudStatus);
       await fetchCloudAccount();
+      if (getActiveTenantId() !== tenantId) return;
       notifyCloudAccountStatusChanged();
       if (!silent) toast.success(t('cloudSaved'));
     } catch (err) {
-      if (!silent) toast.error(t('cloudSaveFailed'));
+      if (!silent && getActiveTenantId() === tenantId) toast.error(t('cloudSaveFailed'));
       throw err;
     } finally {
       setSavingCloud(false);
@@ -3430,9 +3479,12 @@ export default function SettingsPage() {
 
   const registerCloud = async (email: string) => {
     if (!canManageCloud) return;
+    const tenantId = getActiveTenantId();
+    if (tenantId === null) return;
     setRegisteringCloud(true);
     try {
       const res = await api.post('/settings/cloud/register', { email });
+      if (getActiveTenantId() !== tenantId) return;
       const registrationStatus = res.data.cloud_registration_status || 'unregistered';
       cloudRegistrationStatus.current = registrationStatus;
       cloudHydrationGeneration.current += 1;
@@ -3449,19 +3501,20 @@ export default function SettingsPage() {
         cloud_deletion_status: res.data.cloud_deletion_status || '',
       };
       setCloudStatus(nextCloudStatus);
-      const tenantId = getActiveTenantId();
-      if (isOwner && tenantId !== null) syncCloudAttentionStatus(tenantId, nextCloudStatus);
+      if (isOwnerForTenant(tenantId)) syncCloudAttentionStatus(tenantId, nextCloudStatus);
       setCloudSettings((prev) => ({
         ...prev,
         cloud_api_key: res.data.cloud_api_key || prev.cloud_api_key,
         cloud_store_id: res.data.cloud_store_id || prev.cloud_store_id,
       }));
       await fetchCloudAccount();
+      if (getActiveTenantId() !== tenantId) return;
       notifyCloudAccountStatusChanged();
       if (registrationStatus === 'registered') {
-        const mobileAccessKeys = currentTenant?.id
-          ? [`${currentTenant.id}:mobile-access`, `${currentTenant.id}:mobile-access:status`]
-          : [];
+        const mobileAccessKeys = [
+          `${tenantId}:mobile-access`,
+          `${tenantId}:mobile-access:status`,
+        ];
         mobileAccessKeys.forEach((key) => {
           settingsTabLoadControllers.current.get(key)?.abort();
           settingsTabLoadControllers.current.delete(key);
@@ -3480,11 +3533,15 @@ export default function SettingsPage() {
             controller.abort();
           }
         }
-        toast.success(t('cloudRegistrationSuccess'));
+        if (getActiveTenantId() === tenantId) {
+          toast.success(t('cloudRegistrationSuccess'));
+        }
       }
     } catch (error) {
       if (isRequestCancelled(error)) return;
-      toast.error(t('cloudRegistrationFailed'));
+      if (getActiveTenantId() === tenantId) {
+        toast.error(t('cloudRegistrationFailed'));
+      }
     } finally {
       setRegisteringCloud(false);
     }
@@ -4698,10 +4755,9 @@ export default function SettingsPage() {
               onClick={handleSettingsTabChange}
               attention={
                 isOwner &&
-                ((cloudAttentionTenantId === (currentTenant?.id ?? null) &&
-                  storeEmailNeedsAttention) ||
-                  (cloudAccountAvailable &&
-                    Boolean(cloudAccount?.email && !cloudAccount?.verified)))
+                (hasStoreAttentionForTenant
+                  ? storeEmailNeedsAttention
+                  : cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))
               }
             />
             <SettingsNavItem
@@ -4711,9 +4767,9 @@ export default function SettingsPage() {
               onClick={handleSettingsTabChange}
               attention={
                 isOwner &&
-                ((cloudAttentionTenantId === (currentTenant?.id ?? null) &&
-                  storeDeletionNeedsAttention) ||
-                  cloudDeletionNeedsAction)
+                (hasStoreAttentionForTenant
+                  ? storeDeletionNeedsAttention
+                  : cloudDeletionNeedsAction)
               }
             />
             <SettingsNavItem
@@ -6518,19 +6574,24 @@ export default function SettingsPage() {
                       className="mt-4"
                       disabled={cloudAccountBusy}
                       onClick={async () => {
+                        const tenantId = getActiveTenantId();
+                        if (tenantId === null) return;
                         setCloudAccountBusy(true);
                         try {
                           await api.post('/settings/cloud/account/verification');
+                          if (getActiveTenantId() !== tenantId) return;
                           toast.success(t('verificationEmailQueued'));
                           await fetchCloudAccount();
                         } catch (err) {
-                          const detail = (err as { response?: { data?: { error?: string } } })
-                            .response?.data?.error;
-                          toast.error(
-                            detail
-                              ? `${t('verificationEmailFailed')}: ${detail}`
-                              : t('verificationEmailFailed'),
-                          );
+                          if (getActiveTenantId() === tenantId) {
+                            const detail = (err as { response?: { data?: { error?: string } } })
+                              .response?.data?.error;
+                            toast.error(
+                              detail
+                                ? `${t('verificationEmailFailed')}: ${detail}`
+                                : t('verificationEmailFailed'),
+                            );
+                          }
                         } finally {
                           setCloudAccountBusy(false);
                         }
@@ -6665,9 +6726,13 @@ export default function SettingsPage() {
                     <Button
                       variant="outline"
                       onClick={async () => {
+                        const tenantId = getActiveTenantId();
+                        if (tenantId === null) return;
                         if (!(await confirm(t('cloudStopAllConfirm')))) return;
+                        if (getActiveTenantId() !== tenantId) return;
                         try {
                           const { data } = await api.post('/settings/cloud/stop-all');
+                          if (getActiveTenantId() !== tenantId) return;
                           const nextCloudStatus = {
                             cloud_registration_status:
                               data.cloud_registration_status || 'unregistered',
@@ -6679,8 +6744,7 @@ export default function SettingsPage() {
                             cloud_deletion_status: data.cloud_deletion_status || '',
                           };
                           setCloudStatus(nextCloudStatus);
-                          const tenantId = getActiveTenantId();
-                          if (isOwner && tenantId !== null) {
+                          if (isOwnerForTenant(tenantId)) {
                             syncCloudAttentionStatus(tenantId, nextCloudStatus);
                           }
                           setCloudSettings((previous) => ({
@@ -6698,10 +6762,13 @@ export default function SettingsPage() {
                           setAnalyticsLevel('off');
                           setDiagnosticsConsent(false);
                           await fetchCloudAccount();
+                          if (getActiveTenantId() !== tenantId) return;
                           notifyCloudAccountStatusChanged();
                           toast.success(t('cloudAllStopped'));
                         } catch {
-                          toast.error(t('cloudStopFailed'));
+                          if (getActiveTenantId() === tenantId) {
+                            toast.error(t('cloudStopFailed'));
+                          }
                         }
                       }}
                     >

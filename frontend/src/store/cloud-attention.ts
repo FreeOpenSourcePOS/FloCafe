@@ -126,19 +126,20 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
   syncAccount: (tenantId, account, failed = false) => {
     if (tenantId === null) return;
     const current = get();
-    const sameTenant = current.tenantId === tenantId;
-    const cloud = sameTenant ? current.cloud : null;
+    if (current.tenantId !== tenantId) return;
+    refreshGeneration += 1;
+    inFlightRefresh = null;
     const derived = deriveCloudAttention({
       canManageCloudAccount: true,
       account: failed ? null : account,
       accountLoadFailed: failed,
-      cloud,
+      cloud: current.cloud,
     });
     set({
       tenantId,
       account: failed ? null : account,
       accountLoadFailed: failed,
-      cloud,
+      cloud: current.cloud,
       ...derived,
     });
   },
@@ -146,19 +147,19 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
   syncCloudStatus: (tenantId, cloud) => {
     if (tenantId === null) return;
     const current = get();
-    const sameTenant = current.tenantId === tenantId;
-    const account = sameTenant ? current.account : null;
-    const accountLoadFailed = sameTenant ? current.accountLoadFailed : false;
+    if (current.tenantId !== tenantId) return;
+    refreshGeneration += 1;
+    inFlightRefresh = null;
     const derived = deriveCloudAttention({
       canManageCloudAccount: true,
-      account,
-      accountLoadFailed,
+      account: current.account,
+      accountLoadFailed: current.accountLoadFailed,
       cloud,
     });
     set({
       tenantId,
-      account,
-      accountLoadFailed,
+      account: current.account,
+      accountLoadFailed: current.accountLoadFailed,
       cloud,
       ...derived,
     });

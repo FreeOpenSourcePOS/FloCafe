@@ -168,9 +168,14 @@ export default function AppSidebar() {
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
   const canManageCloudAccount = tenantCan(currentTenant, 'cloud.account.manage');
+  const cloudAttentionTenantId = useCloudAttentionStore((s) => s.tenantId);
   const cloudNeedsAttention = useCloudAttentionStore((s) => s.anyNeedsAttention);
   const refreshCloudAttention = useCloudAttentionStore((s) => s.refreshForTenant);
-  const settingsNeedsAttention = canManageCloudAccount && cloudNeedsAttention;
+  const settingsNeedsAttention =
+    canManageCloudAccount &&
+    currentTenant?.id != null &&
+    cloudAttentionTenantId === currentTenant.id &&
+    cloudNeedsAttention;
   const settingsAttentionDescId = useId();
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const closeMobile = () => {

@@ -260,17 +260,112 @@ async function run() {
     assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
 
     // 8. Session boundary resets cloud attention state
-    useCloudAttentionStore.getState().syncAccount(1, {
-      cloud_account_available: true,
-      email: 'owner@flo.local',
-      verified: false,
-    });
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        return {
+          data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+        };
+      }
+      return { data: { cloud_registration_status: 'registered', cloud_deletion_status: '' } };
+    };
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
     assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, true);
     const { notifySessionBoundary } =
       require('../frontend/src/store/session-events') as typeof import('../frontend/src/store/session-events');
     notifySessionBoundary('logout');
     assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
     assert.equal(useCloudAttentionStore.getState().tenantId, null);
+
+    // 9. syncAccount and syncCloudStatus ignore calls for non-active or logged-out tenants
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'stale@flo.local',
+      verified: false,
+    });
+    useCloudAttentionStore.getState().syncCloudStatus(1, {
+      cloud_registration_status: 'deletion_pending',
+      cloud_deletion_status: 'pending',
+    });
+    assert.equal(useCloudAttentionStore.getState().tenantId, null);
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
+
+    await useCloudAttentionStore.getState().refreshForTenant(makeTenant({ id: 2, role: 'owner' }) as any);
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'tenant1@flo.local',
+      verified: false,
+    });
+    useCloudAttentionStore.getState().syncCloudStatus(1, {
+      cloud_registration_status: 'deletion_pending',
+      cloud_deletion_status: 'pending',
+    });
+    assert.equal(useCloudAttentionStore.getState().tenantId, 2);
+    assert.equal(useCloudAttentionStore.getState().account?.email, 'owner@flo.local');
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, false);
+
+    // 10. syncAccount and syncCloudStatus supersede an in-flight same-tenant refresh
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    const staleRefreshAccount = createDeferred<{ data: any }>();
+    let refreshAttempt = 0;
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        refreshAttempt += 1;
+        if (refreshAttempt === 1) return staleRefreshAccount.promise;
+        return {
+          data: { cloud_account_available: true, email: 'owner@flo.local', verified: true },
+        };
+      }
+      return { data: { cloud_registration_status: 'registered', cloud_deletion_status: '' } };
+    };
+    const inFlightSameTenant = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(ownerTenant as any);
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'owner@flo.local',
+      verified: true,
+    });
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+    staleRefreshAccount.resolve({
+      data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+    });
+    await inFlightSameTenant;
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().account?.verified, true);
+
+    // Subsequent non-forced refresh starts a new request because inFlightRefresh was cleared
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(refreshAttempt, 2);
+
+    // Same superseding guarantee for syncCloudStatus
+    useCloudAttentionStore.getState().reset();
+    const staleDeletionAccount = createDeferred<{ data: any }>();
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') return staleDeletionAccount.promise;
+      return {
+        data: { cloud_registration_status: 'deletion_pending', cloud_deletion_status: 'pending' },
+      };
+    };
+    const inFlightDeletionRefresh = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(ownerTenant as any);
+    useCloudAttentionStore.getState().syncCloudStatus(1, {
+      cloud_registration_status: 'deleted',
+      cloud_deletion_status: 'deleted',
+    });
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, false);
+    staleDeletionAccount.resolve({
+      data: {
+        cloud_account_available: false,
+        email: null,
+        verified: false,
+        deletion_request: { status: 'pending' },
+      },
+    });
+    await inFlightDeletionRefresh;
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().cloud?.cloud_deletion_status, 'deleted');
 
     console.log('settings-subnav-attention unit tests: all assertions passed');
   } finally {

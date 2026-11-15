@@ -73,9 +73,6 @@ async function assertOrderTypeStripGeometry(
   activeType: OrderTypeKey,
   expectCompact: boolean,
 ): Promise<void> {
-  const shellBox = await cartShell.boundingBox();
-  expect(shellBox, `${localeCase.code}/${activeType}: cart-shell bounding box`).not.toBeNull();
-
   const buttons = ORDER_TYPE_SEQUENCE.map((type) => ({
     type,
     label: localeCase.labels[type],
@@ -84,6 +81,17 @@ async function assertOrderTypeStripGeometry(
 
   const track = buttons[0].locator.locator('..');
   await expect(track).toBeVisible();
+  await expect(track).toHaveAttribute('role', 'group');
+  await expect(track).toHaveAttribute('data-testid', 'pos-order-type-tabs');
+  await expect(track).toHaveAttribute('data-compact', expectCompact ? 'true' : 'false');
+
+  for (const { type, label, locator } of buttons) {
+    await expect(locator, `${localeCase.code}: "${label}" button must stay visible`).toBeVisible();
+    await expect(locator).toHaveAttribute('aria-pressed', type === activeType ? 'true' : 'false');
+  }
+
+  const shellBox = await cartShell.boundingBox();
+  expect(shellBox, `${localeCase.code}/${activeType}: cart-shell bounding box`).not.toBeNull();
 
   const trackBox = await track.boundingBox();
   expect(trackBox, `${localeCase.code}/${activeType}: track bounding box`).not.toBeNull();
@@ -93,8 +101,6 @@ async function assertOrderTypeStripGeometry(
   const boxes: { type: OrderTypeKey; x: number; y: number; width: number; height: number }[] = [];
 
   for (const { type, label, locator } of buttons) {
-    await expect(locator, `${localeCase.code}: "${label}" button must stay visible`).toBeVisible();
-
     const box = await locator.boundingBox();
     expect(box, `${localeCase.code}/${activeType}: "${label}" bounding box`).not.toBeNull();
 
@@ -172,13 +178,8 @@ async function assertOrderTypeStripGeometry(
       expect(metrics.spanScrollHeight).toBeLessThanOrEqual(metrics.spanClientHeight + 1);
     }
 
-    await expect(locator).toHaveAttribute('aria-pressed', type === activeType ? 'true' : 'false');
     boxes.push({ type, ...box! });
   }
-
-  await expect(track).toHaveAttribute('role', 'group');
-  await expect(track).toHaveAttribute('data-testid', 'pos-order-type-tabs');
-  await expect(track).toHaveAttribute('data-compact', expectCompact ? 'true' : 'false');
 
   // Inline direction order check: LTR runs dine_in -> online left-to-right; RTL runs right-to-left
   if (localeCase.dir === 'ltr') {

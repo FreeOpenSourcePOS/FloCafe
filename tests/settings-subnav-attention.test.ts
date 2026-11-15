@@ -369,6 +369,99 @@ async function run() {
     assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, false);
     assert.equal(useCloudAttentionStore.getState().cloud?.cloud_deletion_status, 'deleted');
 
+    // 11. syncCloudStatus during an in-flight refresh keeps the pending account result, and vice versa
+    useCloudAttentionStore.getState().reset();
+    const delayedUnverifiedAccount = createDeferred<{ data: any }>();
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') return delayedUnverifiedAccount.promise;
+      return { data: { cloud_registration_status: 'unregistered', cloud_deletion_status: '' } };
+    };
+    const pendingOrderflowRefresh = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(ownerTenant as any);
+    useCloudAttentionStore.getState().syncCloudStatus(1, {
+      cloud_registration_status: 'registered',
+      cloud_deletion_status: '',
+    });
+    delayedUnverifiedAccount.resolve({
+      data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+    });
+    await pendingOrderflowRefresh;
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, true);
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, true);
+    assert.equal(useCloudAttentionStore.getState().cloud?.cloud_registration_status, 'registered');
+
+    useCloudAttentionStore.getState().reset();
+    const delayedPendingCloud = createDeferred<{ data: any }>();
+    getHandler = async (url) => {
+      if (url === '/settings/cloud') return delayedPendingCloud.promise;
+      return { data: { cloud_account_available: true, email: 'owner@flo.local', verified: false } };
+    };
+    const pendingAccountSyncRefresh = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(ownerTenant as any);
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'owner@flo.local',
+      verified: true,
+    });
+    delayedPendingCloud.resolve({
+      data: { cloud_registration_status: 'deletion_pending', cloud_deletion_status: 'pending' },
+    });
+    await pendingAccountSyncRefresh;
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, true);
+    assert.equal(useCloudAttentionStore.getState().account?.verified, true);
+
+    // 12. Partial failure when permitted /settings/cloud rejects does not cache loadedForTenantId
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    let cloudStatusFailureCount = 0;
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        return {
+          data: {
+            cloud_account_available: false,
+            email: null,
+            verified: false,
+            deletion_request: null,
+          },
+        };
+      }
+      cloudStatusFailureCount += 1;
+      if (cloudStatusFailureCount === 1) {
+        throw new Error('502 Bad Gateway');
+      }
+      return {
+        data: { cloud_registration_status: 'deletion_pending', cloud_deletion_status: 'pending' },
+      };
+    };
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, null);
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, false);
+
+    // Subsequent non-forced refresh retries /settings/cloud and recovers deletion attention
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(cloudStatusFailureCount, 2);
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 1);
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, true);
+
+    // Custom role lacking cloud.manage still marks tenant loaded after /settings/cloud/account succeeds
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        return {
+          data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+        };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    };
+    await useCloudAttentionStore.getState().refreshForTenant(customAccountOnlyTenant as any);
+    assert.equal(useCloudAttentionStore.getState().loadedForTenantId, 2);
+    await useCloudAttentionStore.getState().refreshForTenant(customAccountOnlyTenant as any);
+    assert.equal(apiCalls.length, 1);
+
     console.log('settings-subnav-attention unit tests: all assertions passed');
   } finally {
     Module._resolveFilename = originalResolveFilename;

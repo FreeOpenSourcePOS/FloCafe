@@ -559,6 +559,7 @@ export default function SettingsPage() {
       cloudRegistrationStatus.current = 'unregistered';
       setCloudAccount(null);
       setCloudAccountLoadFailed(false);
+      cloudAccountRequestGeneration.current += 1;
       setCloudStatus(INITIAL_CLOUD_STATUS);
       setCloudPrivacyHydrated(false);
     }
@@ -918,6 +919,7 @@ export default function SettingsPage() {
   } | null>(null);
   const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
   const [cloudAccountLoadFailed, setCloudAccountLoadFailed] = useState(false);
+  const cloudAccountRequestGeneration = useRef(0);
   const [refreshingDeletionStatus, setRefreshingDeletionStatus] = useState(false);
   const cloudAccountAvailable =
     !cloudAccountLoadFailed && cloudAccount?.cloud_account_available !== false;
@@ -933,15 +935,18 @@ export default function SettingsPage() {
   const fetchCloudAccount = async (signal?: AbortSignal): Promise<boolean> => {
     const tenantId = getActiveTenantId();
     if (tenantId === null) return false;
+    const requestGeneration = ++cloudAccountRequestGeneration.current;
     try {
       const { data } = await api.get('/settings/cloud/account', signal ? { signal } : undefined);
       if (signal?.aborted || getActiveTenantId() !== tenantId) return false;
+      if (requestGeneration !== cloudAccountRequestGeneration.current) return true;
       setCloudAccount(data);
       setCloudAccountLoadFailed(false);
       if (isOwnerForTenant(tenantId)) syncCloudAttentionAccount(tenantId, data, false);
       return true;
     } catch (error) {
       if (isRequestCancelled(error) || getActiveTenantId() !== tenantId) return false;
+      if (requestGeneration !== cloudAccountRequestGeneration.current) return false;
       setCloudAccountLoadFailed(true);
       if (isOwnerForTenant(tenantId)) syncCloudAttentionAccount(tenantId, null, true);
       return false;
@@ -954,15 +959,24 @@ export default function SettingsPage() {
   }) => {
     const tenantId = getActiveTenantId();
     if (tenantId === null) return;
+    const requestGeneration = ++cloudAccountRequestGeneration.current;
     setCloudAccountBusy(true);
     try {
       const { data } = await api.put('/settings/cloud/account/preferences', patch);
-      if (getActiveTenantId() !== tenantId) return;
+      if (
+        getActiveTenantId() !== tenantId ||
+        requestGeneration !== cloudAccountRequestGeneration.current
+      ) {
+        return;
+      }
       const next = cloudAccount ? { ...cloudAccount, ...data } : data;
       setCloudAccount(next);
       if (isOwnerForTenant(tenantId)) syncCloudAttentionAccount(tenantId, next, false);
     } catch {
-      if (getActiveTenantId() === tenantId) {
+      if (
+        getActiveTenantId() === tenantId &&
+        requestGeneration === cloudAccountRequestGeneration.current
+      ) {
         toast.error(t('couldNotSavePreference'));
       }
     } finally {

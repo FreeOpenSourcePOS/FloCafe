@@ -98,8 +98,11 @@ interface CloudAttentionState extends DerivedCloudAttention {
   reset: () => void;
 }
 
-let refreshGeneration = 0;
-let inFlightRefresh: { tenantId: number; generation: number; promise: Promise<void> } | null = null;
+let tenantGeneration = 0;
+let accountGeneration = 0;
+let cloudGeneration = 0;
+let nextRefreshId = 0;
+let inFlightRefresh: { tenantId: number; refreshId: number; promise: Promise<void> } | null = null;
 
 function buildEmptyState(tenantId: number | null = null) {
   return {
@@ -118,7 +121,9 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
   ...buildEmptyState(null),
 
   reset: () => {
-    refreshGeneration += 1;
+    tenantGeneration += 1;
+    accountGeneration += 1;
+    cloudGeneration += 1;
     inFlightRefresh = null;
     set(buildEmptyState(null));
   },
@@ -127,17 +132,17 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
     if (tenantId === null) return;
     const current = get();
     if (current.tenantId !== tenantId) return;
-    refreshGeneration += 1;
-    inFlightRefresh = null;
+    accountGeneration += 1;
+    const nextAccount = failed ? null : account;
     const derived = deriveCloudAttention({
       canManageCloudAccount: true,
-      account: failed ? null : account,
+      account: nextAccount,
       accountLoadFailed: failed,
       cloud: current.cloud,
     });
     set({
       tenantId,
-      account: failed ? null : account,
+      account: nextAccount,
       accountLoadFailed: failed,
       cloud: current.cloud,
       ...derived,
@@ -148,8 +153,7 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
     if (tenantId === null) return;
     const current = get();
     if (current.tenantId !== tenantId) return;
-    refreshGeneration += 1;
-    inFlightRefresh = null;
+    cloudGeneration += 1;
     const derived = deriveCloudAttention({
       canManageCloudAccount: true,
       account: current.account,
@@ -168,7 +172,9 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
   refreshForTenant: async (tenant, options) => {
     const canManageAccount = tenantCan(tenant, 'cloud.account.manage');
     if (!tenant || !canManageAccount) {
-      refreshGeneration += 1;
+      tenantGeneration += 1;
+      accountGeneration += 1;
+      cloudGeneration += 1;
       inFlightRefresh = null;
       set(buildEmptyState(tenant?.id ?? null));
       return;
@@ -178,7 +184,9 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
     const force = options?.force === true;
 
     if (get().tenantId !== tenantId) {
-      refreshGeneration += 1;
+      tenantGeneration += 1;
+      accountGeneration += 1;
+      cloudGeneration += 1;
       inFlightRefresh = null;
       set(buildEmptyState(tenantId));
     }
@@ -190,7 +198,10 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
       }
     }
 
-    const generation = ++refreshGeneration;
+    const tenantGen = tenantGeneration;
+    const acctGen = ++accountGeneration;
+    const cldGen = ++cloudGeneration;
+    const refreshId = ++nextRefreshId;
     const canManageCloud = tenantCan(tenant, 'cloud.manage');
 
     const promise = (async () => {
@@ -199,39 +210,52 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
         canManageCloud ? api.get('/settings/cloud') : Promise.resolve(null),
       ]);
 
-      if (generation !== refreshGeneration || get().tenantId !== tenantId) return;
+      const current = get();
+      if (tenantGen !== tenantGeneration || current.tenantId !== tenantId) return;
 
       const accountSucceeded = accountResult.status === 'fulfilled';
-      const account = accountSucceeded
-        ? ((accountResult.value.data ?? null) as CloudAccountAttentionSnapshot | null)
-        : null;
-      const cloud =
-        cloudResult.status === 'fulfilled' && cloudResult.value
+      const cloudSucceeded =
+        !canManageCloud || (cloudResult.status === 'fulfilled' && Boolean(cloudResult.value));
+
+      const applyAccount = acctGen === accountGeneration;
+      const applyCloud = cldGen === cloudGeneration;
+
+      const nextAccount = applyAccount
+        ? accountSucceeded
+          ? ((accountResult.value.data ?? null) as CloudAccountAttentionSnapshot | null)
+          : null
+        : current.account;
+      const nextAccountLoadFailed = applyAccount ? !accountSucceeded : current.accountLoadFailed;
+      const nextCloud = applyCloud
+        ? cloudResult.status === 'fulfilled' && cloudResult.value
           ? ((cloudResult.value.data ?? null) as CloudStatusAttentionSnapshot | null)
-          : null;
+          : null
+        : current.cloud;
 
       const derived = deriveCloudAttention({
         canManageCloudAccount: true,
-        account,
-        accountLoadFailed: !accountSucceeded,
-        cloud,
+        account: nextAccount,
+        accountLoadFailed: nextAccountLoadFailed,
+        cloud: nextCloud,
       });
+
+      const fullyLoaded = accountSucceeded && cloudSucceeded && applyAccount && applyCloud;
 
       set({
         tenantId,
-        loadedForTenantId: accountSucceeded ? tenantId : null,
-        account,
-        accountLoadFailed: !accountSucceeded,
-        cloud,
+        loadedForTenantId: fullyLoaded ? tenantId : null,
+        account: nextAccount,
+        accountLoadFailed: nextAccountLoadFailed,
+        cloud: nextCloud,
         ...derived,
       });
     })().finally(() => {
-      if (inFlightRefresh?.generation === generation) {
+      if (inFlightRefresh?.refreshId === refreshId) {
         inFlightRefresh = null;
       }
     });
 
-    inFlightRefresh = { tenantId, generation, promise };
+    inFlightRefresh = { tenantId, refreshId, promise };
     return promise;
   },
 }));

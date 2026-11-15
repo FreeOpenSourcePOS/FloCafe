@@ -318,3 +318,70 @@ test('non-owner manager lacking cloud.account.manage shows no attention indicato
   await expect(page.getByTestId('settings-nav-attention-account')).toHaveCount(0);
   await expect(page.getByTestId('settings-nav-attention-privacy')).toHaveCount(0);
 });
+
+test('stale Account hydration resolving after verification does not restore attention badges', async ({
+  page,
+}) => {
+  await startMockedSession(page, {
+    cloudAccount: {
+      cloud_account_available: true,
+      email: 'owner@flo.local',
+      verified: false,
+    },
+    cloudStatus: {
+      cloud_registration_status: 'registered',
+      cloud_deletion_status: '',
+    },
+  });
+
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+
+  let releaseStaleHydration!: () => void;
+  const staleHydrationGate = new Promise<void>((resolve) => {
+    releaseStaleHydration = resolve;
+  });
+  let accountGetCount = 0;
+
+  await page.route('**/api/settings/cloud/account', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    accountGetCount += 1;
+    if (accountGetCount === 1) {
+      await staleHydrationGate;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          cloud_account_available: true,
+          email: 'owner@flo.local',
+          verified: false,
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        cloud_account_available: true,
+        email: 'owner@flo.local',
+        verified: true,
+      }),
+    });
+  });
+
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await expect(page).toHaveURL(/tab=account/);
+
+  await page.getByRole('button', { name: /Send verification email/i }).click();
+  await expect(page.getByTestId('settings-nav-attention-account')).toHaveCount(0);
+  await expect(page.getByTestId('sidebar-settings-attention')).toHaveCount(0);
+
+  releaseStaleHydration();
+  await page.waitForTimeout(250);
+  await expect(page.getByTestId('settings-nav-attention-account')).toHaveCount(0);
+  await expect(page.getByTestId('sidebar-settings-attention')).toHaveCount(0);
+});

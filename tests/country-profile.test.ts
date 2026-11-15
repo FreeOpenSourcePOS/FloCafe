@@ -14,3 +14,13 @@ test('IR country profile properties', () => {
   assert.equal(ir.taxName, 'VAT');
   assert.equal(ir.taxIdFormat, undefined, 'No tax ID format should be enforced for IR');
 });
+
+test('SY country profile properties', () => {
+  const sy = getCountryByCode('SY');
+  assert.ok(sy, 'SY country profile should exist');
+  assert.equal(sy.code, 'SY');
+  assert.equal(sy.locale, 'ar-SY');
+  assert.equal(sy.currency, 'SYP');
+  assert.equal(sy.timezone, 'Asia/Damascus');
+  assert.equal(sy.dialCode, '+963');
+});

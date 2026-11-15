@@ -671,7 +671,8 @@ try {
       }
       return tree;
     }
-    return { tree, html: renderWithIntl(React.createElement(Runner)) };
+    const html = renderWithIntl(React.createElement(Runner));
+    return { tree, html };
   };
   const findTreeElement = (node: any, predicate: (el: any) => boolean): any => {
     if (!node || typeof node !== 'object') return null;

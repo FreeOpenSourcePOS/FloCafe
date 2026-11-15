@@ -458,6 +458,25 @@ try {
     /data-testid="pos-order-notes-input"/,
     'rendered CartPanel omits the full-width order-notes input when orderNotes is empty',
   );
+  assert.match(
+    cartMarkup,
+    /role="group"[^>]*aria-label="Type"[^>]*data-testid="pos-order-type-tabs"/,
+    'rendered CartPanel exposes a labeled group container for the order-type segmented control',
+  );
+  for (const [label, pressed] of [
+    ['Dine in', 'true'],
+    ['Takeaway', 'false'],
+    ['Delivery', 'false'],
+    ['Online', 'false'],
+  ] as const) {
+    assert.match(
+      cartMarkup,
+      new RegExp(
+        `<button[^>]*type="button"[^>]*aria-pressed="${pressed}"[^>]*class="[^"]*min-w-0[^"]*whitespace-nowrap[^"]*"[^>]*><svg[^>]*aria-hidden="true"[^>]*>[\\s\\S]*?</svg><span[^>]*class="[^"]*min-w-0 truncate[^"]*">${label}</span></button>`,
+      ),
+      `rendered CartPanel order-type button "${label}" renders an aria-hidden icon, aria-pressed=${pressed}, single-line whitespace-nowrap containment, and a truncatable label span`,
+    );
+  }
 
   // Delivery CartPanel summary strip and OrderDetailsDrawer rendered output
   useCartStore.getState().setOrderType('delivery');

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ShoppingCart,
   UtensilsCrossed,
@@ -23,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import api from '@/lib/api';
 import type { CustomPaymentMethod } from '@/lib/payment-methods';
 import { useCartStore } from '@/store/cart';
@@ -62,12 +62,21 @@ interface Props {
   onCancelExistingOrderMode?: () => void;
 }
 
-const orderTypeIcons = {
+const ORDER_TYPES = ['dine_in', 'takeaway', 'delivery', 'online'] as const;
+type OrderType = (typeof ORDER_TYPES)[number];
+
+const orderTypeIcons: Record<OrderType, typeof UtensilsCrossed> = {
   dine_in: UtensilsCrossed,
   takeaway: Package,
   delivery: Truck,
   online: Globe,
 };
+
+const ORDER_TYPE_ICON_PX = 13;
+// Full-mode segment chrome: px-1 (8px) + 13px icon + gap-1 (4px) = 25px, plus 1px subpixel guard.
+const FULL_MODE_SEGMENT_CHROME_PX = 26;
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 function ItemQuantityControl({
   item,
@@ -218,7 +227,81 @@ export default function CartPanel({
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
+  const tPrintKot = useTranslations('print.kot');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
+  const orderTypeTrackRef = useRef<HTMLDivElement | null>(null);
+  const orderTypeLabelRefs = useRef<Partial<Record<OrderType, HTMLSpanElement | null>>>({});
+  const [isOrderTypeCompact, setIsOrderTypeCompact] = useState(false);
+  const [isActiveOrderTypeTruncated, setIsActiveOrderTypeTruncated] = useState(false);
+  const orderTypeLabels: Record<OrderType, string> = {
+    dine_in: t('orderTypeDineIn'),
+    takeaway: t('orderTypeTakeaway'),
+    delivery: t('orderTypeDelivery'),
+    online: t('orderTypeOnline'),
+  };
+  const visibleOrderTypes = ORDER_TYPES.filter((type) => isRestaurant || type !== 'dine_in');
+  const orderTypeMeasureKey = `${isRestaurant ? '1' : '0'}:${visibleOrderTypes.map((type) => orderTypeLabels[type]).join('|')}`;
+
+  useIsomorphicLayoutEffect(() => {
+    const track = orderTypeTrackRef.current;
+    if (!track) return;
+
+    const measure = () => {
+      const currentTrack = orderTypeTrackRef.current;
+      if (!currentTrack || currentTrack.clientWidth <= 0) return;
+
+      const style = window.getComputedStyle(currentTrack);
+      const inlinePadding =
+        (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+      const gap = Number.parseFloat(style.columnGap) || 2;
+      const availableWidth = currentTrack.clientWidth - inlinePadding;
+      if (availableWidth <= 0) return;
+
+      const types = ORDER_TYPES.filter((type) => isRestaurant || type !== 'dine_in');
+      let requiredFullWidth = Math.max(0, types.length - 1) * gap;
+      for (const type of types) {
+        const span = orderTypeLabelRefs.current[type];
+        let labelWidth = span?.scrollWidth ?? 0;
+        if (span && typeof document.createRange === 'function') {
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          labelWidth = Math.max(labelWidth, range.getBoundingClientRect().width);
+        }
+        requiredFullWidth += FULL_MODE_SEGMENT_CHROME_PX + Math.ceil(labelWidth);
+      }
+
+      const nextCompact = requiredFullWidth > availableWidth;
+      setIsOrderTypeCompact((prev) => (prev === nextCompact ? prev : nextCompact));
+
+      const activeSpan = orderTypeLabelRefs.current[cart.orderType];
+      const nextTruncated = Boolean(
+        activeSpan &&
+        !activeSpan.classList.contains('sr-only') &&
+        activeSpan.scrollWidth > activeSpan.clientWidth + 1,
+      );
+      setIsActiveOrderTypeTruncated((prev) => (prev === nextTruncated ? prev : nextTruncated));
+    };
+
+    measure();
+
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => measure());
+      observer.observe(track);
+    }
+
+    let cancelled = false;
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      void document.fonts.ready.then(() => {
+        if (!cancelled) measure();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
+  }, [isRestaurant, orderTypeMeasureKey, cart.orderType, isOrderTypeCompact]);
   const fmt = useFormatCurrency();
   const effectiveTimezone = storeTimezone || currentTenant?.timezone || 'UTC';
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -384,38 +467,65 @@ export default function CartPanel({
             </div>
           )}
 
-        <div className="flex gap-0.5 h-7 p-0.5 rounded-lg bg-muted">
-          {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
-            .filter((type) => isRestaurant || type !== 'dine_in')
-            .map((type) => {
+        <TooltipProvider delayDuration={150}>
+          <div
+            ref={orderTypeTrackRef}
+            role="group"
+            aria-label={tPrintKot('type')}
+            data-testid="pos-order-type-tabs"
+            data-compact={isOrderTypeCompact ? 'true' : 'false'}
+            className="flex h-7 w-full min-w-0 items-center gap-0.5 rounded-lg bg-muted p-0.5"
+          >
+            {visibleOrderTypes.map((type) => {
               const Icon = orderTypeIcons[type];
-              const showIcon = type !== 'dine_in' && type !== 'online';
-              const label =
-                type === 'dine_in'
-                  ? t('orderTypeDineIn')
-                  : type === 'takeaway'
-                    ? t('orderTypeTakeaway')
-                    : type === 'delivery'
-                      ? t('orderTypeDelivery')
-                      : t('orderTypeOnline');
+              const label = orderTypeLabels[type];
+              const isSelected = cart.orderType === type;
+              const isCompactIconOnly = isOrderTypeCompact && !isSelected;
+              const showTooltip = isCompactIconOnly || (isSelected && isActiveOrderTypeTruncated);
               return (
-                <button
-                  key={type}
-                  type="button"
-                  disabled={Boolean(existingOrder && existingOrder.type !== type)}
-                  onClick={() => cart.setOrderType(type)}
-                  className={`touch-target h-6 min-h-6 flex-1 gap-1 px-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
-                    cart.orderType === type
-                      ? 'bg-card text-brand shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {showIcon && <Icon size={13} />}
-                  {label}
-                </button>
+                <Tooltip key={type} open={showTooltip ? undefined : false}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      disabled={Boolean(existingOrder && existingOrder.type !== type)}
+                      onClick={() => cart.setOrderType(type)}
+                      className={`touch-target relative h-6 min-h-6 ${
+                        isCompactIconOnly
+                          ? 'flex-none min-w-8 px-2.5'
+                          : isOrderTypeCompact
+                            ? 'flex-1 min-w-0 gap-1.5 px-2'
+                            : 'flex-auto min-w-0 gap-1 px-1'
+                      } whitespace-nowrap rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed aria-pressed:forced-colors:outline-1 aria-pressed:forced-colors:outline-[Highlight] ${
+                        isSelected
+                          ? 'bg-card text-brand shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Icon size={ORDER_TYPE_ICON_PX} aria-hidden="true" className="shrink-0" />
+                      <span
+                        ref={(node) => {
+                          orderTypeLabelRefs.current[type] = node;
+                        }}
+                        className={isCompactIconOnly ? 'sr-only' : 'min-w-0 truncate'}
+                      >
+                        {label}
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={4}
+                    aria-hidden="true"
+                    hidden={!showTooltip}
+                  >
+                    {label}
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
-        </div>
+          </div>
+        </TooltipProvider>
 
         {!existingOrder && cart.orderType === 'dine_in' && (
           <div

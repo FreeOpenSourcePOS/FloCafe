@@ -899,7 +899,13 @@
     "releaseScheduled": "নির্ধারিত",
     "releaseBlocked": "রিলিজ স্থগিত",
     "refundOwnerOnlyNotice": "ম্যানেজার রিফান্ড অনুমোদন নিষ্ক্রিয় — এই রিফান্ড অনুমোদনের জন্য মালিকের পিন প্রয়োজন।",
-    "refundOutsideWindowNotice": "এই অর্ডারটি ম্যানেজারের অনুমোদনের সময়সীমার বাইরে — এই রিফান্ড অনুমোদনের জন্য মালিকের পিন প্রয়োজন।"
+    "refundOutsideWindowNotice": "এই অর্ডারটি ম্যানেজারের অনুমোদনের সময়সীমার বাইরে — এই রিফান্ড অনুমোদনের জন্য মালিকের পিন প্রয়োজন।",
+    "clearFilters": "ফিল্টার মুছুন",
+    "noMatchesInTab": "{tab}-এ কোনো মিল থাকা অর্ডার নেই।",
+    "showMatchesInAll": "সব-এ মিল থাকা অর্ডার দেখুন",
+    "orderSettledBanner": "পেমেন্ট সম্পন্ন",
+    "nextActiveOrder": "পরবর্তী অর্ডার",
+    "viewInCompleted": "সম্পন্ন-এ দেখুন"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",

@@ -899,7 +899,13 @@
     "releaseScheduled": "Agendado",
     "releaseBlocked": "Envio bloqueado",
     "refundOwnerOnlyNotice": "As aprovações de reembolso por gerentes estão desativadas — é necessário o PIN do proprietário para aprovar este reembolso.",
-    "refundOutsideWindowNotice": "Este pedido está fora da janela de aprovação do gerente — é necessário o PIN do proprietário para aprovar este reembolso."
+    "refundOutsideWindowNotice": "Este pedido está fora da janela de aprovação do gerente — é necessário o PIN do proprietário para aprovar este reembolso.",
+    "clearFilters": "Limpar filtros",
+    "noMatchesInTab": "Nenhum pedido correspondente em {tab}.",
+    "showMatchesInAll": "Mostrar correspondências em Todos",
+    "orderSettledBanner": "Pagamento concluído",
+    "nextActiveOrder": "Próximo pedido",
+    "viewInCompleted": "Ver em Concluídos"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",

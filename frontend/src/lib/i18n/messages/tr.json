@@ -899,7 +899,13 @@
     "releaseScheduled": "Planlı",
     "releaseBlocked": "İletim engellendi",
     "refundOwnerOnlyNotice": "Yönetici iade onayları devre dışı — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir.",
-    "refundOutsideWindowNotice": "Bu sipariş yönetici onay süresinin dışında — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir."
+    "refundOutsideWindowNotice": "Bu sipariş yönetici onay süresinin dışında — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir.",
+    "clearFilters": "Filtreleri temizle",
+    "noMatchesInTab": "{tab} sekmesinde eşleşen sipariş yok.",
+    "showMatchesInAll": "Eşleşenleri Tümü sekmesinde göster",
+    "orderSettledBanner": "Ödeme tamamlandı",
+    "nextActiveOrder": "Sonraki Sipariş",
+    "viewInCompleted": "Tamamlananlarda Gör"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",

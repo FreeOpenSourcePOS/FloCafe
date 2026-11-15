@@ -899,7 +899,13 @@
     "releaseScheduled": "E planifikuar",
     "releaseBlocked": "Dërgimi i bllokuar",
     "refundOwnerOnlyNotice": "Miratimet e rimbursimit nga menaxheri janë të çaktivizuara — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim.",
-    "refundOutsideWindowNotice": "Kjo porosi është jashtë afatit të miratimit të menaxherit — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim."
+    "refundOutsideWindowNotice": "Kjo porosi është jashtë afatit të miratimit të menaxherit — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim.",
+    "clearFilters": "Pastro filtrat",
+    "noMatchesInTab": "Nuk ka porosi përputhëse në {tab}.",
+    "showMatchesInAll": "Shfaq përputhjet te Të gjitha",
+    "orderSettledBanner": "Pagesa u krye",
+    "nextActiveOrder": "Porosia tjetër",
+    "viewInCompleted": "Shiko te Të përfunduara"
   },
   "pos": {
     "addCustomer": "Shto klient",

@@ -899,7 +899,13 @@
     "releaseScheduled": "예약됨",
     "releaseBlocked": "전송 보류",
     "refundOwnerOnlyNotice": "매니저 환불 승인이 비활성화되어 있습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다.",
-    "refundOutsideWindowNotice": "이 주문은 매니저 승인 가능 시간을 지났습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다."
+    "refundOutsideWindowNotice": "이 주문은 매니저 승인 가능 시간을 지났습니다 — 이 환불을 승인하려면 점주 PIN이 필요합니다.",
+    "clearFilters": "필터 초기화",
+    "noMatchesInTab": "{tab}에 일치하는 주문이 없습니다.",
+    "showMatchesInAll": "전체에서 일치하는 주문 보기",
+    "orderSettledBanner": "결제 완료",
+    "nextActiveOrder": "다음 주문",
+    "viewInCompleted": "완료됨에서 보기"
   },
   "pos": {
     "addCustomer": "고객 추가",

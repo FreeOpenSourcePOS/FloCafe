@@ -899,7 +899,13 @@
     "releaseScheduled": "Naka-iskedyul",
     "releaseBlocked": "Naka-hold ang pagpapadala",
     "refundOwnerOnlyNotice": "Naka-disable ang pag-apruba ng refund ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito.",
-    "refundOutsideWindowNotice": "Lampas na ang order na ito sa window ng pag-apruba ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito."
+    "refundOutsideWindowNotice": "Lampas na ang order na ito sa window ng pag-apruba ng manager — kailangan ng PIN ng may-ari para aprubahan ang refund na ito.",
+    "clearFilters": "I-clear ang mga filter",
+    "noMatchesInTab": "Walang tumutugmang order sa {tab}.",
+    "showMatchesInAll": "Ipakita ang mga tugma sa Lahat",
+    "orderSettledBanner": "Kumpleto na ang bayad",
+    "nextActiveOrder": "Susunod na Order",
+    "viewInCompleted": "Tingnan sa Nakumpleto"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",

@@ -1,10 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { login, addToCart, ownerAuth } from './helpers';
 
 /** Tests Orders layout persistence and held-order restoration. */
 
 const RUN = Date.now().toString(36).slice(-4);
+
+function waitForLayoutPut(page: Page) {
+  return page.waitForResponse(
+    (res) =>
+      res.ok() &&
+      res.request().method() === 'PUT' &&
+      new URL(res.url()).pathname === '/api/settings/orders_layout',
+  );
+}
 
 test.describe('@ci-tier2 operations admin - orders appearance and hold', () => {
   test.beforeEach(async ({ page }) => {
@@ -61,7 +70,10 @@ test.describe('@ci-tier2 operations admin - orders appearance and hold', () => {
 
     // Switch to the card grid.
     await page.goto(`${E2E_BASE_URL}/settings?tab=appearance`);
-    await group.getByRole('radio', { name: /Cards Grid/i }).click();
+    await Promise.all([
+      waitForLayoutPut(page),
+      group.getByRole('radio', { name: /Cards Grid/i }).click(),
+    ]);
     await expect(cards).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
 
     // The Orders screen follows, and no longer offers the split placeholder.
@@ -87,13 +99,19 @@ test.describe('@ci-tier2 operations admin - orders appearance and hold', () => {
     const group = page.getByRole('radiogroup', { name: 'Orders Screen Layout' });
     await expect(group).toBeVisible({ timeout: 20_000 });
 
-    await group.getByRole('radio', { name: /Cards Grid/i }).click();
+    await Promise.all([
+      waitForLayoutPut(page),
+      group.getByRole('radio', { name: /Cards Grid/i }).click(),
+    ]);
     await expect(group.getByRole('radio', { name: /Cards Grid/i })).toHaveAttribute(
       'aria-checked',
       'true',
     );
 
-    await group.getByRole('radio', { name: /Master \/ Detail/i }).click();
+    await Promise.all([
+      waitForLayoutPut(page),
+      group.getByRole('radio', { name: /Master \/ Detail/i }).click(),
+    ]);
     await expect(group.getByRole('radio', { name: /Master \/ Detail/i })).toHaveAttribute(
       'aria-checked',
       'true',

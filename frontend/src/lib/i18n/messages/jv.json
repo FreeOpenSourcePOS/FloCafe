@@ -899,7 +899,13 @@
     "releaseScheduled": "Dijadwalake",
     "releaseBlocked": "Wetokake katahan",
     "refundOwnerOnlyNotice": "Persetujuan bali dhuwit dening manajer dipateni — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki.",
-    "refundOutsideWindowNotice": "Pesanan iki wis liwat wektu persetujuan manajer — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki."
+    "refundOutsideWindowNotice": "Pesanan iki wis liwat wektu persetujuan manajer — butuh PIN sing duwe toko kanggo nyetujoni bali dhuwit iki.",
+    "clearFilters": "Resiki filter",
+    "noMatchesInTab": "Ora ana pesenan sing cocok ing {tab}.",
+    "showMatchesInAll": "Duduhake pesenan cocok ing Kabeh",
+    "orderSettledBanner": "Pembayaran rampung",
+    "nextActiveOrder": "Pesenan Sabanjure",
+    "viewInCompleted": "Deleng ing Rampung"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",

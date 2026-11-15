@@ -899,7 +899,13 @@
     "releaseScheduled": "Scheduled",
     "releaseBlocked": "Release blocked",
     "refundOwnerOnlyNotice": "Manager refund approvals are disabled — an owner PIN is required to approve this refund.",
-    "refundOutsideWindowNotice": "This order is outside the manager approval window — an owner PIN is required to approve this refund."
+    "refundOutsideWindowNotice": "This order is outside the manager approval window — an owner PIN is required to approve this refund.",
+    "clearFilters": "Clear filters",
+    "noMatchesInTab": "No matching orders in {tab}.",
+    "showMatchesInAll": "Show matching orders in All",
+    "orderSettledBanner": "Payment complete",
+    "nextActiveOrder": "Next Order",
+    "viewInCompleted": "View in Completed"
   },
   "pos": {
     "addCustomer": "Add Customer",

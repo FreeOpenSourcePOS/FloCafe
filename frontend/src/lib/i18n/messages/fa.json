@@ -899,7 +899,13 @@
     "releaseScheduled": "زمان‌بندی‌شده",
     "releaseBlocked": "ارسال مسدود",
     "refundOwnerOnlyNotice": "تأیید استرداد توسط مدیر غیرفعال است — برای تأیید این استرداد به پین مالک نیاز است.",
-    "refundOutsideWindowNotice": "این سفارش خارج از بازه زمانی تأیید مدیر است — برای تأیید این استرداد به پین مالک نیاز است."
+    "refundOutsideWindowNotice": "این سفارش خارج از بازه زمانی تأیید مدیر است — برای تأیید این استرداد به پین مالک نیاز است.",
+    "clearFilters": "پاک کردن فیلترها",
+    "noMatchesInTab": "سفارش منطبقی در {tab} یافت نشد.",
+    "showMatchesInAll": "نمایش سفارش‌های منطبق در همه",
+    "orderSettledBanner": "پرداخت انجام شد",
+    "nextActiveOrder": "سفارش بعدی",
+    "viewInCompleted": "مشاهده در تکمیل‌شده‌ها"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",

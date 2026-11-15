@@ -899,7 +899,13 @@
     "releaseScheduled": "مجدول",
     "releaseBlocked": "الإرسال متوقف",
     "refundOwnerOnlyNotice": "موافقات استرداد المدير معطلة — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد.",
-    "refundOutsideWindowNotice": "هذا الطلب خارج نافذة موافقة المدير — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد."
+    "refundOutsideWindowNotice": "هذا الطلب خارج نافذة موافقة المدير — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد.",
+    "clearFilters": "مسح الفلاتر",
+    "noMatchesInTab": "لا توجد طلبات مطابقة في {tab}.",
+    "showMatchesInAll": "عرض الطلبات المطابقة في الكل",
+    "orderSettledBanner": "اكتمل الدفع",
+    "nextActiveOrder": "الطلب التالي",
+    "viewInCompleted": "عرض في المكتملة"
   },
   "pos": {
     "addCustomer": "إضافة عميل",

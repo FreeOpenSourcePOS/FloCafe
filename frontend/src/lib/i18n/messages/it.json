@@ -899,7 +899,13 @@
     "releaseScheduled": "Programmato",
     "releaseBlocked": "Invio bloccato",
     "refundOwnerOnlyNotice": "Le approvazioni dei rimborsi da parte del responsabile sono disabilitate — è richiesto il PIN del titolare per approvare questo rimborso.",
-    "refundOutsideWindowNotice": "Questo ordine è fuori dalla finestra di approvazione del responsabile — è richiesto il PIN del titolare per approvare questo rimborso."
+    "refundOutsideWindowNotice": "Questo ordine è fuori dalla finestra di approvazione del responsabile — è richiesto il PIN del titolare per approvare questo rimborso.",
+    "clearFilters": "Cancella filtri",
+    "noMatchesInTab": "Nessun ordine corrispondente in {tab}.",
+    "showMatchesInAll": "Mostra corrispondenze in Tutti",
+    "orderSettledBanner": "Pagamento completato",
+    "nextActiveOrder": "Ordine successivo",
+    "viewInCompleted": "Vedi in Completati"
   },
   "pos": {
     "addCustomer": "Aggiungi cliente",

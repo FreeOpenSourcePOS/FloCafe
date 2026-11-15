@@ -151,13 +151,8 @@ test.describe('@ci-tier2 operations admin - order history', () => {
         .first(),
     ).toBeVisible();
 
-    // The Active pill and the status dropdown both apply, so the pill has to be
-    // widened before the dropdown can mean "settled sales".
-    await page.getByRole('button', { name: 'All', exact: true }).first().click();
-    await page
-      .locator('select')
-      .filter({ has: page.locator('option[value="completed"]') })
-      .selectOption('completed');
+    // Clicking the unified Completed tab directly shows settled sales and leaves open ones out.
+    await page.getByRole('button', { name: 'Completed', exact: true }).click();
     await page.waitForTimeout(1200);
 
     await expect(page.getByRole('button').filter({ hasText: `#${open.order_number}` })).toHaveCount(
@@ -173,14 +168,10 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     }
   });
 
-  test('FINDING: the Active pill and the Completed dropdown contradict each other', async ({
+  test('unified Completed tab replaces the removed Status dropdown without contradiction', async ({
     page,
     request,
   }) => {
-    // The pill and the status dropdown are applied together, and "Active" counts
-    // a completed order as inactive once its items are served. So leaving the
-    // pill alone while asking for Completed hides precisely the settled sales
-    // the operator is trying to find, with nothing on screen to explain it.
     await login(page, 'owner');
     const headers = await (async () => ({
       Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
@@ -195,18 +186,13 @@ test.describe('@ci-tier2 operations admin - order history', () => {
 
     await page.goto(`${E2E_BASE_URL}/orders`);
 
-    // Asked for Completed while the Active pill is still selected: not listed.
-    await page
-      .locator('select')
-      .filter({ has: page.locator('option[value="completed"]') })
-      .selectOption('completed');
-    await page.waitForTimeout(1200);
+    // The legacy Row-2 Status <select> no longer exists.
     await expect(
-      page.getByRole('button').filter({ hasText: `#${order.order_number}` }),
+      page.locator('select').filter({ has: page.locator('option[value="completed"]') }),
     ).toHaveCount(0);
 
-    // The very same order appears the moment the pill is widened.
-    await page.getByRole('button', { name: 'All', exact: true }).first().click();
+    // Clicking the unified Completed tab surfaces the settled order in 1 tap.
+    await page.getByRole('button', { name: 'Completed', exact: true }).click();
     await page.waitForTimeout(1200);
     await expect(
       page
@@ -363,12 +349,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     await settleOrderViaBill(request, headers, sale.id);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
-    await page.getByRole('button', { name: 'All', exact: true }).first().click();
-
-    await page
-      .locator('select')
-      .filter({ has: page.locator('option[value="completed"]') })
-      .selectOption('completed');
+    await page.getByRole('button', { name: 'Completed', exact: true }).click();
     await page.waitForTimeout(1000);
 
     // The two-quantity sale: 2 x 60.00 net, 7% tax on top.
@@ -405,10 +386,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     const orderNumber = await placeOrderAndPayCash(page);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
-    await page
-      .locator('select')
-      .filter({ has: page.locator('option[value="completed"]') })
-      .selectOption('completed');
+    await page.getByRole('button', { name: 'Completed', exact: true }).click();
     await page.waitForTimeout(1200);
 
     const row = page

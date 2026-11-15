@@ -899,7 +899,13 @@
     "releaseScheduled": "予約済",
     "releaseBlocked": "送信保留",
     "refundOwnerOnlyNotice": "マネージャーによる返金承認は無効になっています — この返金を承認するにはオーナーのPINが必要です。",
-    "refundOutsideWindowNotice": "この注文はマネージャーの承認可能時間を過ぎています — この返金を承認するにはオーナーのPINが必要です。"
+    "refundOutsideWindowNotice": "この注文はマネージャーの承認可能時間を過ぎています — この返金を承認するにはオーナーのPINが必要です。",
+    "clearFilters": "フィルターをクリア",
+    "noMatchesInTab": "{tab}に一致する注文はありません。",
+    "showMatchesInAll": "「すべて」で一致する注文を表示",
+    "orderSettledBanner": "支払い完了",
+    "nextActiveOrder": "次の注文",
+    "viewInCompleted": "完了で表示"
   },
   "pos": {
     "addCustomer": "顧客を追加",

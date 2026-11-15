@@ -20,8 +20,8 @@ import { isExcludedFromBillReceipt, isTerminalItemStatus } from '../../shared/or
 import { getTenantCurrency } from './refund';
 import { roundCurrencyCost } from './supplies';
 import { computeDiscountTaxRatio } from './tax';
-import { getOrdersWithItemsForBills } from '../routes/bills';
-import { paymentMethodBreakdown } from '../routes/cash-closures';
+import { getOrdersWithItemsForBills } from './bill-item-projection';
+import { paymentMethodBreakdown } from './payment-method-breakdown';
 import { printLabel } from '../print/print-labels.generated';
 
 export const DAILY_SALES_EXPORT_MAX_RANGE_DAYS = 93;

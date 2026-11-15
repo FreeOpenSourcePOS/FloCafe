@@ -3011,6 +3011,14 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
       dispatchKey({ key: '0', code: 'Digit0' });
       tree = renderPm();
 
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        0,
+        'Enter while editing unapplied discount must not submit payment',
+      );
+
       const applyDiscBtn = collectElements(
         tree,
         (el) =>
@@ -3216,6 +3224,23 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
         (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
       )[0];
       assert.equal(ppCashInput.props.value, '20', 'Prepaid keyboard digits populate Cash input');
+
+      const ppDiscountToggle = collectElements(
+        ppTree,
+        (el) => el.type === 'button' && el.props?.['aria-expanded'] !== undefined && renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      assert.ok(ppDiscountToggle, 'Prepaid Discounts toggle renders');
+      ppDiscountToggle.props.onClick();
+      ppTree = renderPp();
+      dispatchPpKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        ppConfirmed,
+        0,
+        'Prepaid Enter while Discount target is active must not submit checkout early',
+      );
+      ppDiscountToggle.props.onClick();
+      ppTree = renderPp();
 
       dispatchPpKey({ key: 'Enter', code: 'Enter' });
       await new Promise((r) => setTimeout(r, 15));

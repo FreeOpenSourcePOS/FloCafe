@@ -1014,7 +1014,7 @@ export default function PrepaidCheckoutModal({
             onClose();
             return;
           }
-          if (!confirmDisabled) {
+          if (amountTarget?.kind !== 'discount' && !confirmDisabled) {
             handlePrimarySubmit();
           }
         }

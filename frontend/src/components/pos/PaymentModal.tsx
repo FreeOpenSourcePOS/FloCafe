@@ -2492,6 +2492,7 @@ export default function PaymentModal({
             return;
           }
           if (
+            amountTarget?.kind !== 'discount' &&
             !payCtaDisabled &&
             !pendingAttempt &&
             remainingMinor > 0 &&

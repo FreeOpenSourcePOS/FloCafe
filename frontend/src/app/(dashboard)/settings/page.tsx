@@ -3493,7 +3493,7 @@ export default function SettingsPage() {
         allow_switch: true,
       });
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-      await fetchRemoteGoogleDriveBackups();
+      void fetchRemoteGoogleDriveBackups();
       toast.success(t('googleDriveConnectedSuccess'));
       fetchBackups();
     } catch (err: unknown) {
@@ -5636,9 +5636,7 @@ export default function SettingsPage() {
             <QrMenuSettingsTab
               canConnectDrive={canManageGoogleDrive}
               connectingDrive={connectingGoogleDrive}
-              onConnectDrive={() => {
-                void connectGoogleDrive();
-              }}
+              onConnectDrive={connectGoogleDrive}
             />
           </TabsContent>
 

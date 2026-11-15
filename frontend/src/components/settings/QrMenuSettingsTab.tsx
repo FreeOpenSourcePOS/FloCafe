@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, Download, ExternalLink, LoaderCircle, Printer, QrCode, Upload } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
@@ -63,7 +63,7 @@ export function QrMenuSettingsTab({
 }: {
   canConnectDrive: boolean;
   connectingDrive: boolean;
-  onConnectDrive: () => void;
+  onConnectDrive: () => void | Promise<unknown>;
 }) {
   const t = useTranslations('qrMenu');
   const tenant = useAuthStore((state) => state.currentTenant);
@@ -74,27 +74,84 @@ export function QrMenuSettingsTab({
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [busy, setBusy] = useState(false);
   const [receiptLogo, setReceiptLogo] = useState<string | null>(null);
+  const mountedRef = useRef(false);
+  const refreshGenerationRef = useRef(0);
+  const statusRef = useRef<QrMenuStatus | null>(null);
+  const connectingDriveRef = useRef(connectingDrive);
+
+  const commitFetchedStatus = useCallback((nextStatus: QrMenuStatus) => {
+    const prevStatus = statusRef.current;
+    const connectionChanged = prevStatus === null || prevStatus.connected !== nextStatus.connected;
+
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+
+    if (connectionChanged) {
+      setPrefs(nextStatus.generator_prefs);
+    } else {
+      setPrefs((current) => current ?? nextStatus.generator_prefs);
+    }
+  }, []);
+
+  const refreshQrMenuStatus = useCallback(
+    ({ silent = false }: { silent?: boolean } = {}) => {
+      const generation = ++refreshGenerationRef.current;
+      return api
+        .get('/settings/google-drive/qr-menu')
+        .then((response) => {
+          if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
+          commitFetchedStatus(response.data as QrMenuStatus);
+        })
+        .catch(() => {
+          if (mountedRef.current && generation === refreshGenerationRef.current && !silent) {
+            toast.error(t('loadFailed'));
+          }
+        });
+    },
+    [commitFetchedStatus, t],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .get('/settings/google-drive/qr-menu')
-      .then((response) => {
-        if (cancelled) return;
-        setStatus(response.data);
-        setPrefs(response.data.generator_prefs);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error(t('loadFailed'));
-      });
+    connectingDriveRef.current = connectingDrive;
+  }, [connectingDrive]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void refreshQrMenuStatus();
     api
       .get('/settings')
-      .then((response) => setReceiptLogo(response.data?.receipt_logo || null))
+      .then((response) => {
+        if (mountedRef.current) setReceiptLogo(response.data?.receipt_logo || null);
+      })
       .catch(() => {});
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
+      refreshGenerationRef.current += 1;
     };
-  }, [t]);
+  }, [refreshQrMenuStatus]);
+
+  useEffect(() => {
+    const handleReturnToApp = () => {
+      if (connectingDriveRef.current) return;
+      void refreshQrMenuStatus({ silent: true });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') handleReturnToApp();
+    };
+    window.addEventListener('focus', handleReturnToApp);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleReturnToApp);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshQrMenuStatus]);
+
+  const handleConnectDrive = async () => {
+    await onConnectDrive();
+    if (mountedRef.current) {
+      await refreshQrMenuStatus({ silent: true });
+    }
+  };
 
   const setPreference = <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
     setPrefs((current) => (current ? { ...current, [key]: value } : current));
@@ -193,6 +250,8 @@ export function QrMenuSettingsTab({
         pageSize: prefs.pageSize,
         preferences: prefs,
       });
+      refreshGenerationRef.current += 1;
+      statusRef.current = response.data;
       setStatus(response.data);
       setPrefs(response.data.generator_prefs);
       toast.success(t('published'));
@@ -223,6 +282,8 @@ export function QrMenuSettingsTab({
         mimeType: 'application/pdf',
         data: btoa(binary),
       });
+      refreshGenerationRef.current += 1;
+      statusRef.current = response.data;
       setStatus(response.data);
       setPrefs(response.data.generator_prefs);
       toast.success(t('published'));
@@ -241,6 +302,8 @@ export function QrMenuSettingsTab({
       const response = await api.put('/settings/google-drive/qr-menu/sharing', {
         enabled: !status.sharing_enabled,
       });
+      refreshGenerationRef.current += 1;
+      statusRef.current = response.data;
       setStatus(response.data);
       toast.success(response.data.sharing_enabled ? t('sharingResumed') : t('sharingPaused'));
     } catch {
@@ -290,7 +353,7 @@ export function QrMenuSettingsTab({
             {status.configured ? t('connectHint') : t('notConfigured')}
           </p>
           {canConnectDrive && status.configured && (
-            <Button className="mt-4" disabled={connectingDrive} onClick={onConnectDrive}>
+            <Button className="mt-4" disabled={connectingDrive} onClick={handleConnectDrive}>
               {connectingDrive && <LoaderCircle className="me-2 animate-spin" size={16} />}
               {t('connectDrive')}
             </Button>

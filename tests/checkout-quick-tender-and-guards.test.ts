@@ -4617,8 +4617,29 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
 
       let zeroPayCalls = 0;
       let lastPayUrl = '';
+      const zeroUnpaidBill = {
+        ...makeBill('bill-zero-enter', 0),
+        subtotal: 20,
+        discount_amount: 20,
+        discount_type: 'percentage',
+        discount_value: 100,
+        total: 0,
+        balance: 0,
+        paid_amount: 0,
+        payment_status: 'unpaid',
+      };
       try {
         installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/')) return { data: { bill: zeroUnpaidBill } };
+            if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('printers')) return { data: { printers: [] } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+            return { data: {} };
+          },
           apiPost: async (url: string) => {
             lastPayUrl = String(url);
             if (lastPayUrl.endsWith('/payment') || lastPayUrl.endsWith('/payments')) {
@@ -4641,17 +4662,6 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
         delete require.cache[pmPath];
         const PaymentModal = require(pmPath).default;
-        const zeroUnpaidBill = {
-          ...makeBill('bill-zero-enter', 0),
-          subtotal: 20,
-          discount_amount: 20,
-          discount_type: 'percentage',
-          discount_value: 100,
-          total: 0,
-          balance: 0,
-          paid_amount: 0,
-          payment_status: 'unpaid',
-        };
         const renderPm = () =>
           harness.renderAndSettle(PaymentModal, {
             bill: zeroUnpaidBill,
@@ -4749,6 +4759,16 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
       let payCalls = 0;
       try {
         installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/')) return { data: { bill: blockedScenario.bill } };
+            if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('printers')) return { data: { printers: [] } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+            return { data: {} };
+          },
           apiPost: async (url: string) => {
             if (String(url).endsWith('/payment') || String(url).endsWith('/payments')) {
               payCalls++;

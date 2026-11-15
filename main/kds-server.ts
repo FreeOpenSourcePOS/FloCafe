@@ -48,6 +48,7 @@ import {
   handlePinChange,
   normalizeEmail,
   parseCategoryIds,
+  tokenExpSeconds,
 } from './routes/auth';
 import {
   rateLimit,
@@ -343,14 +344,15 @@ export function startKdsServer(): Promise<void> {
 
         resetSuccessfulLogin(ip);
 
+        const iat = nextTokenIatSeconds();
         const token = jwt.sign(
           {
             userId: user.id,
             email: user.email,
             role: user.role,
             jti: randomUUID(),
-            iat: nextTokenIatSeconds(),
-            exp: Math.floor(Date.now() / 1000) + 86400,
+            iat,
+            exp: tokenExpSeconds(false, iat),
           },
           getJWTSecret(),
         );

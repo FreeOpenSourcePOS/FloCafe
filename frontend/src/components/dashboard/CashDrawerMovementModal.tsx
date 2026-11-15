@@ -2,20 +2,51 @@
 
 import { useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, Banknote, Loader2, Shield, X } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import { Ltr } from '@/components/layout/Ltr';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
-import type { CashDrawerMovementType, CashDrawerMovementsModel } from '@/hooks/useCashDrawerMovements';
+import type {
+  CashDrawerMovementType,
+  CashDrawerMovementsModel,
+} from '@/hooks/useCashDrawerMovements';
 
 export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsModel }) {
   const { currentTenant } = useAuthStore();
   const canVoid = tenantCan(currentTenant, 'cash.movements.void');
   const {
-    open, setOpen, businessDate, setBusinessDate, loadMovements, movementType, setMovementType,
-    amountInput, setAmountInput, reason, setReason, movements, loading, submitting, error,
-    recordMovement, voidMovement, fmt, minorFactor, unitAdapter, t, tCommon, todayLocal,
+    open,
+    setOpen,
+    businessDate,
+    setBusinessDate,
+    loadMovements,
+    movementType,
+    setMovementType,
+    amountInput,
+    setAmountInput,
+    reason,
+    setReason,
+    movements,
+    loading,
+    submitting,
+    error,
+    recordMovement,
+    voidMovement,
+    fmt,
+    minorFactor,
+    unitAdapter,
+    t,
+    tCommon,
+    todayLocal,
   } = model;
   const [voidingId, setVoidingId] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState('');
@@ -27,7 +58,12 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!submitting) setOpen(next); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!submitting) setOpen(next);
+      }}
+    >
       <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -39,10 +75,13 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
 
         <div className="flex-1 overflow-y-auto space-y-4">
           <div>
-            <label htmlFor="movement-business-date" className="block text-sm text-muted-foreground mb-1">
+            <label
+              htmlFor="movement-business-date"
+              className="block text-sm text-muted-foreground mb-1"
+            >
               {t('businessDateLabel')}
             </label>
-            <input
+            <DatePickerInput
               id="movement-business-date"
               type="date"
               value={businessDate}
@@ -53,7 +92,8 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
                 setBusinessDate(next);
                 void loadMovements(next);
               }}
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+              pickerAriaLabel={t('openDatePicker')}
+              className="w-full ps-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
 
@@ -93,7 +133,8 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
 
           <div>
             <label htmlFor="movement-reason" className="block text-sm text-muted-foreground mb-1">
-              {t('movementReason')} {movementType === 'opening_float' && <span>({tCommon('optional')})</span>}
+              {t('movementReason')}{' '}
+              {movementType === 'opening_float' && <span>({tCommon('optional')})</span>}
             </label>
             <textarea
               id="movement-reason"
@@ -105,28 +146,58 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
             />
           </div>
 
-          {error && <p className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</p>}
+          {error && (
+            <p className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">
+              {error}
+            </p>
+          )}
 
           <section aria-labelledby="movement-history-heading">
-            <h3 id="movement-history-heading" className="text-sm font-medium text-foreground mb-2">{t('movementHistory')}</h3>
+            <h3 id="movement-history-heading" className="text-sm font-medium text-foreground mb-2">
+              {t('movementHistory')}
+            </h3>
             {loading ? (
-              <div className="flex items-center justify-center py-6 text-muted-foreground"><Loader2 size={16} className="animate-spin" /></div>
+              <div className="flex items-center justify-center py-6 text-muted-foreground">
+                <Loader2 size={16} className="animate-spin" />
+              </div>
             ) : movements.length === 0 ? (
-              <p className="text-sm text-muted-foreground rounded-lg border border-border p-3">{t('noMovements')}</p>
+              <p className="text-sm text-muted-foreground rounded-lg border border-border p-3">
+                {t('noMovements')}
+              </p>
             ) : (
               <ul className="divide-y divide-border rounded-lg border border-border">
                 {movements.map((movement) => (
-                  <li key={movement.id} className={`p-3 space-y-2 ${movement.voided_at ? 'opacity-60' : ''}`}>
+                  <li
+                    key={movement.id}
+                    className={`p-3 space-y-2 ${movement.voided_at ? 'opacity-60' : ''}`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                          {movement.movement_type === 'pay_in' ? <ArrowDownToLine size={14} /> : movement.movement_type === 'pay_out' || movement.movement_type === 'safe_drop' ? <ArrowUpFromLine size={14} /> : <Shield size={14} />}
+                          {movement.movement_type === 'pay_in' ? (
+                            <ArrowDownToLine size={14} />
+                          ) : movement.movement_type === 'pay_out' ||
+                            movement.movement_type === 'safe_drop' ? (
+                            <ArrowUpFromLine size={14} />
+                          ) : (
+                            <Shield size={14} />
+                          )}
                           {movementLabel(movement.movement_type)}
-                          {movement.voided_at && <span className="text-xs text-red-700 dark:text-red-300">({t('voided')})</span>}
+                          {movement.voided_at && (
+                            <span className="text-xs text-red-700 dark:text-red-300">
+                              ({t('voided')})
+                            </span>
+                          )}
                         </p>
-                        <p className="text-xs text-muted-foreground truncate">{movement.reason || t('openingFloat')} · {movement.created_by_name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {movement.reason || t('openingFloat')} · {movement.created_by_name}
+                        </p>
                       </div>
-                      <Ltr><span className="text-sm font-semibold text-foreground whitespace-nowrap">{fmt(movement.amount_cents / minorFactor)}</span></Ltr>
+                      <Ltr>
+                        <span className="text-sm font-semibold text-foreground whitespace-nowrap">
+                          {fmt(movement.amount_cents / minorFactor)}
+                        </span>
+                      </Ltr>
                     </div>
                     {movement.voided_at ? (
                       <p className="text-xs text-muted-foreground">{movement.void_reason}</p>
@@ -140,15 +211,40 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
                           placeholder={t('voidReason')}
                           className="min-w-0 flex-1 px-2 py-1.5 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
                         />
-                        <Button type="button" size="sm" onClick={async () => { if (await voidMovement(movement.id, voidReason)) { setVoidingId(null); setVoidReason(''); } }}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={async () => {
+                            if (await voidMovement(movement.id, voidReason)) {
+                              setVoidingId(null);
+                              setVoidReason('');
+                            }
+                          }}
+                        >
                           {t('voidMovement')}
                         </Button>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => { setVoidingId(null); setVoidReason(''); }} aria-label={tCommon('cancel')}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setVoidingId(null);
+                            setVoidReason('');
+                          }}
+                          aria-label={tCommon('cancel')}
+                        >
                           <X size={14} />
                         </Button>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => { setVoidingId(movement.id); setVoidReason(''); }} className="text-xs text-red-700 dark:text-red-300 hover:underline">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVoidingId(movement.id);
+                          setVoidReason('');
+                        }}
+                        className="text-xs text-red-700 dark:text-red-300 hover:underline"
+                      >
                         {t('voidMovement')}
                       </button>
                     )}

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import {
   Sheet,
   SheetContent,
@@ -55,6 +56,7 @@ export function OrderDetailsDrawer({
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
+  const tDashboard = useTranslations('dashboard');
 
   const Icon = orderTypeIcons[cart.orderType];
   const orderTypeLabel =
@@ -314,13 +316,14 @@ export function OrderDetailsDrawer({
                   </button>
                 )}
               </div>
-              <input
+              <DatePickerInput
                 id="pos-send-to-kitchen-drawer-input"
                 data-testid="pos-send-to-kitchen-input"
                 type="datetime-local"
                 value={cart.scheduledFor}
                 onChange={(e) => cart.setScheduledFor(e.target.value)}
-                className={`w-full min-h-10 px-2.5 py-1.5 text-sm border bg-card rounded-lg outline-none focus:ring-2 focus:ring-brand focus:border-brand ${
+                pickerAriaLabel={tDashboard('openDatePicker')}
+                className={`w-full min-h-10 ps-2.5 py-1.5 text-sm border bg-card text-foreground rounded-lg outline-none focus:ring-2 focus:ring-brand focus:border-brand ${
                   scheduleErrorMessage ? 'border-red-500' : 'border-border'
                 }`}
               />

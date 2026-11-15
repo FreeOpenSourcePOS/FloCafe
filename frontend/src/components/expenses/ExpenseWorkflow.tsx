@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import CurrencyAmountInput from '@/components/ui/CurrencyAmountInput';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
@@ -95,6 +96,7 @@ export default function ExpenseWorkflow({
   const tCommon = useTranslations('common');
   const tInventory = useTranslations('inventory');
   const tPos = useTranslations('pos');
+  const tDashboard = useTranslations('dashboard');
   const { user, currentTenant } = useAuthStore();
   const fmt = useFormatCurrency();
   const { formatDate, formatDateTime } = useFormatDate();
@@ -734,14 +736,15 @@ export default function ExpenseWorkflow({
                   <label className="mb-1 block text-sm font-medium" htmlFor="expense-incurred-on">
                     {t('incurredOn')}
                   </label>
-                  <input
+                  <DatePickerInput
                     id="expense-incurred-on"
                     type="date"
                     data-testid="expense-form-incurred-on"
                     value={incurredOn}
                     max={context.business_date}
                     onChange={(event) => setIncurredOn(event.target.value)}
-                    className="w-full rounded-lg border border-border px-3 py-2 outline-none focus:ring-2 focus:ring-brand"
+                    pickerAriaLabel={tDashboard('openDatePicker')}
+                    className="w-full rounded-lg border border-border bg-card ps-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-brand"
                   />
                   {fieldError('date')}
                 </div>

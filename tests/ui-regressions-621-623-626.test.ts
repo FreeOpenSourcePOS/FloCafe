@@ -79,19 +79,20 @@ assert.match(
 );
 
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
+const datePickerInput = source('frontend/src/components/ui/date-picker-input.tsx');
 assert.match(
   dashboard,
-  /dayInputRef.*monthInputRef/s,
+  /DatePickerInput[\s\S]*type="date"[\s\S]*DatePickerInput[\s\S]*type="month"/,
   'dashboard retains explicit date and month picker controls',
 );
 assert.match(
-  dashboard,
+  datePickerInput,
   /input\.showPicker\(\)/,
   'dashboard calendar buttons invoke the native Chromium picker',
 );
 assert.match(
   dashboard,
-  /aria-label=\{t\('openDatePicker'\)\}/,
+  /pickerAriaLabel=\{t\('openDatePicker'\)\}/,
   'dashboard date picker trigger stays accessible',
 );
 

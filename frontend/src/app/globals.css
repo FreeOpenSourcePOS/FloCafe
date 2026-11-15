@@ -515,8 +515,15 @@ html.dark::-webkit-scrollbar-thumb:hover,
   body {
     @apply bg-background text-foreground;
   }
-  select {
+  select,
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"],
+  input[type="time"] {
     color-scheme: light;
+  }
+  select {
     background-color: var(--card);
     color: var(--card-foreground);
   }
@@ -525,7 +532,12 @@ html.dark::-webkit-scrollbar-thumb:hover,
     background-color: var(--card);
     color: var(--card-foreground);
   }
-  .dark select {
+  .dark select,
+  .dark input[type="date"],
+  .dark input[type="datetime-local"],
+  .dark input[type="month"],
+  .dark input[type="week"],
+  .dark input[type="time"] {
     color-scheme: dark;
   }
 }

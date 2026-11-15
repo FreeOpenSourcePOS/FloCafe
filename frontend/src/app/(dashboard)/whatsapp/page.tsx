@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -1941,7 +1942,7 @@ export default function WhatsAppPage() {
                         >
                           {tAutomation('quietHoursStart')}
                         </label>
-                        <Input
+                        <DatePickerInput
                           id="wa-quiet-hours-start"
                           type="time"
                           value={automationConfig.safety.quietHoursStart}
@@ -1951,6 +1952,9 @@ export default function WhatsAppPage() {
                               safety: { ...prev.safety, quietHoursStart: e.target.value },
                             }))
                           }
+                          pickerAriaLabel={tAutomation('quietHoursStart')}
+                          className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent dark:bg-input/30 ps-3 py-1 text-base text-foreground shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus:ring-0 md:text-sm"
+                          buttonClassName="rounded-e-md"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1960,7 +1964,7 @@ export default function WhatsAppPage() {
                         >
                           {tAutomation('quietHoursEnd')}
                         </label>
-                        <Input
+                        <DatePickerInput
                           id="wa-quiet-hours-end"
                           type="time"
                           value={automationConfig.safety.quietHoursEnd}
@@ -1970,6 +1974,9 @@ export default function WhatsAppPage() {
                               safety: { ...prev.safety, quietHoursEnd: e.target.value },
                             }))
                           }
+                          pickerAriaLabel={tAutomation('quietHoursEnd')}
+                          className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent dark:bg-input/30 ps-3 py-1 text-base text-foreground shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus:ring-0 md:text-sm"
+                          buttonClassName="rounded-e-md"
                         />
                       </div>
                       <div className="space-y-1">

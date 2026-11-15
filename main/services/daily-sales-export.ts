@@ -20,8 +20,8 @@ import { isExcludedFromBillReceipt, isTerminalItemStatus } from '../../shared/or
 import { getTenantCurrency } from './refund';
 import { roundCurrencyCost } from './supplies';
 import { computeDiscountTaxRatio } from './tax';
-import { getOrdersWithItemsForBills } from '../routes/bills';
-import { paymentMethodBreakdown } from '../routes/cash-closures';
+import { getOrdersWithItemsForBills } from './bill-item-projection';
+import { paymentMethodBreakdown } from './payment-method-breakdown';
 import { printLabel } from '../print/print-labels.generated';
 
 export const DAILY_SALES_EXPORT_MAX_RANGE_DAYS = 93;
@@ -59,6 +59,7 @@ export type DailySalesExportItemRow = {
 
 export type DailySalesExportPaymentRow = {
   method: string;
+  count: number;
   total: number;
 };
 
@@ -1635,11 +1636,12 @@ export function buildDailySalesExportDataset(
   })
     .map((row) => ({
       method: String(row.method || 'unknown'),
+      count: Math.max(0, Math.trunc(Number(row.count || 0))),
       total: new Decimal(Number(row.total || 0))
         .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
         .toNumber(),
     }))
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => b.total - a.total || a.method.localeCompare(b.method));
 
   const hasIncompleteTaxDetail = taxes.some((row) => row.incomplete_detail);
 

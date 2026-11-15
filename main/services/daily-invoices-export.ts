@@ -15,7 +15,7 @@ import {
   resolveRegionalSnapshot,
   type LocalePreferences,
 } from '../countries';
-import { getOrdersWithItemsForBills } from '../routes/bills';
+import { getOrdersWithItemsForBills } from './bill-item-projection';
 import { getTenantCurrency } from './refund';
 import { getActiveCountryPack } from './tax';
 import { resolveTaxComponents, type DisplayTaxComponent } from './tax-components';

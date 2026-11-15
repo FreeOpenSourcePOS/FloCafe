@@ -2103,7 +2103,9 @@ export default function PaymentModal({
         return;
       }
       const { usePrinterStore } = await import('@/hooks/usePrinter');
-      await usePrinterStore.getState().printBill(targetBill, currentTenant, undefined, reservedWindow);
+      await usePrinterStore
+        .getState()
+        .printBill(targetBill, currentTenant, undefined, reservedWindow);
     } catch {
       toast.error(tOrders('printReceiptFailed'));
     } finally {

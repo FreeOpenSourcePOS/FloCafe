@@ -2828,7 +2828,9 @@ async function testVisualHierarchyAndPrematurePaidGuards() {
 }
 
 async function testPrincipalUxErgonomicsAndCompletionParity() {
-  console.log('\n--- 8. Principal UX Ergonomics: 1-Tap Switch, Keyboard Flow, Discount Sync, & Completion Change ---');
+  console.log(
+    '\n--- 8. Principal UX Ergonomics: 1-Tap Switch, Keyboard Flow, Discount Sync, & Completion Change ---',
+  );
 
   await withAliases(async () => {
     const checkoutUiPath = path.resolve(ROOT, 'frontend/src/components/pos/checkout-ui.tsx');
@@ -2954,7 +2956,11 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
 
       findTenderBtn(tree, 'methodCard').props.onClick();
       tree = renderPm();
-      assert.equal(findTenderInput(tree, 'methodCard').props.value, '30', 'Card 1-tap auto-fills 30');
+      assert.equal(
+        findTenderInput(tree, 'methodCard').props.value,
+        '30',
+        'Card 1-tap auto-fills 30',
+      );
       assert.equal(findTenderInput(tree, 'methodCash').props.value, '', 'Cash starts empty');
 
       findTenderBtn(tree, 'methodCash').props.onClick();
@@ -3039,7 +3045,11 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
       // Escape while Discount sub-panel is open backs out to Items first without closing modal
       dispatchKey({ key: 'Escape', code: 'Escape' });
       tree = renderPm();
-      assert.equal(closeCount, 0, 'First Escape closes Discount sub-panel instead of closing modal');
+      assert.equal(
+        closeCount,
+        0,
+        'First Escape closes Discount sub-panel instead of closing modal',
+      );
 
       // Switch to Cash and type 40 via physical keyboard (Delete -> '4' -> '0') -> Change Returned = 13
       findTenderBtn(tree, 'methodCash').props.onClick();
@@ -3091,7 +3101,10 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
         tree,
         (el) => el.props?.['data-testid'] === 'settled-change-banner',
       )[0];
-      assert.ok(changeBanner, 'Completion screen renders settled-change-banner when cash change > 0');
+      assert.ok(
+        changeBanner,
+        'Completion screen renders settled-change-banner when cash change > 0',
+      );
       assert.ok(
         renderToStaticMarkup(changeBanner).includes('13.00'),
         'Completion screen displays exact $13.00 change returned',
@@ -3227,7 +3240,10 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
 
       const ppDiscountToggle = collectElements(
         ppTree,
-        (el) => el.type === 'button' && el.props?.['aria-expanded'] !== undefined && renderToStaticMarkup(el).includes('discounts'),
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discounts'),
       )[0];
       assert.ok(ppDiscountToggle, 'Prepaid Discounts toggle renders');
       ppDiscountToggle.props.onClick();
@@ -3239,7 +3255,15 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
         0,
         'Prepaid Enter while Discount target is active must not submit checkout early',
       );
-      ppDiscountToggle.props.onClick();
+      const ppDiscountToggleAfter = collectElements(
+        ppTree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discount'),
+      )[0];
+      assert.ok(ppDiscountToggleAfter, 'Prepaid Discounts toggle still renders after opening');
+      ppDiscountToggleAfter.props.onClick();
       ppTree = renderPp();
 
       dispatchPpKey({ key: 'Enter', code: 'Enter' });
@@ -3453,9 +3477,21 @@ async function testConfirmDialogAndCardReferenceSwitchGuards() {
       const spaceEvent = dispatchKey({ key: ' ', code: 'Space' });
       const digitEvent = dispatchKey({ key: '5', code: 'Digit5' });
       tree = renderModal(true);
-      assert.equal(enterEvent.defaultPrevented, false, 'Enter is not prevented behind ConfirmDialog');
-      assert.equal(spaceEvent.defaultPrevented, false, 'Space is not prevented behind ConfirmDialog');
-      assert.equal(digitEvent.defaultPrevented, false, 'Digit is not intercepted behind ConfirmDialog');
+      assert.equal(
+        enterEvent.defaultPrevented,
+        false,
+        'Enter is not prevented behind ConfirmDialog',
+      );
+      assert.equal(
+        spaceEvent.defaultPrevented,
+        false,
+        'Space is not prevented behind ConfirmDialog',
+      );
+      assert.equal(
+        digitEvent.defaultPrevented,
+        false,
+        'Digit is not intercepted behind ConfirmDialog',
+      );
       assert.equal(payCalls, 0, 'Payment is not submitted behind ConfirmDialog');
       assert.equal(
         findTenderInput(tree, 'methodCash').props.value,
@@ -3466,7 +3502,11 @@ async function testConfirmDialogAndCardReferenceSwitchGuards() {
       // Standalone Escape (without onRegisterDismissHandler) also stays open while ConfirmDialog is open
       tree = renderModal(false);
       dispatchKey({ key: 'Escape', code: 'Escape' });
-      assert.equal(closeCount, 0, 'Standalone Escape does not close PaymentModal behind ConfirmDialog');
+      assert.equal(
+        closeCount,
+        0,
+        'Standalone Escape does not close PaymentModal behind ConfirmDialog',
+      );
 
       // Cancel ConfirmDialog, then Escape closes PaymentModal normally
       resolveConfirm?.(false);

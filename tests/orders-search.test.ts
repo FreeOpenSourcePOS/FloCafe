@@ -2080,6 +2080,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       );
 
       // 10. PaymentModal on /orders forwards reservePrintWindow and prints a departing split bill not yet in orders
+      tree = await flushAll(350);
       const detailForSplit = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
       if (detailForSplit?.props?.onPayBill) {
         await detailForSplit.props.onPayBill(order103.bills[0]);
@@ -2107,14 +2108,25 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         total: 12,
         balance: 0,
         payment_status: 'paid',
-        order: { id: 999, order_number: 'ORD-999', status: 'completed', type: 'dine_in', items: [] },
+        order: {
+          id: 999,
+          order_number: 'ORD-999',
+          status: 'completed',
+          type: 'dine_in',
+          items: [],
+        },
       };
       splitSourceModal.props.onSplit(departingBill);
       tree = await flushAll(20);
       const departingModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
       assert.ok(departingModal, 'PaymentModal reopens for departing split bill 999');
 
-      const fakeReservedWindow = { closed: false, close() { this.closed = true; } };
+      const fakeReservedWindow = {
+        closed: false,
+        close() {
+          this.closed = true;
+        },
+      };
       await departingModal.props.onPrintBill(departingBill, fakeReservedWindow);
       assert.deepEqual(
         toastErrors,

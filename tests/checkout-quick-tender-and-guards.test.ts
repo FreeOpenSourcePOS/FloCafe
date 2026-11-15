@@ -4739,7 +4739,7 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         balance: 0,
         paid_amount: 0,
         payment_status: 'unpaid',
-        order: { id: 101, order_number: 'ORD-CANC', order_status: 'cancelled', items: [] },
+        order: { id: 101, order_number: 'ORD-CANC', status: 'cancelled', items: [] },
       },
     },
   ]) {

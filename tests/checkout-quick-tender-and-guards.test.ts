@@ -3524,6 +3524,410 @@ async function testConfirmDialogAndCardReferenceSwitchGuards() {
   console.log('  ✓ ConfirmDialog keyboard/Escape guards & 1-tap card ref clearing verified');
 }
 
+async function testGreptileReviewRegressions() {
+  console.log('\n--- 10. Input Enter Discount Guard & Partial-Bill Recovered Cash Change ---');
+
+  // 10a: PaymentModal & PrepaidCheckoutModal input Enter on card ref / tender inputs does NOT bypass open Discount panel
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let payCalls = 0;
+    try {
+      installCheckoutComponentMocks(harness, {
+        apiPost: async (url: string) => {
+          if (String(url).endsWith('/payments')) {
+            payCalls++;
+            return {
+              data: {
+                bill: { ...makeBill('bill-disc-enter', 20), balance: 0, payment_status: 'paid' },
+              },
+            };
+          }
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const bill = makeBill('bill-disc-enter', 20);
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderPm();
+      const cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      assert.ok(cardBtn, 'PaymentModal Card tender button renders');
+      cardBtn.props.onClick();
+      tree = renderPm();
+
+      const cardRefSetup = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.ok(cardRefSetup, 'PaymentModal card reference input renders');
+      cardRefSetup.props.onChange({ target: { value: 'TXN-123' } });
+      tree = renderPm();
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.ok(discountTab, 'PaymentModal Discount tab renders');
+      discountTab.props.onClick();
+      tree = renderPm();
+
+      const cardRefInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.ok(cardRefInput, 'PaymentModal card reference input still renders');
+      let preventedWhileDiscountOpen = false;
+      cardRefInput.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          preventedWhileDiscountOpen = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(
+        payCalls,
+        0,
+        'Enter in #payment-card-transaction-id does not submit while Discount panel is open',
+      );
+      assert.equal(
+        preventedWhileDiscountOpen,
+        false,
+        'Enter in #payment-card-transaction-id is not intercepted while Discount panel is open',
+      );
+
+      // Close Discount panel, then Enter in #payment-card-transaction-id submits normally
+      const discountTabClose = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTabClose.props.onClick();
+      tree = renderPm();
+      const cardRefAfterClose = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      cardRefAfterClose.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        payCalls,
+        1,
+        'Enter in #payment-card-transaction-id submits once Discount panel is closed',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  await withAliases(async () => {
+    const ppHarness = createStatefulHarness();
+    let confirmCalls = 0;
+    try {
+      installCheckoutComponentMocks(ppHarness, {
+        cartState: {
+          items: [
+            {
+              key: 'item-1',
+              product: { id: 1, name: 'Latte', price: 15 },
+              quantity: 1,
+              variant: null,
+              addons: [],
+              notes: '',
+            },
+          ],
+          orderType: 'takeaway',
+          tableId: null,
+          customer: null,
+          deliveryAddress: '',
+          notes: '',
+          getSubtotal: () => 15,
+        },
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+      const renderPp = () =>
+        ppHarness.renderAndSettle(PrepaidCheckoutModal, {
+          currency: 'USD',
+          onClose: () => {},
+          onConfirm: async () => {
+            confirmCalls++;
+            return {
+              bill: { id: 601, bill_number: 'B-601', total: 15, payment_status: 'paid' },
+              customer: null,
+              pointsEarned: 0,
+            };
+          },
+        });
+
+      let tree = renderPp();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPp();
+
+      const cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      cardBtn.props.onClick();
+      tree = renderPp();
+
+      const ppCardRefSetup = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'prepaid-card-transaction-id',
+      )[0];
+      assert.ok(ppCardRefSetup, 'Prepaid card reference input renders');
+      ppCardRefSetup.props.onChange({ target: { value: 'TXN-456' } });
+      tree = renderPp();
+
+      const discountToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      assert.ok(discountToggle, 'Prepaid Discounts toggle renders');
+      discountToggle.props.onClick();
+      tree = renderPp();
+
+      const ppCardRef = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'prepaid-card-transaction-id',
+      )[0];
+      assert.ok(ppCardRef, 'Prepaid card reference input still renders');
+      ppCardRef.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(
+        confirmCalls,
+        0,
+        'Enter in #prepaid-card-transaction-id does not submit while Discount panel is open',
+      );
+
+      // Close Discount panel, then Enter in #prepaid-card-transaction-id submits normally
+      const discountToggleClose = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discount'),
+      )[0];
+      discountToggleClose.props.onClick();
+      tree = renderPp();
+      const ppCardRefAfterClose = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'prepaid-card-transaction-id',
+      )[0];
+      ppCardRefAfterClose.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        confirmCalls,
+        1,
+        'Enter in #prepaid-card-transaction-id submits once Discount panel is closed',
+      );
+    } finally {
+      ppHarness.cleanupAll();
+    }
+  });
+
+  // 10b: Partially paid $100 bill ($40 prior payment, balance $60) + $100 cash tender -> lost response -> checkPaymentStatus updates balance to 0 -> idempotent replay preserves $40.00 change and $60.00 settled amount
+  for (const includeServerPaymentDetails of [true, false]) {
+    await withAliases(async () => {
+      const storageMap = new Map<string, string>();
+      const hadWindow = 'window' in globalThis;
+      const prevWindow = (globalThis as any).window;
+      (globalThis as any).window = {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        sessionStorage: {
+          getItem: (k: string) => storageMap.get(k) ?? null,
+          setItem: (k: string, v: string) => {
+            storageMap.set(k, v);
+          },
+          removeItem: (k: string) => {
+            storageMap.delete(k);
+          },
+        },
+      };
+
+      const harness = createStatefulHarness();
+      try {
+        const partialBill = {
+          ...makeBill('bill-partial-change', 100),
+          total: 100,
+          paid_amount: 40,
+          balance: 60,
+          payment_status: 'partial',
+        };
+        const settledServerBill = {
+          ...partialBill,
+          paid_amount: 100,
+          balance: 0,
+          payment_status: 'paid',
+          ...(includeServerPaymentDetails
+            ? {
+                payment_details: [
+                  { method: 'card', amount: 40, requested_amount: 40 },
+                  {
+                    method: 'cash',
+                    amount: 60,
+                    requested_amount: 100,
+                    tendered_amount: 100,
+                    change_amount: 40,
+                  },
+                ],
+              }
+            : {}),
+        };
+
+        let payAttempts = 0;
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/bill-partial-change')) {
+              return { data: { bill: settledServerBill } };
+            }
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            if (String(url).endsWith('/payments')) {
+              payAttempts++;
+              if (payAttempts === 1) {
+                throw new Error('Network timeout after server committed payment');
+              }
+              return { data: { bill: settledServerBill, loyaltyPointsEarned: 0 } };
+            }
+            return { data: {} };
+          },
+        });
+
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+
+        let activeBill: any = partialBill;
+        const renderPm = () =>
+          harness.renderAndSettle(PaymentModal, {
+            bill: activeBill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+            onBillUpdate: (updated: any) => {
+              activeBill = updated;
+            },
+          });
+
+        let tree = renderPm();
+        const cashBtn = collectElements(
+          tree,
+          (el) => el.type === 'button' && el.props?.title === 'methodCash',
+        )[0];
+        cashBtn.props.onClick();
+        tree = renderPm();
+
+        const cashInput = collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+        )[0];
+        cashInput.props.onChange({ target: { value: '100' } });
+        tree = renderPm();
+
+        // 1. Submit $100 cash tender -> network timeout locks pendingAttempt
+        const payCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(payCta, 'Initial Pay CTA rendered');
+        await payCta.props.onClick();
+        tree = renderPm();
+
+        // 2. Check payment status -> updates activeBill.balance to 0, activeBill.paid_amount to 100
+        const checkCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(checkCta, 'Check Payment Status CTA rendered');
+        await checkCta.props.onClick();
+        tree = renderPm();
+        assert.equal(activeBill.balance, 0, 'checkPaymentStatus updates bill.balance to 0');
+
+        // 3. Replay idempotent payment -> completion screen must show $60.00 settled now and $40.00 cash change
+        const retryCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(retryCta, 'Retry Same Payment CTA rendered');
+        await retryCta.props.onClick();
+        tree = renderPm();
+
+        const changeBanner = collectElements(
+          tree,
+          (el) => el.props?.['data-testid'] === 'settled-change-banner',
+        )[0];
+        assert.ok(
+          changeBanner,
+          `Recovered partial-bill cash payment renders settled-change-banner (payment_details=${includeServerPaymentDetails})`,
+        );
+        const changeMarkup = renderToStaticMarkup(changeBanner);
+        assert.ok(
+          changeMarkup.includes('$40.00'),
+          `Recovered partial-bill cash payment displays $40.00 change (got ${changeMarkup})`,
+        );
+
+        const receiptCard = collectElements(tree, (el) => el.props?.role === 'status')[0];
+        const receiptMarkup = renderToStaticMarkup(receiptCard);
+        assert.ok(
+          receiptMarkup.includes('$60.00'),
+          `Recovered partial-bill cash payment displays $60.00 settled now instead of $100.00 cumulative (got ${receiptMarkup})`,
+        );
+      } finally {
+        harness.cleanupAll();
+        if (!hadWindow) delete (globalThis as any).window;
+        else (globalThis as any).window = prevWindow;
+      }
+    });
+  }
+
+  console.log('  ✓ Input Enter discount guard & recovered partial-bill cash change verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -3536,6 +3940,7 @@ async function run() {
   await testVisualHierarchyAndPrematurePaidGuards();
   await testPrincipalUxErgonomicsAndCompletionParity();
   await testConfirmDialogAndCardReferenceSwitchGuards();
+  await testGreptileReviewRegressions();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

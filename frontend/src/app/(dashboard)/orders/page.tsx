@@ -1502,19 +1502,23 @@ export default function OrdersPage() {
       return;
     }
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
-    const tenantIdAtStart = currentTenant?.id ?? null;
+    const startTenant = useAuthStore.getState().currentTenant ?? currentTenant;
+    const tenantIdAtStart = startTenant?.id ?? null;
     setPrintingBillId(billId);
     try {
       let rawBill: Bill | undefined;
       try {
         const { data } = await api.get(`/bills/${billId}`);
+        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill;
+      } catch (err) {
         if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
           return;
         }
-        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill;
-      } catch (err) {
         if (!options?.fallbackBill) throw err;
         rawBill = options.fallbackBill;
+      }
+      if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+        return;
       }
       if (!rawBill) {
         throw new Error('Bill not found');
@@ -1526,17 +1530,20 @@ export default function OrdersPage() {
       const printWarnings = await printBill(
         latestBill,
         {
-          business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
-          currency: currentTenant?.currency || '',
-          country: currentTenant?.country || '',
-          timezone: currentTenant?.timezone || 'UTC',
-          currency_display: currentTenant?.currency_display,
-          number_digits: currentTenant?.number_digits,
-          calendar: currentTenant?.calendar,
+          business_name: startTenant?.business_name || tCommon('businessNameFallback'),
+          currency: startTenant?.currency || '',
+          country: startTenant?.country || '',
+          timezone: startTenant?.timezone || 'UTC',
+          currency_display: startTenant?.currency_display,
+          number_digits: startTenant?.number_digits,
+          calendar: startTenant?.calendar,
         },
         { isReprint },
         reservedWindow,
       );
+      if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+        return;
+      }
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
       try {

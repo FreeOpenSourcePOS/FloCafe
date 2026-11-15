@@ -149,6 +149,7 @@ type PendingPaymentAttempt = {
     transaction_id?: string;
   }[];
   customerId: string | number | null;
+  balanceAtSubmit?: number;
 };
 
 function getSessionStorageSafe() {
@@ -171,6 +172,10 @@ function readRestoredPostpaidAttempt(bill: Bill, storageKey: string): PendingPay
   }
   const candidate = stored as unknown as Partial<PendingPaymentAttempt>;
   if (!candidate.key || !Array.isArray(candidate.lines)) return null;
+  const savedBalance =
+    typeof candidate.balanceAtSubmit === 'number' && Number.isFinite(candidate.balanceAtSubmit)
+      ? candidate.balanceAtSubmit
+      : Number(bill.balance);
   return {
     billId: bill.id,
     key: candidate.key,
@@ -178,6 +183,7 @@ function readRestoredPostpaidAttempt(bill: Bill, storageKey: string): PendingPay
     zeroBalance: Boolean(candidate.zeroBalance),
     lines: candidate.lines,
     customerId: candidate.customerId ?? null,
+    ...(Number.isFinite(savedBalance) && savedBalance > 0 ? { balanceAtSubmit: savedBalance } : {}),
   };
 }
 
@@ -1616,6 +1622,7 @@ export default function PaymentModal({
       zeroBalance,
       lines: zeroBalance ? [{ method: 'cash', amount: null }] : splitLines,
       customerId: effectiveCustomerId,
+      ...(remaining > 0 ? { balanceAtSubmit: remaining } : {}),
     };
   };
 
@@ -1727,20 +1734,51 @@ export default function PaymentModal({
         toast.success(t('paymentRecorded'));
       }
       const attemptAmount = attempt.zeroBalance ? 0 : attemptTotalMinor(attempt) / minorFactor;
-      const maxSettleable =
+      const recordedTail =
+        !attempt.zeroBalance &&
+        attempt.lines.length > 0 &&
+        Array.isArray(updatedBill.payment_details) &&
+        updatedBill.payment_details.length >= attempt.lines.length
+          ? updatedBill.payment_details.slice(-attempt.lines.length)
+          : null;
+      const recordedTailMatches = Boolean(
+        recordedTail &&
+        recordedTail.every((detail, idx) => {
+          const line = attempt.lines[idx];
+          const requested =
+            (detail as { requested_amount?: number }).requested_amount ??
+            detail.tendered_amount ??
+            detail.amount;
+          return (
+            detail?.method === line.method &&
+            (detail?.payment_method_id ?? undefined) === (line.payment_method_id ?? undefined) &&
+            toMinorUnits(Number(requested) || 0) === toMinorUnits(Number(line.amount) || 0)
+          );
+        }),
+      );
+      const priorRemaining =
         remaining > 0
           ? remaining
-          : Math.max(0, Number(updatedBill.paid_amount ?? updatedBill.total ?? attemptAmount));
-      const settledNow = attempt.zeroBalance ? 0 : Math.min(attemptAmount, maxSettleable);
+          : typeof attempt.balanceAtSubmit === 'number' && attempt.balanceAtSubmit > 0
+            ? attempt.balanceAtSubmit
+            : Math.max(0, Number(updatedBill.paid_amount ?? updatedBill.total ?? attemptAmount));
+      const settledNow = attempt.zeroBalance
+        ? 0
+        : recordedTailMatches && recordedTail
+          ? recordedTail.reduce((sum, d) => sum + toMinorUnits(Number(d.amount) || 0), 0) /
+            minorFactor
+          : Math.min(attemptAmount, priorRemaining);
       const attemptHasCash = attempt.lines.some(
         (line) => line.method === 'cash' && (Number(line.amount) || 0) > 0,
       );
-      const settledChange =
-        !attempt.zeroBalance &&
-        attemptHasCash &&
-        attemptTotalMinor(attempt) > toMinorUnits(settledNow)
-          ? (attemptTotalMinor(attempt) - toMinorUnits(settledNow)) / minorFactor
-          : 0;
+      const settledChange = attempt.zeroBalance
+        ? 0
+        : recordedTailMatches && recordedTail
+          ? recordedTail.reduce((sum, d) => sum + toMinorUnits(Number(d.change_amount) || 0), 0) /
+            minorFactor
+          : attemptHasCash && attemptTotalMinor(attempt) > toMinorUnits(settledNow)
+            ? (attemptTotalMinor(attempt) - toMinorUnits(settledNow)) / minorFactor
+            : 0;
       setSettledBill({
         ...bill,
         ...updatedBill,
@@ -2541,6 +2579,9 @@ export default function PaymentModal({
       !e.repeat &&
       !e.nativeEvent?.isComposing &&
       e.keyCode !== 229 &&
+      !isConfirmOpen &&
+      activeCol1Panel !== 'discount' &&
+      amountTarget?.kind !== 'discount' &&
       !payCtaDisabled &&
       !pendingAttempt &&
       remainingMinor > 0 &&

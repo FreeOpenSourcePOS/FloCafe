@@ -830,6 +830,25 @@ export default function PrepaidCheckoutModal({
   };
 
   const recordSettledSuccess = (result: PrepaidSuccess) => {
+    const serverDetails = Array.isArray(result.bill.payment_details)
+      ? result.bill.payment_details
+      : null;
+    if (
+      serverDetails &&
+      serverDetails.some(
+        (detail) =>
+          typeof detail?.change_amount === 'number' || typeof detail?.tendered_amount === 'number',
+      )
+    ) {
+      const serverChange =
+        serverDetails.reduce(
+          (sum, detail) => sum + toMinorUnits(Number(detail?.change_amount) || 0),
+          0,
+        ) / minorFactor;
+      setSettledChangeAmount(serverChange > 0 ? serverChange : 0);
+      setSuccess(result);
+      return;
+    }
     const submitted = lastSubmissionRef.current;
     if (submitted) {
       const [splitLines, submittedWallet] = submitted;
@@ -1064,6 +1083,8 @@ export default function PrepaidCheckoutModal({
       !e.repeat &&
       !e.nativeEvent?.isComposing &&
       e.keyCode !== 229 &&
+      activeCol1Panel !== 'discount' &&
+      amountTarget?.kind !== 'discount' &&
       !confirmDisabled
     ) {
       e.preventDefault();

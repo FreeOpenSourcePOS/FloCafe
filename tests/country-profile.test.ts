@@ -54,14 +54,24 @@ test('SY country profile properties', () => {
   assert.equal(getLocalizedCountryName('SY', 'en'), 'Syria');
 });
 
-test('SL country profile uses current SLE currency', () => {
+test('SL, CW, and SX country profiles use current redenominated currencies', () => {
   const sl = getCountryByCode('SL');
   assert.ok(sl, 'SL country profile should exist');
   assert.equal(sl.currency, 'SLE');
-  const snapshot = resolveRegionalSnapshot({ country: 'SL' });
-  assert.equal(snapshot.currency, 'SLE');
-  assert.equal(snapshot.currencyFractionDigits, 2);
-  assert.equal(snapshot.currencySymbol, 'Le');
+  const slSnapshot = resolveRegionalSnapshot({ country: 'SL' });
+  assert.equal(slSnapshot.currency, 'SLE');
+  assert.equal(slSnapshot.currencyFractionDigits, 2);
+  assert.equal(slSnapshot.currencySymbol, 'Le');
+
+  const cw = getCountryByCode('CW');
+  assert.ok(cw, 'CW country profile should exist');
+  assert.equal(cw.currency, 'XCG');
+  assert.equal(resolveRegionalSnapshot({ country: 'CW' }).currency, 'XCG');
+
+  const sx = getCountryByCode('SX');
+  assert.ok(sx, 'SX country profile should exist');
+  assert.equal(sx.currency, 'XCG');
+  assert.equal(resolveRegionalSnapshot({ country: 'SX' }).currency, 'XCG');
 });
 
 test('every country in COUNTRIES satisfies regional, currency, timezone, phone, and display invariants', () => {
@@ -101,6 +111,10 @@ test('every country in COUNTRIES satisfies regional, currency, timezone, phone, 
       currencyDisplayName,
       /\(\d{4}[—–-]\d{4}\)/,
       `${c.code}: currency ${c.currency} (${currencyDisplayName}) must not be a withdrawn historical currency`,
+    );
+    assert.ok(
+      !['SLL', 'ANG'].includes(c.currency),
+      `${c.code}: currency ${c.currency} must not be a withdrawn currency`,
     );
     assert.ok(isValidTimeZone(c.timezone), `${c.code}: valid IANA timezone (${c.timezone})`);
 

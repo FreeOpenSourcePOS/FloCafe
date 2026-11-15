@@ -6,7 +6,12 @@ import {
 } from '@print/thermal-capabilities';
 import { displayCellWidth } from '@print/width';
 
-export { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, stripCurrencyTokens } from '@print/currency';
+export {
+  CURRENCY_ASCII_MAP,
+  normalizeCurrencyToAscii,
+  resolveAsciiCurrencyFallback,
+  stripCurrencyTokens,
+} from '@print/currency';
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
   return normalizeThermalTextByCapabilities(text, capabilities);

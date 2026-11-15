@@ -115,6 +115,25 @@ export function stripCurrencyTokens(text: string): string {
   return text.replace(CURRENCY_TOKEN_RE, '');
 }
 
+const AMBIGUOUS_CURRENCY_ASCII_OWNER: Readonly<Record<string, string>> = Object.freeze({
+  '¥': 'JPY',
+  '\uFFE5': 'JPY',
+  '£': 'GBP',
+  '₩': 'KRW',
+});
+
+/** Resolve a currency symbol's ASCII fallback, preferring `currencyCode` when a symbol is shared. */
+export function resolveAsciiCurrencyFallback(
+  symbol: string,
+  currencyCode?: string,
+): string | undefined {
+  const owner = AMBIGUOUS_CURRENCY_ASCII_OWNER[symbol];
+  if (owner && currencyCode && currencyCode !== owner) {
+    return currencyCode;
+  }
+  return CURRENCY_ASCII_MAP[symbol];
+}
+
 /** Canonical tenant currency storage contract. */
 export const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
 

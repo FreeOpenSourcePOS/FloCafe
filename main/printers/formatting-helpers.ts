@@ -2,8 +2,8 @@
 
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
 import {
-  CURRENCY_ASCII_MAP,
   normalizeCurrencyToAscii,
+  resolveAsciiCurrencyFallback,
   stripCurrencyTokens,
 } from '../../shared/print/currency';
 import {
@@ -536,11 +536,7 @@ export function resolveCurrencyPrefix(
     : normalizedSymbol;
   const fallbackCurrency = currencyCode || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs';
   const candidateFallback =
-    (normalizedSymbol === '¥' || normalizedSymbol === '\uFFE5') &&
-    currencyCode &&
-    currencyCode !== 'JPY'
-      ? fallbackCurrency
-      : CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency;
+    resolveAsciiCurrencyFallback(normalizedSymbol, currencyCode) || fallbackCurrency;
   const mappedFallback = /^[\x00-\x7F]*$/.test(candidateFallback)
     ? candidateFallback
     : currencyCode || '';

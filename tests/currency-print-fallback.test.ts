@@ -6,8 +6,12 @@
 import { resolveCurrencyPrefix } from '../main/printers/formatting-helpers';
 import { getCurrencySymbol, COUNTRIES } from '../main/countries';
 import { listSupportedCurrencyCodes } from '../shared/currencies';
-import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
-import { normalizeCurrencyToAscii, stripCurrencyTokens } from '../shared/print/currency';
+import { GENERIC_THERMAL_CAPABILITIES, LATIN_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
+import {
+  normalizeCurrencyToAscii,
+  resolveAsciiCurrencyFallback,
+  stripCurrencyTokens,
+} from '../shared/print/currency';
 
 const { assertOrThrow, assertEqualOrThrow, getResults } = require('./helpers/test-setup');
 
@@ -86,6 +90,38 @@ assertEqualOrThrow(
   stripCurrencyTokens('100 сом.'),
   '100 ',
   'standalone Tajikistani somoni token is recognized as currency',
+);
+for (const code of ['SYP', 'SSP', 'GIP', 'FKP', 'SHP'] as const) {
+  assertEqualOrThrow(
+    resolveAsciiCurrencyFallback('£', code),
+    code,
+    `shared pound fallback preserves ${code}`,
+  );
+  assertEqualOrThrow(
+    resolveCurrencyPrefix('£', false, GENERIC_THERMAL_CAPABILITIES, false, code).trim(),
+    code,
+    `generic thermal prefix preserves ${code} instead of GBP`,
+  );
+}
+assertEqualOrThrow(
+  resolveCurrencyPrefix('£', false, GENERIC_THERMAL_CAPABILITIES, false, 'GBP').trim(),
+  'GBP',
+  'GBP still resolves to GBP on generic thermal printer',
+);
+assertEqualOrThrow(
+  resolveAsciiCurrencyFallback('₩', 'KPW'),
+  'KPW',
+  'shared won fallback preserves KPW',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('₩', false, LATIN_THERMAL_CAPABILITIES, false, 'KPW').trim(),
+  'KPW',
+  'Latin thermal prefix preserves KPW instead of KRW',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('₩', false, GENERIC_THERMAL_CAPABILITIES, false, 'KRW').trim(),
+  'KRW',
+  'KRW still resolves to KRW on generic thermal printer',
 );
 
 const { passed, failed } = getResults();

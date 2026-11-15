@@ -1,7 +1,12 @@
 /** Converts a Flo POS Bill and nested Order into raw ESC/POS bytes. */
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
+import {
+  normalizeCurrencyToAscii,
+  normalizeThermalText,
+  padCurrencyPrefix,
+  resolveAsciiCurrencyFallback,
+} from './unicode';
 import {
   selectThermalCodePage,
   type ThermalPrinterCapabilities,
@@ -364,13 +369,9 @@ function resolveEncoderCurrency(
 ): string {
   // Normalize known currencies like IRR (ریال) that generic ESC/POS cannot shape.
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
-  const asciiFallback = normalizeCurrencyToAscii(normalizedCurrency);
-  const fallbackCurrency =
-    (normalizedCurrency === '¥' || normalizedCurrency === '\uFFE5') && currencyCode !== 'JPY'
-      ? currencyCode
-      : /^[\x00-\x7F]+$/.test(asciiFallback)
-        ? asciiFallback
-        : currencyCode;
+  const mappedFallback = resolveAsciiCurrencyFallback(normalizedCurrency, currencyCode);
+  const asciiFallback = mappedFallback ?? normalizeCurrencyToAscii(normalizedCurrency);
+  const fallbackCurrency = /^[\x00-\x7F]+$/.test(asciiFallback) ? asciiFallback : currencyCode;
   const hasSymbol = normalizedCurrency.trim().length > 0;
   if (capabilities) {
     const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);

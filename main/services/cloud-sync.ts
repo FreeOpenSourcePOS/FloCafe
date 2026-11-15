@@ -1100,7 +1100,7 @@ function assertReportPayloadObject(
     throw new Error(`Invalid report payload for ${view}`);
   }
   const record = payload as Record<string, unknown>;
-  if (record.view !== undefined && record.view !== view) {
+  if (!isOmittedParam(record.view) && record.view !== view) {
     throw new Error(`Report view mismatch: expected ${view}, received ${String(record.view)}`);
   }
   return record;
@@ -1117,11 +1117,11 @@ function resolveSingleDayReportMeta(
 ): LiveReportBaseMeta {
   const opts = assertReportPayloadObject(view, payload);
   if (
-    opts.from !== undefined ||
-    opts.to !== undefined ||
-    opts.group_by !== undefined ||
-    opts.sort_by !== undefined ||
-    opts.limit !== undefined
+    !isOmittedParam(opts.from) ||
+    !isOmittedParam(opts.to) ||
+    !isOmittedParam(opts.group_by) ||
+    !isOmittedParam(opts.sort_by) ||
+    !isOmittedParam(opts.limit)
   ) {
     throw new Error(`Disallowed range or sort parameters for single-day ${view} report`);
   }
@@ -1162,14 +1162,13 @@ function resolveRangeReportBounds(
   }
   const hasFrom = !isOmittedParam(opts.from);
   const hasTo = !isOmittedParam(opts.to);
-  const hasExplicitBounds = opts.from !== undefined || opts.to !== undefined;
   const hasRange = !isOmittedParam(opts.range);
 
-  if (hasRange && (hasExplicitBounds || hasFrom || hasTo)) {
+  if (hasRange && (hasFrom || hasTo)) {
     throw new Error('Cannot combine range with explicit from/to dates');
   }
 
-  if (hasExplicitBounds || hasFrom || hasTo) {
+  if (hasFrom || hasTo) {
     if (!hasFrom || !hasTo) {
       throw new Error('Both from and to dates (YYYY-MM-DD) are required');
     }
@@ -4021,7 +4020,7 @@ export class CloudSyncService {
     const db = getDatabase();
     const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
     const opts = assertReportPayloadObject('sales', payload);
-    if (opts.sort_by !== undefined || opts.limit !== undefined) {
+    if (!isOmittedParam(opts.sort_by) || !isOmittedParam(opts.limit)) {
       throw new Error('Parameters sort_by and limit are not allowed on sales report');
     }
     const rawGroupBy = isOmittedParam(opts.group_by) ? 'day' : opts.group_by;
@@ -4238,7 +4237,7 @@ export class CloudSyncService {
     const db = getDatabase();
     const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
     const opts = assertReportPayloadObject('items', payload);
-    if (opts.group_by !== undefined) {
+    if (!isOmittedParam(opts.group_by)) {
       throw new Error('Parameter group_by is not allowed on items report');
     }
     const rawSortBy = isOmittedParam(opts.sort_by) ? 'revenue' : opts.sort_by;
@@ -4273,7 +4272,11 @@ export class CloudSyncService {
     const db = getDatabase();
     const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
     const opts = assertReportPayloadObject('payments', payload);
-    if (opts.group_by !== undefined || opts.sort_by !== undefined || opts.limit !== undefined) {
+    if (
+      !isOmittedParam(opts.group_by) ||
+      !isOmittedParam(opts.sort_by) ||
+      !isOmittedParam(opts.limit)
+    ) {
       throw new Error('Parameters group_by, sort_by, and limit are not allowed on payments report');
     }
     const { from, to } = resolveRangeReportBounds('payments', opts, ctx);

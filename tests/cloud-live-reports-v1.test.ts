@@ -1067,10 +1067,86 @@ async function main() {
 
     // ── 8. Selector & parameter validation rejections ────────────────────────
     console.log('\n─── 8. Selector & parameter validation rejections ───');
+    validateReportResponse(
+      invokeReport('dashboard', {
+        view: null,
+        date: '2026-09-10',
+        range: '',
+        from: null,
+        to: '',
+        group_by: null,
+        sort_by: '',
+        limit: null,
+      }),
+      { view: 'dashboard', date: '2026-09-10' },
+    );
+    validateReportResponse(
+      invokeReport('hourly', {
+        view: '',
+        date: '2026-09-10',
+        range: null,
+        from: '',
+        to: null,
+        group_by: '',
+        sort_by: null,
+        limit: '',
+      }),
+      { view: 'hourly', date: '2026-09-10' },
+    );
+    validateReportResponse(
+      invokeReport('sales', {
+        view: null,
+        range: 'last7',
+        date: '',
+        from: null,
+        to: null,
+        group_by: '',
+        sort_by: null,
+        limit: '',
+      }),
+      { view: 'sales', range: 'last7' },
+    );
+    validateReportResponse(
+      invokeReport('sales', {
+        from: '',
+        to: '',
+        group_by: null,
+      }),
+      { view: 'sales', range: 'last7' },
+    );
+    validateReportResponse(
+      invokeReport('items', {
+        view: '',
+        range: 'today',
+        date: null,
+        from: '',
+        to: null,
+        group_by: null,
+        sort_by: '',
+        limit: null,
+      }),
+      { view: 'items', range: 'today' },
+    );
+    validateReportResponse(
+      invokeReport('payments', {
+        view: null,
+        range: 'yesterday',
+        date: '',
+        from: null,
+        to: '',
+        group_by: '',
+        sort_by: null,
+        limit: '',
+      }),
+      { view: 'payments', range: 'yesterday' },
+    );
+
     const badCalls: Array<[string, () => unknown]> = [
       ['371-day range', () => invokeReport('sales', { from: '2025-09-30', to: '2026-10-05' })],
       ['from > to', () => invokeReport('sales', { from: '2026-09-12', to: '2026-09-10' })],
       ['from without to', () => invokeReport('items', { from: '2026-09-10' })],
+      ['from with null to', () => invokeReport('items', { from: '2026-09-10', to: null })],
+      ['empty from with to', () => invokeReport('payments', { from: '', to: '2026-09-10' })],
       ['to without from', () => invokeReport('payments', { to: '2026-09-10' })],
       ['invalid calendar date Feb 30', () => invokeReport('dashboard', { date: '2026-02-30' })],
       ['malformed date', () => invokeReport('hourly', { date: '10-09-2026' })],

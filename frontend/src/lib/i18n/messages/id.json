@@ -899,7 +899,13 @@
     "releaseScheduled": "Terjadwal",
     "releaseBlocked": "Rilis tertahan",
     "refundOwnerOnlyNotice": "Persetujuan pengembalian dana oleh manajer dinonaktifkan — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini.",
-    "refundOutsideWindowNotice": "Pesanan ini berada di luar batas waktu persetujuan manajer — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini."
+    "refundOutsideWindowNotice": "Pesanan ini berada di luar batas waktu persetujuan manajer — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini.",
+    "clearFilters": "Hapus filter",
+    "noMatchesInTab": "Tidak ada pesanan yang cocok di {tab}.",
+    "showMatchesInAll": "Tampilkan pesanan cocok di Semua",
+    "orderSettledBanner": "Pembayaran selesai",
+    "nextActiveOrder": "Pesanan Berikutnya",
+    "viewInCompleted": "Lihat di Selesai"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",

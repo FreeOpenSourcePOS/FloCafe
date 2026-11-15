@@ -899,7 +899,13 @@
     "releaseScheduled": "An tsara lokaci",
     "releaseBlocked": "An dakatar da turawa",
     "refundOwnerOnlyNotice": "An kashe amincewar mayar da kuɗi na manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi.",
-    "refundOutsideWindowNotice": "Wannan odar ta wuce lokacin amincewar manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi."
+    "refundOutsideWindowNotice": "Wannan odar ta wuce lokacin amincewar manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi.",
+    "clearFilters": "Share matattara",
+    "noMatchesInTab": "Babu odar da ta dace a {tab}.",
+    "showMatchesInAll": "Nuna ododin da suka dace a Duka",
+    "orderSettledBanner": "An kammala biya",
+    "nextActiveOrder": "Oda ta gaba",
+    "viewInCompleted": "Duba a Kammalallu"
   },
   "pos": {
     "addCustomer": "Ƙara Abokin Ciniki",

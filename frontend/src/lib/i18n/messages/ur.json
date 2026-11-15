@@ -899,7 +899,13 @@
     "releaseScheduled": "شیڈول شدہ",
     "releaseBlocked": "اجرا مسدود",
     "refundOwnerOnlyNotice": "مینیجر کی جانب سے رقم واپسی کی منظوری غیر فعال ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔",
-    "refundOutsideWindowNotice": "یہ آرڈر مینیجر کی منظوری کے وقت سے باہر ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔"
+    "refundOutsideWindowNotice": "یہ آرڈر مینیجر کی منظوری کے وقت سے باہر ہے — اس واپسی کی منظوری کے لیے مالک کا پن درکار ہے۔",
+    "clearFilters": "فلٹرز صاف کریں",
+    "noMatchesInTab": "{tab} میں کوئی مماثل آرڈر نہیں ملا۔",
+    "showMatchesInAll": "مماثل آرڈرز تمام میں دکھائیں",
+    "orderSettledBanner": "ادائیگی مکمل",
+    "nextActiveOrder": "اگلا آرڈر",
+    "viewInCompleted": "مکمل شدہ میں دیکھیں"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",

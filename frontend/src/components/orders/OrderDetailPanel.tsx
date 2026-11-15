@@ -39,6 +39,7 @@ import {
   Bike,
   Pencil,
   Tag,
+  CheckCircle2,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
@@ -77,6 +78,10 @@ export interface OrderDetailPanelProps {
   order: Order | null;
   orderNotInCurrentList?: boolean;
   orderMissing?: boolean;
+  settledTransition?: 'completed' | 'cancelled' | null;
+  hasRemainingOrdersInTab?: boolean;
+  onAdvanceAfterSettle?: () => void;
+  onViewInCompleted?: () => void;
   now: number;
   canCancelItems: boolean;
   canEditItems?: boolean;
@@ -1088,11 +1093,66 @@ export function OrderDetailPanel({ onBack, ...props }: OrderDetailPanelProps) {
           {tCommon('back')}
         </button>
       )}
-      {props.order && props.orderNotInCurrentList && (
+      {props.order && props.settledTransition === 'completed' ? (
+        <div
+          data-testid="order-settled-banner"
+          className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-800/50 dark:bg-emerald-950/40"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <CheckCircle2 size={16} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
+              {tOrders('orderSettledBanner')}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {props.onViewInCompleted && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="view-in-completed-button"
+                onClick={props.onViewInCompleted}
+                className="min-h-[36px] text-xs"
+              >
+                {tOrders('viewInCompleted')}
+              </Button>
+            )}
+            {props.onAdvanceAfterSettle && (
+              <Button
+                type="button"
+                size="sm"
+                data-testid="next-active-order-button"
+                onClick={props.onAdvanceAfterSettle}
+                className="min-h-[36px] bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+              >
+                {props.hasRemainingOrdersInTab ? tOrders('nextActiveOrder') : tCommon('done')}
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : props.order && props.settledTransition === 'cancelled' ? (
+        <div
+          data-testid="order-cancelled-transition-bar"
+          className="shrink-0 flex items-center justify-end gap-2 border-b border-border bg-muted/40 px-4 py-2"
+        >
+          {props.onAdvanceAfterSettle && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="next-active-order-button"
+              onClick={props.onAdvanceAfterSettle}
+              className="min-h-[36px] text-xs"
+            >
+              {props.hasRemainingOrdersInTab ? tOrders('nextActiveOrder') : tCommon('done')}
+            </Button>
+          )}
+        </div>
+      ) : props.order && props.orderNotInCurrentList ? (
         <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-100">
           {tOrders('orderNotInCurrentList')}
         </div>
-      )}
+      ) : null}
       {props.order ? (
         <OrderDetailContent key={props.order.id} {...props} order={props.order} />
       ) : (

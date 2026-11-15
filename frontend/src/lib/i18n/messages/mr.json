@@ -899,7 +899,13 @@
     "releaseScheduled": "शेड्यूल केलेले",
     "releaseBlocked": "रिलीज थांबवले",
     "refundOwnerOnlyNotice": "व्यवस्थापक परतावा मंजुरी निष्क्रिय आहेत — हा परतावा मंजूर करण्यासाठी मालकाचा पिन आवश्यक आहे.",
-    "refundOutsideWindowNotice": "ही ऑर्डर व्यवस्थापक मंजुरीच्या वेळेबाहेर आहे — हा परतावा मंजूर करण्यासाठी मालकाचा पिन आवश्यक आहे."
+    "refundOutsideWindowNotice": "ही ऑर्डर व्यवस्थापक मंजुरीच्या वेळेबाहेर आहे — हा परतावा मंजूर करण्यासाठी मालकाचा पिन आवश्यक आहे.",
+    "clearFilters": "फिल्टर साफ करा",
+    "noMatchesInTab": "{tab} मध्ये जुळणारी ऑर्डर नाही.",
+    "showMatchesInAll": "सर्व मध्ये जुळणाऱ्या ऑर्डर्स दाखवा",
+    "orderSettledBanner": "पेमेंट पूर्ण",
+    "nextActiveOrder": "पुढील ऑर्डर",
+    "viewInCompleted": "पूर्ण मध्ये पहा"
   },
   "pos": {
     "addCustomer": "ग्राहक जोडा",

@@ -899,7 +899,13 @@
     "releaseScheduled": "ਨਿਰਧਾਰਤ",
     "releaseBlocked": "ਰਿਲੀਜ਼ ਰੋਕੀ ਗਈ",
     "refundOwnerOnlyNotice": "ਮੈਨੇਜਰ ਰਿਫੰਡ ਮਨਜ਼ੂਰੀਆਂ ਬੰਦ ਹਨ — ਇਸ ਰਿਫੰਡ ਨੂੰ ਮਨਜ਼ੂਰ ਕਰਨ ਲਈ ਮਾਲਕ ਦੇ ਪਿੰਨ ਦੀ ਲੋੜ ਹੈ।",
-    "refundOutsideWindowNotice": "ਇਹ ਆਰਡਰ ਮੈਨੇਜਰ ਦੀ ਮਨਜ਼ੂਰੀ ਸਮਾਂ-ਸੀਮਾ ਤੋਂ ਬਾਹਰ ਹੈ — ਇਸ ਰਿਫੰਡ ਨੂੰ ਮਨਜ਼ੂਰ ਕਰਨ ਲਈ ਮਾਲਕ ਦੇ ਪਿੰਨ ਦੀ ਲੋੜ ਹੈ।"
+    "refundOutsideWindowNotice": "ਇਹ ਆਰਡਰ ਮੈਨੇਜਰ ਦੀ ਮਨਜ਼ੂਰੀ ਸਮਾਂ-ਸੀਮਾ ਤੋਂ ਬਾਹਰ ਹੈ — ਇਸ ਰਿਫੰਡ ਨੂੰ ਮਨਜ਼ੂਰ ਕਰਨ ਲਈ ਮਾਲਕ ਦੇ ਪਿੰਨ ਦੀ ਲੋੜ ਹੈ।",
+    "clearFilters": "ਫਿਲਟਰ ਸਾਫ਼ ਕਰੋ",
+    "noMatchesInTab": "{tab} ਵਿੱਚ ਕੋਈ ਮੇਲ ਖਾਂਦਾ ਆਰਡਰ ਨਹੀਂ।",
+    "showMatchesInAll": "ਸਭ ਵਿੱਚ ਮੇਲ ਖਾਂਦੇ ਆਰਡਰ ਦਿਖਾਓ",
+    "orderSettledBanner": "ਭੁਗਤਾਨ ਪੂਰਾ ਹੋਇਆ",
+    "nextActiveOrder": "ਅਗਲਾ ਆਰਡਰ",
+    "viewInCompleted": "ਪੂਰੇ ਹੋਏ ਵਿੱਚ ਦੇਖੋ"
   },
   "pos": {
     "addCustomer": "ਗਾਹਕ ਜੋੜੋ",

@@ -93,7 +93,7 @@ const CLOUD_DELETION_KNOWN_STATUSES = new Set([
 ]);
 const CLOUD_DELETION_FINAL_STATUSES = new Set(['approved', 'completed', 'deleted']);
 
-function isCloudDeletionBlocking(status?: string): boolean {
+export function isCloudDeletionBlocking(status?: string | null): boolean {
   return CLOUD_DELETION_BLOCKING_STATUSES.has(status || '');
 }
 

@@ -8,7 +8,6 @@ import {
   parseItemJson,
   parseRowJson,
   withTxn,
-  verifyPin,
   verifyPinAsync,
   getSettingValue,
   insertOrderItemAddons,
@@ -152,13 +151,13 @@ type PinApproverCandidate = { id: string; role: string; pin_hash: string };
 
 const registeredSearchDatabases = new WeakSet<object>();
 
-function ensureOrderSearchFunctions(dbInstance: any): void {
+function ensureOrderSearchFunctions(dbInstance: ReturnType<typeof getDatabase>): void {
   if (registeredSearchDatabases.has(dbInstance)) return;
   registerOrderSearchFunctions(dbInstance);
   registeredSearchDatabases.add(dbInstance);
 }
 
-function isSearchIndexAvailable(dbInstance: any): boolean {
+function isSearchIndexAvailable(dbInstance: ReturnType<typeof getDatabase>): boolean {
   try {
     const row = dbInstance
       .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'orders_search_fts'")
@@ -251,7 +250,8 @@ export function structuredOperationFailure(
     ...(Object.keys(mergedFacts).length > 0 ? { facts: mergedFacts } : {}),
   });
   if (!failure) return { error };
-  const { display_code: _displayCode, ...responseFacts } = failure.facts;
+  const responseFacts = { ...failure.facts };
+  delete responseFacts.display_code;
   if (options.capture !== false) {
     (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
     try {
@@ -413,11 +413,13 @@ function getStoredOrderReplay(
 }
 
 function syncCustomerTagCounts(
-  db: any,
+  db: ReturnType<typeof getDatabase>,
   customerId: string,
   items: { product_id: string; quantity: number }[],
 ) {
-  const row = db.prepare('SELECT tag_counts FROM customers WHERE id = ?').get(customerId) as any;
+  const row = db.prepare('SELECT tag_counts FROM customers WHERE id = ?').get(customerId) as
+    | { tag_counts?: string | null }
+    | undefined;
   if (!row) return;
   let counts: Record<string, number> = {};
   try {
@@ -426,9 +428,9 @@ function syncCustomerTagCounts(
     counts = {};
   }
   for (const item of items) {
-    const product = db
-      .prepare('SELECT tags FROM products WHERE id = ?')
-      .get(item.product_id) as any;
+    const product = db.prepare('SELECT tags FROM products WHERE id = ?').get(item.product_id) as
+      | { tags?: string | null }
+      | undefined;
     if (!product?.tags) continue;
     let tags: string[] = [];
     try {
@@ -645,8 +647,10 @@ function resolveItemAddons(
       // Refusing is the point: a tracked add-on with nothing left must not be
       // silently substituted, so there is no variant-style fallback here.
       if (requirement - available > 1e-8) {
-        throw new Error(
+        throw new InventoryServiceError(
+          400,
           `Add-on "${catalog.name}" is out of stock (requested ${requirement}, available ${available})`,
+          describeStockRefusal('addon', available),
         );
       }
       inventoryDeductedQuantity = requirement;
@@ -673,7 +677,16 @@ function resolveItemAddons(
   for (const groupId of linkedGroupIds) {
     const group = db
       .prepare('SELECT * FROM addon_groups WHERE id = ? AND is_active = 1')
-      .get(groupId) as any;
+      .get(groupId) as
+      | {
+          id: string;
+          name: string;
+          allow_multiple_quantities: number;
+          max_selection: number | null;
+          is_required: number;
+          min_selection: number | null;
+        }
+      | undefined;
     if (!group) continue;
     const selection = groupSelections.get(groupId) || { totalQty: 0, hasMultiQty: false };
 
@@ -712,7 +725,7 @@ router.get(
     try {
       const db = getDatabase();
       const wheres: string[] = [];
-      const params: any[] = [];
+      const params: unknown[] = [];
       const view = typeof req.query.view === 'string' ? req.query.view : 'all';
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
@@ -813,7 +826,7 @@ router.get(
 
         if (hasFts) {
           let candidateClause: string;
-          const candidateParams: any[] = [];
+          const candidateParams: unknown[] = [];
           const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
 
           if (isPhoneSearch) {
@@ -989,7 +1002,7 @@ router.get(
         orders: ordersWithRelations,
         ...(nextCursor !== null && { nextCursor }),
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -1890,7 +1903,7 @@ router.get(
       // Hydrate relations using batchHydrateOrders.
       const [hydrated] = batchHydrateOrders(db, [order]);
       res.json({ order: hydrated });
-    } catch (error: any) {
+    } catch (error: unknown) {
       res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -2230,8 +2243,9 @@ router.post(
             deferStockDeduction: shouldDeferRelease,
           });
         }
-      } catch (err: any) {
-        const msg = err?.message || 'Item validation failed';
+      } catch (err: unknown) {
+        if (err instanceof InventoryServiceError) throw err;
+        const msg = err instanceof Error ? err.message : 'Item validation failed';
         const isRequiredGroup =
           typeof msg === 'string' &&
           (msg.includes('requires at least') ||
@@ -2239,9 +2253,7 @@ router.post(
             msg.includes('does not allow multiple'));
         const isAddonUnavailable =
           typeof msg === 'string' &&
-          (msg.includes('is not available') ||
-            msg.includes('was not found') ||
-            msg.includes('is out of stock'));
+          (msg.includes('is not available') || msg.includes('was not found'));
         const point = isRequiredGroup
           ? 'fc.backend.order.create.addon_group_validation'
           : isAddonUnavailable
@@ -3777,8 +3789,6 @@ router.patch(
           minorFactor,
           roundCurrency,
           evaluatedBills,
-          orderTotalMinor,
-          payableBills,
           totalOutstandingMinor,
           totalCollectedMinor,
           paymentBlocksCompletion: rawPaymentBlocksCompletion,

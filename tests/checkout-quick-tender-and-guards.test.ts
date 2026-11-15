@@ -2508,11 +2508,68 @@ async function testVisualHierarchyAndPrematurePaidGuards() {
         'change',
         'Cash overpayment sets readout statusTone to change',
       );
+
+      // Over-allocated non-cash tender ($0.00 Cash, $20.00 Card on $14.20 balance):
+      // MUST warn with paymentAboveBalance, set readout tone to due, hide exactAmount pill, and disable Pay CTA!
+      const cashClearEl = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashClearEl.props.onChange({ target: { value: '' } });
+      cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      cardInput.props.onChange({ target: { value: '20' } });
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      const overCardFooter = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'footer',
+      )[0];
+      const overCardPayBtns = collectElements(overCardFooter, (el) => el.type === 'button');
+      const overCardPrimaryBtn = overCardPayBtns[overCardPayBtns.length - 1];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'warning',
+        'Card over-allocation renders warning status strip instead of idle-ready',
+      );
+      assert.ok(
+        JSON.stringify(statusStrip).includes('paymentAboveBalance'),
+        'Card over-allocation status strip displays paymentAboveBalance',
+      );
+      assert.equal(
+        readoutZone?.props?.['data-readout-tone'],
+        'due',
+        'Card over-allocation sets readout statusTone to due (never ready)',
+      );
+      assert.ok(
+        !JSON.stringify(readoutZone).includes('exactAmount') &&
+          !JSON.stringify(readoutZone).includes('"paid"'),
+        'Card over-allocation hides exactAmount and paid pills in readout',
+      );
+      assert.equal(
+        Boolean(overCardPrimaryBtn?.props?.disabled),
+        true,
+        'Card over-allocation disables Primary Pay CTA',
+      );
     } finally {
       pmHarness.cleanupAll();
     }
 
-    // B. Already-settled zero-balance check DOES show idle-settled / paid
+    // B. Already-settled zero-balance check DOES show idle-settled / paid and recorded paid_amount
     const settledHarness = createStatefulHarness();
     try {
       installCheckoutComponentMocks(settledHarness, {});
@@ -2537,10 +2594,18 @@ async function testVisualHierarchyAndPrematurePaidGuards() {
         settledTree,
         (el) => el.props?.['data-testid'] === 'checkout-status-strip',
       )[0];
+      const settledReadout = collectElements(
+        settledTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
       assert.equal(
         settledStrip?.props?.['data-status-tone'],
         'idle-settled',
         'Already-settled zero-balance check renders idle-settled status strip',
+      );
+      assert.ok(
+        JSON.stringify(settledReadout).includes('paid: $14.20'),
+        'Already-settled bill readout summary displays recorded bill.paid_amount ($14.20) instead of $0.00',
       );
     } finally {
       settledHarness.cleanupAll();
@@ -2606,6 +2671,57 @@ async function testVisualHierarchyAndPrematurePaidGuards() {
         (el) => el.props?.['data-testid'] === 'checkout-header-chips',
       )[0];
       assert.ok(prepaidChips, 'PrepaidCheckoutModal renders structured checkout-header-chips');
+
+      // PrepaidCheckoutModal Card over-allocation ($0.00 Cash, $99.00 Card) warns, sets readout due, and disables Confirm CTA
+      const prepaidCashInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      prepaidCashInput.props.onChange({ target: { value: '' } });
+      const prepaidCardInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      prepaidCardInput.props.onChange({ target: { value: '99' } });
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidStrip = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const prepaidOverReadout = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      const prepaidFooter = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'footer',
+      )[0];
+      const prepaidFooterBtns = collectElements(prepaidFooter, (el) => el.type === 'button');
+      const prepaidConfirmBtn = prepaidFooterBtns[prepaidFooterBtns.length - 1];
+      assert.equal(
+        prepaidStrip?.props?.['data-status-tone'],
+        'warning',
+        'PrepaidCheckoutModal Card over-allocation renders warning status strip',
+      );
+      assert.ok(
+        JSON.stringify(prepaidStrip).includes('paymentAboveBalance'),
+        'PrepaidCheckoutModal Card over-allocation displays paymentAboveBalance',
+      );
+      assert.equal(
+        prepaidOverReadout?.props?.['data-readout-tone'],
+        'due',
+        'PrepaidCheckoutModal Card over-allocation sets readout statusTone to due',
+      );
+      assert.ok(
+        !JSON.stringify(prepaidOverReadout).includes('exactAmount') &&
+          !JSON.stringify(prepaidOverReadout).includes('"paid"'),
+        'PrepaidCheckoutModal Card over-allocation hides exactAmount and paid pills in readout',
+      );
+      assert.equal(
+        Boolean(prepaidConfirmBtn?.props?.disabled),
+        true,
+        'PrepaidCheckoutModal Card over-allocation disables Confirm Payment CTA',
+      );
     } finally {
       prepaidHarness.cleanupAll();
       if (!hadWindow) delete (globalThis as any).window;

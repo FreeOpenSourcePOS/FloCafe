@@ -468,7 +468,13 @@ export default function PrepaidCheckoutModal({
   const totalPaymentMinor =
     payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) +
     toMinorUnits(walletAmt);
+  const nonCashTotalMinor =
+    payments
+      .filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) +
+    toMinorUnits(walletAmt);
   const remainingMinor = toMinorUnits(remaining);
+  const nonCashExceedsBalance = Boolean(preview) && nonCashTotalMinor > remainingMinor;
 
   const updatePaymentTransactionId = (idx: number, value: string) => {
     setPayments((current) =>
@@ -520,7 +526,11 @@ export default function PrepaidCheckoutModal({
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
   const change =
-    !taxLoading && preview && hasCash && totalPaymentMinor > remainingMinor
+    !taxLoading &&
+    preview &&
+    !nonCashExceedsBalance &&
+    hasCash &&
+    totalPaymentMinor > remainingMinor
       ? (totalPaymentMinor - remainingMinor) / minorFactor
       : 0;
 
@@ -983,6 +993,12 @@ export default function PrepaidCheckoutModal({
       };
     }
     if (!taxLoading && preview) {
+      if (nonCashExceedsBalance) {
+        return {
+          tone: 'warning',
+          message: t('paymentAboveBalance'),
+        };
+      }
       if (totalPaymentMinor === 0 && remainingMinor > 0) {
         return {
           tone: 'idle-due',
@@ -996,15 +1012,21 @@ export default function PrepaidCheckoutModal({
           message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
         };
       }
-      if (change > 0) {
+      if (change > 0 && !nonCashExceedsBalance) {
         return {
           tone: 'idle-ready',
           message: `${t('totalDue')}: ${currencyFmt(remaining)}`,
         };
       }
+      if (!nonCashExceedsBalance && totalPaymentMinor === remainingMinor) {
+        return {
+          tone: 'idle-ready',
+          message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
+        };
+      }
       return {
-        tone: 'idle-ready',
-        message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
+        tone: 'idle-due',
+        message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
       };
     }
     return null;
@@ -1030,22 +1052,24 @@ export default function PrepaidCheckoutModal({
         : currencyFmt(toStoredUnit(parseFloat(discountValue) || 0))
       : currencyFmt(toStoredUnit(parseFloat(activeAmountValue) || 0));
 
-  const readoutStatusTone: 'ready' | 'due' | 'partial' | 'change' =
-    change > 0
+  const readoutStatusTone: 'ready' | 'due' | 'partial' | 'change' = nonCashExceedsBalance
+    ? 'due'
+    : change > 0 && !nonCashExceedsBalance
       ? 'change'
-      : totalPaymentMinor >= remainingMinor && preview
+      : !nonCashExceedsBalance && totalPaymentMinor === remainingMinor && Boolean(preview)
         ? 'ready'
         : totalPaymentMinor > 0
           ? 'partial'
           : 'due';
 
-  const readoutStatusPillText = !preview
-    ? undefined
-    : change > 0
-      ? `${t('changeReturned')}: ${currencyFmt(change)}`
-      : totalPaymentMinor >= remainingMinor
-        ? t('exactAmount')
-        : undefined;
+  const readoutStatusPillText =
+    !preview || nonCashExceedsBalance
+      ? undefined
+      : change > 0 && !nonCashExceedsBalance
+        ? `${t('changeReturned')}: ${currencyFmt(change)}`
+        : !nonCashExceedsBalance && totalPaymentMinor === remainingMinor
+          ? t('exactAmount')
+          : undefined;
 
   const headerChips: CheckoutHeaderChipItem[] = [
     { key: 'type', label: t(ORDER_TYPE_KEYS[cart.orderType]), variant: 'brand' },
@@ -1064,6 +1088,7 @@ export default function PrepaidCheckoutModal({
       (taxLoading ||
         !preview ||
         hasInvalidFixedDiscount ||
+        nonCashExceedsBalance ||
         totalPaymentMinor < remainingMinor ||
         Boolean(
           preview.discountAmount > 0 &&

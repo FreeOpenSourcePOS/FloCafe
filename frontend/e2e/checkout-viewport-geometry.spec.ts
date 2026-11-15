@@ -567,8 +567,11 @@ test('PaymentModal holds zero-scroll and <=1px shift with 20 items, 20-payer Equ
       }
     }
   } finally {
-    await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
-    await restoreBusinessSettings(page, saved);
+    try {
+      await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
+    } finally {
+      await restoreBusinessSettings(page, saved);
+    }
   }
 });
 
@@ -747,14 +750,46 @@ test('Checkout modals hold Light/Dark parity, RTL geometry, 3-state tender focus
     // 9. Compact 1024x600 & Mobile 390x844 in Light & Dark
     await page.setViewportSize({ width: 1024, height: 600 });
     await applyColorScheme('light');
+    await assertColumnAndStationGeometry(modal);
     await snap('11-payment-light-1024x600-compact.png');
     await applyColorScheme('dark');
+    await assertColumnAndStationGeometry(modal);
     await snap('12-payment-dark-1024x600-compact.png');
+
+    const assertMobileStationVisibleWithinViewport = async (schemeLabel: string) => {
+      const keypad = modal.locator('[data-checkout-zone="keypad"]');
+      const payButton = modal.locator('[data-checkout-zone="footer"] > button').last();
+      await expect(keypad, `390x844 ${schemeLabel} keypad visible`).toBeVisible();
+      await expect(payButton, `390x844 ${schemeLabel} Pay CTA visible`).toBeVisible();
+      const mobileBounds = await page.evaluate(() => ({
+        docScrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+      }));
+      expect(
+        mobileBounds.docScrollWidth,
+        `390x844 ${schemeLabel} must not overflow horizontally`,
+      ).toBeLessThanOrEqual(mobileBounds.innerWidth);
+      const keypadBox = await keypad.boundingBox();
+      const payBox = await payButton.boundingBox();
+      expect(keypadBox).not.toBeNull();
+      expect(payBox).not.toBeNull();
+      expect(keypadBox!.x).toBeGreaterThanOrEqual(0);
+      expect(keypadBox!.x + keypadBox!.width).toBeLessThanOrEqual(mobileBounds.innerWidth + 1);
+      expect(keypadBox!.y).toBeGreaterThanOrEqual(0);
+      expect(keypadBox!.y + keypadBox!.height).toBeLessThanOrEqual(mobileBounds.innerHeight + 1);
+      expect(payBox!.x).toBeGreaterThanOrEqual(0);
+      expect(payBox!.x + payBox!.width).toBeLessThanOrEqual(mobileBounds.innerWidth + 1);
+      expect(payBox!.y).toBeGreaterThanOrEqual(0);
+      expect(payBox!.y + payBox!.height).toBeLessThanOrEqual(mobileBounds.innerHeight + 1);
+    };
 
     await page.setViewportSize({ width: 390, height: 844 });
     await applyColorScheme('light');
+    await assertMobileStationVisibleWithinViewport('light');
     await snap('13-payment-light-390x844-mobile.png');
     await applyColorScheme('dark');
+    await assertMobileStationVisibleWithinViewport('dark');
     await snap('14-payment-dark-390x844-mobile.png');
 
     // 10. RTL (Persian `fa`) at 1280x800 in Light & Dark
@@ -813,7 +848,10 @@ test('Checkout modals hold Light/Dark parity, RTL geometry, 3-state tender focus
         data: { value: originalSplitSetting },
       })
       .catch(() => {});
-    await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
-    await restoreBusinessSettings(page, saved);
+    try {
+      await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
+    } finally {
+      await restoreBusinessSettings(page, saved);
+    }
   }
 });

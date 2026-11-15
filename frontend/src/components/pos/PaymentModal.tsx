@@ -935,14 +935,27 @@ export default function PaymentModal({
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
   const attemptTotalMinor = (attempt: PendingPaymentAttempt) =>
     attempt.lines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
+  const attemptNonCashMinor = (attempt: PendingPaymentAttempt) =>
+    attempt.lines
+      .filter((line) => line.method !== 'cash')
+      .reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
   const lockedAttemptTotalMinor =
     attemptLocked && pendingAttempt ? attemptTotalMinor(pendingAttempt) : null;
+  const lockedAttemptNonCashMinor =
+    attemptLocked && pendingAttempt ? attemptNonCashMinor(pendingAttempt) : null;
   const totalPaymentMinor =
     lockedAttemptTotalMinor ??
     payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) +
       toMinorUnits(walletAmt);
+  const nonCashTotalMinor =
+    lockedAttemptNonCashMinor ??
+    payments
+      .filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) +
+      toMinorUnits(walletAmt);
   const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
+  const nonCashExceedsBalance = nonCashTotalMinor > remainingMinor;
 
   // Equal shares divide the remaining authoritative balance in the tenant's
   // smallest unit, so no share is created or lost to rounding.
@@ -1277,7 +1290,7 @@ export default function PaymentModal({
       : payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 
   const change =
-    hasCash && totalPaymentMinor > remainingMinor
+    !nonCashExceedsBalance && hasCash && totalPaymentMinor > remainingMinor
       ? (totalPaymentMinor - remainingMinor) / minorFactor
       : 0;
 
@@ -1908,12 +1921,7 @@ export default function PaymentModal({
         toast.error(t('cardTransactionIdMissing'));
         return;
       }
-      const nonCashTotalMinor =
-        payments
-          .filter((p) => p.method !== 'cash')
-          .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) +
-        toMinorUnits(walletAmt);
-      if (nonCashTotalMinor > remainingMinor) {
+      if (nonCashExceedsBalance) {
         toast.error(t('paymentAboveBalance'));
         return;
       }
@@ -2152,6 +2160,12 @@ export default function PaymentModal({
             : t('paymentBillRefunded'),
       };
     }
+    if (nonCashExceedsBalance) {
+      return {
+        tone: 'warning',
+        message: t('paymentAboveBalance'),
+      };
+    }
     if (totalPaymentMinor === 0 && remainingMinor > 0) {
       return {
         tone: 'idle-due',
@@ -2165,15 +2179,21 @@ export default function PaymentModal({
         message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
       };
     }
-    if (change > 0) {
+    if (change > 0 && !nonCashExceedsBalance) {
       return {
         tone: 'idle-ready',
         message: `${t('totalDue')}: ${currencyFmt(remaining)}`,
       };
     }
+    if (!nonCashExceedsBalance && totalPaymentMinor === remainingMinor) {
+      return {
+        tone: 'idle-ready',
+        message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
+      };
+    }
     return {
-      tone: 'idle-ready',
-      message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
+      tone: 'idle-due',
+      message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
     };
   })();
 
@@ -2186,11 +2206,11 @@ export default function PaymentModal({
 
   const readoutStatusTone: 'settled' | 'ready' | 'due' | 'partial' | 'change' = isBillPaid
     ? 'settled'
-    : billTerminal
+    : billTerminal || nonCashExceedsBalance
       ? 'due'
-      : change > 0
+      : change > 0 && !nonCashExceedsBalance
         ? 'change'
-        : totalPaymentMinor >= remainingMinor
+        : !nonCashExceedsBalance && totalPaymentMinor === remainingMinor
           ? 'ready'
           : totalPaymentMinor > 0
             ? 'partial'
@@ -2198,11 +2218,11 @@ export default function PaymentModal({
 
   const readoutStatusPillText = isBillPaid
     ? t('paid')
-    : billTerminal
+    : billTerminal || nonCashExceedsBalance
       ? undefined
-      : change > 0
+      : change > 0 && !nonCashExceedsBalance
         ? `${t('changeReturned')}: ${currencyFmt(change)}`
-        : totalPaymentMinor >= remainingMinor
+        : !nonCashExceedsBalance && totalPaymentMinor === remainingMinor
           ? t('exactAmount')
           : undefined;
 
@@ -2256,6 +2276,7 @@ export default function PaymentModal({
     Boolean(updatingChargeId) ||
     chargeStateUncertain ||
     billTerminal ||
+    (!pendingAttempt && nonCashExceedsBalance) ||
     (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
     Boolean(
       kitchenOverridePin &&
@@ -3529,7 +3550,7 @@ export default function PaymentModal({
                   activeLabel: activeAmountLabel,
                   amountText: readoutFormattedAmount,
                   paidSummaryText: isBillPaid
-                    ? `${t('paid')}: ${currencyFmt(totalPayment)}`
+                    ? `${t('paid')}: ${currencyFmt(Number(bill.paid_amount) || 0)}`
                     : `${t('payment')}: ${currencyFmt(totalPayment)}`,
                   dueSummaryText: `${t('total')}: ${currencyFmt(remaining)}`,
                   statusPillText: readoutStatusPillText,

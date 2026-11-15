@@ -77,6 +77,10 @@ export const CURRENCY_ASCII_MAP: Readonly<Record<string, string>> = Object.freez
   'лв.': 'BGN',
   'ден.': 'MKD',
   'руб.': 'RUB',
+  'сом.': 'TJS',
+  'грн.': 'UAH',
+  'р.': 'BYN',
+  Íkr: 'ISK',
   'රු.': 'LKR',
   ТМТ: 'TMT',
 });

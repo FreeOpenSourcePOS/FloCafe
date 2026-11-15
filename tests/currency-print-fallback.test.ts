@@ -61,6 +61,10 @@ assertOrThrow(
   ASCII.test(resolveCurrencyPrefix('\u{1F4B0}', false, undefined, false, 'XYZ')),
   'unknown symbol falls back to ISO code',
 );
+assertEqualOrThrow(normalizeCurrencyToAscii('сом.'), 'TJS', 'Tajikistani somoni Cyrillic symbol');
+assertEqualOrThrow(normalizeCurrencyToAscii('Íkr'), 'ISK', 'Icelandic krona Belarusian symbol');
+assertEqualOrThrow(normalizeCurrencyToAscii('грн.'), 'UAH', 'Ukrainian hryvnia Cyrillic symbol');
+assertEqualOrThrow(normalizeCurrencyToAscii('р.'), 'BYN', 'Belarusian ruble Cyrillic symbol');
 
 const { passed, failed } = getResults();
 console.log(`${passed} counted, ${failed} failed; all throwing checks passed`);

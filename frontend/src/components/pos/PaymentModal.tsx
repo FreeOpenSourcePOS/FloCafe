@@ -218,7 +218,7 @@ export default function PaymentModal({
   const cartCustomerId = useCartStore((s) => s.customerId);
   const selectedCustomer = useCartStore((s) => s.customer);
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, ConfirmDialog, isConfirmOpen } = useConfirm();
   const t = useTranslations('pos');
   const tExpenses = useTranslations('expenses');
   const locale = useLocale();
@@ -1256,10 +1256,11 @@ export default function PaymentModal({
       setAutoFilledSingleIndex(dueMinor > 0 ? idx : null);
       setPaymentsTouched(false);
       setPayments((current) =>
-        current.map((payment, index) => ({
-          ...payment,
-          amount: index === idx && dueMinor > 0 ? formatInput(dueDisplay) : '',
-        })),
+        current.map((payment, index) =>
+          index === idx
+            ? { ...payment, amount: dueMinor > 0 ? formatInput(dueDisplay) : '' }
+            : { ...payment, amount: '', transaction_id: '' },
+        ),
       );
       return;
     }
@@ -2121,7 +2122,7 @@ export default function PaymentModal({
     inFlightRef.current;
 
   const handleCloseButtonClick = () => {
-    if (isDismissLocked()) return;
+    if (isDismissLocked() || isConfirmOpen) return;
     if (splitCheckOrder) {
       setSplitCheckOrder(null);
       return;
@@ -2141,7 +2142,7 @@ export default function PaymentModal({
   const dismissHandlerRef = useRef<() => boolean>(() => true);
   useEffect(() => {
     dismissHandlerRef.current = () => {
-      if (isDismissLocked()) {
+      if (isDismissLocked() || isConfirmOpen) {
         return true;
       }
       if (splitCheckOrder) {
@@ -2473,7 +2474,7 @@ export default function PaymentModal({
         return;
       }
 
-      if (splitCheckOrder || chargeApprovalId) return;
+      if (splitCheckOrder || chargeApprovalId || isConfirmOpen) return;
       if (isInput) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.isComposing || e.keyCode === 229) return;

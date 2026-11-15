@@ -33,6 +33,7 @@ import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
+import { printerService } from '@/lib/printer/PrinterService';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import {
   formatKotErrorToast,
@@ -1471,14 +1472,32 @@ export default function OrdersPage() {
     }
   };
 
-  const handlePrint = async (billId: number) => {
+  const reservePrintWindowForModal = () => {
+    const printer = usePrinterStore.getState?.();
+    if (!printer) return undefined;
+    const expectedBrowserPrint =
+      printer.printMethod === 'browser' ||
+      (printer.printMethod === 'escpos' &&
+        !printer.hardwarePrinter &&
+        !printerService.isConnected &&
+        printer.status !== 'connecting');
+    return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
+  };
+
+  const handlePrint = async (
+    billId: number,
+    options?: { fallbackBill?: Bill; reservedWindow?: Window | null },
+  ) => {
+    const reservedWindow = options?.reservedWindow;
+    let windowTransferred = false;
     const candidateOrders = selectedOrderSnapshot ? [selectedOrderSnapshot, ...orders] : orders;
     const order = candidateOrders.find(
       (o) => o.bill?.id === billId || o.bills?.some((b) => b.id === billId),
     );
     const matchedBill =
       order?.bill?.id === billId ? order.bill : order?.bills?.find((b) => b.id === billId);
-    if (!order || !matchedBill) {
+    if ((!order || !matchedBill) && !options?.fallbackBill) {
+      if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       toast.error(tOrders('billNotFound'));
       return;
     }
@@ -1486,11 +1505,22 @@ export default function OrdersPage() {
     const tenantIdAtStart = currentTenant?.id ?? null;
     setPrintingBillId(billId);
     try {
-      const { data } = await api.get(`/bills/${billId}`);
-      if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
-        return;
+      let rawBill: Bill | undefined;
+      try {
+        const { data } = await api.get(`/bills/${billId}`);
+        if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+          return;
+        }
+        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill;
+      } catch (err) {
+        if (!options?.fallbackBill) throw err;
+        rawBill = options.fallbackBill;
       }
-      const latestBill = preferChildScopedBill(data.bill as Bill, order);
+      if (!rawBill) {
+        throw new Error('Bill not found');
+      }
+      const latestBill = preferChildScopedBill(rawBill, order ?? options?.fallbackBill?.order);
+      windowTransferred = true;
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
       const printWarnings = await printBill(
@@ -1505,6 +1535,7 @@ export default function OrdersPage() {
           calendar: currentTenant?.calendar,
         },
         { isReprint },
+        reservedWindow,
       );
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
@@ -1525,6 +1556,9 @@ export default function OrdersPage() {
         ),
       );
     } finally {
+      if (!windowTransferred && reservedWindow && !reservedWindow.closed) {
+        reservedWindow.close();
+      }
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
     }
@@ -2596,9 +2630,10 @@ export default function OrdersPage() {
           key={paymentBill.id}
           bill={paymentBill}
           currency={currency}
-          onPrintBill={async (b) => {
-            await handlePrint(b.id);
+          onPrintBill={async (b, reservedWindow) => {
+            await handlePrint(b.id, { fallbackBill: b, reservedWindow });
           }}
+          reservePrintWindow={reservePrintWindowForModal}
           onClose={() => setPaymentBill(null)}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
@@ -2683,7 +2718,9 @@ export default function OrdersPage() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => handlePrint(confirmPrintBillId)}
+                onClick={() =>
+                  handlePrint(confirmPrintBillId, { reservedWindow: reservePrintWindowForModal() })
+                }
                 disabled={printingBillId === confirmPrintBillId}
               >
                 <Printer size={14} className="me-1.5" />

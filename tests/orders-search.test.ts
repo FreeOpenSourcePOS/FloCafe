@@ -1167,6 +1167,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
   const orderRequests: Array<Record<string, unknown>> = [];
   const toastErrors: string[] = [];
   const printedBillIds: number[] = [];
+  const printedReservedWindows: unknown[] = [];
   const printOrderStatuses: Array<string | undefined> = [];
   let currentSearchParams = new URLSearchParams();
   let deferNextActiveFetch = false;
@@ -1509,13 +1510,28 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       }),
     },
     '@/hooks/usePrinter': {
-      usePrinterStore: () => ({
-        printBill: async (bill: { id: number }) => {
-          printedBillIds.push(bill.id);
-          return [];
+      usePrinterStore: Object.assign(
+        () => ({
+          printBill: async (
+            bill: { id: number },
+            _tenant: unknown,
+            _opts: unknown,
+            reservedWindow?: unknown,
+          ) => {
+            printedBillIds.push(bill.id);
+            printedReservedWindows.push(reservedWindow);
+            return [];
+          },
+          printDeliverySlip: async () => [],
+        }),
+        {
+          getState: () => ({
+            printMethod: 'browser',
+            hardwarePrinter: null,
+            status: 'disconnected',
+          }),
         },
-        printDeliverySlip: async () => [],
-      }),
+      ),
       isPrintCancelledOnTenantChangeError: () => false,
     },
     '@/hooks/use-confirm': {
@@ -2061,6 +2077,59 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         findTableSelect(tree)?.props.value,
         'tbl-42',
         'OrdersTableQuerySync applies URL table param and keeps Table select visible',
+      );
+
+      // 10. PaymentModal on /orders forwards reservePrintWindow and prints a departing split bill not yet in orders
+      const detailForSplit = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      if (detailForSplit?.props?.onPayBill) {
+        await detailForSplit.props.onPayBill(order103.bills[0]);
+      } else {
+        const masterSplit2 = collectElements(tree, (el) => el.type === MasterListStub)[0];
+        masterSplit2.props.onSelect(103);
+        tree = renderPage();
+        await collectElements(tree, (el) => el.type === DetailPanelStub)[0].props.onPayBill(
+          order103.bills[0],
+        );
+      }
+      tree = renderPage();
+      const splitSourceModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(splitSourceModal, 'PaymentModal opens before split');
+      assert.equal(
+        typeof splitSourceModal.props.reservePrintWindow,
+        'function',
+        'OrdersPage passes reservePrintWindow to PaymentModal',
+      );
+
+      const departingBill = {
+        id: 999,
+        order_id: 999,
+        bill_number: 'B-999',
+        total: 12,
+        balance: 0,
+        payment_status: 'paid',
+        order: { id: 999, order_number: 'ORD-999', status: 'completed', type: 'dine_in', items: [] },
+      };
+      splitSourceModal.props.onSplit(departingBill);
+      tree = await flushAll(20);
+      const departingModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(departingModal, 'PaymentModal reopens for departing split bill 999');
+
+      const fakeReservedWindow = { closed: false, close() { this.closed = true; } };
+      await departingModal.props.onPrintBill(departingBill, fakeReservedWindow);
+      assert.deepEqual(
+        toastErrors,
+        [],
+        'Completion print for departing split bill does not emit billNotFound',
+      );
+      assert.equal(
+        printedBillIds[printedBillIds.length - 1],
+        999,
+        'Completion print prints departing split bill directly',
+      );
+      assert.equal(
+        printedReservedWindows[printedReservedWindows.length - 1],
+        fakeReservedWindow,
+        'Completion print forwards reservedWindow to printBill',
       );
     } finally {
       globalThis.setInterval = originalSetInterval;

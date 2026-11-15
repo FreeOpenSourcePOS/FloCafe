@@ -427,8 +427,10 @@ function installCheckoutComponentMocks(
   harness: ReturnType<typeof createStatefulHarness>,
   overrides: {
     confirmFn?: () => Promise<boolean>;
+    isConfirmOpen?: () => boolean;
     splitSavingRef?: { current: boolean };
     discount?: { type: 'amount' | 'percentage'; value: number; reason?: string } | null;
+    taxPreview?: (args: any) => any;
     apiGet?: (url: string) => Promise<any>;
     apiPost?: (url: string, body: any) => Promise<any>;
     apiPatch?: (url: string, body: any) => Promise<any>;
@@ -535,6 +537,9 @@ function installCheckoutComponentMocks(
     if (request === '@/hooks/use-tax-preview') {
       return {
         useTaxPreview: (args: any) => {
+          if (overrides.taxPreview) {
+            return overrides.taxPreview(args);
+          }
           const disc = overrides.discount ?? args?.discount;
           const discountAmt =
             disc && disc.value > 0
@@ -595,6 +600,7 @@ function installCheckoutComponentMocks(
         useConfirm: () => ({
           confirm: overrides.confirmFn ?? (async () => true),
           ConfirmDialog: null,
+          isConfirmOpen: overrides.isConfirmOpen ? overrides.isConfirmOpen() : false,
         }),
       };
     }
@@ -3246,6 +3252,212 @@ async function testPrincipalUxErgonomicsAndCompletionParity() {
   console.log('  ✓ Principal UX ergonomics & completion parity verified');
 }
 
+async function testConfirmDialogAndCardReferenceSwitchGuards() {
+  console.log('\n--- 9. ConfirmDialog Keyboard/Escape Guards & 1-Tap Card Reference Clearing ---');
+
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    const keyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWindow || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.delete(fn);
+      },
+    };
+
+    try {
+      let confirmOpen = false;
+      let resolveConfirm: ((accepted: boolean) => void) | null = null;
+      let payCalls = 0;
+
+      installCheckoutComponentMocks(harness, {
+        isConfirmOpen: () => confirmOpen,
+        confirmFn: () =>
+          new Promise<boolean>((resolve) => {
+            confirmOpen = true;
+            resolveConfirm = (accepted) => {
+              confirmOpen = false;
+              resolve(accepted);
+            };
+          }),
+        apiGet: async (url: string) => {
+          if (url === '/settings/card_transaction_id_required') {
+            return { data: { setting: { value: 'true' } } };
+          }
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          return { data: {} };
+        },
+        apiPost: async () => {
+          payCalls++;
+          return {
+            data: {
+              bill: {
+                ...makeBill('bill-guard-1', 0),
+                total: 30,
+                paid_amount: 30,
+                balance: 0,
+                payment_status: 'paid',
+              },
+            },
+          };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let closeCount = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+      const renderModal = (withDismissHandler: boolean) =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: { ...makeBill('bill-guard-1', 30), subtotal: 30, total: 30, balance: 30 },
+          currency: 'USD',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {},
+          ...(withDismissHandler
+            ? {
+                onRegisterDismissHandler: (fn?: () => boolean) => {
+                  registeredDismiss = fn;
+                },
+              }
+            : {}),
+        });
+
+      let tree = renderModal(true);
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderModal(true);
+
+      const findTenderBtn = (t: any, title: string) =>
+        collectElements(t, (el) => el.type === 'button' && el.props?.title === title)[0];
+      const findTenderInput = (t: any, label: string) =>
+        collectElements(
+          t,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === `${label} amount`,
+        )[0];
+
+      // 1-tap Card -> type card ref -> 1-tap Cash clears stale card ref
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderModal(true);
+      const cardRefBefore = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.ok(cardRefBefore, 'Card transaction_id input renders when Card is auto-filled');
+      cardRefBefore.props.onChange({ target: { value: 'TXN-999' } });
+      tree = renderModal(true);
+      assert.equal(
+        collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+        )[0].props.value,
+        'TXN-999',
+      );
+
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderModal(true);
+      assert.equal(findTenderInput(tree, 'methodCash').props.value, '30');
+
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderModal(true);
+      const cardRefAfter = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.equal(
+        cardRefAfter.props.value,
+        '',
+        '1-tap switch away from Card clears stale transaction_id',
+      );
+
+      // Open partial-payment ConfirmDialog via Cash = 10 -> click Pay
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderModal(true);
+      findTenderInput(tree, 'methodCash').props.onChange({ target: { value: '10' } });
+      tree = renderModal(true);
+
+      const payBtn = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'payment-submit-btn',
+      )[0];
+      const payPromise = payBtn.props.onClick();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderModal(true);
+      assert.equal(confirmOpen, true, 'Partial payment opens ConfirmDialog');
+
+      const dispatchKey = (init: Record<string, any>) => {
+        const event = {
+          key: '',
+          code: '',
+          repeat: false,
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+          defaultPrevented: false,
+          target: { tagName: 'BUTTON', getAttribute: () => null, closest: () => null },
+          preventDefault() {
+            this.defaultPrevented = true;
+          },
+          ...init,
+        };
+        for (const fn of keyListeners) fn(event);
+        return event;
+      };
+
+      // Registered dismiss handler (POS Escape path) must return true without closing PaymentModal
+      assert.equal(
+        registeredDismiss?.(),
+        true,
+        'Registered dismiss handler swallows Escape while ConfirmDialog is open',
+      );
+      assert.equal(closeCount, 0, 'PaymentModal stays open while ConfirmDialog is open');
+
+      // Enter / Space / digit keys must not be intercepted or mutate state behind ConfirmDialog
+      const enterEvent = dispatchKey({ key: 'Enter', code: 'Enter' });
+      const spaceEvent = dispatchKey({ key: ' ', code: 'Space' });
+      const digitEvent = dispatchKey({ key: '5', code: 'Digit5' });
+      tree = renderModal(true);
+      assert.equal(enterEvent.defaultPrevented, false, 'Enter is not prevented behind ConfirmDialog');
+      assert.equal(spaceEvent.defaultPrevented, false, 'Space is not prevented behind ConfirmDialog');
+      assert.equal(digitEvent.defaultPrevented, false, 'Digit is not intercepted behind ConfirmDialog');
+      assert.equal(payCalls, 0, 'Payment is not submitted behind ConfirmDialog');
+      assert.equal(
+        findTenderInput(tree, 'methodCash').props.value,
+        '10',
+        'Cash amount is not mutated while ConfirmDialog is open',
+      );
+
+      // Standalone Escape (without onRegisterDismissHandler) also stays open while ConfirmDialog is open
+      tree = renderModal(false);
+      dispatchKey({ key: 'Escape', code: 'Escape' });
+      assert.equal(closeCount, 0, 'Standalone Escape does not close PaymentModal behind ConfirmDialog');
+
+      // Cancel ConfirmDialog, then Escape closes PaymentModal normally
+      resolveConfirm?.(false);
+      await payPromise;
+      tree = renderModal(false);
+      dispatchKey({ key: 'Escape', code: 'Escape' });
+      assert.equal(closeCount, 1, 'Escape closes PaymentModal once ConfirmDialog closes');
+    } finally {
+      harness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+
+  console.log('  ✓ ConfirmDialog keyboard/Escape guards & 1-tap card ref clearing verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -3257,6 +3469,7 @@ async function run() {
   await testReviewFixRegressions();
   await testVisualHierarchyAndPrematurePaidGuards();
   await testPrincipalUxErgonomicsAndCompletionParity();
+  await testConfirmDialogAndCardReferenceSwitchGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

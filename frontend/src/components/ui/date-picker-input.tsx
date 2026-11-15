@@ -8,7 +8,6 @@ export type TemporalInputType = 'date' | 'datetime-local' | 'month' | 'week' | '
 
 export interface DatePickerInputProps extends Omit<React.ComponentProps<'input'>, 'type'> {
   type?: TemporalInputType;
-  wrapperClassName?: string;
   buttonClassName?: string;
   pickerAriaLabel?: string;
 }
@@ -38,7 +37,6 @@ function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null): void {
 export function DatePickerInput({
   type = 'date',
   className,
-  wrapperClassName,
   buttonClassName,
   pickerAriaLabel,
   disabled,
@@ -63,7 +61,7 @@ export function DatePickerInput({
         : 'Open date picker';
 
   return (
-    <div className={cn('relative', wrapperClassName)}>
+    <div className="relative">
       <input
         ref={setRefs}
         type={type}

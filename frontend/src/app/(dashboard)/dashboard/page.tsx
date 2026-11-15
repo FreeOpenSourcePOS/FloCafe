@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -12,7 +12,6 @@ import {
   ArrowUpRight,
   Banknote,
   BarChart3,
-  CalendarDays,
   ChefHat,
   ChevronDown,
   ClipboardList,
@@ -43,6 +42,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { PriceExceptionsCard } from '@/components/dashboard/PriceExceptionsCard';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -303,10 +303,6 @@ export default function DashboardPage() {
   const [rangeStartDate, setRangeStartDate] = useState(() => shiftDate(todayLocal, -6));
   const [rangeEndDate, setRangeEndDate] = useState(todayLocal);
   const [periodMode, setPeriodMode] = useState<'day' | 'month' | 'range'>('day');
-  const dayInputRef = useRef<HTMLInputElement>(null);
-  const monthInputRef = useRef<HTMLInputElement>(null);
-  const rangeFromInputRef = useRef<HTMLInputElement>(null);
-  const rangeToInputRef = useRef<HTMLInputElement>(null);
   const isToday = periodMode === 'day' && selectedDate === todayLocal;
   const range =
     periodMode === 'month'
@@ -338,18 +334,6 @@ export default function DashboardPage() {
       if (rangeStartDate < minStart) {
         setRangeStartDate(minStart);
       }
-    }
-  };
-
-  /** Opens Chromium's native calendar UI while preserving keyboard fallback. */
-  const openPicker = (input: HTMLInputElement | null) => {
-    if (!input) return;
-    try {
-      input.showPicker();
-    } catch {
-      // Older embedded Chromium builds may not expose showPicker. Focusing the
-      // native input still leaves keyboard date entry available.
-      input.focus();
     }
   };
 
@@ -840,90 +824,54 @@ export default function DashboardPage() {
 
         <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
           {periodMode === 'day' ? (
-            <div className="relative">
-              <input
-                ref={dayInputRef}
-                type="date"
-                value={selectedDate}
-                max={todayLocal}
-                onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-                className="h-10 appearance-none rounded-xl border border-border bg-card ps-3 pe-10 text-sm text-foreground shadow-sm [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-brand/30 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
-                aria-label={t('selectDate')}
-              />
-              <button
-                type="button"
-                onClick={() => openPicker(dayInputRef.current)}
-                className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label={t('openDatePicker')}
-              >
-                <CalendarDays size={16} />
-              </button>
-            </div>
+            <DatePickerInput
+              type="date"
+              value={selectedDate}
+              max={todayLocal}
+              onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+              className="h-10 rounded-xl border border-border bg-card ps-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+              buttonClassName="rounded-e-xl"
+              aria-label={t('selectDate')}
+              pickerAriaLabel={t('openDatePicker')}
+            />
           ) : periodMode === 'month' ? (
-            <div className="relative">
-              <input
-                ref={monthInputRef}
-                type="month"
-                value={selectedMonth}
-                max={todayLocal.slice(0, 7)}
-                onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
-                className="h-10 appearance-none rounded-xl border border-border bg-card ps-3 pe-10 text-sm text-foreground shadow-sm [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-brand/30 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
-                aria-label={t('selectMonth')}
-              />
-              <button
-                type="button"
-                onClick={() => openPicker(monthInputRef.current)}
-                className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label={t('openMonthPicker')}
-              >
-                <CalendarDays size={16} />
-              </button>
-            </div>
+            <DatePickerInput
+              type="month"
+              value={selectedMonth}
+              max={todayLocal.slice(0, 7)}
+              onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+              className="h-10 rounded-xl border border-border bg-card ps-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+              buttonClassName="rounded-e-xl"
+              aria-label={t('selectMonth')}
+              pickerAriaLabel={t('openMonthPicker')}
+            />
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <input
-                  ref={rangeFromInputRef}
-                  type="date"
-                  value={rangeStartDate}
-                  max={todayLocal}
-                  onChange={(e) => handleRangeStartChange(e.target.value)}
-                  className="h-10 appearance-none rounded-xl border border-border bg-card ps-3 pe-10 text-sm text-foreground shadow-sm [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-brand/30 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
-                  aria-label={t('periodStart')}
-                />
-                <button
-                  type="button"
-                  onClick={() => openPicker(rangeFromInputRef.current)}
-                  className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label={t('openDatePicker')}
-                >
-                  <CalendarDays size={16} />
-                </button>
-              </div>
-              <div className="relative">
-                <input
-                  ref={rangeToInputRef}
-                  type="date"
-                  value={rangeEndDate}
-                  min={rangeStartDate}
-                  max={
-                    shiftDate(rangeStartDate, 92) < todayLocal
-                      ? shiftDate(rangeStartDate, 92)
-                      : todayLocal
-                  }
-                  onChange={(e) => handleRangeEndChange(e.target.value)}
-                  className="h-10 appearance-none rounded-xl border border-border bg-card ps-3 pe-10 text-sm text-foreground shadow-sm [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-brand/30 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
-                  aria-label={t('periodEnd')}
-                />
-                <button
-                  type="button"
-                  onClick={() => openPicker(rangeToInputRef.current)}
-                  className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label={t('openDatePicker')}
-                >
-                  <CalendarDays size={16} />
-                </button>
-              </div>
+              <DatePickerInput
+                type="date"
+                value={rangeStartDate}
+                max={todayLocal}
+                onChange={(e) => handleRangeStartChange(e.target.value)}
+                className="h-10 rounded-xl border border-border bg-card ps-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                buttonClassName="rounded-e-xl"
+                aria-label={t('periodStart')}
+                pickerAriaLabel={t('openDatePicker')}
+              />
+              <DatePickerInput
+                type="date"
+                value={rangeEndDate}
+                min={rangeStartDate}
+                max={
+                  shiftDate(rangeStartDate, 92) < todayLocal
+                    ? shiftDate(rangeStartDate, 92)
+                    : todayLocal
+                }
+                onChange={(e) => handleRangeEndChange(e.target.value)}
+                className="h-10 rounded-xl border border-border bg-card ps-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                buttonClassName="rounded-e-xl"
+                aria-label={t('periodEnd')}
+                pickerAriaLabel={t('openDatePicker')}
+              />
             </div>
           )}
 

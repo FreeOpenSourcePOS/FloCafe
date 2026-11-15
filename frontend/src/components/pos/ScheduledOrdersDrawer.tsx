@@ -21,6 +21,7 @@ import {
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import { Ltr } from '@/components/layout/Ltr';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
 import api from '@/lib/api';
@@ -82,6 +83,7 @@ export default function ScheduledOrdersDrawer({
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
+  const tDashboard = useTranslations('dashboard');
   const fmt = useFormatCurrency();
   const { currentTenant } = useAuthStore();
 
@@ -424,13 +426,14 @@ export default function ScheduledOrdersDrawer({
             >
               {t('sendToKitchenAt')} ({effectiveTimezone})
             </label>
-            <input
+            <DatePickerInput
               id={`scheduled-reschedule-input-${order.id}`}
               data-testid={`scheduled-reschedule-input-${order.id}`}
               type="datetime-local"
               value={rescheduleInput}
               onChange={(e) => setRescheduleInput(e.target.value)}
-              className="w-full min-h-10 px-2.5 py-1.5 text-sm border border-border bg-card rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              pickerAriaLabel={tDashboard('openDatePicker')}
+              className="w-full min-h-10 ps-2.5 py-1.5 text-sm border border-border bg-card text-foreground rounded-lg outline-none focus:ring-2 focus:ring-brand"
             />
             {rescheduleErrorMsg && (
               <p

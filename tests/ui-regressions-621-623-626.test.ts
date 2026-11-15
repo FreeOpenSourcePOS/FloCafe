@@ -685,24 +685,40 @@ try {
     if (predicate(node)) return node;
     return node.props?.children ? findTreeElement(node.props.children, predicate) : null;
   };
-  const dashboardDay = renderDashboard();
-  assert.match(
-    dashboardDay.html,
-    /<input[^>]*type="date"[^>]*aria-label="Select date"[^>]*\/>[\s]*<button[^>]*type="button"[^>]*aria-label="Open date picker"/,
-    'rendered DashboardPage exposes explicit date picker and accessible trigger',
-  );
-  const monthModeBtn = findTreeElement(
-    dashboardDay.tree,
-    (el) => el?.type === 'button' && el?.props?.children === 'Month',
-  );
-  assert.ok(monthModeBtn, 'rendered DashboardPage includes Month mode toggle');
-  monthModeBtn.props.onClick();
-  const dashboardMonth = renderDashboard();
-  assert.match(
-    dashboardMonth.html,
-    /<input[^>]*type="month"[^>]*aria-label="Select month"[^>]*\/>[\s]*<button[^>]*type="button"[^>]*aria-label="Open month picker"/,
-    'rendered DashboardPage switches to explicit month picker control',
-  );
+  const prevAuthForDashboard = useAuthStore.getState();
+  try {
+    useAuthStore.setState({
+      currentTenant: {
+        ...(prevAuthForDashboard.currentTenant as any),
+        timezone: 'UTC',
+        business_day_start_time: '00:00',
+        permission_ids: [
+          ...((prevAuthForDashboard.currentTenant as any)?.permission_ids ?? []),
+          'dashboard.view',
+        ],
+      } as any,
+    });
+    const dashboardDay = renderDashboard();
+    assert.match(
+      dashboardDay.html,
+      /<input[^>]*type="date"[^>]*aria-label="Select date"[^>]*\/>[\s]*<button[^>]*type="button"[^>]*aria-label="Open date picker"/,
+      'rendered DashboardPage exposes explicit date picker and accessible trigger',
+    );
+    const monthModeBtn = findTreeElement(
+      dashboardDay.tree,
+      (el) => el?.type === 'button' && el?.props?.children === 'Month',
+    );
+    assert.ok(monthModeBtn, 'rendered DashboardPage includes Month mode toggle');
+    monthModeBtn.props.onClick();
+    const dashboardMonth = renderDashboard();
+    assert.match(
+      dashboardMonth.html,
+      /<input[^>]*type="month"[^>]*aria-label="Select month"[^>]*\/>[\s]*<button[^>]*type="button"[^>]*aria-label="Open month picker"/,
+      'rendered DashboardPage switches to explicit month picker control',
+    );
+  } finally {
+    useAuthStore.setState(prevAuthForDashboard);
+  }
 
   // 7. Issue #1515: KDS default view kanban, persisted view selection, and body pointer-events recovery
   const kdsHeaderModule = require('../frontend/src/components/kds/KdsHeader');

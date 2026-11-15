@@ -241,8 +241,7 @@ export const useCloudAttentionStore = create<CloudAttentionState>((set, get) => 
         cloud: nextCloud,
       });
 
-      const appliedFailure =
-        (applyAccount && !accountSucceeded) || (applyCloud && !cloudSucceeded);
+      const appliedFailure = (applyAccount && !accountSucceeded) || (applyCloud && !cloudSucceeded);
       const fullyLoaded = applyAccount && accountSucceeded && applyCloud && cloudSucceeded;
 
       set({

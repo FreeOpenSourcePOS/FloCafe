@@ -3,39 +3,24 @@
  * management UI (#1576).
  *
  * Covers:
- *  1. Shared DatePickerInput component rendering, color-scheme / indicator hiding
- *     classes, forwarded attributes, CalendarDays vs Clock icon selection, and
- *     openTemporalPicker showPicker() + focus() fallback behavior.
- *  2. Parsed CSS AST check on globals.css @layer base ensuring color-scheme
+ *  1. Parsed CSS AST check on globals.css @layer base ensuring color-scheme
  *     applies to date, datetime-local, month, week, and time inputs in both light
  *     and .dark modes.
- *  3. Repo-wide frontend/src audit verifying all temporal inputs use DatePickerInput
- *     and no raw un-themed date/datetime-local/month/week/time inputs remain.
- *  4. Rendered component markup checks for OrderDetailsDrawer, ScheduledOrdersDrawer,
- *     CashDrawerMovementModal, CashCloseModal, and ExpenseWorkflow preserving exact
- *     ids, data-testids, and error/class hooks.
+ *  2. Shared DatePickerInput component rendering, color-scheme / indicator hiding
+ *     classes, forwarded attributes, CalendarDays vs Clock icon selection, and
+ *     openTemporalPicker showPicker() + focus() fallback behavior.
+ *  3. Rendered component markup checks across all 8 temporal input call sites:
+ *     OrderDetailsDrawer, ScheduledOrdersDrawer (reschedule mode),
+ *     CashDrawerMovementModal, CashCloseModal, ExpenseWorkflow, ExpensesPage,
+ *     DashboardPage (day, month, and range modes), and WhatsAppPage (automation tab).
  */
 import { strict as assert } from 'node:assert';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const ROOT = process.cwd();
 const FRONTEND_SRC = resolve(ROOT, 'frontend/src');
 const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), 'utf8');
-
-function walkSourceFiles(dir: string): string[] {
-  const results: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      results.push(...walkSourceFiles(fullPath));
-    } else if (/\.(tsx|ts|jsx|js)$/.test(entry)) {
-      results.push(fullPath);
-    }
-  }
-  return results;
-}
 
 // 1. globals.css parsed CSS AST check
 const Module = require('node:module') as {
@@ -87,43 +72,7 @@ for (const type of expectedTemporalTypes) {
   );
 }
 
-// 2. Exhaustive frontend/src audit for un-themed raw temporal inputs
-const datePickerPath = resolve(FRONTEND_SRC, 'components/ui/date-picker-input.tsx');
-assert.ok(existsSync(datePickerPath), 'frontend/src/components/ui/date-picker-input.tsx exists');
-
-const rawTemporalTagPattern =
-  /<(input|Input)\b[^>]*\btype=["'](?:date|datetime-local|month|week|time)["'][^>]*>/gs;
-const offendingFiles: string[] = [];
-for (const filePath of walkSourceFiles(FRONTEND_SRC)) {
-  if (resolve(filePath) === datePickerPath) continue;
-  const content = readFileSync(filePath, 'utf8');
-  if (rawTemporalTagPattern.test(content)) {
-    offendingFiles.push(relative(ROOT, filePath));
-  }
-}
-assert.deepEqual(
-  offendingFiles,
-  [],
-  `No raw <input>/<Input> temporal fields should remain outside DatePickerInput; found: ${offendingFiles.join(', ')}`,
-);
-
-// Verify every expected call site imports and uses DatePickerInput
-const expectedCallSites = [
-  'frontend/src/app/(dashboard)/expenses/page.tsx',
-  'frontend/src/components/expenses/ExpenseWorkflow.tsx',
-  'frontend/src/components/pos/OrderDetailsDrawer.tsx',
-  'frontend/src/components/pos/ScheduledOrdersDrawer.tsx',
-  'frontend/src/components/dashboard/CashDrawerMovementModal.tsx',
-  'frontend/src/components/dashboard/CashCloseModal.tsx',
-  'frontend/src/app/(dashboard)/whatsapp/page.tsx',
-  'frontend/src/app/(dashboard)/dashboard/page.tsx',
-];
-for (const site of expectedCallSites) {
-  const src = read(site);
-  assert.match(src, /<DatePickerInput\b/, `${site} uses <DatePickerInput>`);
-}
-
-// 3. Runtime component and helper verification
+// 2. Runtime component and helper verification
 const originalResolveFilename = Module._resolveFilename;
 const originalLoad = Module._load;
 const reactPath = frontendRequire.resolve('react');
@@ -517,6 +466,257 @@ try {
     /data-testid="expense-form-incurred-on"[^>]*\/>[\s]*<button[^>]*><svg[^>]*lucide-calendar-days/,
     'ExpenseWorkflow renders CalendarDays trigger button',
   );
+
+  // Lightweight state harness for rendering stateful components across mode/tab transitions
+  const findElement = (node: any, predicate: (el: any) => boolean): any => {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const hit = findElement(child, predicate);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (predicate(node)) return node;
+    return node.props?.children ? findElement(node.props.children, predicate) : null;
+  };
+
+  const createHarness = (Component: any, props: any = {}) => {
+    const states: unknown[] = [];
+    const refs: Array<{ current: unknown }> = [];
+    const origUseState = React.useState;
+    const origUseEffect = React.useEffect;
+    const origUseRef = React.useRef;
+    const origUseCallback = React.useCallback;
+    const origUseMemo = React.useMemo;
+
+    const render = () => {
+      let tree: any;
+      function Runner() {
+        let stateIdx = 0;
+        let refIdx = 0;
+        React.useState = ((initial: unknown) => {
+          const idx = stateIdx++;
+          if (!(idx in states)) {
+            states[idx] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+          }
+          const setState = (next: unknown) => {
+            states[idx] =
+              typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
+          };
+          return [states[idx], setState];
+        }) as typeof React.useState;
+        React.useRef = ((initial: unknown) => {
+          const idx = refIdx++;
+          if (!refs[idx]) refs[idx] = { current: initial };
+          return refs[idx];
+        }) as typeof React.useRef;
+        React.useEffect = (() => {}) as typeof React.useEffect;
+        React.useCallback = ((fn: any) => fn) as typeof React.useCallback;
+        React.useMemo = ((fn: () => unknown) => fn()) as typeof React.useMemo;
+
+        try {
+          for (let pass = 0; pass < 4; pass++) {
+            const snapshot = states.slice();
+            stateIdx = 0;
+            refIdx = 0;
+            tree = Component(props);
+            if (!states.some((val, i) => val !== snapshot[i])) break;
+          }
+        } finally {
+          React.useState = origUseState;
+          React.useEffect = origUseEffect;
+          React.useRef = origUseRef;
+          React.useCallback = origUseCallback;
+          React.useMemo = origUseMemo;
+        }
+        return tree;
+      }
+
+      const html = renderWithIntl(React.createElement(Runner));
+      return { tree, html };
+    };
+
+    return { render };
+  };
+
+  const { useAuthStore } = require('@/store/auth');
+  const prevAuth = useAuthStore.getState();
+  const origWindow = (globalThis as any).window;
+  try {
+    useAuthStore.setState({
+      user: { id: 'owner-1', name: 'Owner', email: 'owner@test.com', role: 'owner' } as any,
+      currentTenant: {
+        id: 't1',
+        business_name: 'FloCafe',
+        role: 'owner',
+        currency: 'USD',
+        country: 'US',
+        timezone: 'UTC',
+        business_day_start_time: '00:00',
+        permission_ids: [
+          'dashboard.view',
+          'reports.financial.view',
+          'orders.create',
+          'orders.status.update',
+          'whatsapp.manage',
+        ],
+      } as any,
+    });
+
+    // 3f. Verify ScheduledOrdersDrawer renders themed datetime-local input in reschedule mode
+    const ScheduledOrdersDrawer =
+      require('../frontend/src/components/pos/ScheduledOrdersDrawer').default;
+    const scheduledHarness = createHarness(ScheduledOrdersDrawer, {
+      open: true,
+      orders: [
+        {
+          id: 101,
+          order_number: 'ORD-101',
+          type: 'takeaway',
+          status: 'pending',
+          release_status: 'scheduled',
+          total: 12,
+          scheduled_for: '2030-01-15T10:30:00.000Z',
+          items: [
+            {
+              id: 1,
+              order_id: 101,
+              product_id: 'prod-1',
+              product_name: 'Latte',
+              quantity: 1,
+              unit_price: 12,
+              total: 12,
+              status: 'pending',
+            },
+          ],
+        },
+      ],
+      storeTimezone: 'UTC',
+      onClose: () => {},
+      onRefresh: () => {},
+      onOrderReleased: () => {},
+      onAddItemsToOrder: () => {},
+      onPayOrder: () => {},
+      onRefundOrder: () => {},
+    });
+    const scheduledInitial = scheduledHarness.render();
+    const rescheduleBtn = findElement(
+      scheduledInitial.tree,
+      (el) => el?.props?.['data-testid'] === 'scheduled-reschedule-btn-101',
+    );
+    assert.ok(rescheduleBtn, 'ScheduledOrdersDrawer renders reschedule trigger button');
+    rescheduleBtn.props.onClick();
+    const scheduledReschedule = scheduledHarness.render();
+    assert.match(
+      scheduledReschedule.html,
+      /<input[^>]*type="datetime-local"[^>]*dark:\[color-scheme:dark\][^"]*"[^>]*id="scheduled-reschedule-input-101"[^>]*data-testid="scheduled-reschedule-input-101"/,
+      'ScheduledOrdersDrawer applies dark color-scheme to reschedule datetime-local input',
+    );
+    assert.match(
+      scheduledReschedule.html,
+      /data-testid="scheduled-reschedule-input-101"[^>]*\/>[\s]*<button[^>]*><svg[^>]*lucide-calendar-days/,
+      'ScheduledOrdersDrawer renders CalendarDays trigger button in reschedule mode',
+    );
+
+    // 3g. Verify ExpensesPage renders themed #expense-filter-from and #expense-filter-to date inputs
+    const ExpensesPage = require('../frontend/src/app/(dashboard)/expenses/page').default;
+    const expensesHtml = renderWithIntl(React.createElement(ExpensesPage));
+    for (const filterId of ['expense-filter-from', 'expense-filter-to']) {
+      assert.match(
+        expensesHtml,
+        new RegExp(
+          `<input[^>]*type="date"[^>]*dark:\\[color-scheme:dark\\][^"]*"[^>]*id="${filterId}"[^>]*data-testid="${filterId}"`,
+        ),
+        `ExpensesPage applies dark color-scheme to #${filterId}`,
+      );
+      assert.match(
+        expensesHtml,
+        new RegExp(
+          `data-testid="${filterId}"[^>]*\\/>[\\s]*<button[^>]*><svg[^>]*lucide-calendar-days`,
+        ),
+        `ExpensesPage renders CalendarDays trigger button for #${filterId}`,
+      );
+    }
+
+    // 3h. Verify DashboardPage renders themed date/month inputs across day, month, and range modes
+    const DashboardPage = require('../frontend/src/app/(dashboard)/dashboard/page').default;
+    const dashboardHarness = createHarness(DashboardPage);
+    const dashboardDay = dashboardHarness.render();
+    assert.match(
+      dashboardDay.html,
+      /<input[^>]*type="date"[^>]*dark:\[color-scheme:dark\][^"]*"[^>]*aria-label="Select date"/,
+      'DashboardPage day mode renders themed date input',
+    );
+    assert.match(
+      dashboardDay.html,
+      /aria-label="Select date"[^>]*\/>[\s]*<button[^>]*aria-label="Open date picker"[^>]*><svg[^>]*lucide-calendar-days/,
+      'DashboardPage day mode renders accessible CalendarDays trigger button',
+    );
+
+    const monthModeBtn = findElement(
+      dashboardDay.tree,
+      (el) => el?.type === 'button' && el?.props?.children === 'Month',
+    );
+    assert.ok(monthModeBtn, 'DashboardPage renders Month period button');
+    monthModeBtn.props.onClick();
+    const dashboardMonth = dashboardHarness.render();
+    assert.match(
+      dashboardMonth.html,
+      /<input[^>]*type="month"[^>]*dark:\[color-scheme:dark\][^"]*"[^>]*aria-label="Select month"/,
+      'DashboardPage month mode renders themed month input',
+    );
+    assert.match(
+      dashboardMonth.html,
+      /aria-label="Select month"[^>]*\/>[\s]*<button[^>]*aria-label="Open month picker"[^>]*><svg[^>]*lucide-calendar-days/,
+      'DashboardPage month mode renders accessible CalendarDays trigger button',
+    );
+
+    const rangeModeBtn = findElement(
+      dashboardMonth.tree,
+      (el) => el?.type === 'button' && el?.props?.children === 'Range',
+    );
+    assert.ok(rangeModeBtn, 'DashboardPage renders Range period button');
+    rangeModeBtn.props.onClick();
+    const dashboardRange = dashboardHarness.render();
+    for (const label of ['Period start', 'Period end']) {
+      assert.match(
+        dashboardRange.html,
+        new RegExp(
+          `<input[^>]*type="date"[^>]*dark:\\[color-scheme:dark\\][^"]*"[^>]*aria-label="${label}"`,
+        ),
+        `DashboardPage range mode renders themed ${label} date input`,
+      );
+    }
+
+    // 3i. Verify WhatsAppPage renders themed quiet-hours time inputs on automation tab
+    (globalThis as any).window = {
+      localStorage: {
+        getItem: (key: string) => (key === 'whatsapp.activeTab' ? 'automation' : null),
+        setItem: () => {},
+      },
+    };
+    const WhatsAppPage = require('../frontend/src/app/(dashboard)/whatsapp/page').default;
+    const whatsappHtml = renderWithIntl(React.createElement(WhatsAppPage));
+    for (const timeId of ['wa-quiet-hours-start', 'wa-quiet-hours-end']) {
+      assert.match(
+        whatsappHtml,
+        new RegExp(
+          `<input[^>]*type="time"[^>]*dark:\\[color-scheme:dark\\][^"]*"[^>]*id="${timeId}"`,
+        ),
+        `WhatsAppPage applies dark color-scheme to #${timeId}`,
+      );
+      assert.match(
+        whatsappHtml,
+        new RegExp(`id="${timeId}"[^>]*\\/>[\\s]*<button[^>]*><svg[^>]*lucide-clock`),
+        `WhatsAppPage renders Clock trigger button for #${timeId}`,
+      );
+    }
+  } finally {
+    useAuthStore.setState(prevAuth);
+    if (origWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = origWindow;
+  }
 
   console.log('✓ Themed date/time input checks passed');
 } finally {

@@ -78,24 +78,6 @@ assert.match(
   'ledger totals use semantic text color',
 );
 
-const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
-const datePickerInput = source('frontend/src/components/ui/date-picker-input.tsx');
-assert.match(
-  dashboard,
-  /DatePickerInput[\s\S]*type="date"[\s\S]*DatePickerInput[\s\S]*type="month"/,
-  'dashboard retains explicit date and month picker controls',
-);
-assert.match(
-  datePickerInput,
-  /input\.showPicker\(\)/,
-  'dashboard calendar buttons invoke the native Chromium picker',
-);
-assert.match(
-  dashboard,
-  /pickerAriaLabel=\{t\('openDatePicker'\)\}/,
-  'dashboard date picker trigger stays accessible',
-);
-
 // Issue #1453: Executable component rendering and parsed CSS checks for POS drawers,
 // side sheets, CartPanel, PosTopbar, CustomerSearch, and dashboard search fields.
 const Module = require('node:module') as {
@@ -623,6 +605,103 @@ try {
     ordersMarkup,
     /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-brand"/,
     'rendered OrdersPage search bar matches the sleek Products search bar styling with pe-3 when empty',
+  );
+
+  // Dashboard date/month pickers and openTemporalPicker executable checks
+  const { openTemporalPicker } = require('../frontend/src/components/ui/date-picker-input');
+  let pickerCalls = 0;
+  openTemporalPicker({
+    disabled: false,
+    readOnly: false,
+    showPicker: () => {
+      pickerCalls += 1;
+    },
+    focus: () => {},
+  } as any);
+  assert.equal(pickerCalls, 1, 'dashboard calendar buttons invoke the native Chromium picker');
+
+  const DashboardPage = require('../frontend/src/app/(dashboard)/dashboard/page').default;
+  const dashboardStates: unknown[] = [];
+  const dashboardRefs: Array<{ current: unknown }> = [];
+  const origUseState = React.useState;
+  const origUseEffect = React.useEffect;
+  const origUseRef = React.useRef;
+  const origUseCallback = React.useCallback;
+  const origUseMemo = React.useMemo;
+  const renderDashboard = () => {
+    let tree: any;
+    function Runner() {
+      let stateIdx = 0;
+      let refIdx = 0;
+      React.useState = ((initial: unknown) => {
+        const idx = stateIdx++;
+        if (!(idx in dashboardStates)) {
+          dashboardStates[idx] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+        }
+        const setState = (next: unknown) => {
+          dashboardStates[idx] =
+            typeof next === 'function'
+              ? (next as (prev: unknown) => unknown)(dashboardStates[idx])
+              : next;
+        };
+        return [dashboardStates[idx], setState];
+      }) as typeof React.useState;
+      React.useRef = ((initial: unknown) => {
+        const idx = refIdx++;
+        if (!dashboardRefs[idx]) dashboardRefs[idx] = { current: initial };
+        return dashboardRefs[idx];
+      }) as typeof React.useRef;
+      React.useEffect = (() => {}) as typeof React.useEffect;
+      React.useCallback = ((fn: any) => fn) as typeof React.useCallback;
+      React.useMemo = ((fn: () => unknown) => fn()) as typeof React.useMemo;
+      try {
+        for (let pass = 0; pass < 4; pass++) {
+          const snapshot = dashboardStates.slice();
+          stateIdx = 0;
+          refIdx = 0;
+          tree = DashboardPage({});
+          if (!dashboardStates.some((val, i) => val !== snapshot[i])) break;
+        }
+      } finally {
+        React.useState = origUseState;
+        React.useEffect = origUseEffect;
+        React.useRef = origUseRef;
+        React.useCallback = origUseCallback;
+        React.useMemo = origUseMemo;
+      }
+      return tree;
+    }
+    return { tree, html: renderWithIntl(React.createElement(Runner)) };
+  };
+  const findTreeElement = (node: any, predicate: (el: any) => boolean): any => {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const hit = findTreeElement(child, predicate);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (predicate(node)) return node;
+    return node.props?.children ? findTreeElement(node.props.children, predicate) : null;
+  };
+  const dashboardDay = renderDashboard();
+  assert.match(
+    dashboardDay.html,
+    /<input[^>]*type="date"[^>]*aria-label="Select date"[^>]*\/>[\s]*<button[^>]*type="button"[^>]*aria-label="Open date picker"/,
+    'rendered DashboardPage exposes explicit date picker and accessible trigger',
+  );
+  const monthModeBtn = findTreeElement(
+    dashboardDay.tree,
+    (el) => el?.type === 'button' && el?.props?.children === 'Month',
+  );
+  assert.ok(monthModeBtn, 'rendered DashboardPage includes Month mode toggle');
+  monthModeBtn.props.onClick();
+  const dashboardMonth = renderDashboard();
+  assert.match(
+    dashboardMonth.html,
+    /<input[^>]*type="month"[^>]*aria-label="Select month"[^>]*\/>[\s]*<button[^>]*type="button"[^>]*aria-label="Open month picker"/,
+    'rendered DashboardPage switches to explicit month picker control',
   );
 
   // 7. Issue #1515: KDS default view kanban, persisted view selection, and body pointer-events recovery

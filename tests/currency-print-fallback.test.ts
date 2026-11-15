@@ -6,8 +6,15 @@
 import { resolveCurrencyPrefix } from '../main/printers/formatting-helpers';
 import { getCurrencySymbol, COUNTRIES } from '../main/countries';
 import { listSupportedCurrencyCodes } from '../shared/currencies';
-import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
-import { normalizeCurrencyToAscii } from '../shared/print/currency';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  LATIN_THERMAL_CAPABILITIES,
+} from '../shared/print/thermal-capabilities';
+import {
+  normalizeCurrencyToAscii,
+  resolveAsciiCurrencyFallback,
+  stripCurrencyTokens,
+} from '../shared/print/currency';
 
 const { assertOrThrow, assertEqualOrThrow, getResults } = require('./helpers/test-setup');
 
@@ -60,6 +67,68 @@ assertEqualOrThrow(
 assertOrThrow(
   ASCII.test(resolveCurrencyPrefix('\u{1F4B0}', false, undefined, false, 'XYZ')),
   'unknown symbol falls back to ISO code',
+);
+assertEqualOrThrow(normalizeCurrencyToAscii('сом.'), 'TJS', 'Tajikistani somoni Cyrillic symbol');
+assertEqualOrThrow(
+  normalizeCurrencyToAscii('100 сом.'),
+  '100 TJS',
+  'Tajikistani somoni price line',
+);
+assertEqualOrThrow(normalizeCurrencyToAscii('Íkr'), 'ISK', 'Icelandic krona Belarusian symbol');
+assertEqualOrThrow(normalizeCurrencyToAscii('грн.'), 'UAH', 'Ukrainian hryvnia Cyrillic symbol');
+assertEqualOrThrow(
+  resolveCurrencyPrefix('р.', false, undefined, false, 'BYN').trim(),
+  'BYN',
+  'Belarusian ruble symbol falls back to BYN via currency code',
+);
+for (const cyrillicText of ['Сахар.', 'Товар.', 'стр.', 'пр.', '100 р.', 'соусом.', 'рисом.']) {
+  assertEqualOrThrow(
+    normalizeCurrencyToAscii(cyrillicText),
+    cyrillicText,
+    `Cyrillic text not corrupted by currency normalization: ${cyrillicText}`,
+  );
+  assertEqualOrThrow(
+    stripCurrencyTokens(cyrillicText),
+    cyrillicText,
+    `Cyrillic text not stripped by currency token matcher: ${cyrillicText}`,
+  );
+}
+assertEqualOrThrow(
+  stripCurrencyTokens('100 сом.'),
+  '100 ',
+  'standalone Tajikistani somoni token is recognized as currency',
+);
+for (const code of ['SYP', 'SSP', 'GIP', 'FKP', 'SHP'] as const) {
+  assertEqualOrThrow(
+    resolveAsciiCurrencyFallback('£', code),
+    code,
+    `shared pound fallback preserves ${code}`,
+  );
+  assertEqualOrThrow(
+    resolveCurrencyPrefix('£', false, GENERIC_THERMAL_CAPABILITIES, false, code).trim(),
+    code,
+    `generic thermal prefix preserves ${code} instead of GBP`,
+  );
+}
+assertEqualOrThrow(
+  resolveCurrencyPrefix('£', false, GENERIC_THERMAL_CAPABILITIES, false, 'GBP').trim(),
+  'GBP',
+  'GBP still resolves to GBP on generic thermal printer',
+);
+assertEqualOrThrow(
+  resolveAsciiCurrencyFallback('₩', 'KPW'),
+  'KPW',
+  'shared won fallback preserves KPW',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('₩', false, LATIN_THERMAL_CAPABILITIES, false, 'KPW').trim(),
+  'KPW',
+  'Latin thermal prefix preserves KPW instead of KRW',
+);
+assertEqualOrThrow(
+  resolveCurrencyPrefix('₩', false, GENERIC_THERMAL_CAPABILITIES, false, 'KRW').trim(),
+  'KRW',
+  'KRW still resolves to KRW on generic thermal printer',
 );
 
 // Non-sterling pound currencies and SYP Arabic symbol thermal fallback

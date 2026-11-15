@@ -1,4 +1,4 @@
-import { CURRENCY_TOKEN_PATTERN } from './currency';
+import { stripCurrencyTokens } from './currency';
 import type { PrinterTextSize } from './text-size';
 
 /**
@@ -126,7 +126,6 @@ const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\
 const ARABIC_SCRIPT_GLOBAL_RE =
   /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-const THERMAL_CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g');
 const LATIN_LETTER_RE = /\p{Script=Latin}/u;
 const LETTER_RE = /\p{Letter}/u;
 
@@ -183,7 +182,7 @@ export function hasArabicScript(text: string): boolean {
 
 export function isArabicShapingSafeLine(text: string): boolean {
   if (!hasArabicScript(text)) return false;
-  const textWithoutCurrency = text.replace(THERMAL_CURRENCY_TOKEN_RE, '');
+  const textWithoutCurrency = stripCurrencyTokens(text);
   return !/[^\x00-\x7F]/.test(
     textWithoutCurrency.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(SHAPING_ALLOWED_GLOBAL_RE, ''),
   );

@@ -10,6 +10,8 @@ export {
   CURRENCY_ASCII_MAP,
   isAmbiguousCurrencySymbol,
   normalizeCurrencyToAscii,
+  resolveAsciiCurrencyFallback,
+  stripCurrencyTokens,
 } from '@print/currency';
 
 export function normalizeThermalText(

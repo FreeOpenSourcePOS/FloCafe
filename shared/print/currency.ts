@@ -78,6 +78,9 @@ export const CURRENCY_ASCII_MAP: Readonly<Record<string, string>> = Object.freez
   'лв.': 'BGN',
   'ден.': 'MKD',
   'руб.': 'RUB',
+  'сом.': 'TJS',
+  'грн.': 'UAH',
+  Íkr: 'ISK',
   'රු.': 'LKR',
   ТМТ: 'TMT',
 });
@@ -86,25 +89,55 @@ const CURRENCY_ASCII_ENTRIES = Object.entries(CURRENCY_ASCII_MAP).sort(
   ([left], [right]) => right.length - left.length,
 );
 
-/** Replace known non-ASCII currency tokens without changing numeric values. */
-export function normalizeCurrencyToAscii(text: string): string {
-  return CURRENCY_ASCII_ENTRIES.reduce(
-    (value, [symbol, fallback]) => value.split(symbol).join(fallback),
-    text,
-  );
+const STARTS_WITH_LETTER_RE = /^\p{L}/u;
+const ENDS_WITH_LETTER_RE = /\p{L}$/u;
+
+function currencyTokenPatternFor(symbol: string): string {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const prefix = STARTS_WITH_LETTER_RE.test(symbol) ? '(?<!\\p{L})' : '';
+  const suffix = ENDS_WITH_LETTER_RE.test(symbol) ? '(?!\\p{L})' : '';
+  return `${prefix}${escaped}${suffix}`;
 }
 
 /** Regex source for matching known currency tokens in thermal safety checks. */
 export const CURRENCY_TOKEN_PATTERN = CURRENCY_ASCII_ENTRIES.map(([symbol]) =>
-  symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  currencyTokenPatternFor(symbol),
 ).join('|');
 
-/** True when a narrow glyph (¥, £) must fall back to the ISO code rather than JPY/GBP. */
+const CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'gu');
+
+/** Replace known non-ASCII currency tokens without changing numeric values. */
+export function normalizeCurrencyToAscii(text: string): string {
+  return text.replace(CURRENCY_TOKEN_RE, (token) => CURRENCY_ASCII_MAP[token] ?? token);
+}
+
+/** Strip known currency tokens before checking whether remaining text is printer-representable. */
+export function stripCurrencyTokens(text: string): string {
+  return text.replace(CURRENCY_TOKEN_RE, '');
+}
+
+const AMBIGUOUS_CURRENCY_ASCII_OWNER: Readonly<Record<string, string>> = Object.freeze({
+  '¥': 'JPY',
+  '\uFFE5': 'JPY',
+  '£': 'GBP',
+  '₩': 'KRW',
+});
+
+/** True when a shared glyph (¥, £, ₩) must fall back to the ISO code rather than its default owner. */
 export function isAmbiguousCurrencySymbol(symbol: string, currencyCode?: string): boolean {
-  if (!currencyCode) return false;
-  if ((symbol === '¥' || symbol === '\uFFE5') && currencyCode !== 'JPY') return true;
-  if (symbol === '£' && currencyCode !== 'GBP') return true;
-  return false;
+  const owner = AMBIGUOUS_CURRENCY_ASCII_OWNER[symbol];
+  return Boolean(owner && currencyCode && currencyCode !== owner);
+}
+
+/** Resolve a currency symbol's ASCII fallback, preferring `currencyCode` when a symbol is shared. */
+export function resolveAsciiCurrencyFallback(
+  symbol: string,
+  currencyCode?: string,
+): string | undefined {
+  if (isAmbiguousCurrencySymbol(symbol, currencyCode)) {
+    return currencyCode;
+  }
+  return CURRENCY_ASCII_MAP[symbol];
 }
 
 /** Canonical tenant currency storage contract. */

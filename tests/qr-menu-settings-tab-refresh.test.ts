@@ -1,0 +1,831 @@
+/**
+ * Regression tests for QrMenuSettingsTab automatic status refresh on Google Drive
+ * reconnect, disconnect, account switch, and window focus / visibility return.
+ *
+ * Run: npm run test:qr-menu-settings-tab-refresh
+ */
+
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const ROOT = path.join(__dirname, '..');
+const Module = require('node:module') as {
+  createRequire: (filename: string) => NodeRequire;
+  _resolveFilename: (...args: any[]) => string;
+  _load: (request: string, parent: any, isMain: boolean) => any;
+};
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+const originalResolveFilename = Module._resolveFilename;
+const originalLoad = Module._load;
+
+const reactPath = frontendRequire.resolve('react');
+const reactJsxRuntimePath = frontendRequire.resolve('react/jsx-runtime');
+const reactDomPath = frontendRequire.resolve('react-dom');
+const reactDomServerPath = frontendRequire.resolve('react-dom/server');
+const useIntlPath = frontendRequire.resolve('use-intl');
+const RealReact = frontendRequire('react');
+const RealJsxRuntime = frontendRequire('react/jsx-runtime');
+const { renderToStaticMarkup } = frontendRequire('react-dom/server');
+
+type MenuPrefs = {
+  template: 'mobile-cafe' | 'classic-bistro' | 'standard';
+  pageSize: 'A4' | 'Letter';
+  includeDescriptions: boolean;
+  includeModifiers: boolean;
+  includePhotos: boolean;
+  includeOutOfStock: boolean;
+  includeInactive: boolean;
+  includeHidden: boolean;
+};
+
+type QrMenuStatusPayload = {
+  configured: boolean;
+  connected: boolean;
+  published: boolean;
+  file_name: string | null;
+  web_view_link: string | null;
+  sharing_enabled: boolean;
+  source: 'generated' | 'uploaded' | null;
+  updated_at: string | null;
+  qr_data_url: string | null;
+  qr_download_data_url: string | null;
+  generator_prefs: MenuPrefs;
+};
+
+function makePrefs(overrides: Partial<MenuPrefs> = {}): MenuPrefs {
+  return {
+    template: 'mobile-cafe',
+    pageSize: 'A4',
+    includeDescriptions: true,
+    includeModifiers: true,
+    includePhotos: false,
+    includeOutOfStock: false,
+    includeInactive: false,
+    includeHidden: false,
+    ...overrides,
+  };
+}
+
+function makeStatus(overrides: Partial<QrMenuStatusPayload> = {}): QrMenuStatusPayload {
+  return {
+    configured: true,
+    connected: false,
+    published: false,
+    file_name: null,
+    web_view_link: null,
+    sharing_enabled: false,
+    source: null,
+    updated_at: null,
+    qr_data_url: null,
+    qr_download_data_url: null,
+    generator_prefs: makePrefs(),
+    ...overrides,
+  };
+}
+
+function depsChanged(prev: unknown[] | undefined, next: unknown[] | undefined): boolean {
+  if (!prev || !next) return true;
+  if (prev.length !== next.length) return true;
+  return next.some((dep, i) => !Object.is(dep, prev[i]));
+}
+
+function createStatefulHarness() {
+  const states: any[] = [];
+  const refs: Array<{ current: any }> = [];
+  const callbacks: Array<{ fn: any; deps: unknown[] | undefined }> = [];
+  const memos: Array<{ value: any; deps: unknown[] | undefined }> = [];
+  const effects: Array<{ fn: () => void | (() => void); deps: unknown[] | undefined }> = [];
+  const prevDeps: Array<unknown[] | undefined> = [];
+  const cleanups: Array<(() => void) | void> = [];
+  let stateCursor = 0;
+  let refCursor = 0;
+  let callbackCursor = 0;
+  let memoCursor = 0;
+  let effectCursor = 0;
+
+  const hooksReact = {
+    ...RealReact,
+    createElement: RealReact.createElement,
+    Fragment: RealReact.Fragment,
+    useState: <T>(initial: T | (() => T)) => {
+      const idx = stateCursor++;
+      if (!(idx in states)) {
+        states[idx] = typeof initial === 'function' ? (initial as () => T)() : initial;
+      }
+      const setter = (next: T | ((prev: T) => T)) => {
+        states[idx] = typeof next === 'function' ? (next as (prev: T) => T)(states[idx]) : next;
+      };
+      return [states[idx], setter] as const;
+    },
+    useRef: <T>(initial: T) => {
+      const idx = refCursor++;
+      if (!(idx in refs)) refs[idx] = { current: initial };
+      return refs[idx];
+    },
+    useCallback: <T>(fn: T, deps?: unknown[]) => {
+      const idx = callbackCursor++;
+      const existing = callbacks[idx];
+      if (!existing || depsChanged(existing.deps, deps)) {
+        callbacks[idx] = { fn, deps };
+      }
+      return callbacks[idx].fn as T;
+    },
+    useMemo: <T>(factory: () => T, deps?: unknown[]) => {
+      const idx = memoCursor++;
+      const existing = memos[idx];
+      if (!existing || depsChanged(existing.deps, deps)) {
+        memos[idx] = { value: factory(), deps };
+      }
+      return memos[idx].value as T;
+    },
+    useEffect: (fn: () => void | (() => void), deps?: unknown[]) => {
+      const idx = effectCursor++;
+      effects[idx] = { fn, deps };
+    },
+  };
+
+  function flushEffects() {
+    for (let i = 0; i < effects.length; i++) {
+      const entry = effects[i];
+      if (!entry) continue;
+      if (depsChanged(prevDeps[i], entry.deps)) {
+        if (typeof cleanups[i] === 'function') cleanups[i]!();
+        cleanups[i] = entry.fn();
+        prevDeps[i] = entry.deps;
+      }
+    }
+  }
+
+  function resetCursors() {
+    stateCursor = 0;
+    refCursor = 0;
+    callbackCursor = 0;
+    memoCursor = 0;
+    effectCursor = 0;
+    effects.length = 0;
+  }
+
+  return {
+    hooksReact,
+    jsxRuntime: RealJsxRuntime,
+    render<P>(Component: (props: P) => any, props: P) {
+      resetCursors();
+      const tree = Component(props);
+      flushEffects();
+      return tree;
+    },
+    cleanupAll() {
+      for (let i = 0; i < cleanups.length; i++) {
+        if (typeof cleanups[i] === 'function') cleanups[i]!();
+        cleanups[i] = undefined;
+      }
+    },
+  };
+}
+
+function collectElements(node: unknown, predicate: (el: any) => boolean, out: any[] = []): any[] {
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, predicate, out);
+    return out;
+  }
+  if (!node || typeof node !== 'object') return out;
+  const el = node as { type?: unknown; props?: Record<string, any> };
+  if (predicate(el)) out.push(el);
+  if (typeof el.type === 'function') {
+    try {
+      const rendered = (el.type as (p: any) => unknown)(el.props || {});
+      collectElements(rendered, predicate, out);
+    } catch {
+      // Ignore child components requiring full DOM context
+    }
+  }
+  if (el.props && el.props.children !== undefined) {
+    collectElements(el.props.children, predicate, out);
+  }
+  return out;
+}
+
+async function flushMicrotasks() {
+  for (let i = 0; i < 6; i++) {
+    await Promise.resolve();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function createDomEventEnv() {
+  const windowListeners = new Map<string, Set<() => void>>();
+  const documentListeners = new Map<string, Set<() => void>>();
+
+  const fakeWindow = {
+    addEventListener(type: string, handler: () => void) {
+      let set = windowListeners.get(type);
+      if (!set) {
+        set = new Set();
+        windowListeners.set(type, set);
+      }
+      set.add(handler);
+    },
+    removeEventListener(type: string, handler: () => void) {
+      windowListeners.get(type)?.delete(handler);
+    },
+    dispatch(type: string) {
+      for (const handler of [...(windowListeners.get(type) || [])]) handler();
+    },
+    open() {},
+  };
+
+  const fakeDocument = {
+    visibilityState: 'visible' as 'visible' | 'hidden',
+    addEventListener(type: string, handler: () => void) {
+      let set = documentListeners.get(type);
+      if (!set) {
+        set = new Set();
+        documentListeners.set(type, set);
+      }
+      set.add(handler);
+    },
+    removeEventListener(type: string, handler: () => void) {
+      documentListeners.get(type)?.delete(handler);
+    },
+    dispatch(type: string) {
+      for (const handler of [...(documentListeners.get(type) || [])]) handler();
+    },
+  };
+
+  return { fakeWindow, fakeDocument, windowListeners, documentListeners };
+}
+
+function loadQrMenuTabWithMocks(
+  harness: ReturnType<typeof createStatefulHarness>,
+  apiGet: (url: string) => Promise<{ data: any }>,
+) {
+  const Icon = () => null;
+  const toastErrors: string[] = [];
+  const toastFn = Object.assign(() => {}, {
+    success: () => {},
+    error: (msg: string) => {
+      toastErrors.push(msg);
+    },
+  });
+  const authState = {
+    currentTenant: { id: 1, business_name: 'Test Cafe', country: 'US', currency: 'USD' },
+  };
+
+  const tabPath = path.resolve(ROOT, 'frontend/src/components/settings/QrMenuSettingsTab.tsx');
+  delete require.cache[tabPath];
+
+  Module._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
+    const resolved =
+      request === 'react'
+        ? reactPath
+        : request === 'react/jsx-runtime'
+          ? reactJsxRuntimePath
+          : request === 'react-dom'
+            ? reactDomPath
+            : request === 'react-dom/server'
+              ? reactDomServerPath
+              : request === 'use-intl'
+                ? useIntlPath
+                : request.startsWith('@/')
+                  ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+                  : request;
+    return originalResolveFilename.call(this, resolved, parent, isMain, options);
+  };
+
+  const stableT = (key: string) => key;
+  Module._load = function (request: string, parent: any, isMain: boolean) {
+    if (request === 'react') return harness.hooksReact;
+    if (request === 'react/jsx-runtime') return harness.jsxRuntime;
+    if (request === 'use-intl') {
+      return { useTranslations: () => stableT };
+    }
+    if (request === 'lucide-react') {
+      return new Proxy({}, { get: () => Icon });
+    }
+    if (request === 'react-hot-toast') {
+      return { __esModule: true, default: toastFn, toast: toastFn };
+    }
+    if (request === '@/store/auth') {
+      return {
+        useAuthStore: (sel?: (s: any) => any) =>
+          typeof sel === 'function' ? sel(authState) : authState,
+      };
+    }
+    if (request === '@/hooks/useFormatCurrency') {
+      return { useFormatCurrency: () => (val: number) => `$${Number(val || 0).toFixed(2)}` };
+    }
+    if (request === '@/hooks/useFormatDate') {
+      return { useFormatDate: () => ({ formatDateTime: (val: string) => val }) };
+    }
+    if (request === '@/components/ui/button') {
+      return {
+        Button: ({ children, ...rest }: any) =>
+          harness.hooksReact.createElement('button', rest, children),
+      };
+    }
+    if (request === '@/lib/product-variants') {
+      return { activeVariants: () => [], isVariantSoldOut: () => false };
+    }
+    if (request === '@/lib/printer/menu-web-print') {
+      return {
+        buildHierarchicalMenuWebSections: () => [],
+        buildMenuWebPrintHtml: () => '',
+        buildQrTableCardHtml: () => '',
+        isMenuCategoryVisible: () => true,
+        printMenuInBrowser: () => {},
+      };
+    }
+    if (request === '@/lib/api') {
+      return {
+        __esModule: true,
+        default: {
+          get: apiGet,
+          post: async () => ({ data: {} }),
+          put: async () => ({ data: {} }),
+        },
+      };
+    }
+    return originalLoad.apply(this, [request, parent, isMain]);
+  };
+
+  const mod = require(tabPath);
+  return { QrMenuSettingsTab: mod.QrMenuSettingsTab, toastErrors };
+}
+
+async function withMockEnv(fn: () => Promise<void>) {
+  const prevWindow = (globalThis as any).window;
+  const prevDocument = (globalThis as any).document;
+  try {
+    await fn();
+  } finally {
+    Module._load = originalLoad;
+    Module._resolveFilename = originalResolveFilename;
+    if (prevWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = prevWindow;
+    if (prevDocument === undefined) delete (globalThis as any).document;
+    else (globalThis as any).document = prevDocument;
+  }
+}
+
+async function testReconnectViaPropsAndConnectCallback() {
+  console.log('\n--- 1. Reconnect via driveConnected transition and onConnectDrive ---');
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    let qrMenuCalls = 0;
+    let backendStatus = makeStatus({ connected: false, published: false });
+    const harness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, async (url) => {
+      if (url === '/settings/google-drive/qr-menu') {
+        qrMenuCalls++;
+        return { data: backendStatus };
+      }
+      return { data: {} };
+    });
+
+    const props = {
+      canConnectDrive: true,
+      connectingDrive: false,
+      driveConnected: false,
+      driveAccountEmail: null as string | null,
+      onConnectDrive: () => {},
+    };
+
+    harness.render(QrMenuSettingsTab, props);
+    await flushMicrotasks();
+    const disconnectedTree = harness.render(QrMenuSettingsTab, props);
+    const disconnectedMarkup = renderToStaticMarkup(disconnectedTree);
+    assert.ok(disconnectedMarkup.includes('connectHint'), 'Initial mount shows connectHint');
+    assert.ok(
+      disconnectedMarkup.includes('connectDrive'),
+      'Initial mount renders connectDrive CTA',
+    );
+    assert.equal(qrMenuCalls, 1, 'Initial mount fetches qr-menu status once');
+
+    // Simulate OAuth completing in settings/page.tsx without unmounting QrMenuSettingsTab
+    backendStatus = makeStatus({
+      connected: true,
+      published: true,
+      file_name: 'Test Cafe - Menu (abc123).pdf',
+      web_view_link: 'https://drive.google.com/file/d/menu-1/view',
+      sharing_enabled: true,
+      source: 'generated',
+      updated_at: '2026-11-14T10:00:00Z',
+    });
+
+    harness.render(QrMenuSettingsTab, {
+      ...props,
+      connectingDrive: true,
+    });
+    harness.render(QrMenuSettingsTab, {
+      ...props,
+      connectingDrive: false,
+      driveConnected: true,
+      driveAccountEmail: 'owner@cafe.com',
+    });
+    await flushMicrotasks();
+    const connectedTree = harness.render(QrMenuSettingsTab, {
+      ...props,
+      connectingDrive: false,
+      driveConnected: true,
+      driveAccountEmail: 'owner@cafe.com',
+    });
+    const connectedMarkup = renderToStaticMarkup(connectedTree);
+    assert.ok(
+      connectedMarkup.includes('liveMenu') &&
+        connectedMarkup.includes('Test Cafe - Menu (abc123).pdf'),
+      'Connected QR Menu UI renders immediately when driveConnected flips false -> true without unmounting',
+    );
+    assert.ok(qrMenuCalls >= 2, 'driveConnected false -> true triggers fresh qr-menu fetch');
+
+    harness.cleanupAll();
+  });
+
+  // Also test standalone caller where driveConnected prop is omitted and onConnectDrive resolves async
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    let backendStatus = makeStatus({ connected: false });
+    const harness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, async (url) => {
+      if (url === '/settings/google-drive/qr-menu') return { data: backendStatus };
+      return { data: {} };
+    });
+
+    const props = {
+      canConnectDrive: true,
+      connectingDrive: false,
+      onConnectDrive: async () => {
+        backendStatus = makeStatus({
+          connected: true,
+          published: false,
+          generator_prefs: makePrefs({ template: 'classic-bistro' }),
+        });
+      },
+    };
+
+    harness.render(QrMenuSettingsTab, props);
+    await flushMicrotasks();
+    const tree = harness.render(QrMenuSettingsTab, props);
+    const connectBtn = collectElements(
+      tree,
+      (el) => el.type === 'button' && renderToStaticMarkup(el).includes('connectDrive'),
+    )[0];
+    assert.ok(connectBtn, 'connectDrive button rendered');
+
+    await connectBtn.props.onClick();
+    await flushMicrotasks();
+    const afterTree = harness.render(QrMenuSettingsTab, props);
+    const afterMarkup = renderToStaticMarkup(afterTree);
+    assert.ok(
+      afterMarkup.includes('publishMenu'),
+      'Awaiting onConnectDrive refreshes standalone QrMenuSettingsTab to connected state',
+    );
+
+    harness.cleanupAll();
+  });
+  console.log('  ✓ Reconnect via driveConnected prop and async onConnectDrive verified');
+}
+
+async function testFocusAndVisibilityRefresh() {
+  console.log('\n--- 2. Window focus and document visibilitychange refresh ---');
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    let qrMenuCalls = 0;
+    let backendStatus = makeStatus({ connected: false });
+    const harness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, async (url) => {
+      if (url === '/settings/google-drive/qr-menu') {
+        qrMenuCalls++;
+        return { data: backendStatus };
+      }
+      return { data: {} };
+    });
+
+    const baseProps = {
+      canConnectDrive: true,
+      connectingDrive: false,
+      driveConnected: false,
+      driveAccountEmail: null,
+      onConnectDrive: () => {},
+    };
+
+    harness.render(QrMenuSettingsTab, baseProps);
+    await flushMicrotasks();
+    harness.render(QrMenuSettingsTab, baseProps);
+    assert.equal(qrMenuCalls, 1);
+
+    // While connectingDrive is true, focus should not trigger redundant refresh
+    backendStatus = makeStatus({ connected: true });
+    harness.render(QrMenuSettingsTab, { ...baseProps, connectingDrive: true });
+    dom.fakeWindow.dispatch('focus');
+    await flushMicrotasks();
+    assert.equal(
+      qrMenuCalls,
+      1,
+      'Focus while connectingDrive is true does not refresh prematurely',
+    );
+
+    // Once !connectingDrive, returning focus refreshes automatically
+    harness.render(QrMenuSettingsTab, baseProps);
+    dom.fakeWindow.dispatch('focus');
+    await flushMicrotasks();
+    assert.equal(qrMenuCalls, 2, 'Window focus while !connectingDrive refreshes qr-menu status');
+    const focusedTree = harness.render(QrMenuSettingsTab, baseProps);
+    assert.ok(
+      renderToStaticMarkup(focusedTree).includes('publishMenu'),
+      'Window focus transitions UI to connected state',
+    );
+
+    // Reset back to disconnected, verify visibilitychange only refreshes when visible
+    backendStatus = makeStatus({ connected: false });
+    harness.render(QrMenuSettingsTab, { ...baseProps, driveConnected: true });
+    harness.render(QrMenuSettingsTab, { ...baseProps, driveConnected: false });
+    await flushMicrotasks();
+    harness.render(QrMenuSettingsTab, { ...baseProps, driveConnected: false });
+    const callsBeforeHidden = qrMenuCalls;
+
+    backendStatus = makeStatus({ connected: true });
+    dom.fakeDocument.visibilityState = 'hidden';
+    dom.fakeDocument.dispatch('visibilitychange');
+    await flushMicrotasks();
+    assert.equal(qrMenuCalls, callsBeforeHidden, 'visibilitychange when hidden does not refresh');
+
+    dom.fakeDocument.visibilityState = 'visible';
+    dom.fakeDocument.dispatch('visibilitychange');
+    await flushMicrotasks();
+    assert.equal(
+      qrMenuCalls,
+      callsBeforeHidden + 1,
+      'visibilitychange when visible refreshes qr-menu status',
+    );
+    const visibleTree = harness.render(QrMenuSettingsTab, baseProps);
+    assert.ok(
+      renderToStaticMarkup(visibleTree).includes('publishMenu'),
+      'Visibility return transitions UI to connected state',
+    );
+
+    harness.cleanupAll();
+    assert.equal(dom.windowListeners.get('focus')?.size ?? 0, 0, 'focus listener cleaned up');
+    assert.equal(
+      dom.documentListeners.get('visibilitychange')?.size ?? 0,
+      0,
+      'visibilitychange listener cleaned up',
+    );
+  });
+  console.log('  ✓ Window focus and visibilitychange refresh verified');
+}
+
+async function testDisconnectAndPrefsPreservationAndRaceSafety() {
+  console.log(
+    '\n--- 3. Disconnect, prefs preservation on focus, account switch, and race safety ---',
+  );
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    let backendStatus = makeStatus({
+      connected: true,
+      published: true,
+      file_name: 'Menu-v1.pdf',
+      generator_prefs: makePrefs({ template: 'mobile-cafe', includePhotos: false }),
+    });
+    const harness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, async (url) => {
+      if (url === '/settings/google-drive/qr-menu') return { data: backendStatus };
+      return { data: {} };
+    });
+
+    const connectedProps = {
+      canConnectDrive: true,
+      connectingDrive: false,
+      driveConnected: true,
+      driveAccountEmail: 'a@cafe.com',
+      onConnectDrive: () => {},
+    };
+
+    harness.render(QrMenuSettingsTab, connectedProps);
+    await flushMicrotasks();
+    const tree1 = harness.render(QrMenuSettingsTab, connectedProps);
+
+    // User toggles local unsaved prefs in memory
+    const checkboxes = collectElements(
+      tree1,
+      (el) => el.type === 'input' && el.props?.type === 'checkbox',
+    );
+    const includePhotosCheckbox = checkboxes[2];
+    assert.equal(includePhotosCheckbox.props.checked, false, 'includePhotos starts false');
+    includePhotosCheckbox.props.onChange({ target: { checked: true } });
+
+    const selects = collectElements(tree1, (el) => el.type === 'select');
+    assert.equal(selects[0].props.value, 'mobile-cafe', 'template starts mobile-cafe');
+    selects[0].props.onChange({ target: { value: 'classic-bistro' } });
+
+    const editedTree = harness.render(QrMenuSettingsTab, connectedProps);
+    const editedCheckboxes = collectElements(
+      editedTree,
+      (el) => el.type === 'input' && el.props?.type === 'checkbox',
+    );
+    assert.equal(editedCheckboxes[2].props.checked, true, 'local includePhotos edit persisted');
+
+    // Background focus refresh while still connected on same account must NOT clobber unsaved prefs
+    backendStatus = makeStatus({
+      connected: true,
+      published: true,
+      file_name: 'Menu-v2.pdf',
+      generator_prefs: makePrefs({ template: 'standard', includePhotos: false }),
+    });
+    dom.fakeWindow.dispatch('focus');
+    await flushMicrotasks();
+    const afterFocusTree = harness.render(QrMenuSettingsTab, connectedProps);
+    assert.ok(
+      renderToStaticMarkup(afterFocusTree).includes('Menu-v2.pdf'),
+      'Background focus updates status fields',
+    );
+    const afterFocusCheckboxes = collectElements(
+      afterFocusTree,
+      (el) => el.type === 'input' && el.props?.type === 'checkbox',
+    );
+    const afterFocusSelects = collectElements(afterFocusTree, (el) => el.type === 'select');
+    assert.equal(
+      afterFocusCheckboxes[2].props.checked,
+      true,
+      'Background focus while connected on same account preserves unsaved checkbox edit',
+    );
+    assert.equal(
+      afterFocusSelects[0].props.value,
+      'classic-bistro',
+      'Background focus while connected on same account preserves unsaved template edit',
+    );
+
+    // Switching account while connected DOES reload generator_prefs from server
+    backendStatus = makeStatus({
+      connected: true,
+      published: false,
+      generator_prefs: makePrefs({ template: 'standard', includePhotos: false }),
+    });
+    harness.render(QrMenuSettingsTab, {
+      ...connectedProps,
+      driveAccountEmail: 'b@cafe.com',
+    });
+    await flushMicrotasks();
+    const switchedTree = harness.render(QrMenuSettingsTab, {
+      ...connectedProps,
+      driveAccountEmail: 'b@cafe.com',
+    });
+    const switchedSelects = collectElements(switchedTree, (el) => el.type === 'select');
+    const switchedCheckboxes = collectElements(
+      switchedTree,
+      (el) => el.type === 'input' && el.props?.type === 'checkbox',
+    );
+    assert.equal(
+      switchedSelects[0].props.value,
+      'standard',
+      'Account switch reloads generator_prefs template',
+    );
+    assert.equal(
+      switchedCheckboxes[2].props.checked,
+      false,
+      'Account switch reloads generator_prefs toggles',
+    );
+
+    // Disconnecting Google Drive while mounted refreshes cleanly to disconnected UI
+    backendStatus = makeStatus({ connected: false });
+    harness.render(QrMenuSettingsTab, {
+      ...connectedProps,
+      driveConnected: false,
+      driveAccountEmail: null,
+    });
+    await flushMicrotasks();
+    const disconnectedTree = harness.render(QrMenuSettingsTab, {
+      ...connectedProps,
+      driveConnected: false,
+      driveAccountEmail: null,
+    });
+    assert.ok(
+      renderToStaticMarkup(disconnectedTree).includes('connectDrive'),
+      'driveConnected true -> false refreshes cleanly to disconnected state',
+    );
+
+    harness.cleanupAll();
+  });
+
+  // Race-safety: out-of-order stale response must not overwrite newer response
+  await withMockEnv(async () => {
+    const dom = createDomEventEnv();
+    (globalThis as any).window = dom.fakeWindow;
+    (globalThis as any).document = dom.fakeDocument;
+
+    const pendingQrResponses: Array<{
+      resolve: (value: { data: QrMenuStatusPayload }) => void;
+    }> = [];
+    const harness = createStatefulHarness();
+    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, (url) => {
+      if (url === '/settings/google-drive/qr-menu') {
+        return new Promise((resolve) => {
+          pendingQrResponses.push({ resolve });
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const props = {
+      canConnectDrive: true,
+      connectingDrive: false,
+      driveConnected: false,
+      driveAccountEmail: null as string | null,
+      onConnectDrive: () => {},
+    };
+
+    // Request 1 on mount
+    harness.render(QrMenuSettingsTab, props);
+    assert.equal(pendingQrResponses.length, 1);
+    pendingQrResponses[0].resolve({ data: makeStatus({ connected: false }) });
+    await flushMicrotasks();
+    harness.render(QrMenuSettingsTab, props);
+
+    // Request 2 via focus (slow, stale)
+    dom.fakeWindow.dispatch('focus');
+    assert.equal(pendingQrResponses.length, 2);
+
+    // Request 3 via driveConnected false -> true (fast, newer)
+    harness.render(QrMenuSettingsTab, {
+      ...props,
+      driveConnected: true,
+      driveAccountEmail: 'owner@cafe.com',
+    });
+    assert.equal(pendingQrResponses.length, 3);
+
+    // Resolve newer Request 3 first as connected
+    pendingQrResponses[2].resolve({
+      data: makeStatus({ connected: true, published: true, file_name: 'Fresh.pdf' }),
+    });
+    await flushMicrotasks();
+
+    // Now resolve stale Request 2 as disconnected
+    pendingQrResponses[1].resolve({ data: makeStatus({ connected: false }) });
+    await flushMicrotasks();
+
+    const finalTree = harness.render(QrMenuSettingsTab, {
+      ...props,
+      driveConnected: true,
+      driveAccountEmail: 'owner@cafe.com',
+    });
+    const finalMarkup = renderToStaticMarkup(finalTree);
+    assert.ok(
+      finalMarkup.includes('Fresh.pdf'),
+      'Stale out-of-order response must not overwrite newer connected response',
+    );
+
+    harness.cleanupAll();
+  });
+
+  console.log('  ✓ Disconnect, prefs preservation, account switch, and race safety verified');
+}
+
+async function testSettingsPagePropsWiring() {
+  console.log('\n--- 4. settings/page.tsx passes Google Drive connection props ---');
+  const settingsPageSource = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx'),
+    'utf8',
+  );
+  const match = settingsPageSource.match(/<QrMenuSettingsTab[\s\S]*?\/>/);
+  assert.ok(match, 'settings/page.tsx renders <QrMenuSettingsTab ... />');
+  const jsxBlock = match[0];
+  assert.ok(
+    jsxBlock.includes('driveConnected={Boolean(googleDriveStatus?.connected)}'),
+    'settings/page.tsx passes driveConnected={Boolean(googleDriveStatus?.connected)}',
+  );
+  assert.ok(
+    jsxBlock.includes('driveAccountEmail={googleDriveStatus?.account_email ?? null}'),
+    'settings/page.tsx passes driveAccountEmail={googleDriveStatus?.account_email ?? null}',
+  );
+  console.log('  ✓ settings/page.tsx QrMenuSettingsTab props wiring verified');
+}
+
+async function main() {
+  console.log('🧪 QR Menu Settings Tab Refresh Tests');
+  await testReconnectViaPropsAndConnectCallback();
+  await testFocusAndVisibilityRefresh();
+  await testDisconnectAndPrefsPreservationAndRaceSafety();
+  await testSettingsPagePropsWiring();
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -4472,7 +4472,7 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         (el) =>
           el.type === 'button' &&
           el.props?.['data-testid'] === 'col1-tab-discount' &&
-          el.props?.['aria-selected'] === true,
+          el.props?.['aria-expanded'] === true,
       )[0];
       assert.ok(discountTabStillOpen, 'Discount panel remains open in Col 1 after focusing tender input');
 
@@ -4510,26 +4510,7 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
     const ppHarness = createStatefulHarness();
     let confirmCalls = 0;
     try {
-      installCheckoutComponentMocks(ppHarness, {
-        cartState: {
-          items: [
-            {
-              key: 'item-1',
-              product: { id: 1, name: 'Latte', price: 15 },
-              quantity: 1,
-              variant: null,
-              addons: [],
-              notes: '',
-            },
-          ],
-          orderType: 'takeaway',
-          tableId: null,
-          customer: null,
-          deliveryAddress: '',
-          notes: '',
-          getSubtotal: () => 15,
-        },
-      });
+      installCheckoutComponentMocks(ppHarness);
       const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
       delete require.cache[ppPath];
       const PrepaidCheckoutModal = require(ppPath).default;
@@ -4540,7 +4521,7 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
           onConfirm: async () => {
             confirmCalls++;
             return {
-              bill: { id: 602, bill_number: 'B-602', total: 15, payment_status: 'paid' },
+              bill: { id: 602, bill_number: 'B-602', total: 20, payment_status: 'paid' },
               customer: null,
               pointsEarned: 0,
             };
@@ -4549,6 +4530,14 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
 
       let tree = renderPp();
       await new Promise((r) => setTimeout(r, 10));
+      tree = renderPp();
+
+      const ppCashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      assert.ok(ppCashBtn, 'Prepaid Cash tender button renders');
+      ppCashBtn.props.onClick();
       tree = renderPp();
 
       const discountToggle = collectElements(

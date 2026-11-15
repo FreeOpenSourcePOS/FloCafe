@@ -25,7 +25,12 @@ import {
 } from './db';
 import { getJWTSecret } from './security/jwt-secret';
 import { asyncHandler } from './middleware/async-handler';
-import { authenticatePinLogin, handlePasswordChange, handlePinChange } from './routes/auth';
+import {
+  authenticatePinLogin,
+  handlePasswordChange,
+  handlePinChange,
+  tokenExpSeconds,
+} from './routes/auth';
 import {
   authRateLimit,
   loginAuthRateLimit,
@@ -322,6 +327,7 @@ export function startServerApp(): Promise<void> {
         resetSuccessfulLogin(ip);
 
         const remember = !!remember_me;
+        const iat = nextTokenIatSeconds();
         const token = jwt.sign(
           {
             userId: user.id,
@@ -329,8 +335,8 @@ export function startServerApp(): Promise<void> {
             role: user.role,
             remember,
             jti: randomUUID(),
-            iat: nextTokenIatSeconds(),
-            exp: Math.floor(Date.now() / 1000) + (remember ? 10 * 24 * 60 * 60 : 86400),
+            iat,
+            exp: tokenExpSeconds(remember, iat),
           },
           getJWTSecret(),
         );

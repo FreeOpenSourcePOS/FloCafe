@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ShoppingCart,
   UtensilsCrossed,
@@ -23,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import api from '@/lib/api';
 import type { CustomPaymentMethod } from '@/lib/payment-methods';
 import { useCartStore } from '@/store/cart';
@@ -62,12 +62,50 @@ interface Props {
   onCancelExistingOrderMode?: () => void;
 }
 
-const orderTypeIcons = {
+const ORDER_TYPES = ['dine_in', 'takeaway', 'delivery', 'online'] as const;
+type OrderType = (typeof ORDER_TYPES)[number];
+
+const orderTypeIcons: Record<OrderType, typeof UtensilsCrossed> = {
   dine_in: UtensilsCrossed,
   takeaway: Package,
   delivery: Truck,
   online: Globe,
 };
+
+const ORDER_TYPE_ICON_PX = 13;
+const TRACK_GAP_UNITS = 0.5;
+const FULL_MODE_PADDING_X_UNITS = 0.5;
+const FULL_MODE_GAP_UNITS = 0.5;
+const SUBPIXEL_FIT_GUARD_PX = 1;
+
+export function resolveFullModeOrderTypeChromePx(
+  fullModeButtonStyle: Pick<
+    CSSStyleDeclaration,
+    'paddingLeft' | 'paddingRight' | 'columnGap'
+  > | null,
+  trackStyle: Pick<CSSStyleDeclaration, 'columnGap'> | null,
+  rootFontSizePx: number,
+): number {
+  if (fullModeButtonStyle) {
+    const padLeft = Number.parseFloat(fullModeButtonStyle.paddingLeft);
+    const padRight = Number.parseFloat(fullModeButtonStyle.paddingRight);
+    const colGap = Number.parseFloat(fullModeButtonStyle.columnGap);
+    if (Number.isFinite(padLeft) && Number.isFinite(padRight) && Number.isFinite(colGap)) {
+      return padLeft + padRight + colGap + ORDER_TYPE_ICON_PX + SUBPIXEL_FIT_GUARD_PX;
+    }
+  }
+  const safeRootFontSize =
+    Number.isFinite(rootFontSizePx) && rootFontSizePx > 0 ? rootFontSizePx : 16;
+  const parsedTrackGap = trackStyle ? Number.parseFloat(trackStyle.columnGap) : Number.NaN;
+  const spacingUnitPx =
+    Number.isFinite(parsedTrackGap) && parsedTrackGap > 0
+      ? parsedTrackGap / TRACK_GAP_UNITS
+      : safeRootFontSize * 0.25;
+  const fullSpacingUnits = 2 * FULL_MODE_PADDING_X_UNITS + FULL_MODE_GAP_UNITS;
+  return fullSpacingUnits * spacingUnitPx + ORDER_TYPE_ICON_PX + SUBPIXEL_FIT_GUARD_PX;
+}
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 function ItemQuantityControl({
   item,
@@ -218,7 +256,111 @@ export default function CartPanel({
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
+  const tPrintKot = useTranslations('print.kot');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
+  const orderTypeTrackRef = useRef<HTMLDivElement | null>(null);
+  const orderTypeLabelRefs = useRef<Partial<Record<OrderType, HTMLSpanElement | null>>>({});
+  const [isOrderTypeCompact, setIsOrderTypeCompact] = useState(false);
+  const [truncatedOrderTypes, setTruncatedOrderTypes] = useState<
+    Partial<Record<OrderType, boolean>>
+  >({});
+  const orderTypeLabels: Record<OrderType, string> = {
+    dine_in: t('orderTypeDineIn'),
+    takeaway: t('orderTypeTakeaway'),
+    delivery: t('orderTypeDelivery'),
+    online: t('orderTypeOnline'),
+  };
+  const visibleOrderTypes = ORDER_TYPES.filter((type) => isRestaurant || type !== 'dine_in');
+  const orderTypeMeasureKey = `${isRestaurant ? '1' : '0'}:${visibleOrderTypes.map((type) => orderTypeLabels[type]).join('|')}`;
+
+  useIsomorphicLayoutEffect(() => {
+    const track = orderTypeTrackRef.current;
+    if (!track) return;
+
+    const measure = () => {
+      const currentTrack = orderTypeTrackRef.current;
+      if (!currentTrack || currentTrack.clientWidth <= 0) return;
+
+      const style = window.getComputedStyle(currentTrack);
+      const inlinePadding =
+        (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+      const rootFontSize =
+        typeof document !== 'undefined'
+          ? Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16
+          : 16;
+      const parsedGap = Number.parseFloat(style.columnGap);
+      const gap = Number.isFinite(parsedGap) ? parsedGap : 0.125 * rootFontSize;
+      const availableWidth = currentTrack.clientWidth - inlinePadding;
+      if (availableWidth <= 0) return;
+
+      const types = ORDER_TYPES.filter((type) => isRestaurant || type !== 'dine_in');
+      const sampleFullModeButton = !isOrderTypeCompact
+        ? (orderTypeLabelRefs.current[types[0]]?.parentElement ?? null)
+        : null;
+      const fullModeSegmentChromePx = resolveFullModeOrderTypeChromePx(
+        sampleFullModeButton ? window.getComputedStyle(sampleFullModeButton) : null,
+        style,
+        rootFontSize,
+      );
+
+      let requiredFullWidth = Math.max(0, types.length - 1) * gap;
+      for (const type of types) {
+        const span = orderTypeLabelRefs.current[type];
+        let labelWidth = span?.scrollWidth ?? 0;
+        if (span && typeof document.createRange === 'function') {
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          labelWidth = Math.max(labelWidth, range.getBoundingClientRect().width);
+        }
+        requiredFullWidth += fullModeSegmentChromePx + Math.ceil(labelWidth);
+      }
+
+      const nextCompact = requiredFullWidth > availableWidth;
+      setIsOrderTypeCompact((prev) => (prev === nextCompact ? prev : nextCompact));
+
+      const nextTruncated: Partial<Record<OrderType, boolean>> = {};
+      for (const type of types) {
+        const span = orderTypeLabelRefs.current[type];
+        if (
+          span &&
+          !span.classList.contains('sr-only') &&
+          span.scrollWidth > span.clientWidth + 1
+        ) {
+          nextTruncated[type] = true;
+        }
+      }
+      setTruncatedOrderTypes((prev) => {
+        const unchanged = ORDER_TYPES.every(
+          (type) => Boolean(prev[type]) === Boolean(nextTruncated[type]),
+        );
+        return unchanged ? prev : nextTruncated;
+      });
+    };
+
+    measure();
+
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => measure());
+      observer.observe(track);
+      for (const type of ORDER_TYPES) {
+        const span = orderTypeLabelRefs.current[type];
+        if (span) observer.observe(span);
+      }
+    }
+
+    let cancelled = false;
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      void document.fonts.ready.then(() => {
+        if (!cancelled) measure();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
+  }, [isRestaurant, orderTypeMeasureKey, cart.orderType, isOrderTypeCompact]);
   const fmt = useFormatCurrency();
   const effectiveTimezone = storeTimezone || currentTenant?.timezone || 'UTC';
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -384,38 +526,66 @@ export default function CartPanel({
             </div>
           )}
 
-        <div className="flex gap-0.5 h-7 p-0.5 rounded-lg bg-muted">
-          {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
-            .filter((type) => isRestaurant || type !== 'dine_in')
-            .map((type) => {
+        <TooltipProvider delayDuration={150}>
+          <div
+            ref={orderTypeTrackRef}
+            role="group"
+            aria-label={tPrintKot('type')}
+            data-testid="pos-order-type-tabs"
+            data-compact={isOrderTypeCompact ? 'true' : 'false'}
+            className="flex h-7 w-full min-w-0 items-center gap-0.5 rounded-lg bg-muted p-0.5"
+          >
+            {visibleOrderTypes.map((type) => {
               const Icon = orderTypeIcons[type];
-              const showIcon = type !== 'dine_in' && type !== 'online';
-              const label =
-                type === 'dine_in'
-                  ? t('orderTypeDineIn')
-                  : type === 'takeaway'
-                    ? t('orderTypeTakeaway')
-                    : type === 'delivery'
-                      ? t('orderTypeDelivery')
-                      : t('orderTypeOnline');
+              const label = orderTypeLabels[type];
+              const isSelected = cart.orderType === type;
+              const isCompactIconOnly = isOrderTypeCompact && !isSelected;
+              const isLabelTruncated = !isCompactIconOnly && Boolean(truncatedOrderTypes[type]);
+              const showTooltip = isCompactIconOnly || isLabelTruncated;
               return (
-                <button
-                  key={type}
-                  type="button"
-                  disabled={Boolean(existingOrder && existingOrder.type !== type)}
-                  onClick={() => cart.setOrderType(type)}
-                  className={`touch-target h-6 min-h-6 flex-1 gap-1 px-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
-                    cart.orderType === type
-                      ? 'bg-card text-brand shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {showIcon && <Icon size={13} />}
-                  {label}
-                </button>
+                <Tooltip key={type} open={showTooltip ? undefined : false}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      disabled={Boolean(existingOrder && existingOrder.type !== type)}
+                      onClick={() => cart.setOrderType(type)}
+                      className={`touch-target relative h-6 min-h-6 ${
+                        isCompactIconOnly
+                          ? 'flex-none min-w-8 px-2.5'
+                          : isOrderTypeCompact
+                            ? 'flex-1 min-w-0 gap-1.5 px-2'
+                            : 'flex-auto min-w-0 gap-0.5 px-0.5'
+                      } whitespace-nowrap rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed aria-pressed:forced-colors:outline-1 aria-pressed:forced-colors:outline-[Highlight] ${
+                        isSelected
+                          ? 'bg-card text-brand shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Icon size={ORDER_TYPE_ICON_PX} aria-hidden="true" className="shrink-0" />
+                      <span
+                        ref={(node) => {
+                          orderTypeLabelRefs.current[type] = node;
+                        }}
+                        className={isCompactIconOnly ? 'sr-only' : 'min-w-0 truncate'}
+                      >
+                        {label}
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={4}
+                    aria-hidden="true"
+                    hidden={!showTooltip}
+                  >
+                    {label}
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
-        </div>
+          </div>
+        </TooltipProvider>
 
         {!existingOrder && cart.orderType === 'dine_in' && (
           <div

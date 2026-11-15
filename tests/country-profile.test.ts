@@ -54,12 +54,23 @@ test('SY country profile properties', () => {
   assert.equal(getLocalizedCountryName('SY', 'en'), 'Syria');
 });
 
+test('SL country profile uses current SLE currency', () => {
+  const sl = getCountryByCode('SL');
+  assert.ok(sl, 'SL country profile should exist');
+  assert.equal(sl.currency, 'SLE');
+  const snapshot = resolveRegionalSnapshot({ country: 'SL' });
+  assert.equal(snapshot.currency, 'SLE');
+  assert.equal(snapshot.currencyFractionDigits, 2);
+  assert.equal(snapshot.currencySymbol, 'Le');
+});
+
 test('every country in COUNTRIES satisfies regional, currency, timezone, phone, and display invariants', () => {
   assert.equal(COUNTRIES[0]?.code, 'IN', 'IN remains pinned first');
   assert.equal(COUNTRIES[1]?.code, 'AR', 'AR remains pinned second');
 
   const seen = new Set<string>();
   const sampleDate = new Date('2026-06-15T12:00:00Z');
+  const currencyNames = new Intl.DisplayNames(['en'], { type: 'currency' });
 
   for (const c of COUNTRIES) {
     assert.ok(!seen.has(c.code), `duplicate country code ${c.code}`);
@@ -84,6 +95,12 @@ test('every country in COUNTRIES satisfies regional, currency, timezone, phone, 
     assert.ok(
       isSupportedCurrencyCode(c.currency),
       `${c.code}: runtime-supported ISO 4217 currency (${c.currency})`,
+    );
+    const currencyDisplayName = currencyNames.of(c.currency) ?? c.currency;
+    assert.doesNotMatch(
+      currencyDisplayName,
+      /\(\d{4}[—–-]\d{4}\)/,
+      `${c.code}: currency ${c.currency} (${currencyDisplayName}) must not be a withdrawn historical currency`,
     );
     assert.ok(isValidTimeZone(c.timezone), `${c.code}: valid IANA timezone (${c.timezone})`);
 

@@ -79,7 +79,6 @@ export const CURRENCY_ASCII_MAP: Readonly<Record<string, string>> = Object.freez
   'руб.': 'RUB',
   'сом.': 'TJS',
   'грн.': 'UAH',
-  'р.': 'BYN',
   Íkr: 'ISK',
   'රු.': 'LKR',
   ТМТ: 'TMT',
@@ -89,18 +88,32 @@ const CURRENCY_ASCII_ENTRIES = Object.entries(CURRENCY_ASCII_MAP).sort(
   ([left], [right]) => right.length - left.length,
 );
 
-/** Replace known non-ASCII currency tokens without changing numeric values. */
-export function normalizeCurrencyToAscii(text: string): string {
-  return CURRENCY_ASCII_ENTRIES.reduce(
-    (value, [symbol, fallback]) => value.split(symbol).join(fallback),
-    text,
-  );
+const STARTS_WITH_LETTER_RE = /^\p{L}/u;
+const ENDS_WITH_LETTER_RE = /\p{L}$/u;
+
+function currencyTokenPatternFor(symbol: string): string {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const prefix = STARTS_WITH_LETTER_RE.test(symbol) ? '(?<!\\p{L})' : '';
+  const suffix = ENDS_WITH_LETTER_RE.test(symbol) ? '(?!\\p{L})' : '';
+  return `${prefix}${escaped}${suffix}`;
 }
 
 /** Regex source for matching known currency tokens in thermal safety checks. */
 export const CURRENCY_TOKEN_PATTERN = CURRENCY_ASCII_ENTRIES.map(([symbol]) =>
-  symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  currencyTokenPatternFor(symbol),
 ).join('|');
+
+const CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'gu');
+
+/** Replace known non-ASCII currency tokens without changing numeric values. */
+export function normalizeCurrencyToAscii(text: string): string {
+  return text.replace(CURRENCY_TOKEN_RE, (token) => CURRENCY_ASCII_MAP[token] ?? token);
+}
+
+/** Strip known currency tokens before checking whether remaining text is printer-representable. */
+export function stripCurrencyTokens(text: string): string {
+  return text.replace(CURRENCY_TOKEN_RE, '');
+}
 
 /** Canonical tenant currency storage contract. */
 export const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;

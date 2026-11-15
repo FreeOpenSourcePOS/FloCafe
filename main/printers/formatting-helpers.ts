@@ -1,7 +1,11 @@
 /** Thermal receipt formatting helpers and ESC/POS builder. Pure leaf module with no dependencies on document formatters. */
 
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
-import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
+import {
+  CURRENCY_ASCII_MAP,
+  normalizeCurrencyToAscii,
+  stripCurrencyTokens,
+} from '../../shared/print/currency';
 import {
   displayCellWidth,
   fitThermalLine,
@@ -32,14 +36,6 @@ import type { PrinterCutMode } from './profiles';
 export type { PrintWarning };
 
 const RECEIPT_BRANDING = 'Powered by FloPOS (flopos.com)';
-
-const CURRENCY_TOKEN_RE = new RegExp(
-  Object.keys(CURRENCY_ASCII_MAP)
-    .sort((left, right) => right.length - left.length)
-    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|'),
-  'g',
-);
 
 const ESC_POS_CONTROL_TOKEN_RE =
   /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
@@ -760,7 +756,7 @@ export function buildEscPos(
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     if (lineDW && fitColumns !== undefined) {
-      const styleText = printableLine.replace(CURRENCY_TOKEN_RE, '');
+      const styleText = stripCurrencyTokens(printableLine);
       const columns = fitColumns;
       if (
         thermalDisplayWidth(styleText) > Math.floor(columns / 2) &&
@@ -771,7 +767,7 @@ export function buildEscPos(
         printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
       }
     }
-    const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
+    const textWithoutSupportedCurrency = stripCurrencyTokens(printableLine);
     const selectedCodePage = selectThermalCodePage(textWithoutSupportedCurrency, capabilities);
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
       const arabicOnly =

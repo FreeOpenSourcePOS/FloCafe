@@ -310,7 +310,7 @@ const SUPPORTED: Record<string, Row> = {
   SC: { locale: 'en-SC', currency: 'SCR', tz: 'Indian/Mahe' },
   SD: { locale: 'ar-SD', currency: 'SDG', tz: 'Africa/Khartoum' },
   SH: { locale: 'en-SH', currency: 'SHP', tz: 'Atlantic/St_Helena' },
-  SL: { locale: 'en-SL', currency: 'SLL', tz: 'Africa/Freetown' },
+  SL: { locale: 'en-SL', currency: 'SLE', tz: 'Africa/Freetown' },
   SO: { locale: 'so-SO', currency: 'SOS', tz: 'Africa/Mogadishu' },
   SS: { locale: 'en-SS', currency: 'SSP', tz: 'Africa/Juba' },
   ST: { locale: 'pt-ST', currency: 'STN', tz: 'Africa/Sao_Tome' },

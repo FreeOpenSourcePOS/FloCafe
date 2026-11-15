@@ -1241,10 +1241,10 @@ function getDatabaseStateToken(db: Database): string {
 export function buildDailySalesExportDataset(
   input: DailySalesExportQueryInput,
   db: Database = getDatabase(),
-  options?: { maxRangeDays?: number; timezone?: string },
+  options?: { maxRangeDays?: number },
 ): DailySalesExportDataset {
   const range = resolveDailySalesExportRange(input, undefined, options?.maxRangeDays);
-  const timezone = options?.timezone ?? resolveExportTimezone(db);
+  const timezone = resolveExportTimezone(db);
   const businessDayStart = tenantBusinessDayStartTime(db);
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);

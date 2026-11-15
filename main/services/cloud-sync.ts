@@ -35,12 +35,7 @@ import {
 } from '../lib/diagnostic-signature';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getTenantCurrency } from './refund';
-import {
-  getCurrencyFractionDigits,
-  getCurrencyMinorUnitFactor,
-  getCurrencySymbol,
-  resolveRegionalSnapshot,
-} from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { businessDateForInstant } from '../../shared/business-date';
 import { buildDailySalesExportDataset, type DailySalesExportItemRow } from './daily-sales-export';
 import { assertOnlineAllowed, isOfflineMode } from './offline-mode';
@@ -947,16 +942,6 @@ function inclusiveReportDayCount(fromStr: string, toStr: string): number {
   );
 }
 
-function isValidReportIanaTimezone(tz: unknown): tz is string {
-  if (typeof tz !== 'string' || tz.trim().length === 0 || tz !== tz.trim()) return false;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function sanitizeReportCurrencySymbol(symbol: unknown): string | undefined {
   if (typeof symbol !== 'string') return undefined;
   const trimmed = symbol.trim();
@@ -970,80 +955,21 @@ function sanitizeReportCurrencySymbol(symbol: unknown): string | undefined {
   return trimmed;
 }
 
-function computeReportBusinessDayEndsAtIso(
-  currentBusinessDate: string,
-  timezone: string,
-  businessDayStart: string,
-): string {
-  const nextDate = addReportCalendarDays(currentBusinessDate, 1);
-  const [, yStr, mStr, dStr] = LIVE_REPORT_DATE_RE.exec(nextDate)!;
-  const [hStr, minStr] = businessDayStart.split(':');
-  const targetAsUtcMs = Date.UTC(
-    Number(yStr),
-    Number(mStr) - 1,
-    Number(dStr),
-    Number(hStr),
-    Number(minStr),
-    0,
-    0,
-  );
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  });
-  let guessMs = targetAsUtcMs;
-  for (let i = 0; i < 3; i += 1) {
-    const parts = formatter.formatToParts(new Date(guessMs));
-    const map: Record<string, string> = {};
-    for (const part of parts) {
-      if (part.type !== 'literal') map[part.type] = part.value;
-    }
-    const localAsUtcMs = Date.UTC(
-      Number(map.year),
-      Number(map.month) - 1,
-      Number(map.day),
-      Number(map.hour === '24' ? '0' : map.hour),
-      Number(map.minute),
-      Number(map.second),
-      0,
-    );
-    const diffMs = targetAsUtcMs - localAsUtcMs;
-    if (diffMs === 0) break;
-    guessMs += diffMs;
-  }
-  return new Date(guessMs).toISOString();
-}
-
 function resolveLiveReportContext(
   db: BetterSqlite3.Database,
   settings: Record<string, string>,
   nowInstant: Date = new Date(),
 ): LiveReportContext {
-  const currency = getTenantCurrency(db).trim().toUpperCase();
-  let rawTimezone = settings.timezone?.trim();
-  let rawSymbol: string | undefined;
-  try {
-    const snapshot = resolveRegionalSnapshot({
-      country: settings.country,
-      currency: settings.currency,
-      timezone: rawTimezone,
-    });
-    rawTimezone = snapshot.timezone.trim();
-    rawSymbol = snapshot.currencySymbol;
-  } catch {
-    rawSymbol = getCurrencySymbol(currency);
-  }
-  const timezone = isValidReportIanaTimezone(rawTimezone) ? rawTimezone : 'UTC';
-  const currencySymbol = sanitizeReportCurrencySymbol(rawSymbol ?? getCurrencySymbol(currency));
-  const rawFractionDigits = getCurrencyFractionDigits(currency);
-  const fractionDigits = Number.isInteger(rawFractionDigits)
-    ? Math.min(4, Math.max(0, rawFractionDigits))
+  const snapshot = resolveRegionalSnapshot({
+    country: settings.country,
+    currency: settings.currency,
+    timezone: settings.timezone?.trim(),
+  });
+  const currency = snapshot.currency.trim().toUpperCase();
+  const timezone = snapshot.timezone;
+  const currencySymbol = sanitizeReportCurrencySymbol(snapshot.currencySymbol);
+  const fractionDigits = Number.isInteger(snapshot.currencyFractionDigits)
+    ? Math.min(4, Math.max(0, snapshot.currencyFractionDigits))
     : 2;
   const businessDayStart = tenantBusinessDayStartTime(db);
   const currentBusinessDate = businessDateForInstant({
@@ -1051,11 +977,9 @@ function resolveLiveReportContext(
     timezone,
     startTime: businessDayStart,
   });
-  const currentBusinessDayEndsAt = computeReportBusinessDayEndsAtIso(
-    currentBusinessDate,
-    timezone,
-    businessDayStart,
-  );
+  const currentBusinessDayEndsAt = parseDbTimestamp(
+    dayBoundsInTimezone(currentBusinessDate, timezone, businessDayStart)[1],
+  ).toISOString();
   return {
     currency,
     ...(currencySymbol !== undefined ? { currencySymbol } : {}),
@@ -4036,7 +3960,6 @@ export class CloudSyncService {
 
     const dataset = buildDailySalesExportDataset({ from, to }, db, {
       maxRangeDays: MAX_COMMAND_RANGE_DAYS,
-      timezone: ctx.timezone,
     });
     const { summary } = dataset;
 
@@ -4123,7 +4046,6 @@ export class CloudSyncService {
     const meta = resolveSingleDayReportMeta('dashboard', payload, ctx);
     const dataset = buildDailySalesExportDataset(meta.from, db, {
       maxRangeDays: MAX_COMMAND_RANGE_DAYS,
-      timezone: ctx.timezone,
     });
     const { summary } = dataset;
 
@@ -4255,7 +4177,6 @@ export class CloudSyncService {
 
     const dataset = buildDailySalesExportDataset({ from, to }, db, {
       maxRangeDays: MAX_COMMAND_RANGE_DAYS,
-      timezone: ctx.timezone,
     });
     const items = sortDailySalesItems(dataset.items, sortBy)
       .slice(0, limit)
@@ -4284,7 +4205,6 @@ export class CloudSyncService {
 
     const dataset = buildDailySalesExportDataset({ from, to }, db, {
       maxRangeDays: MAX_COMMAND_RANGE_DAYS,
-      timezone: ctx.timezone,
     });
     const total = dataset.summary.net_collected;
     const breakdown = dataset.summary.payment_methods.map((row) => {

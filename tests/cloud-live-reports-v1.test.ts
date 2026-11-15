@@ -1186,6 +1186,29 @@ async function main() {
       assertOrThrow(threw, `rejects invalid selector: ${label}`);
     }
 
+    // ── 9. Regional resolution parity with Daily Sales Export ───────────────
+    console.log('\n─── 9. Regional resolution parity & unconfigured country rejection ───');
+    setSetting('country', 'IN');
+    setSetting('currency', 'INR');
+    setSetting('timezone', 'Invalid/Zone');
+    setSetting('business_day_start_time', '04:00');
+    const fallbackCountryTz = validateReportResponse(invokeReport('dashboard', { date: '2026-09-10' }), {
+      view: 'dashboard',
+      date: '2026-09-10',
+    });
+    assertEqualOrThrow(
+      fallbackCountryTz.meta.timezone,
+      'Asia/Kolkata',
+      'invalid timezone setting falls back to country timezone (matching resolveExportTimezone)',
+    );
+
+    db.prepare("DELETE FROM settings WHERE key = 'country'").run();
+    assert.throws(
+      () => invokeReport('dashboard', { date: '2026-09-10' }),
+      /Regional settings are not configured/,
+      'unconfigured country throws RegionalNotConfiguredError without UTC fallback',
+    );
+
     console.log('\nAll Cloud live-reports v1 tests passed!');
   } finally {
     closeDatabase();

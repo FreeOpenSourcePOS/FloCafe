@@ -3941,7 +3941,12 @@ async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
     {
       name: 'refunded terminal bill',
       billOverrides: { payment_status: 'refunded', balance: 20, paid_amount: 0 },
-      expectedLabel: 'pay $0.00',
+      expectedLabel: 'refunded',
+    },
+    {
+      name: 'partially refunded terminal bill',
+      billOverrides: { payment_status: 'partially_refunded', balance: 10, paid_amount: 10 },
+      expectedLabel: 'partiallyrefunded',
     },
     {
       name: 'cancelled order terminal bill',
@@ -3951,87 +3956,133 @@ async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
         paid_amount: 0,
         order: { ...makeBill('bill-cancelled', 20).order, status: 'cancelled' },
       },
-      expectedLabel: 'pay $0.00',
+      expectedLabel: 'cancelled',
+      expectCancelledSplitNotice: true,
     },
   ]) {
-    await withAliases(async () => {
-      const harness = createStatefulHarness();
-      try {
-        let postCalls = 0;
-        installCheckoutComponentMocks(harness, {
-          apiPost: async () => {
-            postCalls++;
-            return { data: {} };
-          },
-        });
-        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
-        delete require.cache[pmPath];
-        const PaymentModal = require(pmPath).default;
+    for (const splitSettingFails of [false, true]) {
+      await withAliases(async () => {
+        const harness = createStatefulHarness();
+        try {
+          let postCalls = 0;
+          installCheckoutComponentMocks(harness, {
+            apiGet: async (url: string) => {
+              if (String(url).includes('loyalty/settings'))
+                return { data: { loyalty_enabled: false } };
+              if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+              if (String(url).includes('settings/split_checks_enabled')) {
+                if (splitSettingFails) throw new Error('network error');
+                return { data: { setting: { value: 'true' } } };
+              }
+              if (String(url).includes('settings/discount'))
+                return { data: { discount_mode: 'both', discount_requires_approval: false } };
+              return { data: {} };
+            },
+            apiPost: async () => {
+              postCalls++;
+              return { data: {} };
+            },
+          });
+          const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+          delete require.cache[pmPath];
+          const PaymentModal = require(pmPath).default;
 
-        const bill = {
-          ...makeBill(`bill-${scenario.name.replace(/\s+/g, '-')}`, 20),
-          ...scenario.billOverrides,
-        };
-        const tree = harness.renderAndSettle(PaymentModal, {
-          bill,
-          currency: 'USD',
-          onClose: () => {},
-          onPaid: () => {},
-        });
+          const bill = {
+            ...makeBill(`bill-${scenario.name.replace(/\s+/g, '-')}`, 20),
+            ...scenario.billOverrides,
+          };
+          const props = {
+            bill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+          };
+          harness.renderAndSettle(PaymentModal, props);
+          await new Promise((r) => setTimeout(r, 15));
+          const tree = harness.renderAndSettle(PaymentModal, props);
 
-        const payCta = collectElements(
-          tree,
-          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
-        ).pop();
-        assert.ok(payCta, `${scenario.name}: primary Pay CTA rendered`);
-        assert.equal(
-          Boolean(payCta.props.disabled),
-          true,
-          `${scenario.name}: primary Pay CTA must be disabled`,
-        );
-        const ctaText = renderToStaticMarkup(payCta).toLowerCase();
-        assert.ok(
-          ctaText.includes(scenario.expectedLabel),
-          `${scenario.name}: CTA label includes "${scenario.expectedLabel}" (got "${ctaText}")`,
-        );
+          const payCta = collectElements(
+            tree,
+            (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+          ).pop();
+          assert.ok(payCta, `${scenario.name}: primary Pay CTA rendered`);
+          assert.equal(
+            Boolean(payCta.props.disabled),
+            true,
+            `${scenario.name}: primary Pay CTA must be disabled`,
+          );
+          const ctaText = renderToStaticMarkup(payCta).toLowerCase();
+          assert.ok(
+            ctaText.includes(scenario.expectedLabel),
+            `${scenario.name}: CTA label includes "${scenario.expectedLabel}" (got "${ctaText}")`,
+          );
 
-        await payCta.props.onClick();
-        assert.equal(
-          postCalls,
-          0,
-          `${scenario.name}: invoking Pay CTA handler must not POST a payment`,
-        );
+          await payCta.props.onClick();
+          assert.equal(
+            postCalls,
+            0,
+            `${scenario.name}: invoking Pay CTA handler must not POST a payment`,
+          );
 
-        const keypadFieldset = collectElements(tree, (el) => el.type === 'fieldset')[0];
-        assert.equal(
-          Boolean(keypadFieldset?.props?.disabled),
-          true,
-          `${scenario.name}: keypad fieldset is disabled`,
-        );
+          const keypadFieldset = collectElements(tree, (el) => el.type === 'fieldset')[0];
+          assert.equal(
+            Boolean(keypadFieldset?.props?.disabled),
+            true,
+            `${scenario.name}: keypad fieldset is disabled`,
+          );
 
-        const cashInput = collectElements(
-          tree,
-          (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
-        )[0];
-        assert.equal(
-          Boolean(cashInput?.props?.disabled),
-          true,
-          `${scenario.name}: tender input is disabled`,
-        );
+          const cashInput = collectElements(
+            tree,
+            (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+          )[0];
+          assert.equal(
+            Boolean(cashInput?.props?.disabled),
+            true,
+            `${scenario.name}: tender input is disabled`,
+          );
 
-        const discountTab = collectElements(
-          tree,
-          (el) => el.props?.['data-testid'] === 'col1-tab-discount',
-        )[0];
-        assert.equal(
-          Boolean(discountTab?.props?.disabled),
-          true,
-          `${scenario.name}: discount tab is disabled`,
-        );
-      } finally {
-        harness.cleanupAll();
-      }
-    });
+          const discountTab = collectElements(
+            tree,
+            (el) => el.props?.['data-testid'] === 'col1-tab-discount',
+          )[0];
+          assert.equal(
+            Boolean(discountTab?.props?.disabled),
+            true,
+            `${scenario.name}: discount tab is disabled`,
+          );
+
+          const splitSection = collectElements(
+            tree,
+            (el) => el.props?.['data-testid'] === 'split-check-section',
+          )[0];
+          assert.ok(
+            splitSection,
+            `${scenario.name} (splitSettingFails=${splitSettingFails}): split-check-section rendered`,
+          );
+          const splitButtons = collectElements(
+            splitSection,
+            (el) => el.type === 'button' || typeof el.props?.onClick === 'function',
+          );
+          assert.ok(splitButtons.length > 0, `${scenario.name}: split section renders button`);
+          for (const btn of splitButtons) {
+            assert.equal(
+              Boolean(btn.props?.disabled),
+              true,
+              `${scenario.name} (splitSettingFails=${splitSettingFails}): split-check button must be disabled`,
+            );
+          }
+          if (scenario.expectCancelledSplitNotice && !splitSettingFails) {
+            const splitMarkup = renderToStaticMarkup(splitSection);
+            assert.ok(
+              splitMarkup.includes('noFurtherActions'),
+              `${scenario.name}: split section shows cancelled notice (got "${splitMarkup}")`,
+            );
+          }
+        } finally {
+          harness.cleanupAll();
+        }
+      });
+    }
   }
 
   // 11b: TableCheckoutModal header badge formats partial / refunded / paid / unpaid consistently

@@ -574,7 +574,11 @@ export default function PaymentModal({
     | 'splitCheckWholeUnitsOnly'
     | 'splitCheckTwoUnitsRequired'
     | 'splitCheckFailed';
-  type SplitEligibilityResult = { open: true } | { unknown: true } | { reason: SplitReasonKey };
+  type SplitEligibilityResult =
+    | { open: true }
+    | { unknown: true }
+    | { cancelled: true }
+    | { reason: SplitReasonKey };
   const splitEligibility: SplitEligibilityResult = (() => {
     // 1. Reading eligibility and generating an allocation are both configured
     //    permissions; both are explained the same way.
@@ -584,8 +588,12 @@ export default function PaymentModal({
     if (attemptLocked || paymentOutcomeUnknown || processing) {
       return { reason: 'splitCheckResolvePaymentFirst' } as const;
     }
+    if (bill.order?.status === 'cancelled') {
+      return { cancelled: true } as const;
+    }
     // 3. Only an untouched unpaid check is divisible.
     if (
+      billTerminal ||
       bill.payment_status !== 'unpaid' ||
       Number(bill.paid_amount || 0) > 0 ||
       Boolean(bill.payment_details)
@@ -1568,6 +1576,7 @@ export default function PaymentModal({
       );
       const untouchedUnpaid =
         freshBill.payment_status === 'unpaid' &&
+        splitOrder?.status !== 'cancelled' &&
         Number(freshBill.paid_amount || 0) === 0 &&
         !freshBill.payment_details;
       const wholeUnits = items.every(
@@ -2490,15 +2499,24 @@ export default function PaymentModal({
         !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
     );
 
+  const terminalCtaLabel =
+    bill.order?.status === 'cancelled'
+      ? tOrders('cancelled')
+      : bill.payment_status === 'partially_refunded'
+        ? tOrders('partiallyRefunded')
+        : tOrders('refunded');
+
   const payCtaLabel = processing
     ? t('processingPayment')
-    : paymentOutcomeUnknown
-      ? t('checkPaymentStatus')
-      : pendingAttempt
-        ? t('retrySamePayment')
-        : isBillPaid
-          ? t('paid')
-          : `${t('pay')} ${currencyFmt(totalPayment)}`;
+    : billTerminal
+      ? terminalCtaLabel
+      : paymentOutcomeUnknown
+        ? t('checkPaymentStatus')
+        : pendingAttempt
+          ? t('retrySamePayment')
+          : isBillPaid
+            ? t('paid')
+            : `${t('pay')} ${currencyFmt(totalPayment)}`;
 
   useEffect(() => {
     if (justPaid) {
@@ -3734,6 +3752,7 @@ export default function PaymentModal({
                                 <Button
                                   type="button"
                                   variant="outline"
+                                  disabled={billReadOnly || justPaid}
                                   onClick={loadSplitCheckSetting}
                                   className="w-full"
                                   size="lg"
@@ -3756,6 +3775,8 @@ export default function PaymentModal({
                                     variant="outline"
                                     onClick={handleOpenSplitCheck}
                                     disabled={
+                                      billReadOnly ||
+                                      justPaid ||
                                       openingSplitCheck ||
                                       processing ||
                                       attemptLocked ||
@@ -3774,6 +3795,8 @@ export default function PaymentModal({
                                     variant="outline"
                                     onClick={handleOpenSplitCheck}
                                     disabled={
+                                      billReadOnly ||
+                                      justPaid ||
                                       openingSplitCheck ||
                                       processing ||
                                       attemptLocked ||
@@ -3794,7 +3817,9 @@ export default function PaymentModal({
                                       {t('splitCheck')}
                                     </Button>
                                     <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                                      {t(splitEligibility.reason)}
+                                      {'cancelled' in splitEligibility
+                                        ? tOrders('noFurtherActions')
+                                        : t(splitEligibility.reason)}
                                     </p>
                                   </div>
                                 )}

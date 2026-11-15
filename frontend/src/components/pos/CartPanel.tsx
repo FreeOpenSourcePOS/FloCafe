@@ -73,8 +73,8 @@ const orderTypeIcons: Record<OrderType, typeof UtensilsCrossed> = {
 };
 
 const ORDER_TYPE_ICON_PX = 13;
-// Full-mode segment chrome: px-1 (8px) + 13px icon + gap-1 (4px) = 25px, plus 1px subpixel guard.
-const FULL_MODE_SEGMENT_CHROME_PX = 26;
+// Full-mode segment chrome: px-0.5 (4px) + 13px icon + gap-0.5 (2px) = 19px, plus 1px subpixel guard.
+const FULL_MODE_SEGMENT_CHROME_PX = 20;
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
@@ -495,7 +495,7 @@ export default function CartPanel({
                           ? 'flex-none min-w-8 px-2.5'
                           : isOrderTypeCompact
                             ? 'flex-1 min-w-0 gap-1.5 px-2'
-                            : 'flex-auto min-w-0 gap-1 px-1'
+                            : 'flex-auto min-w-0 gap-0.5 px-0.5'
                       } whitespace-nowrap rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed aria-pressed:forced-colors:outline-1 aria-pressed:forced-colors:outline-[Highlight] ${
                         isSelected
                           ? 'bg-card text-brand shadow-sm'

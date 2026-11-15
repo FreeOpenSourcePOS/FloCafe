@@ -3928,6 +3928,210 @@ async function testGreptileReviewRegressions() {
   console.log('  ✓ Input Enter discount guard & recovered partial-bill cash change verified');
 }
 
+async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
+  console.log('\n--- 11. Paid/Terminal Bill Pay CTA & TableCheckout Header Status Label ---');
+
+  // 11a: Already-paid and terminal bills disable Pay CTA, block handlePay POST, and disable inputs
+  for (const scenario of [
+    {
+      name: 'already-paid zero-balance bill',
+      billOverrides: { payment_status: 'paid', balance: 0, paid_amount: 20 },
+      expectedLabel: 'paid',
+    },
+    {
+      name: 'refunded terminal bill',
+      billOverrides: { payment_status: 'refunded', balance: 20, paid_amount: 0 },
+      expectedLabel: 'pay $0.00',
+    },
+    {
+      name: 'cancelled order terminal bill',
+      billOverrides: {
+        payment_status: 'unpaid',
+        balance: 20,
+        paid_amount: 0,
+        order: { ...makeBill('bill-cancelled', 20).order, status: 'cancelled' },
+      },
+      expectedLabel: 'pay $0.00',
+    },
+  ]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      try {
+        let postCalls = 0;
+        installCheckoutComponentMocks(harness, {
+          apiPost: async () => {
+            postCalls++;
+            return { data: {} };
+          },
+        });
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+
+        const bill = {
+          ...makeBill(`bill-${scenario.name.replace(/\s+/g, '-')}`, 20),
+          ...scenario.billOverrides,
+        };
+        const tree = harness.renderAndSettle(PaymentModal, {
+          bill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        });
+
+        const payCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(payCta, `${scenario.name}: primary Pay CTA rendered`);
+        assert.equal(
+          Boolean(payCta.props.disabled),
+          true,
+          `${scenario.name}: primary Pay CTA must be disabled`,
+        );
+        const ctaText = renderToStaticMarkup(payCta).toLowerCase();
+        assert.ok(
+          ctaText.includes(scenario.expectedLabel),
+          `${scenario.name}: CTA label includes "${scenario.expectedLabel}" (got "${ctaText}")`,
+        );
+
+        await payCta.props.onClick();
+        assert.equal(
+          postCalls,
+          0,
+          `${scenario.name}: invoking Pay CTA handler must not POST a payment`,
+        );
+
+        const keypadFieldset = collectElements(tree, (el) => el.type === 'fieldset')[0];
+        assert.equal(
+          Boolean(keypadFieldset?.props?.disabled),
+          true,
+          `${scenario.name}: keypad fieldset is disabled`,
+        );
+
+        const cashInput = collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+        )[0];
+        assert.equal(
+          Boolean(cashInput?.props?.disabled),
+          true,
+          `${scenario.name}: tender input is disabled`,
+        );
+
+        const discountTab = collectElements(
+          tree,
+          (el) => el.props?.['data-testid'] === 'col1-tab-discount',
+        )[0];
+        assert.equal(
+          Boolean(discountTab?.props?.disabled),
+          true,
+          `${scenario.name}: discount tab is disabled`,
+        );
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 11b: TableCheckoutModal header badge formats partial / refunded / paid / unpaid consistently
+  for (const statusCase of [
+    { payment_status: 'partial', expectedText: 'partiallyPaid' },
+    { payment_status: 'partially_paid', expectedText: 'partiallyPaid' },
+    { payment_status: 'partially_refunded', expectedText: 'partiallyRefunded' },
+    { payment_status: 'refunded', expectedText: 'refunded' },
+    { payment_status: 'paid', expectedText: 'paid' },
+    { payment_status: 'unpaid', expectedText: 'unpaid' },
+  ]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return { data: { table: { id: 7, name: 'T7', activeOrder: { id: 77 } } } };
+            }
+            if (String(url).includes('/orders/')) {
+              return {
+                data: {
+                  order: {
+                    id: 77,
+                    order_number: 707,
+                    type: 'dine_in',
+                    subtotal: 25,
+                    tax_amount: 0,
+                    total: 25,
+                    items: [],
+                    bill: {
+                      id: 701,
+                      bill_number: 'B-701',
+                      total: 25,
+                      balance: statusCase.payment_status === 'paid' ? 0 : 10,
+                      payment_status: statusCase.payment_status,
+                    },
+                    bills: [],
+                  },
+                },
+              };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'false' } } };
+            }
+            return { data: {} };
+          },
+        });
+        const baseLoad = Module._load;
+        Module._load = function (request: string, parent: any, isMain: boolean) {
+          if (
+            request === '@/components/tables/MoveTableModal' ||
+            request === '@/components/orders/EditOrderItemModal'
+          ) {
+            return { __esModule: true, default: () => null };
+          }
+          return baseLoad.call(this, request, parent, isMain);
+        };
+
+        const tcmPath = path.resolve(ROOT, 'frontend/src/components/pos/TableCheckoutModal.tsx');
+        delete require.cache[tcmPath];
+        const TableCheckoutModal = require(tcmPath).default;
+
+        const props = {
+          table: { id: 7, name: 'T7', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {},
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+        };
+
+        harness.renderAndSettle(TableCheckoutModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+        const headerBadge = collectElements(
+          tree,
+          (el) =>
+            el.type === 'span' &&
+            typeof el.props?.className === 'string' &&
+            el.props.className.includes('rounded-full') &&
+            el.props.className.includes('px-2.5'),
+        )[0];
+        assert.ok(headerBadge, `TableCheckoutModal header badge rendered for ${statusCase.payment_status}`);
+        const badgeText = renderToStaticMarkup(headerBadge);
+        assert.ok(
+          badgeText.includes(statusCase.expectedText),
+          `TableCheckoutModal header badge for ${statusCase.payment_status} renders "${statusCase.expectedText}" (got "${badgeText}")`,
+        );
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  console.log('  ✓ Paid/terminal bill CTA guard & TableCheckout header status label verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -3941,6 +4145,7 @@ async function run() {
   await testPrincipalUxErgonomicsAndCompletionParity();
   await testConfirmDialogAndCardReferenceSwitchGuards();
   await testGreptileReviewRegressions();
+  await testPaidBillCtaDisabledAndTableCheckoutHeaderStatus();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

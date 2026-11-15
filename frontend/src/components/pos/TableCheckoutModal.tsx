@@ -342,7 +342,7 @@ export default function TableCheckoutModal({
                       : 'border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300'
                   }`}
                 >
-                  {order.bill?.payment_status === 'paid' ? t('paid') : t('unpaid')}
+                  {formatBillStatusLabel(order.bill?.payment_status)}
                 </span>
               </div>
               <CheckoutHeaderChips chips={headerChips} className="mt-1.5" />

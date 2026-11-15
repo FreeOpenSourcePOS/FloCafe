@@ -261,6 +261,13 @@ export default function PaymentModal({
     'INR';
   const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
+  const remainingMinor = toMinorUnits(remaining);
+  const billTerminal =
+    bill.payment_status === 'refunded' ||
+    bill.payment_status === 'partially_refunded' ||
+    bill.order?.status === 'cancelled';
+  const isBillPaid = bill.payment_status === 'paid' && remainingMinor <= 0;
+  const billReadOnly = billTerminal || isBillPaid;
 
   const buildAttemptPaymentRows = (
     attempt: PendingPaymentAttempt | null,
@@ -424,7 +431,13 @@ export default function PaymentModal({
     if (resolved !== activeCol1Panel) {
       setActiveCol1Panel(resolved);
     }
-    if (resolved === 'discount' && !attemptLocked && !justPaid && discountMode !== 'none') {
+    if (
+      resolved === 'discount' &&
+      !attemptLocked &&
+      !justPaid &&
+      !billReadOnly &&
+      discountMode !== 'none'
+    ) {
       setAmountTarget({ kind: 'discount' });
     } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
       restorePaymentTarget();
@@ -541,10 +554,9 @@ export default function PaymentModal({
   const canToggleCharges =
     !bill.split_group_id &&
     !scheduledOrderEditLocked &&
+    !billReadOnly &&
     bill.payment_status !== 'paid' &&
-    Number(bill.paid_amount || 0) === 0 &&
-    bill.payment_status !== 'refunded' &&
-    bill.payment_status !== 'partially_refunded';
+    Number(bill.paid_amount || 0) === 0;
   const canReadBills = tenantCan(currentTenant, 'bills.read');
   const canGenerateBill = tenantCan(currentTenant, 'bills.generate');
   const splitCheckItems = (bill.order?.items || []).filter(
@@ -1006,7 +1018,6 @@ export default function PaymentModal({
       .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) +
       toMinorUnits(walletAmt);
   const totalPayment = totalPaymentMinor / minorFactor;
-  const remainingMinor = toMinorUnits(remaining);
   const nonCashExceedsBalance = nonCashTotalMinor > remainingMinor;
 
   // Equal shares divide the remaining authoritative balance in the tenant's
@@ -1033,13 +1044,17 @@ export default function PaymentModal({
   const canDecrementEqualShare =
     !processing &&
     !attemptLocked &&
+    !justPaid &&
+    !billReadOnly &&
     !(equalSharePayers.trim() !== '' && Number(equalSharePayers) <= MIN_EQUAL_SHARE_PAYERS);
   const canIncrementEqualShare =
     !processing &&
     !attemptLocked &&
+    !justPaid &&
+    !billReadOnly &&
     !(equalSharePayers.trim() !== '' && Number(equalSharePayers) >= MAX_EQUAL_SHARE_PAYERS);
   const stepEqualSharePayers = (delta: -1 | 1) => {
-    if (processing || attemptLocked) return;
+    if (processing || attemptLocked || justPaid || billReadOnly) return;
     const trimmed = equalSharePayers.trim();
     const parsed = Number(trimmed);
     if (!trimmed || !Number.isFinite(parsed)) {
@@ -1090,7 +1105,7 @@ export default function PaymentModal({
 
   const applyEqualShare = async (index: number) => {
     const shareMinor = equalShareShares[0];
-    if (processing || attemptLocked || shareMinor === undefined) return;
+    if (processing || attemptLocked || justPaid || billReadOnly || shareMinor === undefined) return;
     const amountInput = String(toDisplayUnit(minorToStored(shareMinor)));
     const replacing = payments.filter(
       (row, rowIndex) =>
@@ -1195,7 +1210,7 @@ export default function PaymentModal({
   }
 
   const updatePaymentAmount = (idx: number, value: string) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     setPaymentsTouched(true);
     setAutoFilledSingleIndex(null);
     setAppliedEqualShare((current) => (current?.index === idx ? null : current));
@@ -1205,7 +1220,7 @@ export default function PaymentModal({
   };
 
   const updatePaymentTransactionId = (idx: number, value: string) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     setPayments((current) =>
       current.map((payment, index) =>
         index === idx ? { ...payment, transaction_id: value } : payment,
@@ -1219,7 +1234,7 @@ export default function PaymentModal({
     payment.payment_method_id === undefined;
 
   const allocateRemainingTo = (idx: number) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     const rowMinor = payments.map((payment) =>
       toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
     );
@@ -1248,7 +1263,7 @@ export default function PaymentModal({
   };
 
   const handleTenderButtonClick = (idx: number) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     setAmountTarget({ kind: 'payment', index: idx });
     if (
       autoFilledSingleIndex !== null &&
@@ -1298,7 +1313,7 @@ export default function PaymentModal({
       : rawActiveAmountValue;
 
   const updateActiveAmount = (value: string) => {
-    if (!amountTarget || attemptLocked || justPaid) return;
+    if (!amountTarget || attemptLocked || justPaid || billReadOnly) return;
     if (amountTarget.kind === 'payment') {
       updatePaymentAmount(amountTarget.index, value);
       return;
@@ -1380,6 +1395,7 @@ export default function PaymentModal({
   const handleApplyDiscount = async (customVal?: number) => {
     if (
       justPaid ||
+      billReadOnly ||
       applyingDiscount ||
       processing ||
       updatingChargeId ||
@@ -1517,6 +1533,8 @@ export default function PaymentModal({
     if (
       openingSplitCheck ||
       attemptLocked ||
+      justPaid ||
+      billReadOnly ||
       applyingDiscount ||
       updatingChargeId ||
       chargeStateUncertain
@@ -1999,11 +2017,17 @@ export default function PaymentModal({
   };
 
   const handlePay = async () => {
+    const hasLockedAttempt = Boolean(
+      pendingAttemptRef.current && pendingAttemptRef.current.billId === bill.id,
+    );
     if (
       processing ||
       applyingDiscount ||
       updatingChargeId ||
       chargeStateUncertain ||
+      justPaid ||
+      billTerminal ||
+      (!hasLockedAttempt && isBillPaid) ||
       inFlightRef.current
     )
       return;
@@ -2232,7 +2256,7 @@ export default function PaymentModal({
   );
 
   const quickTenderOptions: CheckoutQuickTenderOption[] = (() => {
-    if (processing || attemptLocked || justPaid) return [];
+    if (processing || attemptLocked || justPaid || billReadOnly) return [];
     if (amountTarget?.kind === 'discount' && discountType === 'percentage') {
       return [5, 10, 15, 20].map((pct) => ({
         label: `${pct}%`,
@@ -2306,12 +2330,6 @@ export default function PaymentModal({
     }
     return [];
   })();
-
-  const billTerminal =
-    bill.payment_status === 'refunded' ||
-    bill.payment_status === 'partially_refunded' ||
-    bill.order?.status === 'cancelled';
-  const isBillPaid = bill.payment_status === 'paid' && remainingMinor <= 0;
 
   const stationStatusBanner: CheckoutStatusBanner | null = (() => {
     if (requestFailure) {
@@ -2452,6 +2470,8 @@ export default function PaymentModal({
 
   const taxComponents = resolveTaxComponents(bill);
 
+  const controlsDisabled = processing || attemptLocked || justPaid || billReadOnly;
+
   const payCtaDisabled =
     processing ||
     openingSplitCheck ||
@@ -2459,6 +2479,7 @@ export default function PaymentModal({
     Boolean(updatingChargeId) ||
     chargeStateUncertain ||
     billTerminal ||
+    (!attemptLocked && isBillPaid) ||
     (!pendingAttempt && nonCashExceedsBalance) ||
     (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
     Boolean(
@@ -2475,7 +2496,9 @@ export default function PaymentModal({
       ? t('checkPaymentStatus')
       : pendingAttempt
         ? t('retrySamePayment')
-        : `${t('pay')} ${currencyFmt(totalPayment)}`;
+        : isBillPaid
+          ? t('paid')
+          : `${t('pay')} ${currencyFmt(totalPayment)}`;
 
   useEffect(() => {
     if (justPaid) {
@@ -2544,7 +2567,8 @@ export default function PaymentModal({
         return;
       }
 
-      if (justPaid || isDismissLocked() || openingSplitCheck || !amountTarget) return;
+      if (justPaid || billReadOnly || isDismissLocked() || openingSplitCheck || !amountTarget)
+        return;
       const allowDecimal = allowCurrencyDecimalKey(
         unitAdapter.maxDecimals,
         amountTarget.kind,
@@ -2697,7 +2721,7 @@ export default function PaymentModal({
                   <button
                     type="button"
                     data-testid="col1-tab-discount"
-                    disabled={processing || attemptLocked || justPaid}
+                    disabled={controlsDisabled}
                     onClick={() => setShowDiscount((open) => !open)}
                     aria-expanded={showDiscount}
                     className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -2752,7 +2776,7 @@ export default function PaymentModal({
                       }}
                       loading={managerApprovers.loading}
                       loadFailed={managerApprovers.loadFailed}
-                      disabled={processing || attemptLocked || justPaid}
+                      disabled={controlsDisabled}
                     />
                     <input
                       type="password"
@@ -2760,7 +2784,7 @@ export default function PaymentModal({
                       pattern="[0-9]*"
                       maxLength={6}
                       value={kitchenOverridePin}
-                      disabled={processing || attemptLocked || justPaid}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         setKitchenOverridePin(event.target.value.replace(/\D/g, '').slice(0, 6));
                         setKitchenDeliveryError('');
@@ -2783,7 +2807,7 @@ export default function PaymentModal({
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
                       <button
                         type="button"
-                        disabled={processing || attemptLocked || justPaid}
+                        disabled={controlsDisabled}
                         onClick={() => setDiscountType('percentage')}
                         className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors sm:text-sm ${
                           discountType === 'percentage'
@@ -2798,7 +2822,7 @@ export default function PaymentModal({
                     {isDiscountTypeAllowed(discountMode, 'amount') && (
                       <button
                         type="button"
-                        disabled={processing || attemptLocked || justPaid}
+                        disabled={controlsDisabled}
                         onClick={() => setDiscountType('amount')}
                         className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors sm:text-sm ${
                           discountType === 'amount'
@@ -2812,7 +2836,7 @@ export default function PaymentModal({
                   </div>
                   <div
                     className={`flex min-h-11 items-center rounded-xl border bg-card pe-3 transition-colors ${
-                      processing || attemptLocked || justPaid ? 'cursor-not-allowed opacity-60' : ''
+                      controlsDisabled ? 'cursor-not-allowed opacity-60' : ''
                     } ${
                       amountTarget?.kind === 'discount'
                         ? 'border-brand ring-2 ring-brand/20'
@@ -2825,7 +2849,7 @@ export default function PaymentModal({
                     <input
                       type="number"
                       value={discountValue}
-                      disabled={processing || attemptLocked || justPaid}
+                      disabled={controlsDisabled}
                       onFocus={() => setAmountTarget({ kind: 'discount' })}
                       onChange={(e) => setDiscountValue(e.target.value)}
                       placeholder={discountType === 'percentage' ? '0' : '0.00'}
@@ -2841,7 +2865,7 @@ export default function PaymentModal({
                   <input
                     type="text"
                     value={discountReason}
-                    disabled={processing || attemptLocked || justPaid}
+                    disabled={controlsDisabled}
                     onChange={(e) => setDiscountReason(e.target.value)}
                     placeholder={t('discountReasonPlaceholder')}
                     className="min-h-11 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
@@ -2860,12 +2884,12 @@ export default function PaymentModal({
                         }}
                         loading={managerApprovers.loading}
                         loadFailed={managerApprovers.loadFailed}
-                        disabled={processing || attemptLocked || applyingDiscount || justPaid}
+                        disabled={controlsDisabled || applyingDiscount}
                       />
                       <input
                         type="password"
                         value={discountPin}
-                        disabled={processing || attemptLocked || applyingDiscount || justPaid}
+                        disabled={controlsDisabled || applyingDiscount}
                         onChange={(e) => setDiscountPin(e.target.value)}
                         placeholder={t('managerPin')}
                         maxLength={6}
@@ -2876,10 +2900,8 @@ export default function PaymentModal({
                   <Button
                     onClick={() => handleApplyDiscount()}
                     disabled={
-                      justPaid ||
-                      processing ||
+                      controlsDisabled ||
                       applyingDiscount ||
-                      attemptLocked ||
                       openingSplitCheck ||
                       Boolean(updatingChargeId) ||
                       discountValue === '' ||
@@ -2905,10 +2927,8 @@ export default function PaymentModal({
                       variant="outline"
                       className="min-h-10 w-full rounded-xl"
                       disabled={
-                        justPaid ||
-                        processing ||
+                        controlsDisabled ||
                         applyingDiscount ||
-                        attemptLocked ||
                         openingSplitCheck ||
                         Boolean(updatingChargeId)
                       }
@@ -3206,7 +3226,7 @@ export default function PaymentModal({
                 const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
                 const isAppliedShare = appliedEqualShare?.index === idx;
                 const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
-                const rowDisabled = processing || attemptLocked || justPaid;
+                const rowDisabled = controlsDisabled;
                 const rowClasses = getTenderRowClasses({
                   isFocused,
                   isAllocated,
@@ -3263,7 +3283,7 @@ export default function PaymentModal({
                     id="payment-card-transaction-id"
                     type="text"
                     value={cardPayment.transaction_id ?? ''}
-                    disabled={processing || attemptLocked || justPaid}
+                    disabled={controlsDisabled}
                     onChange={(e) => updatePaymentTransactionId(cardTenderIndex, e.target.value)}
                     onKeyDown={handleTenderInputKeyDown}
                     placeholder={t('cardTransactionIdLabel')}
@@ -3307,7 +3327,7 @@ export default function PaymentModal({
                       amountTarget?.kind === 'payment' && amountTarget.index === idx;
                     const isAppliedShare = appliedEqualShare?.index === idx;
                     const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
-                    const rowDisabled = processing || attemptLocked || justPaid;
+                    const rowDisabled = controlsDisabled;
                     const rowClasses = getTenderRowClasses({
                       isFocused,
                       isAllocated,
@@ -3362,7 +3382,7 @@ export default function PaymentModal({
                 effectiveCustomerId &&
                 (() => {
                   const walletDisabled =
-                    processing || attemptLocked || justPaid || !walletBalance || walletBalance <= 0;
+                    controlsDisabled || !walletBalance || walletBalance <= 0;
                   const walletClasses = getTenderRowClasses({
                     isFocused: amountTarget?.kind === 'wallet',
                     isAllocated: walletAmt > 0,
@@ -3375,7 +3395,8 @@ export default function PaymentModal({
                           type="button"
                           disabled={walletDisabled}
                           onClick={() => {
-                            if (attemptLocked || justPaid || !walletBalance) return;
+                            if (attemptLocked || justPaid || billReadOnly || !walletBalance)
+                              return;
                             const dueMinor = remainingWalletMinor();
                             const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
                             setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
@@ -3399,7 +3420,7 @@ export default function PaymentModal({
                             disabled={walletDisabled}
                             onFocus={() => setAmountTarget({ kind: 'wallet' })}
                             onChange={(e) => {
-                              if (attemptLocked || justPaid) return;
+                              if (attemptLocked || justPaid || billReadOnly) return;
                               const v = e.target.value;
                               const maxWalletCurrencyStored = Math.floor(
                                 (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
@@ -3561,9 +3582,9 @@ export default function PaymentModal({
                                       type="button"
                                       aria-pressed={activePreset}
                                       data-testid={`equal-share-preset-${preset}`}
-                                      disabled={processing || attemptLocked}
+                                      disabled={controlsDisabled}
                                       onClick={() => {
-                                        if (attemptLocked) return;
+                                        if (attemptLocked || justPaid || billReadOnly) return;
                                         setEqualSharePayers(String(preset));
                                       }}
                                       className={`min-h-11 min-w-11 rounded-lg border px-2.5 py-1.5 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
@@ -3596,9 +3617,9 @@ export default function PaymentModal({
                                   step={1}
                                   inputMode="numeric"
                                   value={equalSharePayers}
-                                  disabled={processing || attemptLocked}
+                                  disabled={controlsDisabled}
                                   onChange={(event) => {
-                                    if (attemptLocked) return;
+                                    if (attemptLocked || justPaid || billReadOnly) return;
                                     setEqualSharePayers(event.target.value);
                                   }}
                                   className="min-h-11 w-12 rounded-lg border border-border bg-card px-1.5 py-1.5 text-center text-sm font-bold tabular-nums text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
@@ -3690,7 +3711,7 @@ export default function PaymentModal({
                                     variant="outline"
                                     size="sm"
                                     className="min-h-10 border-brand/35 bg-brand-light/40 font-semibold text-brand hover:border-brand hover:bg-brand-light/80 dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300 dark:hover:bg-indigo-500/25"
-                                    disabled={processing || attemptLocked}
+                                    disabled={controlsDisabled}
                                     onClick={() => void applyEqualShare(idx)}
                                   >
                                     {t('equalShareApplyTo', { method: tenderLabel(payment) })}
@@ -3886,7 +3907,7 @@ export default function PaymentModal({
                 }}
                 quickTenders={quickTenderOptions}
                 keypad={
-                  <fieldset disabled={processing || attemptLocked || justPaid} className="h-full">
+                  <fieldset disabled={controlsDisabled} className="h-full">
                     {amountTarget && (
                       <CurrencyTouchNumberPad
                         value={activeAmountValue}

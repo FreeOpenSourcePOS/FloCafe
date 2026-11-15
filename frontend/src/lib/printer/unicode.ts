@@ -8,6 +8,7 @@ import { displayCellWidth } from '@print/width';
 
 export {
   CURRENCY_ASCII_MAP,
+  isAmbiguousCurrencySymbol,
   normalizeCurrencyToAscii,
   resolveAsciiCurrencyFallback,
   stripCurrencyTokens,

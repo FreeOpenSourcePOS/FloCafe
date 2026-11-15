@@ -71,6 +71,7 @@ export const CURRENCY_ASCII_MAP: Readonly<Record<string, string>> = Object.freez
   'ر.س.': 'SAR',
   'ج.س.': 'SDG',
   'ل.س.': 'SYP',
+  'ل.س': 'SYP',
   'د.ت.': 'TND',
   'ر.ي.': 'YER',
   'د.إ.': 'AED',
@@ -122,13 +123,18 @@ const AMBIGUOUS_CURRENCY_ASCII_OWNER: Readonly<Record<string, string>> = Object.
   '₩': 'KRW',
 });
 
+/** True when a shared glyph (¥, £, ₩) must fall back to the ISO code rather than its default owner. */
+export function isAmbiguousCurrencySymbol(symbol: string, currencyCode?: string): boolean {
+  const owner = AMBIGUOUS_CURRENCY_ASCII_OWNER[symbol];
+  return Boolean(owner && currencyCode && currencyCode !== owner);
+}
+
 /** Resolve a currency symbol's ASCII fallback, preferring `currencyCode` when a symbol is shared. */
 export function resolveAsciiCurrencyFallback(
   symbol: string,
   currencyCode?: string,
 ): string | undefined {
-  const owner = AMBIGUOUS_CURRENCY_ASCII_OWNER[symbol];
-  if (owner && currencyCode && currencyCode !== owner) {
+  if (isAmbiguousCurrencySymbol(symbol, currencyCode)) {
     return currencyCode;
   }
   return CURRENCY_ASCII_MAP[symbol];

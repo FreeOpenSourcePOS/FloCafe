@@ -258,9 +258,9 @@ const SUPPORTED: Record<string, Row> = {
   OM: { locale: 'ar-OM', currency: 'OMR', tz: 'Asia/Muscat' },
   JO: { locale: 'ar-JO', currency: 'JOD', tz: 'Asia/Amman' },
   LB: { locale: 'ar-LB', currency: 'LBP', tz: 'Asia/Beirut' },
+  SY: { locale: 'ar-SY', currency: 'SYP', tz: 'Asia/Damascus' },
   IQ: { locale: 'ar-IQ', currency: 'IQD', tz: 'Asia/Baghdad' },
   YE: { locale: 'ar-YE', currency: 'YER', tz: 'Asia/Aden' },
-  SY: { locale: 'ar-SY', currency: 'SYP', tz: 'Asia/Damascus' },
   PS: { locale: 'ar-PS', currency: 'ILS', tz: 'Asia/Hebron' },
 
   // Africa
@@ -509,14 +509,35 @@ export function resolveStoredLocalePreference(
   return NEUTRAL_LOCALE_PREFERENCES[key];
 }
 
-export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
-  if (!currency) return currency;
+// Non-sterling pound currencies collapse to bare '£' under Intl narrowSymbol.
+const NON_STERLING_POUND_CURRENCIES = new Set(['SYP', 'SSP']);
+
+/** Resolves Intl currencyDisplay so non-sterling pound currencies never render bare '£'. */
+export function resolveIntlCurrencyDisplay(
+  currency: string,
+  locale = 'en-US',
+): 'narrowSymbol' | 'symbol' | 'code' {
+  const normalized = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
+  if (!NON_STERLING_POUND_CURRENCIES.has(normalized)) return 'narrowSymbol';
   try {
     const symbol = new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency,
-      currencyDisplay: 'narrowSymbol',
+      currency: normalized,
+      currencyDisplay: 'symbol',
     })
+      .formatToParts(0)
+      .find((part) => part.type === 'currency')?.value;
+    return symbol && symbol !== '£' && symbol !== '¤' ? 'symbol' : 'code';
+  } catch {
+    return 'code';
+  }
+}
+
+export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
+  if (!currency) return currency;
+  try {
+    const currencyDisplay = resolveIntlCurrencyDisplay(currency, locale);
+    const symbol = new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay })
       .formatToParts(0)
       .find((p) => p.type === 'currency')?.value;
     return symbol && symbol !== '¤' ? symbol : currency;
@@ -548,11 +569,10 @@ const normalizePreferences = (prefs?: LocalePreferences): Required<LocalePrefere
 export const formatCurrency = (amount: number, currency: string, locale = 'en-US'): string => {
   if (!currency) return amount.toFixed(2);
   try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency,
-      currencyDisplay: 'narrowSymbol',
-    }).format(amount);
+    const currencyDisplay = resolveIntlCurrencyDisplay(currency, locale);
+    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay }).format(
+      amount,
+    );
   } catch {
     return `${currency} ${amount.toFixed(2)}`;
   }
@@ -585,7 +605,7 @@ export const formatMoney = (
     const formatted = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
-      currencyDisplay: 'narrowSymbol',
+      currencyDisplay: resolveIntlCurrencyDisplay(currency, locale),
       numberingSystem,
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
@@ -823,10 +843,11 @@ export interface RegionalSnapshot {
 // Whether the currency symbol renders before or after the amount for this locale/currency pair.
 function regionalCurrencyPosition(locale: string, currency: string): 'prefix' | 'suffix' {
   try {
+    const currencyDisplay = resolveIntlCurrencyDisplay(currency, locale);
     const parts = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
-      currencyDisplay: 'narrowSymbol',
+      currencyDisplay,
     }).formatToParts(1);
     return parts.findIndex((part) => part.type === 'currency') <
       parts.findIndex((part) => part.type === 'integer')

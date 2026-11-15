@@ -359,9 +359,9 @@ FloCafe ships with 245 country profiles covering 153 currencies. Each profile se
 | Oman (OM)                           | OMR      | Asia/Muscat                    |
 | Jordan (JO)                         | JOD      | Asia/Amman                     |
 | Lebanon (LB)                        | LBP      | Asia/Beirut                    |
+| Syria (SY)                          | SYP      | Asia/Damascus                  |
 | Iraq (IQ)                           | IQD      | Asia/Baghdad                   |
 | Yemen (YE)                          | YER      | Asia/Aden                      |
-| Syria (SY)                          | SYP      | Asia/Damascus                  |
 | Palestinian Territories (PS)        | ILS      | Asia/Hebron                    |
 | Ghana (GH)                          | GHS      | Africa/Accra                   |
 | Tanzania (TZ)                       | TZS      | Africa/Dar_es_Salaam           |

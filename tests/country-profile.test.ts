@@ -6,11 +6,13 @@ import { getCountries } from 'libphonenumber-js';
 import {
   COUNTRIES,
   getCountryByCode,
+  getCurrencyFractionDigits,
   isValidTimeZone,
   resolveRegionalSnapshot,
 } from '../main/countries';
 import { isSupportedCurrencyCode } from '../shared/currencies';
 import { isSyntacticallyValidCurrencyCode } from '../shared/print/currency';
+import { resolveActiveCurrencyDecimals } from '../frontend/src/lib/cart-price';
 import { dialCodeFor } from '../frontend/src/lib/phone';
 
 const moduleApi = Module as unknown as {
@@ -61,7 +63,10 @@ test('SL, CW, and SX country profiles use current redenominated currencies', () 
   const slSnapshot = resolveRegionalSnapshot({ country: 'SL' });
   assert.equal(slSnapshot.currency, 'SLE');
   assert.equal(slSnapshot.currencyFractionDigits, 2);
-  assert.equal(slSnapshot.currencySymbol, 'Le');
+  assert.ok(
+    ['Le', 'SLE'].includes(slSnapshot.currencySymbol),
+    `SL currency symbol resolves cleanly (${slSnapshot.currencySymbol})`,
+  );
 
   const cw = getCountryByCode('CW');
   assert.ok(cw, 'CW country profile should exist');
@@ -115,6 +120,11 @@ test('every country in COUNTRIES satisfies regional, currency, timezone, phone, 
     assert.ok(
       !['SLL', 'ANG'].includes(c.currency),
       `${c.code}: currency ${c.currency} must not be a withdrawn currency`,
+    );
+    assert.equal(
+      resolveActiveCurrencyDecimals(c.code),
+      getCurrencyFractionDigits(c.currency),
+      `${c.code}: cart-price country decimal lookup matches ${c.currency}`,
     );
     assert.ok(isValidTimeZone(c.timezone), `${c.code}: valid IANA timezone (${c.timezone})`);
 

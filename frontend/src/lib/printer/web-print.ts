@@ -8,6 +8,7 @@ import {
   getCountryByCode,
   getCurrencyFractionDigits,
   getCurrencySymbol,
+  resolveIntlCurrencyDisplay,
   formatCurrencyForTenant,
   formatNumberForTenant,
   formatDateForTenant,
@@ -722,7 +723,10 @@ function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false
       return new Intl.NumberFormat(locale, {
         style: 'currency',
         currency,
-        currencyDisplay: getCurrencySymbol(currency, locale) === currency ? 'code' : 'narrowSymbol',
+        currencyDisplay:
+          getCurrencySymbol(currency, locale) === currency
+            ? 'code'
+            : resolveIntlCurrencyDisplay(currency, locale),
         ...(numberingSystem ? { numberingSystem } : {}),
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,

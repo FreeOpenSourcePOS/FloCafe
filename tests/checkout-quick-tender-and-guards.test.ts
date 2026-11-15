@@ -4180,6 +4180,209 @@ async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
     });
   }
 
+  // 11c: Unhydrated bill prop (no .order) picks up cancelled status from GET /bills/:id detailOrder
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    try {
+      const unhydratedBill = {
+        ...makeBill('bill-detail-cancelled', 20),
+        order: undefined,
+      };
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/bill-detail-cancelled')) {
+            return {
+              data: {
+                bill: {
+                  ...unhydratedBill,
+                  order: { ...makeBill('bill-detail-cancelled', 20).order, status: 'cancelled' },
+                },
+              },
+            };
+          }
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('settings/split_checks_enabled'))
+            return { data: { setting: { value: 'true' } } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const props = {
+        bill: unhydratedBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      };
+      harness.renderAndSettle(PaymentModal, props);
+      await new Promise((r) => setTimeout(r, 15));
+      const tree = harness.renderAndSettle(PaymentModal, props);
+
+      const payCta = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.equal(
+        Boolean(payCta?.props?.disabled),
+        true,
+        'Unhydrated bill with cancelled detailOrder disables Pay CTA',
+      );
+      assert.ok(
+        renderToStaticMarkup(payCta).toLowerCase().includes('cancelled'),
+        'Unhydrated bill with cancelled detailOrder labels Pay CTA Cancelled',
+      );
+
+      const strip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.ok(
+        renderToStaticMarkup(strip).includes('noFurtherActions'),
+        'Unhydrated bill with cancelled detailOrder shows noFurtherActions banner',
+      );
+
+      const splitSection = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'split-check-section',
+      )[0];
+      assert.ok(splitSection, 'Split section rendered for cancelled detailOrder');
+      for (const btn of collectElements(splitSection, (el) => el.type === 'button')) {
+        assert.equal(
+          Boolean(btn.props?.disabled),
+          true,
+          'Cancelled detailOrder disables Split Check button',
+        );
+      }
+      assert.ok(
+        renderToStaticMarkup(splitSection).includes('noFurtherActions'),
+        'Cancelled detailOrder split section explains noFurtherActions',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 11d: Completion WhatsApp actions pass settledBill (with post-settlement fields and hydrated order)
+  for (const waReady of [false, true]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      try {
+        const sentBills: any[] = [];
+        const sharedBills: any[] = [];
+        const splitPropBill = {
+          ...makeBill('bill-wa-settled', 20),
+          order: undefined,
+        };
+        const hydratedOrder = {
+          ...makeBill('bill-wa-settled', 20).order,
+          customer: { id: 9, name: 'Ada', phone: '5551234', country_code: '+1' },
+        };
+        const settledServerBill = {
+          ...splitPropBill,
+          payment_status: 'paid',
+          paid_amount: 20,
+          balance: 0,
+        };
+
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/bill-wa-settled')) {
+              return { data: { bill: { ...splitPropBill, order: hydratedOrder } } };
+            }
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('settings/split_checks_enabled'))
+              return { data: { setting: { value: 'false' } } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            if (String(url).endsWith('/payments')) {
+              return { data: { bill: settledServerBill, loyaltyPointsEarned: 0 } };
+            }
+            return { data: {} };
+          },
+        });
+        const baseLoad = Module._load;
+        Module._load = function (request: string, parent: any, isMain: boolean) {
+          if (request === '@/hooks/useWhatsAppReady') {
+            return { useWhatsAppReady: () => waReady };
+          }
+          if (request === '@/lib/whatsapp-share') {
+            return {
+              sendBillViaFlo: async (passedBill: any) => {
+                sentBills.push(passedBill);
+              },
+              shareBillViaWhatsApp: async (passedBill: any) => {
+                sharedBills.push(passedBill);
+                return true;
+              },
+            };
+          }
+          return baseLoad.call(this, request, parent, isMain);
+        };
+
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+
+        const props = {
+          bill: splitPropBill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        };
+        harness.renderAndSettle(PaymentModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        let tree = harness.renderAndSettle(PaymentModal, props);
+
+        const cashBtn = collectElements(
+          tree,
+          (el) => el.type === 'button' && el.props?.title === 'methodCash',
+        )[0];
+        cashBtn.props.onClick();
+        tree = harness.renderAndSettle(PaymentModal, props);
+
+        const payCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        await payCta.props.onClick();
+        tree = harness.renderAndSettle(PaymentModal, props);
+
+        const waBtn = collectElements(
+          tree,
+          (el) =>
+            typeof el.props?.onClick === 'function' &&
+            renderToStaticMarkup(el).includes(waReady ? 'sendViaWhatsApp' : 'shareViaWhatsApp'),
+        )[0];
+        assert.ok(waBtn, `WhatsApp completion button rendered (waReady=${waReady})`);
+        await waBtn.props.onClick();
+
+        const passed = waReady ? sentBills[0] : sharedBills[0];
+        assert.ok(passed, `WhatsApp handler invoked with bill (waReady=${waReady})`);
+        assert.equal(
+          passed.payment_status,
+          'paid',
+          `WhatsApp handler receives settled payment_status='paid' (waReady=${waReady})`,
+        );
+        assert.ok(
+          Array.isArray(passed.order?.items) && passed.order.items.length > 0,
+          `WhatsApp handler receives hydrated order items (waReady=${waReady})`,
+        );
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
   console.log('  ✓ Paid/terminal bill CTA guard & TableCheckout header status label verified');
 }
 

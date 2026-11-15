@@ -262,12 +262,6 @@ export default function PaymentModal({
   const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
   const remainingMinor = toMinorUnits(remaining);
-  const billTerminal =
-    bill.payment_status === 'refunded' ||
-    bill.payment_status === 'partially_refunded' ||
-    bill.order?.status === 'cancelled';
-  const isBillPaid = bill.payment_status === 'paid' && remainingMinor <= 0;
-  const billReadOnly = billTerminal || isBillPaid;
 
   const buildAttemptPaymentRows = (
     attempt: PendingPaymentAttempt | null,
@@ -470,6 +464,13 @@ export default function PaymentModal({
   }, [bill.id]);
   const detailOrder = billDetails?.id === bill.id ? billDetails.order : null;
   const contextOrder = detailOrder ?? bill.order;
+  const isOrderCancelled = contextOrder?.status === 'cancelled';
+  const billTerminal =
+    bill.payment_status === 'refunded' ||
+    bill.payment_status === 'partially_refunded' ||
+    isOrderCancelled;
+  const isBillPaid = bill.payment_status === 'paid' && remainingMinor <= 0;
+  const billReadOnly = billTerminal || isBillPaid;
   const orderCustomer = detailOrder?.customer ?? bill.order?.customer;
   const cartCustomer = effectiveCustomerId
     ? String(orderCustomer?.id) === String(effectiveCustomerId)
@@ -588,7 +589,7 @@ export default function PaymentModal({
     if (attemptLocked || paymentOutcomeUnknown || processing) {
       return { reason: 'splitCheckResolvePaymentFirst' } as const;
     }
-    if (bill.order?.status === 'cancelled') {
+    if (isOrderCancelled) {
       return { cancelled: true } as const;
     }
     // 3. Only an untouched unpaid check is divisible.
@@ -2126,6 +2127,11 @@ export default function PaymentModal({
     country: currentTenant?.country || '',
   };
 
+  const completionBill = (() => {
+    const base = settledBill ?? bill;
+    return base.order || !contextOrder ? base : { ...base, order: contextOrder };
+  })();
+
   const handleSendWhatsApp = async () => {
     const phone = cartCustomer?.phone;
     if (!phone) {
@@ -2134,7 +2140,14 @@ export default function PaymentModal({
     }
     setSendingWa(true);
     try {
-      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned }, locale);
+      await sendBillViaFlo(
+        completionBill,
+        phone,
+        tenantForShare,
+        whatsappSendT,
+        { pointsEarned },
+        locale,
+      );
     } finally {
       setSendingWa(false);
     }
@@ -2147,7 +2160,7 @@ export default function PaymentModal({
     }
     try {
       const opened = await shareBillViaWhatsApp(
-        bill,
+        completionBill,
         { phone: cartCustomer.phone, country_code: cartCustomer.country_code },
         tenantForShare,
         { pointsEarned },
@@ -2161,7 +2174,7 @@ export default function PaymentModal({
 
   const handlePrintCompletionReceipt = async () => {
     if (printingReceipt) return;
-    const targetBill = settledBill ?? bill;
+    const targetBill = completionBill;
     const reservedWindow = reservePrintWindow?.();
     setPrintingReceipt(true);
     try {
@@ -2364,10 +2377,7 @@ export default function PaymentModal({
     if (billTerminal) {
       return {
         tone: 'warning',
-        message:
-          bill.order?.status === 'cancelled'
-            ? tOrders('noFurtherActions')
-            : t('paymentBillRefunded'),
+        message: isOrderCancelled ? tOrders('noFurtherActions') : t('paymentBillRefunded'),
       };
     }
     if (nonCashExceedsBalance) {
@@ -2499,12 +2509,11 @@ export default function PaymentModal({
         !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
     );
 
-  const terminalCtaLabel =
-    bill.order?.status === 'cancelled'
-      ? tOrders('cancelled')
-      : bill.payment_status === 'partially_refunded'
-        ? tOrders('partiallyRefunded')
-        : tOrders('refunded');
+  const terminalCtaLabel = isOrderCancelled
+    ? tOrders('cancelled')
+    : bill.payment_status === 'partially_refunded'
+      ? tOrders('partiallyRefunded')
+      : tOrders('refunded');
 
   const payCtaLabel = processing
     ? t('processingPayment')

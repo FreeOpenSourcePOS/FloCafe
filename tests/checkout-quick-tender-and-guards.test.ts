@@ -3412,8 +3412,9 @@ async function testConfirmDialogAndCardReferenceSwitchGuards() {
 
       const payBtn = collectElements(
         tree,
-        (el) => el.props?.['data-testid'] === 'payment-submit-btn',
-      )[0];
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.ok(payBtn, 'Pay CTA button rendered');
       const payPromise = payBtn.props.onClick();
       await new Promise((r) => setTimeout(r, 10));
       tree = renderModal(true);

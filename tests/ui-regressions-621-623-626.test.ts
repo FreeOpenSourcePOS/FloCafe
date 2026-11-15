@@ -477,6 +477,35 @@ try {
       `rendered CartPanel order-type button "${label}" renders an aria-hidden icon, aria-pressed=${pressed}, single-line whitespace-nowrap containment, and a truncatable label span`,
     );
   }
+  const { resolveFullModeOrderTypeChromePx } = require('../frontend/src/components/pos/CartPanel');
+  assert.equal(
+    resolveFullModeOrderTypeChromePx(
+      { paddingLeft: '2px', paddingRight: '2px', columnGap: '2px' },
+      { columnGap: '2px' },
+      16,
+    ),
+    20,
+    'resolveFullModeOrderTypeChromePx computes 20px chrome at 16px root font (4px px-0.5 + 2px gap-0.5 + 13px icon + 1px guard)',
+  );
+  assert.equal(
+    resolveFullModeOrderTypeChromePx(
+      { paddingLeft: '4px', paddingRight: '4px', columnGap: '4px' },
+      { columnGap: '4px' },
+      32,
+    ),
+    26,
+    'resolveFullModeOrderTypeChromePx scales full-mode spacing to 26px at 32px root font while keeping the 13px icon fixed in px',
+  );
+  assert.equal(
+    resolveFullModeOrderTypeChromePx(null, { columnGap: '4px' }, 32),
+    26,
+    'resolveFullModeOrderTypeChromePx derives matching 26px full-mode spacing from track computed gap when currently rendered in compact mode',
+  );
+  assert.equal(
+    resolveFullModeOrderTypeChromePx(null, null, 24),
+    23,
+    'resolveFullModeOrderTypeChromePx falls back to root font-size scaling (6px + 3px + 13px + 1px = 23px at 24px root font)',
+  );
 
   // Delivery CartPanel summary strip and OrderDetailsDrawer rendered output
   useCartStore.getState().setOrderType('delivery');

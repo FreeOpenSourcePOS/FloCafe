@@ -272,6 +272,91 @@ test('POS cart order-type tabs never overflow, wrap, or overlap across LTR and R
           (el as HTMLElement).style.width = '';
         });
         await assertOrderTypeStripGeometry(desktopCart, localeCase, 'online', false);
+
+        // Root font-size scaling check: at a 32px root font near the fit boundary, full-mode spacing
+        // (px-0.5 + gap-0.5) scales with root font size and switches cleanly to compact mode instead of truncating in full mode.
+        await desktopCart.evaluate(async (cartEl) => {
+          document.documentElement.style.fontSize = '32px';
+          await new Promise<void>((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r())),
+          );
+          await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
+          const trackEl = cartEl.querySelector(
+            '[data-testid="pos-order-type-tabs"]',
+          ) as HTMLElement;
+          const trackStyle = window.getComputedStyle(trackEl);
+          const trackPad =
+            (Number.parseFloat(trackStyle.paddingLeft) || 0) +
+            (Number.parseFloat(trackStyle.paddingRight) || 0);
+          const trackGap = Number.parseFloat(trackStyle.columnGap) || 0;
+          const spans = Array.from(trackEl.querySelectorAll('button > span')) as HTMLSpanElement[];
+          let sumLabels = 0;
+          for (const span of spans) {
+            const range = document.createRange();
+            range.selectNodeContents(span);
+            sumLabels += Math.ceil(Math.max(span.scrollWidth, range.getBoundingClientRect().width));
+          }
+          const targetAvailableWidth = 3 * trackGap + sumLabels + 90;
+          const cartOuterDelta =
+            cartEl.getBoundingClientRect().width - (trackEl.clientWidth - trackPad);
+          (cartEl as HTMLElement).style.width =
+            `${Math.ceil(targetAvailableWidth + cartOuterDelta)}px`;
+          await new Promise<void>((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r())),
+          );
+          await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
+        });
+        try {
+          await assertOrderTypeStripGeometry(desktopCart, localeCase, 'online', true);
+        } finally {
+          await desktopCart.evaluate(async (cartEl) => {
+            (cartEl as HTMLElement).style.width = '';
+            document.documentElement.style.fontSize = '';
+            await new Promise<void>((r) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => r())),
+            );
+            await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
+          });
+        }
+        await assertOrderTypeStripGeometry(desktopCart, localeCase, 'online', false);
+
+        // Inactive truncated label check: if a visible inactive label truncates, hover and keyboard focus still expose tooltips.
+        const inactiveDineInBtn = desktopCart.getByRole('button', {
+          name: localeCase.labels.dine_in,
+          exact: true,
+        });
+        const inactiveTakeawayBtn = desktopCart.getByRole('button', {
+          name: localeCase.labels.takeaway,
+          exact: true,
+        });
+        await inactiveDineInBtn.evaluate((btn) => {
+          (btn as HTMLElement).style.maxWidth = '44px';
+        });
+        await inactiveTakeawayBtn.evaluate((btn) => {
+          (btn as HTMLElement).style.maxWidth = '44px';
+        });
+        try {
+          for (const btn of [inactiveDineInBtn, inactiveTakeawayBtn]) {
+            const isTruncated = await btn.evaluate((el) => {
+              const span = el.querySelector('span');
+              return Boolean(span && span.scrollWidth > span.clientWidth + 1);
+            });
+            expect(isTruncated).toBe(true);
+          }
+          await assertTooltipOnCompactInactiveSegments(
+            page,
+            desktopCart,
+            localeCase.labels.dine_in,
+            localeCase.labels.takeaway,
+          );
+        } finally {
+          await inactiveDineInBtn.evaluate((btn) => {
+            (btn as HTMLElement).style.maxWidth = '';
+          });
+          await inactiveTakeawayBtn.evaluate((btn) => {
+            (btn as HTMLElement).style.maxWidth = '';
+          });
+        }
       }
     }
 

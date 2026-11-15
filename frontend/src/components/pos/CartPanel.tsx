@@ -73,8 +73,37 @@ const orderTypeIcons: Record<OrderType, typeof UtensilsCrossed> = {
 };
 
 const ORDER_TYPE_ICON_PX = 13;
-// Full-mode segment chrome: px-0.5 (4px) + 13px icon + gap-0.5 (2px) = 19px, plus 1px subpixel guard.
-const FULL_MODE_SEGMENT_CHROME_PX = 20;
+const TRACK_GAP_UNITS = 0.5;
+const FULL_MODE_PADDING_X_UNITS = 0.5;
+const FULL_MODE_GAP_UNITS = 0.5;
+const SUBPIXEL_FIT_GUARD_PX = 1;
+
+export function resolveFullModeOrderTypeChromePx(
+  fullModeButtonStyle: Pick<
+    CSSStyleDeclaration,
+    'paddingLeft' | 'paddingRight' | 'columnGap'
+  > | null,
+  trackStyle: Pick<CSSStyleDeclaration, 'columnGap'> | null,
+  rootFontSizePx: number,
+): number {
+  if (fullModeButtonStyle) {
+    const padLeft = Number.parseFloat(fullModeButtonStyle.paddingLeft);
+    const padRight = Number.parseFloat(fullModeButtonStyle.paddingRight);
+    const colGap = Number.parseFloat(fullModeButtonStyle.columnGap);
+    if (Number.isFinite(padLeft) && Number.isFinite(padRight) && Number.isFinite(colGap)) {
+      return padLeft + padRight + colGap + ORDER_TYPE_ICON_PX + SUBPIXEL_FIT_GUARD_PX;
+    }
+  }
+  const safeRootFontSize =
+    Number.isFinite(rootFontSizePx) && rootFontSizePx > 0 ? rootFontSizePx : 16;
+  const parsedTrackGap = trackStyle ? Number.parseFloat(trackStyle.columnGap) : Number.NaN;
+  const spacingUnitPx =
+    Number.isFinite(parsedTrackGap) && parsedTrackGap > 0
+      ? parsedTrackGap / TRACK_GAP_UNITS
+      : safeRootFontSize * 0.25;
+  const fullSpacingUnits = 2 * FULL_MODE_PADDING_X_UNITS + FULL_MODE_GAP_UNITS;
+  return fullSpacingUnits * spacingUnitPx + ORDER_TYPE_ICON_PX + SUBPIXEL_FIT_GUARD_PX;
+}
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
@@ -232,7 +261,9 @@ export default function CartPanel({
   const orderTypeTrackRef = useRef<HTMLDivElement | null>(null);
   const orderTypeLabelRefs = useRef<Partial<Record<OrderType, HTMLSpanElement | null>>>({});
   const [isOrderTypeCompact, setIsOrderTypeCompact] = useState(false);
-  const [isActiveOrderTypeTruncated, setIsActiveOrderTypeTruncated] = useState(false);
+  const [truncatedOrderTypes, setTruncatedOrderTypes] = useState<
+    Partial<Record<OrderType, boolean>>
+  >({});
   const orderTypeLabels: Record<OrderType, string> = {
     dine_in: t('orderTypeDineIn'),
     takeaway: t('orderTypeTakeaway'),
@@ -253,11 +284,25 @@ export default function CartPanel({
       const style = window.getComputedStyle(currentTrack);
       const inlinePadding =
         (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
-      const gap = Number.parseFloat(style.columnGap) || 2;
+      const rootFontSize =
+        typeof document !== 'undefined'
+          ? Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16
+          : 16;
+      const parsedGap = Number.parseFloat(style.columnGap);
+      const gap = Number.isFinite(parsedGap) ? parsedGap : 0.125 * rootFontSize;
       const availableWidth = currentTrack.clientWidth - inlinePadding;
       if (availableWidth <= 0) return;
 
       const types = ORDER_TYPES.filter((type) => isRestaurant || type !== 'dine_in');
+      const sampleFullModeButton = !isOrderTypeCompact
+        ? (orderTypeLabelRefs.current[types[0]]?.parentElement ?? null)
+        : null;
+      const fullModeSegmentChromePx = resolveFullModeOrderTypeChromePx(
+        sampleFullModeButton ? window.getComputedStyle(sampleFullModeButton) : null,
+        style,
+        rootFontSize,
+      );
+
       let requiredFullWidth = Math.max(0, types.length - 1) * gap;
       for (const type of types) {
         const span = orderTypeLabelRefs.current[type];
@@ -267,19 +312,29 @@ export default function CartPanel({
           range.selectNodeContents(span);
           labelWidth = Math.max(labelWidth, range.getBoundingClientRect().width);
         }
-        requiredFullWidth += FULL_MODE_SEGMENT_CHROME_PX + Math.ceil(labelWidth);
+        requiredFullWidth += fullModeSegmentChromePx + Math.ceil(labelWidth);
       }
 
       const nextCompact = requiredFullWidth > availableWidth;
       setIsOrderTypeCompact((prev) => (prev === nextCompact ? prev : nextCompact));
 
-      const activeSpan = orderTypeLabelRefs.current[cart.orderType];
-      const nextTruncated = Boolean(
-        activeSpan &&
-        !activeSpan.classList.contains('sr-only') &&
-        activeSpan.scrollWidth > activeSpan.clientWidth + 1,
-      );
-      setIsActiveOrderTypeTruncated((prev) => (prev === nextTruncated ? prev : nextTruncated));
+      const nextTruncated: Partial<Record<OrderType, boolean>> = {};
+      for (const type of types) {
+        const span = orderTypeLabelRefs.current[type];
+        if (
+          span &&
+          !span.classList.contains('sr-only') &&
+          span.scrollWidth > span.clientWidth + 1
+        ) {
+          nextTruncated[type] = true;
+        }
+      }
+      setTruncatedOrderTypes((prev) => {
+        const unchanged = ORDER_TYPES.every(
+          (type) => Boolean(prev[type]) === Boolean(nextTruncated[type]),
+        );
+        return unchanged ? prev : nextTruncated;
+      });
     };
 
     measure();
@@ -288,6 +343,10 @@ export default function CartPanel({
     if (typeof ResizeObserver !== 'undefined') {
       observer = new ResizeObserver(() => measure());
       observer.observe(track);
+      for (const type of ORDER_TYPES) {
+        const span = orderTypeLabelRefs.current[type];
+        if (span) observer.observe(span);
+      }
     }
 
     let cancelled = false;
@@ -481,7 +540,8 @@ export default function CartPanel({
               const label = orderTypeLabels[type];
               const isSelected = cart.orderType === type;
               const isCompactIconOnly = isOrderTypeCompact && !isSelected;
-              const showTooltip = isCompactIconOnly || (isSelected && isActiveOrderTypeTruncated);
+              const isLabelTruncated = !isCompactIconOnly && Boolean(truncatedOrderTypes[type]);
+              const showTooltip = isCompactIconOnly || isLabelTruncated;
               return (
                 <Tooltip key={type} open={showTooltip ? undefined : false}>
                   <TooltipTrigger asChild>

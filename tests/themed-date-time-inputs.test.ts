@@ -542,6 +542,7 @@ try {
 
   const { useAuthStore } = require('@/store/auth');
   const prevAuth = useAuthStore.getState();
+  const prevAuthInitial = { ...useAuthStore.getInitialState() };
   const origWindow = (globalThis as any).window;
   try {
     useAuthStore.setState({
@@ -563,6 +564,7 @@ try {
         ],
       } as any,
     });
+    Object.assign(useAuthStore.getInitialState(), useAuthStore.getState());
 
     // 3f. Verify ScheduledOrdersDrawer renders themed datetime-local input in reschedule mode
     const ScheduledOrdersDrawer =
@@ -714,6 +716,7 @@ try {
     }
   } finally {
     useAuthStore.setState(prevAuth);
+    Object.assign(useAuthStore.getInitialState(), prevAuthInitial);
     if (origWindow === undefined) delete (globalThis as any).window;
     else (globalThis as any).window = origWindow;
   }

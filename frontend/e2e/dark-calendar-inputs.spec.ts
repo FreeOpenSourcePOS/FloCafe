@@ -1,11 +1,26 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, loginWithPassword } from './helpers/test-auth';
 
 test.describe.configure({ mode: 'serial' });
 
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || '';
+
 let priorThemeMode = 'light';
 let priorScheduledEnabled = 'false';
+const createdOrderIds: number[] = [];
+
+async function captureEvidence(page: Page, filename: string): Promise<void> {
+  if (!EVIDENCE_DIR) return;
+  fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+  await page.screenshot({
+    path: path.join(EVIDENCE_DIR, filename),
+    fullPage: true,
+    timeout: 15_000,
+  });
+}
 
 async function getAuthHeaders(page: Page): Promise<Record<string, string>> {
   const res = await page.request.post(`${BASE}/api/auth/login`, {
@@ -36,7 +51,12 @@ async function setThemeMode(page: Page, mode: 'light' | 'dark'): Promise<void> {
     .catch(() => {});
 }
 
-async function assertThemedDarkInput(page: Page, input: Locator): Promise<void> {
+async function assertThemedInput(
+  page: Page,
+  input: Locator,
+  expectedTheme: 'dark' | 'light',
+  expectedIconClass: 'lucide-calendar-days' | 'lucide-clock' = 'lucide-calendar-days',
+): Promise<void> {
   await expect(input).toBeVisible({ timeout: 15_000 });
 
   const styles = await input.evaluate((el) => {
@@ -83,6 +103,7 @@ async function assertThemedDarkInput(page: Page, input: Locator): Promise<void> 
     return {
       isDark,
       colorScheme: cs.colorScheme,
+      inputColor: cs.color,
       hasHideOpacityClass: classList.includes('[&::-webkit-calendar-picker-indicator]:opacity-0'),
       hasHidePointerClass: classList.includes(
         '[&::-webkit-calendar-picker-indicator]:pointer-events-none',
@@ -97,17 +118,20 @@ async function assertThemedDarkInput(page: Page, input: Locator): Promise<void> 
     };
   });
 
-  expect(styles.isDark).toBe(true);
-  expect(styles.colorScheme).toBe('dark');
+  expect(styles.isDark).toBe(expectedTheme === 'dark');
+  expect(styles.colorScheme).toBe(expectedTheme);
   expect(styles.hasHideOpacityClass).toBe(true);
   expect(styles.hasHidePointerClass).toBe(true);
   expect(styles.hasIndicatorOpacityRule).toBe(true);
   expect(styles.hasIndicatorPointerRule).toBe(true);
   expect(styles.hasButton).toBe(true);
   expect(styles.hasSvg).toBe(true);
-  expect(styles.svgClass).toContain('lucide-calendar-days');
+  expect(styles.svgClass).toContain(expectedIconClass);
   expect(styles.buttonColor).not.toBe('');
-  expect(styles.buttonColor).not.toBe('rgb(0, 0, 0)');
+  if (expectedTheme === 'dark') {
+    expect(styles.buttonColor).not.toBe('rgb(0, 0, 0)');
+    expect(styles.buttonColor).not.toBe('oklch(0 0 0)');
+  }
   expect(styles.centerCovered).toBe(false);
 
   // Clicking the custom button invokes native showPicker() on the underlying input
@@ -123,6 +147,27 @@ async function assertThemedDarkInput(page: Page, input: Locator): Promise<void> 
     () => (window as unknown as { __floPickerSpyCalled?: boolean }).__floPickerSpyCalled === true,
   );
   expect(pickerInvoked).toBe(true);
+  await input.evaluate((el) => {
+    delete (el as Partial<HTMLInputElement>).showPicker;
+  });
+}
+
+function futureBangkokWallClock(minutesAhead: number): string {
+  const target = new Date(Date.now() + minutesAhead * 60 * 1000);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Bangkok',
+    hour12: false,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(target);
+  const byType: Record<string, string> = {};
+  for (const part of parts) byType[part.type] = part.value;
+  const hour = byType.hour === '24' ? '00' : byType.hour;
+  return `${byType.year}-${byType.month}-${byType.day}T${hour}:${byType.minute}`;
 }
 
 test.beforeAll(async ({ request }) => {
@@ -143,6 +188,14 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async ({ request }) => {
   const token = getE2eToken();
   const headers = { Authorization: `Bearer ${token}` };
+  for (const orderId of createdOrderIds) {
+    await request
+      .patch(`${BASE}/api/orders/${orderId}/status`, {
+        headers,
+        data: { status: 'cancelled', reason: 'E2E cleanup' },
+      })
+      .catch(() => {});
+  }
   await request.put(`${BASE}/api/settings/theme_mode`, {
     headers,
     data: { value: priorThemeMode },
@@ -153,7 +206,7 @@ test.afterAll(async ({ request }) => {
   });
 });
 
-test('dark mode themes Expenses filter and form calendar inputs without breaking fill()', async ({
+test('dark mode themes Expenses filter and form calendar inputs without breaking fill() and reverts cleanly in light mode', async ({
   page,
 }) => {
   await loginWithPassword(page, 'owner@flo.local');
@@ -165,29 +218,95 @@ test('dark mode themes Expenses filter and form calendar inputs without breaking
   const fromInput = page.getByTestId('expense-filter-from');
   const toInput = page.getByTestId('expense-filter-to');
 
-  await assertThemedDarkInput(page, fromInput);
-  await assertThemedDarkInput(page, toInput);
+  await assertThemedInput(page, fromInput, 'dark');
+  await assertThemedInput(page, toInput, 'dark');
 
   await fromInput.fill('2026-11-01');
   await expect(fromInput).toHaveValue('2026-11-01');
+  await captureEvidence(page, 'expenses-dark-filters.png');
+
+  await fromInput.locator('xpath=following-sibling::button[1]').click();
+  await page.keyboard.press('Escape');
 
   await page.getByTestId('expense-add').click();
   const incurredInput = page.getByTestId('expense-form-incurred-on');
-  await assertThemedDarkInput(page, incurredInput);
+  await assertThemedInput(page, incurredInput, 'dark');
   await incurredInput.fill('2026-11-10');
   await expect(incurredInput).toHaveValue('2026-11-10');
+  await captureEvidence(page, 'expenses-dark-form.png');
+
+  // Adversarial: showPicker throwing falls back to focus() without uncaught errors
+  const pageErrors: Error[] = [];
+  page.on('pageerror', (err) => pageErrors.push(err));
+  await incurredInput.evaluate((el) => {
+    (el as HTMLInputElement).showPicker = () => {
+      throw new Error('showPicker unsupported');
+    };
+  });
+  await incurredInput.locator('xpath=following-sibling::button[1]').click();
+  const isFocused = await incurredInput.evaluate((el) => document.activeElement === el);
+  expect(isFocused).toBe(true);
+  expect(pageErrors).toEqual([]);
+  await incurredInput.evaluate((el) => {
+    delete (el as Partial<HTMLInputElement>).showPicker;
+  });
 
   // Switch back to light mode and confirm colorScheme reverts to light
   await setThemeMode(page, 'light');
   await page.reload();
   await expect(page.getByTestId('expense-filter-from')).toBeVisible({ timeout: 20_000 });
-  const lightScheme = await page
-    .getByTestId('expense-filter-from')
-    .evaluate((el) => getComputedStyle(el).colorScheme);
-  expect(lightScheme).toBe('light');
+  const lightFrom = page.getByTestId('expense-filter-from');
+  await assertThemedInput(page, lightFrom, 'light');
+  await captureEvidence(page, 'expenses-light-filters.png');
 });
 
-test('dark mode themes POS OrderDetailsDrawer datetime-local input without breaking fill()', async ({
+test('dark mode themes Dashboard day, month, range pickers and CashCloseModal business date', async ({
+  page,
+}) => {
+  await loginWithPassword(page, 'owner@flo.local');
+  await setThemeMode(page, 'dark');
+
+  await page.goto(`${BASE}/dashboard`);
+  const dayInput = page.locator('input[type="date"][aria-label="Select date"]');
+  await assertThemedInput(page, dayInput, 'dark');
+  await captureEvidence(page, 'dashboard-dark-day.png');
+
+  await page
+    .getByRole('group', { name: 'Dashboard period' })
+    .getByRole('button', { name: 'Month' })
+    .click();
+  const monthInput = page.locator('input[type="month"][aria-label="Select month"]');
+  await assertThemedInput(page, monthInput, 'dark');
+  await captureEvidence(page, 'dashboard-dark-month.png');
+
+  await page
+    .getByRole('group', { name: 'Dashboard period' })
+    .getByRole('button', { name: 'Range' })
+    .click();
+  const rangeStart = page.locator('input[type="date"][aria-label="Period start"]');
+  const rangeEnd = page.locator('input[type="date"][aria-label="Period end"]');
+  await assertThemedInput(page, rangeStart, 'dark');
+  await assertThemedInput(page, rangeEnd, 'dark');
+  await captureEvidence(page, 'dashboard-dark-range.png');
+
+  // CashCloseModal business date input
+  await page.getByRole('button', { name: 'Close day' }).click();
+  const cashCloseDate = page.locator('#business-date');
+  await assertThemedInput(page, cashCloseDate, 'dark');
+  await captureEvidence(page, 'dashboard-dark-cash-close.png');
+
+  // Light mode verification
+  await setThemeMode(page, 'light');
+  await page.reload();
+  await assertThemedInput(
+    page,
+    page.locator('input[type="date"][aria-label="Select date"]'),
+    'light',
+  );
+  await captureEvidence(page, 'dashboard-light-day.png');
+});
+
+test('dark mode themes POS OrderDetailsDrawer, ScheduledOrdersDrawer reschedule, and CashDrawerMovementModal', async ({
   page,
 }) => {
   await loginWithPassword(page, 'owner@flo.local');
@@ -202,7 +321,9 @@ test('dark mode themes POS OrderDetailsDrawer datetime-local input without break
   await page.goto(`${BASE}/pos`);
   await expect(page.getByTestId('pos-product-grid')).toBeVisible({ timeout: 20_000 });
 
+  // 1. OrderDetailsDrawer datetime-local input
   const cartShell = page.getByTestId('cart-shell');
+  await page.getByTestId('pos-product-card').first().click();
   await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
   await expect(cartShell.getByTestId('pos-order-details-summary')).toBeVisible();
   await cartShell.getByTestId('pos-order-details-summary').click();
@@ -211,7 +332,110 @@ test('dark mode themes POS OrderDetailsDrawer datetime-local input without break
   await expect(detailsDrawer).toBeVisible();
 
   const scheduleInput = detailsDrawer.getByTestId('pos-send-to-kitchen-input');
-  await assertThemedDarkInput(page, scheduleInput);
-  await scheduleInput.fill('2030-01-15T10:30');
-  await expect(scheduleInput).toHaveValue('2030-01-15T10:30');
+  await assertThemedInput(page, scheduleInput, 'dark');
+  const futureWall = futureBangkokWallClock(90);
+  await scheduleInput.fill(futureWall);
+  await expect(scheduleInput).toHaveValue(futureWall);
+  await captureEvidence(page, 'pos-dark-order-details-drawer.png');
+  await scheduleInput.locator('xpath=following-sibling::button[1]').click();
+  await page.keyboard.press('Escape');
+  await detailsDrawer.getByTestId('pos-order-details-done-btn').click();
+  await expect(detailsDrawer).toHaveCount(0);
+
+  // 2. Submit scheduled order (hold/unpaid or confirm payment) so ScheduledOrdersDrawer has a real order
+  const createOrderPromise = page.waitForResponse((res) => {
+    const url = new URL(res.url());
+    return res.request().method() === 'POST' && url.pathname === '/api/orders';
+  });
+  await cartShell.getByRole('button', { name: 'Place Order' }).click();
+  await expect(page.getByRole('button', { name: /Confirm Payment/ })).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.getByRole('button', { name: 'Cash', exact: true }).click();
+  await page.getByRole('button', { name: /Confirm Payment/ }).click();
+  const createOrderRes = await createOrderPromise;
+  expect(createOrderRes.status()).toBe(201);
+  const createdOrderId = Number((await createOrderRes.json()).order.id);
+  createdOrderIds.push(createdOrderId);
+  await page
+    .getByTestId('prepaid-checkout-modal')
+    .getByRole('button', { name: 'Done', exact: true })
+    .click();
+
+  // Open ScheduledOrdersDrawer and enter Reschedule mode
+  await page.getByTestId('pos-scheduled-orders-btn').click();
+  const scheduledDrawer = page.getByTestId('scheduled-orders-drawer');
+  await expect(scheduledDrawer).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId(`scheduled-reschedule-btn-${createdOrderId}`).click();
+  const rescheduleInput = page.getByTestId(`scheduled-reschedule-input-${createdOrderId}`);
+  await assertThemedInput(page, rescheduleInput, 'dark');
+  const rescheduledWall = futureBangkokWallClock(150);
+  await rescheduleInput.fill(rescheduledWall);
+  await expect(rescheduleInput).toHaveValue(rescheduledWall);
+  await captureEvidence(page, 'pos-dark-scheduled-reschedule.png');
+  await page.getByTestId(`scheduled-reschedule-save-${createdOrderId}`).click();
+  await expect(page.getByTestId(`scheduled-reschedule-panel-${createdOrderId}`)).toHaveCount(0);
+  await scheduledDrawer.getByTestId('close-scheduled-drawer-btn').click();
+
+  // 3. CashDrawerMovementModal business date input
+  await page.mouse.move(0, 0);
+  await expect(page.locator('.flo-toast-card')).toHaveCount(0, { timeout: 10_000 });
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Cash movement' }).click();
+  const movementDateInput = page.locator('#movement-business-date');
+  await assertThemedInput(page, movementDateInput, 'dark');
+  await captureEvidence(page, 'pos-dark-cash-movement.png');
+});
+
+test('dark mode themes WhatsApp quiet-hours time inputs with Clock icon and light mode reverts', async ({
+  page,
+}) => {
+  await loginWithPassword(page, 'owner@flo.local');
+  await setThemeMode(page, 'dark');
+
+  await page.goto(`${BASE}/whatsapp`);
+  const automationTab = page.getByRole('tab', { name: /Templates & Rules/i });
+  await expect(automationTab).toBeVisible({ timeout: 20_000 });
+  await automationTab.click();
+
+  const quietStart = page.locator('#wa-quiet-hours-start');
+  const quietEnd = page.locator('#wa-quiet-hours-end');
+  await assertThemedInput(page, quietStart, 'dark', 'lucide-clock');
+  await assertThemedInput(page, quietEnd, 'dark', 'lucide-clock');
+  await quietStart.fill('22:30');
+  await expect(quietStart).toHaveValue('22:30');
+  await captureEvidence(page, 'whatsapp-dark-quiet-hours.png');
+  await quietStart.locator('xpath=following-sibling::button[1]').click();
+  await page.keyboard.press('Escape');
+
+  // Verify globals.css base color-scheme applies to all 5 temporal input types in dark & light
+  const baseSchemes = await page.evaluate(() => {
+    const types = ['date', 'datetime-local', 'month', 'week', 'time'];
+    const readSchemes = () =>
+      types.map((t) => {
+        const el = document.createElement('input');
+        el.type = t;
+        document.body.appendChild(el);
+        const scheme = getComputedStyle(el).colorScheme;
+        el.remove();
+        return { type: t, scheme };
+      });
+    const darkSchemes = readSchemes();
+    document.documentElement.classList.remove('dark');
+    const lightSchemes = readSchemes();
+    document.documentElement.classList.add('dark');
+    return { darkSchemes, lightSchemes };
+  });
+  for (const row of baseSchemes.darkSchemes) {
+    expect(row.scheme, `dark base color-scheme for ${row.type}`).toBe('dark');
+  }
+  for (const row of baseSchemes.lightSchemes) {
+    expect(row.scheme, `light base color-scheme for ${row.type}`).toBe('light');
+  }
+
+  await setThemeMode(page, 'light');
+  await page.reload();
+  await page.getByRole('tab', { name: /Templates & Rules/i }).click();
+  await assertThemedInput(page, page.locator('#wa-quiet-hours-start'), 'light', 'lucide-clock');
+  await captureEvidence(page, 'whatsapp-light-quiet-hours.png');
 });

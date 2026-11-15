@@ -636,7 +636,8 @@ try {
       React.useState = ((initial: unknown) => {
         const idx = stateIdx++;
         if (!(idx in dashboardStates)) {
-          dashboardStates[idx] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+          dashboardStates[idx] =
+            typeof initial === 'function' ? (initial as () => unknown)() : initial;
         }
         const setState = (next: unknown) => {
           dashboardStates[idx] =
@@ -687,6 +688,7 @@ try {
     return node.props?.children ? findTreeElement(node.props.children, predicate) : null;
   };
   const prevAuthForDashboard = useAuthStore.getState();
+  const prevAuthInitialForDashboard = { ...useAuthStore.getInitialState() };
   try {
     useAuthStore.setState({
       currentTenant: {
@@ -699,6 +701,7 @@ try {
         ],
       } as any,
     });
+    Object.assign(useAuthStore.getInitialState(), useAuthStore.getState());
     const dashboardDay = renderDashboard();
     assert.match(
       dashboardDay.html,
@@ -719,6 +722,7 @@ try {
     );
   } finally {
     useAuthStore.setState(prevAuthForDashboard);
+    Object.assign(useAuthStore.getInitialState(), prevAuthInitialForDashboard);
   }
 
   // 7. Issue #1515: KDS default view kanban, persisted view selection, and body pointer-events recovery

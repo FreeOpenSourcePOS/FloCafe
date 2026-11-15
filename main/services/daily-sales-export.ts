@@ -59,6 +59,7 @@ export type DailySalesExportItemRow = {
 
 export type DailySalesExportPaymentRow = {
   method: string;
+  count: number;
   total: number;
 };
 
@@ -1240,10 +1241,10 @@ function getDatabaseStateToken(db: Database): string {
 export function buildDailySalesExportDataset(
   input: DailySalesExportQueryInput,
   db: Database = getDatabase(),
-  options?: { maxRangeDays?: number },
+  options?: { maxRangeDays?: number; timezone?: string },
 ): DailySalesExportDataset {
   const range = resolveDailySalesExportRange(input, undefined, options?.maxRangeDays);
-  const timezone = resolveExportTimezone(db);
+  const timezone = options?.timezone ?? resolveExportTimezone(db);
   const businessDayStart = tenantBusinessDayStartTime(db);
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);
@@ -1635,11 +1636,12 @@ export function buildDailySalesExportDataset(
   })
     .map((row) => ({
       method: String(row.method || 'unknown'),
+      count: Math.max(0, Math.trunc(Number(row.count || 0))),
       total: new Decimal(Number(row.total || 0))
         .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
         .toNumber(),
     }))
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => b.total - a.total || a.method.localeCompare(b.method));
 
   const hasIncompleteTaxDetail = taxes.some((row) => row.incomplete_detail);
 

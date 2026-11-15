@@ -102,11 +102,18 @@ function createStatefulHarness() {
   let callbackCursor = 0;
   let memoCursor = 0;
   let effectCursor = 0;
+  let idCursor = 0;
 
   const hooksReact = {
     ...RealReact,
     createElement: RealReact.createElement,
     Fragment: RealReact.Fragment,
+    useId: () => `:r${idCursor++}:`,
+    useDebugValue: () => {},
+    useSyncExternalStore: <T>(
+      _subscribe: (onStoreChange: () => void) => () => void,
+      getSnapshot: () => T,
+    ) => getSnapshot(),
     useState: <T>(initial: T | (() => T)) => {
       const idx = stateCursor++;
       if (!(idx in states)) {
@@ -166,6 +173,7 @@ function createStatefulHarness() {
     callbackCursor = 0;
     memoCursor = 0;
     effectCursor = 0;
+    idCursor = 0;
     effects.length = 0;
   }
 

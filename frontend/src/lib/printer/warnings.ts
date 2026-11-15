@@ -1,6 +1,6 @@
 /** Shared logic to skip unsupported characters and preserve printing on ESC/POS encoders. */
 import { createTranslator } from 'use-intl/core';
-import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeThermalText } from './unicode';
+import { normalizeCurrencyToAscii, normalizeThermalText, stripCurrencyTokens } from './unicode';
 import {
   isArabicShapingSafeLine as isCapabilityArabicShapingSafeLine,
   isThermalTextRepresentable,
@@ -35,16 +35,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 
 export type { PrintWarning } from '@print/warnings';
 
-const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(
-  Object.keys(CURRENCY_ASCII_MAP)
-    .sort((left, right) => right.length - left.length)
-    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|'),
-  'g',
-);
-
 export function hasUnsupportedPrinterChars(text: string): boolean {
-  return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, ''));
+  return /[^\x00-\x7F]/.test(stripCurrencyTokens(text));
 }
 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;

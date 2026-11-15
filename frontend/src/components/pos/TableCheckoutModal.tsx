@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, ShoppingCart, Users, Printer, Loader2, ArrowRightLeft, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
@@ -35,6 +35,7 @@ interface Props {
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
   onOrderMoved?: (result: { sourceTable: Table; targetTable: Table; order: Order }) => void;
+  onRegisterDismissHandler?: (handler?: () => boolean) => void;
   tables?: Table[];
 }
 
@@ -51,6 +52,7 @@ export default function TableCheckoutModal({
   onPayment,
   onAddCartToOrder,
   onOrderMoved,
+  onRegisterDismissHandler,
   tables,
 }: Props) {
   const t = useTranslations('pos');
@@ -74,8 +76,54 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
+  const [splitCheckSaving, setSplitCheckSaving] = useState(false);
   const [printingBill, setPrintingBill] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
+
+  const dismissHandlerRef = useRef<() => boolean>(() => true);
+  useEffect(() => {
+    dismissHandlerRef.current = () => {
+      if (generating || addingItems || printingBill || splitCheckSaving) return true;
+      if (splitBill) {
+        setSplitBill(null);
+        return true;
+      }
+      if (showMoveModal) {
+        setShowMoveModal(false);
+        return true;
+      }
+      if (editingItem) {
+        setEditingItem(null);
+        return true;
+      }
+      onClose();
+      return true;
+    };
+  });
+
+  useEffect(() => {
+    if (!onRegisterDismissHandler) return;
+    onRegisterDismissHandler(() => dismissHandlerRef.current());
+    return () => onRegisterDismissHandler(undefined);
+  }, [onRegisterDismissHandler]);
+
+  useEffect(() => {
+    if (
+      onRegisterDismissHandler ||
+      typeof window === 'undefined' ||
+      typeof window.addEventListener !== 'function'
+    ) {
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.key !== 'Escape') return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      e.preventDefault();
+      dismissHandlerRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onRegisterDismissHandler]);
 
   const handleMoveTable = () => {
     setShowMoveModal(true);
@@ -537,7 +585,10 @@ export default function TableCheckoutModal({
         <SplitCheckModal
           bill={splitBill}
           order={splitBill.order || order}
-          onClose={() => setSplitBill(null)}
+          onSubmittingChange={setSplitCheckSaving}
+          onClose={() => {
+            if (!splitCheckSaving) setSplitBill(null);
+          }}
           onSplit={(bills) => {
             setOrder((current) => {
               if (!current) return current;

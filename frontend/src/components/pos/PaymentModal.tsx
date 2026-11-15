@@ -13,6 +13,7 @@ import {
   Users,
   Minus,
   Plus,
+  Printer,
   ShieldAlert,
   Tag,
 } from 'lucide-react';
@@ -38,7 +39,11 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
-import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
+import {
+  allowCurrencyDecimalKey,
+  getDiscountInputStep,
+  normalizeFixedDiscountValue,
+} from '@/lib/currency-input';
 import {
   allocateRemainingMinor,
   computeQuickCashDisplayAmounts,
@@ -54,6 +59,7 @@ import {
   CheckoutHeaderChips,
   CheckoutQtyBadge,
   type CheckoutHeaderChipItem,
+  applyPhysicalCheckoutKey,
   getCardReferenceSlotClasses,
   getTenderRowClasses,
 } from '@/components/pos/checkout-ui';
@@ -101,6 +107,8 @@ interface Props {
    */
   onSplit?: (departingBill?: Bill) => void;
   onRegisterDismissHandler?: (handler: (() => boolean) | undefined) => void;
+  onPrintBill?: (bill: Bill, reservedWindow?: Window | null) => Promise<void> | void;
+  reservePrintWindow?: () => Window | null | undefined;
 }
 
 interface Payment {
@@ -203,6 +211,8 @@ export default function PaymentModal({
   onBillUpdate,
   onSplit,
   onRegisterDismissHandler,
+  onPrintBill,
+  reservePrintWindow,
 }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
@@ -314,8 +324,13 @@ export default function PaymentModal({
 
   const [justPaid, setJustPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
+  const [paidChangeAmount, setPaidChangeAmount] = useState(0);
+  const [settledBill, setSettledBill] = useState<Bill | null>(null);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const doneButtonRef = useRef<HTMLButtonElement>(null);
   const [payments, setPayments] = useState<Payment[]>(buildAttemptPaymentRows(pendingAttempt, []));
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
@@ -363,6 +378,32 @@ export default function PaymentModal({
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(
     targetFromAttempt(pendingAttempt, payments),
   );
+  const [lastPaymentTarget, setLastPaymentTarget] = useState<
+    Exclude<AmountTarget, { kind: 'discount' } | null>
+  >({
+    kind: 'payment',
+    index: 0,
+  });
+  if (
+    amountTarget &&
+    amountTarget.kind !== 'discount' &&
+    (amountTarget.kind !== lastPaymentTarget.kind ||
+      (amountTarget.kind === 'payment' &&
+        lastPaymentTarget.kind === 'payment' &&
+        amountTarget.index !== lastPaymentTarget.index))
+  ) {
+    setLastPaymentTarget(amountTarget);
+  }
+  const restorePaymentTarget = () => {
+    if (lastPaymentTarget.kind === 'wallet') {
+      setAmountTarget({ kind: 'wallet' });
+      return;
+    }
+    setAmountTarget({
+      kind: 'payment',
+      index: payments[lastPaymentTarget.index] ? lastPaymentTarget.index : 0,
+    });
+  };
   const setCol1Panel = (
     next:
       | 'items'
@@ -377,8 +418,10 @@ export default function PaymentModal({
     if (resolved !== activeCol1Panel) {
       setActiveCol1Panel(resolved);
     }
-    if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
-      setAmountTarget({ kind: 'payment', index: 0 });
+    if (resolved === 'discount' && !attemptLocked && !justPaid && discountMode !== 'none') {
+      setAmountTarget({ kind: 'discount' });
+    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
     }
   };
   const setShowDiscount = (next: boolean | ((prev: boolean) => boolean)) => {
@@ -715,7 +758,10 @@ export default function PaymentModal({
       setPaymentOutcomeUnknown(Boolean(restored));
       setJustPaid(false);
       setPaidAmount(null);
+      setPaidChangeAmount(0);
+      setSettledBill(null);
       setPointsEarned(0);
+      setLastPaymentTarget({ kind: 'payment', index: 0 });
       setDiscountPin('');
       setDiscountApproverId(null);
       setShowDetails(false);
@@ -1195,6 +1241,33 @@ export default function PaymentModal({
     );
   };
 
+  const handleTenderButtonClick = (idx: number) => {
+    if (attemptLocked || justPaid) return;
+    setAmountTarget({ kind: 'payment', index: idx });
+    if (
+      autoFilledSingleIndex !== null &&
+      autoFilledSingleIndex !== idx &&
+      !paymentsTouched &&
+      walletAmt === 0
+    ) {
+      const dueMinor = Math.max(0, remainingMinor);
+      const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+      setAppliedEqualShare(null);
+      setAutoFilledSingleIndex(dueMinor > 0 ? idx : null);
+      setPaymentsTouched(false);
+      setPayments((current) =>
+        current.map((payment, index) => ({
+          ...payment,
+          amount: index === idx && dueMinor > 0 ? formatInput(dueDisplay) : '',
+        })),
+      );
+      return;
+    }
+    if (!payments[idx]?.amount) {
+      allocateRemainingTo(idx);
+    }
+  };
+
   const activeAmountLabel =
     amountTarget?.kind === 'discount'
       ? t('discount')
@@ -1365,6 +1438,8 @@ export default function PaymentModal({
         setShowDiscount(false);
         setDiscountValue('');
         setDiscountReason('');
+      } else if (amountTarget?.kind === 'discount') {
+        restorePaymentTarget();
       }
       // Refresh bill without closing modal
       const { data } = await api.get(`/bills/order/${bill.order_id}`, {
@@ -1655,7 +1730,23 @@ export default function PaymentModal({
         remaining > 0
           ? remaining
           : Math.max(0, Number(updatedBill.paid_amount ?? updatedBill.total ?? attemptAmount));
-      setPaidAmount(attempt.zeroBalance ? 0 : Math.min(attemptAmount, maxSettleable));
+      const settledNow = attempt.zeroBalance ? 0 : Math.min(attemptAmount, maxSettleable);
+      const attemptHasCash = attempt.lines.some(
+        (line) => line.method === 'cash' && (Number(line.amount) || 0) > 0,
+      );
+      const settledChange =
+        !attempt.zeroBalance &&
+        attemptHasCash &&
+        attemptTotalMinor(attempt) > toMinorUnits(settledNow)
+          ? (attemptTotalMinor(attempt) - toMinorUnits(settledNow)) / minorFactor
+          : 0;
+      setSettledBill({
+        ...bill,
+        ...updatedBill,
+        order: updatedBill.order ?? detailOrder ?? bill.order,
+      });
+      setPaidChangeAmount(settledChange);
+      setPaidAmount(settledNow);
       setJustPaid(true);
     } catch (error: unknown) {
       const response = (
@@ -1996,19 +2087,61 @@ export default function PaymentModal({
     }
   };
 
+  const handlePrintCompletionReceipt = async () => {
+    if (printingReceipt) return;
+    const targetBill = settledBill ?? bill;
+    const reservedWindow = reservePrintWindow?.();
+    setPrintingReceipt(true);
+    try {
+      if (onPrintBill) {
+        await onPrintBill(targetBill, reservedWindow);
+        return;
+      }
+      if (!currentTenant) {
+        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+        return;
+      }
+      const { usePrinterStore } = await import('@/hooks/usePrinter');
+      await usePrinterStore.getState().printBill(targetBill, currentTenant, undefined, reservedWindow);
+    } catch {
+      toast.error(tOrders('printReceiptFailed'));
+    } finally {
+      setPrintingReceipt(false);
+    }
+  };
+
+  const isDismissLocked = () =>
+    processing ||
+    attemptLocked ||
+    paymentOutcomeUnknown ||
+    applyingDiscount ||
+    Boolean(updatingChargeId) ||
+    chargeStateUncertain ||
+    splitCheckSaving ||
+    inFlightRef.current;
+
+  const handleCloseButtonClick = () => {
+    if (isDismissLocked()) return;
+    if (splitCheckOrder) {
+      setSplitCheckOrder(null);
+      return;
+    }
+    if (chargeApprovalId) {
+      setChargeApprovalId(null);
+      setChargeApprovalPin('');
+      return;
+    }
+    if (justPaid) {
+      onPaid();
+    } else {
+      onClose();
+    }
+  };
+
   const dismissHandlerRef = useRef<() => boolean>(() => true);
   useEffect(() => {
     dismissHandlerRef.current = () => {
-      if (
-        processing ||
-        attemptLocked ||
-        paymentOutcomeUnknown ||
-        applyingDiscount ||
-        updatingChargeId ||
-        chargeStateUncertain ||
-        splitCheckSaving ||
-        inFlightRef.current
-      ) {
+      if (isDismissLocked()) {
         return true;
       }
       if (splitCheckOrder) {
@@ -2018,6 +2151,15 @@ export default function PaymentModal({
       if (chargeApprovalId) {
         setChargeApprovalId(null);
         setChargeApprovalPin('');
+        return true;
+      }
+      if (
+        !justPaid &&
+        (activeCol1Panel === 'discount' ||
+          activeCol1Panel === 'tax' ||
+          (activeCol1Panel === 'kitchen-override' && !initialOverridePin))
+      ) {
+        setCol1Panel('items');
         return true;
       }
       if (justPaid) {
@@ -2294,8 +2436,122 @@ export default function PaymentModal({
         ? t('retrySamePayment')
         : `${t('pay')} ${currencyFmt(totalPayment)}`;
 
+  useEffect(() => {
+    if (justPaid) {
+      doneButtonRef.current?.focus?.();
+    }
+  }, [justPaid]);
+
+  const keyboardActionRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  useEffect(() => {
+    keyboardActionRef.current = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isInput =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        Boolean(target?.isContentEditable);
+      const isInsideModal =
+        !modalRef.current ||
+        !target ||
+        (typeof Node !== 'undefined' && !(target instanceof Node)) ||
+        modalRef.current.contains(target as Node);
+      const isInteractive =
+        isInput ||
+        (isInsideModal &&
+          (tag === 'BUTTON' ||
+            tag === 'A' ||
+            target?.getAttribute?.('role') === 'button' ||
+            Boolean(target?.closest?.('button, a, [role="button"]'))));
+
+      if (e.key === 'Escape' && !onRegisterDismissHandler) {
+        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+        e.preventDefault();
+        dismissHandlerRef.current();
+        return;
+      }
+
+      if (splitCheckOrder || chargeApprovalId) return;
+      if (isInput) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.isComposing || e.keyCode === 229) return;
+
+      if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
+        if (e.repeat) {
+          e.preventDefault();
+          return;
+        }
+        if (isInteractive) return;
+        e.preventDefault();
+        if (e.key === 'Enter') {
+          if (justPaid) {
+            onPaid();
+            return;
+          }
+          if (
+            !payCtaDisabled &&
+            !pendingAttempt &&
+            remainingMinor > 0 &&
+            totalPaymentMinor >= remainingMinor
+          ) {
+            void handlePay();
+          }
+        }
+        return;
+      }
+
+      if (justPaid || isDismissLocked() || openingSplitCheck || !amountTarget) return;
+      const allowDecimal = allowCurrencyDecimalKey(
+        unitAdapter.maxDecimals,
+        amountTarget.kind,
+        discountType,
+      );
+      const nextVal = applyPhysicalCheckoutKey(
+        activeAmountValue,
+        e.key,
+        allowDecimal,
+        activeAmountMax,
+      );
+      if (nextVal !== null) {
+        e.preventDefault();
+        if (isInteractive && typeof target?.blur === 'function') {
+          target.blur();
+        }
+        updateActiveAmount(nextVal);
+      }
+    };
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const listener = (e: KeyboardEvent) => keyboardActionRef.current?.(e);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
+
+  const handleTenderInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      e.key === 'Enter' &&
+      !e.repeat &&
+      !e.nativeEvent?.isComposing &&
+      e.keyCode !== 229 &&
+      !payCtaDisabled &&
+      !pendingAttempt &&
+      remainingMinor > 0 &&
+      totalPaymentMinor >= remainingMinor
+    ) {
+      e.preventDefault();
+      void handlePay();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3">
+    <div
+      ref={modalRef}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3"
+    >
       <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden border-border bg-background shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl sm:border dark:border-white/12">
         {/* Compact Header */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card/85 px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5 dark:bg-card/55">
@@ -2312,7 +2568,7 @@ export default function PaymentModal({
                 const next = !showDetails;
                 setShowDetails(next);
                 if (!next && amountTarget?.kind === 'discount') {
-                  setAmountTarget({ kind: 'payment', index: 0 });
+                  restorePaymentTarget();
                 }
               }}
               aria-expanded={showDetails}
@@ -2325,7 +2581,7 @@ export default function PaymentModal({
               {showDetails ? t('close') : kitchenOverrideRequired ? t('managerPin') : t('items')}
             </button>
             <button
-              onClick={() => dismissHandlerRef.current()}
+              onClick={handleCloseButtonClick}
               disabled={
                 processing ||
                 attemptLocked ||
@@ -2918,11 +3174,7 @@ export default function PaymentModal({
                         type="button"
                         title={label}
                         disabled={rowDisabled}
-                        onClick={() => {
-                          if (attemptLocked || justPaid) return;
-                          setAmountTarget({ kind: 'payment', index: idx });
-                          if (!payment.amount) allocateRemainingTo(idx);
-                        }}
+                        onClick={() => handleTenderButtonClick(idx)}
                         className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                       >
                         {Icon && <Icon size={15} />}
@@ -2941,6 +3193,7 @@ export default function PaymentModal({
                           disabled={rowDisabled}
                           onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                           onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                          onKeyDown={handleTenderInputKeyDown}
                           placeholder="0.00"
                           inputMode="decimal"
                           className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
@@ -2967,6 +3220,7 @@ export default function PaymentModal({
                     value={cardPayment.transaction_id ?? ''}
                     disabled={processing || attemptLocked || justPaid}
                     onChange={(e) => updatePaymentTransactionId(cardTenderIndex, e.target.value)}
+                    onKeyDown={handleTenderInputKeyDown}
                     placeholder={t('cardTransactionIdLabel')}
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
@@ -3021,11 +3275,7 @@ export default function PaymentModal({
                             type="button"
                             title={label}
                             disabled={rowDisabled}
-                            onClick={() => {
-                              if (attemptLocked || justPaid) return;
-                              setAmountTarget({ kind: 'payment', index: idx });
-                              if (!payment.amount) allocateRemainingTo(idx);
-                            }}
+                            onClick={() => handleTenderButtonClick(idx)}
                             className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                           >
                             <span className="truncate">{label}</span>
@@ -3043,6 +3293,7 @@ export default function PaymentModal({
                               disabled={rowDisabled}
                               onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                               onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                              onKeyDown={handleTenderInputKeyDown}
                               placeholder="0.00"
                               inputMode="decimal"
                               className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
@@ -3248,75 +3499,77 @@ export default function PaymentModal({
 
                       {showEqualShare && remainingMinor > 0 ? (
                         <div className="space-y-2 border-t border-border bg-card p-2.5 dark:border-white/10">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="space-y-1">
                             <label
                               htmlFor="equal-share-payers"
-                              className="text-xs font-semibold text-foreground sm:text-sm"
+                              className="block text-xs font-semibold text-foreground"
                             >
                               {t('equalSharePayers')}
                             </label>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                aria-label={t('decreasePax')}
-                                data-testid="equal-share-decrement"
-                                disabled={!canDecrementEqualShare}
-                                onClick={() => stepEqualSharePayers(-1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
-                              >
-                                <Minus size={15} />
-                              </button>
-                              <input
-                                id="equal-share-payers"
-                                type="number"
-                                min={MIN_EQUAL_SHARE_PAYERS}
-                                max={MAX_EQUAL_SHARE_PAYERS}
-                                step={1}
-                                inputMode="numeric"
-                                value={equalSharePayers}
-                                disabled={processing || attemptLocked}
-                                onChange={(event) => {
-                                  if (attemptLocked) return;
-                                  setEqualSharePayers(event.target.value);
-                                }}
-                                className="min-h-11 w-14 rounded-lg border border-border bg-card px-2 py-1 text-center text-sm font-bold tabular-nums text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
-                              />
-                              <button
-                                type="button"
-                                aria-label={t('increasePax')}
-                                data-testid="equal-share-increment"
-                                disabled={!canIncrementEqualShare}
-                                onClick={() => stepEqualSharePayers(1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
-                              >
-                                <Plus size={15} />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {[2, 3, 4].map((preset) => {
-                              const activePreset = equalShareCount === preset;
-                              return (
+                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1">
+                                {[2, 3, 4].map((preset) => {
+                                  const activePreset = equalShareCount === preset;
+                                  return (
+                                    <button
+                                      key={preset}
+                                      type="button"
+                                      aria-pressed={activePreset}
+                                      data-testid={`equal-share-preset-${preset}`}
+                                      disabled={processing || attemptLocked}
+                                      onClick={() => {
+                                        if (attemptLocked) return;
+                                        setEqualSharePayers(String(preset));
+                                      }}
+                                      className={`min-h-11 min-w-11 rounded-lg border px-2.5 py-1.5 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
+                                        activePreset
+                                          ? 'border-brand bg-brand text-white shadow-xs'
+                                          : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
+                                      }`}
+                                    >
+                                      {preset}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex items-center gap-1">
                                 <button
-                                  key={preset}
                                   type="button"
-                                  aria-pressed={activePreset}
-                                  data-testid={`equal-share-preset-${preset}`}
-                                  disabled={processing || attemptLocked}
-                                  onClick={() => {
-                                    if (attemptLocked) return;
-                                    setEqualSharePayers(String(preset));
-                                  }}
-                                  className={`min-h-9 min-w-10 rounded-lg border px-2.5 py-1 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
-                                    activePreset
-                                      ? 'border-brand bg-brand text-white shadow-xs'
-                                      : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
-                                  }`}
+                                  aria-label={t('decreasePax')}
+                                  data-testid="equal-share-decrement"
+                                  disabled={!canDecrementEqualShare}
+                                  onClick={() => stepEqualSharePayers(-1)}
+                                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
                                 >
-                                  {preset}
+                                  <Minus size={15} />
                                 </button>
-                              );
-                            })}
+                                <input
+                                  id="equal-share-payers"
+                                  type="number"
+                                  min={MIN_EQUAL_SHARE_PAYERS}
+                                  max={MAX_EQUAL_SHARE_PAYERS}
+                                  step={1}
+                                  inputMode="numeric"
+                                  value={equalSharePayers}
+                                  disabled={processing || attemptLocked}
+                                  onChange={(event) => {
+                                    if (attemptLocked) return;
+                                    setEqualSharePayers(event.target.value);
+                                  }}
+                                  className="min-h-11 w-12 rounded-lg border border-border bg-card px-1.5 py-1.5 text-center text-sm font-bold tabular-nums text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={t('increasePax')}
+                                  data-testid="equal-share-increment"
+                                  disabled={!canIncrementEqualShare}
+                                  onClick={() => stepEqualSharePayers(1)}
+                                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
+                                >
+                                  <Plus size={15} />
+                                </button>
+                              </div>
+                            </div>
                           </div>
                           {equalShareError ? (
                             <p role="alert" className="text-[11px] font-medium text-destructive">
@@ -3330,7 +3583,7 @@ export default function PaymentModal({
                             <>
                               <ul
                                 data-testid="equal-share-shares"
-                                className="max-h-[104px] space-y-1 overflow-y-auto rounded-lg border border-border/75 bg-muted/25 p-2 text-sm dark:border-white/10 dark:bg-muted/15"
+                                className="max-h-[76px] space-y-0.5 overflow-y-auto rounded-lg border border-border/75 bg-muted/25 p-1.5 text-xs dark:border-white/10 dark:bg-muted/15"
                               >
                                 {equalShareShares.map((shareMinor, index) => (
                                   <li
@@ -3388,6 +3641,7 @@ export default function PaymentModal({
                                         ? payment.method
                                         : `custom:${payment.payment_method_id}`
                                     }
+                                    data-testid={`equal-share-apply-${idx}`}
                                     variant="outline"
                                     size="sm"
                                     className="min-h-10 border-brand/35 bg-brand-light/40 font-semibold text-brand hover:border-brand hover:bg-brand-light/80 dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300 dark:hover:bg-indigo-500/25"
@@ -3498,10 +3752,10 @@ export default function PaymentModal({
           {/* Column 3: Full-Height 4-Zone Checkout Payment Station (or Receipt Share when settled) */}
           <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto dark:bg-card/25">
             {justPaid ? (
-              <div className="flex h-full flex-col justify-center space-y-3">
+              <div className="flex h-full flex-col justify-center space-y-2.5">
                 <div
                   role="status"
-                  className="space-y-2.5 rounded-2xl border border-emerald-500/35 bg-card p-6 text-center shadow-xs dark:border-emerald-400/30 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                  className="space-y-2.5 rounded-2xl border border-emerald-500/35 bg-card p-5 text-center shadow-xs dark:border-emerald-400/30 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                 >
                   <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/12 text-emerald-600 ring-4 ring-emerald-500/10 dark:text-emerald-400">
                     <CheckCircle2 size={30} />
@@ -3510,10 +3764,37 @@ export default function PaymentModal({
                   <p className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
                     {currencyFmt(paidAmount ?? Math.min(totalPayment, remaining))}
                   </p>
-                  <span className="inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                    {t('paid')}
-                  </span>
+                  <div>
+                    <span className="inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                      {t('paid')}
+                    </span>
+                  </div>
+                  {paidChangeAmount > 0 && (
+                    <div
+                      data-testid="settled-change-banner"
+                      className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/12 px-3.5 py-2.5 text-start dark:border-emerald-400/35 dark:bg-emerald-500/15"
+                    >
+                      <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                        {t('changeReturned')}
+                      </span>
+                      <span className="text-xl font-bold tracking-tight tabular-nums text-emerald-700 sm:text-2xl dark:text-emerald-300">
+                        {currencyFmt(paidChangeAmount)}
+                      </span>
+                    </div>
+                  )}
                 </div>
+                <Button
+                  type="button"
+                  data-testid="completion-print-receipt-btn"
+                  variant="outline"
+                  disabled={printingReceipt}
+                  onClick={() => void handlePrintCompletionReceipt()}
+                  className="min-h-11 w-full rounded-xl bg-card font-semibold dark:border-white/10"
+                  size="lg"
+                >
+                  <Printer size={16} className="me-2" />
+                  {tOrders('printReceiptTitle')}
+                </Button>
                 {cartCustomer?.phone &&
                   (isWhatsAppReady ? (
                     <Button
@@ -3537,6 +3818,7 @@ export default function PaymentModal({
                     </Button>
                   ))}
                 <Button
+                  ref={doneButtonRef}
                   onClick={onPaid}
                   className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   size="lg"

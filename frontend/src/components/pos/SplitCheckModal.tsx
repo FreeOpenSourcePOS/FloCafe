@@ -575,8 +575,8 @@ export function SplitCheckModal({
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t border-border bg-muted/35 font-semibold dark:border-white/10 dark:bg-muted/20">
-                  <td className="p-3 text-foreground sticky start-0 z-10 bg-muted">
+                <tr className="border-t-2 border-border bg-card font-semibold dark:border-white/15">
+                  <td className="sticky start-0 z-10 bg-card p-3 text-foreground">
                     {t('estimatedItemsTotal')}
                   </td>
                   {totals.map((total, i) => (

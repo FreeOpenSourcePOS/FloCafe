@@ -7,6 +7,7 @@ import {
   type CurrencyAmountTarget,
   type CurrencyDiscountType,
 } from '@/lib/currency-input';
+import { appendCheckoutPadDigit, clampCheckoutPadValue } from './checkout-ui';
 
 interface QuickValue {
   label: string;
@@ -24,25 +25,6 @@ interface Props {
   quickValues?: QuickValue[];
   className?: string;
   fillHeight?: boolean;
-}
-
-function clampValue(value: string, max?: number) {
-  if (max == null || value === '' || value === '.') return value;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return value;
-  return numeric > max ? String(max) : value;
-}
-
-function appendDigit(value: string, digit: string, allowDecimal: boolean, max?: number) {
-  if (digit === '.') {
-    if (!allowDecimal || value.includes('.')) return value;
-    return value === '' ? '0.' : `${value}.`;
-  }
-  if (digit === '00' && (value === '' || value === '0')) {
-    return clampValue('0', max);
-  }
-  const next = value === '0' ? digit : `${value}${digit}`;
-  return clampValue(next, max);
 }
 
 export default function TouchNumberPad({
@@ -129,7 +111,7 @@ export default function TouchNumberPad({
             <button
               key={key}
               type="button"
-              onClick={() => onChange(clampValue(quickValues[0].value, max))}
+              onClick={() => onChange(clampCheckoutPadValue(quickValues[0].value, max))}
               className={cn(
                 'touch-target row-span-2 rounded-xl border border-brand/30 bg-brand-light/45 px-2 text-sm font-semibold text-brand transition-[color,background-color,border-color,box-shadow,transform] select-none',
                 'hover:border-brand/50 hover:bg-brand-light/75 active:scale-[0.985]',
@@ -150,7 +132,7 @@ export default function TouchNumberPad({
           <button
             key={key}
             type="button"
-            onClick={() => onChange(appendDigit(value, key, allowDecimal, max))}
+            onClick={() => onChange(appendCheckoutPadDigit(value, key, allowDecimal, max))}
             className={digitKeyClass}
           >
             {key}

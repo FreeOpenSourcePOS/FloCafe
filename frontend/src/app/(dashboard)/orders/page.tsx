@@ -2596,6 +2596,9 @@ export default function OrdersPage() {
           key={paymentBill.id}
           bill={paymentBill}
           currency={currency}
+          onPrintBill={async (b) => {
+            await handlePrint(b.id);
+          }}
           onClose={() => setPaymentBill(null)}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}

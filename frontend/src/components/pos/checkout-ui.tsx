@@ -123,6 +123,51 @@ export function getTenderRowClasses({
   };
 }
 
+export function clampCheckoutPadValue(value: string, max?: number): string {
+  if (max == null || value === '' || value === '.') return value;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return value;
+  return numeric > max ? String(max) : value;
+}
+
+export function appendCheckoutPadDigit(
+  value: string,
+  digit: string,
+  allowDecimal: boolean,
+  max?: number,
+): string {
+  if (digit === '.') {
+    if (!allowDecimal || value.includes('.')) return value;
+    return value === '' ? '0.' : `${value}.`;
+  }
+  if (digit === '00' && (value === '' || value === '0')) {
+    return clampCheckoutPadValue('0', max);
+  }
+  const next = value === '0' ? digit : `${value}${digit}`;
+  return clampCheckoutPadValue(next, max);
+}
+
+export function applyPhysicalCheckoutKey(
+  currentValue: string,
+  key: string,
+  allowDecimal: boolean,
+  max?: number,
+): string | null {
+  if (/^[0-9]$/.test(key)) {
+    return appendCheckoutPadDigit(currentValue, key, allowDecimal, max);
+  }
+  if (key === '.') {
+    return appendCheckoutPadDigit(currentValue, '.', allowDecimal, max);
+  }
+  if (key === 'Backspace') {
+    return currentValue.slice(0, -1);
+  }
+  if (key === 'Delete') {
+    return '';
+  }
+  return null;
+}
+
 export function getCardReferenceSlotClasses({
   isActive,
   isMissingRequired,

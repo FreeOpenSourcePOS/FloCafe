@@ -49,6 +49,7 @@ async function setBusinessSettings(
   page: Page,
   patch: {
     billing_type?: 'prepaid' | 'postpaid';
+    tables_required?: boolean;
     card_transaction_id_required?: boolean;
   },
 ): Promise<{
@@ -73,10 +74,20 @@ async function setBusinessSettings(
   }
 
   try {
-    if (patch.billing_type && originalBusiness.billing_type !== patch.billing_type) {
+    if (
+      (patch.billing_type !== undefined && originalBusiness.billing_type !== patch.billing_type) ||
+      (patch.tables_required !== undefined &&
+        originalBusiness.tables_required !== patch.tables_required)
+    ) {
       const putBiz = await page.request.put(`${BASE}/api/settings/business`, {
         headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
-        data: { ...originalBusiness, billing_type: patch.billing_type },
+        data: {
+          ...originalBusiness,
+          ...(patch.billing_type !== undefined ? { billing_type: patch.billing_type } : {}),
+          ...(patch.tables_required !== undefined
+            ? { tables_required: patch.tables_required }
+            : {}),
+        },
       });
       expect(putBiz.ok()).toBeTruthy();
     }
@@ -848,6 +859,241 @@ test('Checkout modals hold Light/Dark parity, RTL geometry, 3-state tender focus
     await applyColorScheme('light');
   } finally {
     await setLanguage(page, 'en').catch(() => {});
+    await page.request
+      .put(`${BASE}/api/settings/split_checks_enabled`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+        data: { value: originalSplitSetting },
+      })
+      .catch(() => {});
+    try {
+      await setOrdersLayout(page, originalOrdersLayout, BASE, MANAGER_TOKEN);
+    } finally {
+      await restoreBusinessSettings(page, saved);
+    }
+  }
+});
+
+test('Principal UX E2E: 1280x800 Equal Share unclipped, 1-tap tender switch, stacked Escape, and zero-click keyboard rush', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const originalOrdersLayout: E2EOrdersLayout = await readOrdersLayout(page, BASE, MANAGER_TOKEN);
+  const splitSettingRes = await page.request.get(`${BASE}/api/settings/split_checks_enabled`, {
+    headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+  });
+  const originalSplitSetting = splitSettingRes.ok()
+    ? String((await splitSettingRes.json())?.setting?.value ?? 'false')
+    : 'false';
+  const saved = await setBusinessSettings(page, {
+    billing_type: 'postpaid',
+    tables_required: true,
+    card_transaction_id_required: false,
+  });
+  let createdTableId: number | null = null;
+
+  try {
+    await page.request.put(`${BASE}/api/settings/split_checks_enabled`, {
+      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+      data: { value: 'true' },
+    });
+    await setOrdersLayout(page, 'split', BASE, MANAGER_TOKEN);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await loginAndOpenPos(page);
+
+    // Ensure at least one table and product exist for dine-in TableCheckoutModal + Equal Share
+    const [prodRes, custRes] = await Promise.all([
+      page.request.get(`${BASE}/api/products`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+      }),
+      page.request.get(`${BASE}/api/customers`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+      }),
+    ]);
+    const products = ((await prodRes.json()).products || []) as Array<{
+      id: number;
+      name: string;
+      price: number;
+    }>;
+    const customers = ((await custRes.json()).customers || []) as Array<{
+      id: string;
+      name: string;
+    }>;
+    expect(products.length).toBeGreaterThan(0);
+
+    const uniqueTableLabel = `UX${Date.now().toString().slice(-4)}`;
+    const createdTblRes = await page.request.post(`${BASE}/api/tables`, {
+      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+      data: { number: uniqueTableLabel, name: uniqueTableLabel, capacity: 4 },
+    });
+    expect(createdTblRes.ok()).toBeTruthy();
+    const createdTable = (await createdTblRes.json()).table as {
+      id: number;
+      number?: string;
+      name?: string;
+    };
+    createdTableId = createdTable.id;
+
+    let customerId = customers[0]?.id;
+    if (!customerId) {
+      const createdCustRes = await page.request.post(`${BASE}/api/customers`, {
+        headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+        data: { name: 'UX Audit Guest', phone: `+1555${String(Date.now()).slice(-7)}` },
+      });
+      if (createdCustRes.ok()) {
+        customerId = (await createdCustRes.json()).customer?.id;
+      }
+    }
+
+    const dineInRes = await page.request.post(`${BASE}/api/orders`, {
+      headers: {
+        Authorization: `Bearer ${MANAGER_TOKEN}`,
+        'Idempotency-Key': `ux-e2e-${Date.now()}-${Math.random()}`,
+      },
+      data: {
+        type: 'dine_in',
+        table_id: createdTable.id,
+        guest_count: 3,
+        ...(customerId ? { customer_id: customerId } : {}),
+        items: [{ product_id: products[0].id, quantity: 3 }],
+      },
+    });
+    expect(dineInRes.ok()).toBeTruthy();
+    const { order: dineInOrder } = await dineInRes.json();
+
+    // 1. Stacked-modal Escape on /pos: TableCheckoutModal -> SplitCheckModal -> 1st Escape -> 2nd Escape
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    await page.getByRole('button', { name: /Dine in/i }).click();
+    const tableTile = page.getByRole('button', { name: new RegExp(uniqueTableLabel) }).first();
+    if (!(await tableTile.isVisible().catch(() => false))) {
+      await page.locator('body').click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press('F2');
+    }
+    await expect(tableTile).toBeVisible({ timeout: 10000 });
+    await tableTile.click();
+    const tableModalHeading = page.getByRole('heading', { name: new RegExp(uniqueTableLabel) });
+    await expect(tableModalHeading).toBeVisible({ timeout: 10000 });
+
+    const splitBtn = page.getByRole('button', { name: /^Split Check$/i });
+    await expect(splitBtn).toBeVisible({ timeout: 10000 });
+    await splitBtn.click();
+    const splitModalHeading = page.getByRole('heading', { name: /Split Check/i });
+    await expect(splitModalHeading).toBeVisible({ timeout: 10000 });
+
+    // 1st Escape closes ONLY SplitCheckModal; TableCheckoutModal remains open!
+    await page.keyboard.press('Escape');
+    await expect(splitModalHeading).toBeHidden();
+    await expect(tableModalHeading).toBeVisible();
+
+    // 2nd Escape closes TableCheckoutModal!
+    await page.keyboard.press('Escape');
+    await expect(tableModalHeading).toBeHidden();
+
+    // 2. PaymentModal at 1280x800: Equal Shares Apply buttons unclipped + 1-tap tender switch + Discount sync & Escape backout
+    await page.goto(`${BASE}/orders`);
+    await page.getByRole('button').filter({ hasText: dineInOrder.order_number }).first().click();
+    await page
+      .getByRole('button', { name: /Checkout|Take Payment/ })
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 10000 });
+    const payModal = page
+      .locator('[data-testid="checkout-payment-station"]')
+      .locator('..')
+      .locator('..')
+      .locator('..');
+
+    // 1-tap tender switch: Card auto-fills -> Cash moves full balance in 1 click (Card cleared)
+    await payModal.getByRole('button', { name: 'Card', exact: true }).first().click();
+    await expect(payModal.getByLabel('Card amount')).not.toHaveValue('');
+    await payModal.getByRole('button', { name: 'Cash', exact: true }).first().click();
+    await expect(payModal.getByLabel('Card amount')).toHaveValue('');
+    await expect(payModal.getByLabel('Cash amount')).not.toHaveValue('');
+
+    // Discount panel immediately syncs keypad target (5%..20% pills) and 1st Escape backs out to Items
+    if (await payModal.getByTestId('col1-tab-discount').count()) {
+      await payModal.getByTestId('col1-tab-discount').click();
+      await expect(
+        payModal
+          .locator('[data-checkout-zone="quick-tender"]')
+          .getByRole('button', { name: '10%' }),
+      ).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(payModal.getByRole('heading', { name: 'Payment' })).toBeVisible();
+    }
+
+    // Equal Shares at 1280x800: Apply to Cash & Apply to Card stay unclipped inside Column 2 without scrolling
+    await payModal.getByTestId('split-mode-equal-tab').click();
+    const applyCashBtn = payModal.getByTestId('equal-share-apply-0');
+    const applyCardBtn = payModal.getByTestId('equal-share-apply-1');
+    await expect(applyCashBtn).toBeVisible();
+    await expect(applyCardBtn).toBeVisible();
+    const equalBounds = await payModal.evaluate((el) => {
+      const grid = el.querySelector('.lg\\:grid') as HTMLElement | null;
+      const col2 = grid?.children[1] as HTMLElement | null;
+      const cashBtn = el.querySelector('[data-testid="equal-share-apply-0"]') as HTMLElement | null;
+      const cardBtn = el.querySelector('[data-testid="equal-share-apply-1"]') as HTMLElement | null;
+      const col2Rect = col2?.getBoundingClientRect();
+      const cashRect = cashBtn?.getBoundingClientRect();
+      const cardRect = cardBtn?.getBoundingClientRect();
+      return {
+        col2Bottom: col2Rect?.bottom ?? 0,
+        cashBottom: cashRect?.bottom ?? Infinity,
+        cardBottom: cardRect?.bottom ?? Infinity,
+        col2ScrollTop: col2?.scrollTop ?? 0,
+      };
+    });
+    expect(equalBounds.col2ScrollTop).toBe(0);
+    expect(
+      equalBounds.cashBottom,
+      '1280x800 Apply to Cash must stay unclipped inside Column 2 without scrolling',
+    ).toBeLessThanOrEqual(equalBounds.col2Bottom + 1);
+    expect(
+      equalBounds.cardBottom,
+      '1280x800 Apply to Card must stay unclipped inside Column 2 without scrolling',
+    ).toBeLessThanOrEqual(equalBounds.col2Bottom + 1);
+    await payModal.getByRole('button', { name: 'Close' }).first().click();
+
+    // 3. Zero-click keyboard rush checkout in PrepaidCheckoutModal + settled Change Returned + Print Receipt + 1-key Enter dismiss
+    await setBusinessSettings(page, {
+      billing_type: 'prepaid',
+      tables_required: false,
+      card_transaction_id_required: false,
+    });
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(page.getByTestId('cart-item').first()).toBeVisible();
+    await page.keyboard.press('F4');
+    const prepaidModal = page.getByTestId('prepaid-checkout-modal');
+    await expect(prepaidModal).toBeVisible();
+    await expect(prepaidModal.getByTestId('prepaid-checkout-summary')).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Type cash overpayment directly on physical keyboard without clicking any input!
+    await page.keyboard.press('9');
+    await page.keyboard.press('9');
+    await page.keyboard.press('9');
+    await page.keyboard.press('9');
+    await expect(prepaidModal.getByLabel('Cash amount')).toHaveValue('9999');
+
+    // Deliberate Enter submits payment -> completion screen shows Change Returned + Print Receipt!
+    await page.keyboard.press('Enter');
+    await expect(prepaidModal.getByTestId('settled-change-banner')).toBeVisible({ timeout: 10000 });
+    await expect(prepaidModal.getByTestId('completion-print-receipt-btn')).toBeVisible();
+
+    // 1-keystroke Enter dismisses completion screen back to POS!
+    await page.keyboard.press('Enter');
+    await expect(prepaidModal).toBeHidden({ timeout: 5000 });
+  } finally {
+    if (createdTableId !== null) {
+      await page.request
+        .post(`${BASE}/api/tables/${createdTableId}/deactivate`, {
+          headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+        })
+        .catch(() => {});
+    }
     await page.request
       .put(`${BASE}/api/settings/split_checks_enabled`, {
         headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },

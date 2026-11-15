@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, CheckCircle2, Percent, Wallet, ChevronDown, Send, Tag } from 'lucide-react';
+import { X, CheckCircle2, Percent, Wallet, ChevronDown, Send, Tag, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
@@ -17,7 +17,11 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
-import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
+import {
+  allowCurrencyDecimalKey,
+  getDiscountInputStep,
+  normalizeFixedDiscountValue,
+} from '@/lib/currency-input';
 import {
   allocateRemainingMinor,
   computeQuickCashDisplayAmounts,
@@ -29,6 +33,7 @@ import {
   type CheckoutStatusBanner,
 } from '@/components/pos/CheckoutPaymentStation';
 import {
+  applyPhysicalCheckoutKey,
   CHECKOUT_PRIMARY_CTA_CLASS,
   CheckoutHeaderChips,
   CheckoutQtyBadge,
@@ -104,6 +109,9 @@ interface Props {
     };
   } | null;
   onCheckRecovery?: () => Promise<void>;
+  onRegisterDismissHandler?: (handler?: () => boolean) => void;
+  onPrintBill?: (bill: Bill, reservedWindow?: Window | null) => Promise<void> | void;
+  reservePrintWindow?: () => Window | null | undefined;
   onClose: () => void;
   onConfirm: (
     payments: PrepaidPayment[],
@@ -153,6 +161,9 @@ export default function PrepaidCheckoutModal({
   recovery = null,
   failure = null,
   onCheckRecovery,
+  onRegisterDismissHandler,
+  onPrintBill,
+  reservePrintWindow,
   onClose,
   onConfirm,
 }: Props) {
@@ -188,6 +199,9 @@ export default function PrepaidCheckoutModal({
   const [walletAmount, setWalletAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState<PrepaidSuccess | null>(null);
+  const [settledChangeAmount, setSettledChangeAmount] = useState(0);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
+  const doneButtonRef = useRef<HTMLButtonElement>(null);
   const inFlightRef = useRef(false);
   const lastSubmissionRef = useRef<[PrepaidPayment[], number, PrepaidDiscount | null] | null>(null);
   const locked = processing || Boolean(recovery);
@@ -221,6 +235,25 @@ export default function PrepaidCheckoutModal({
   const [discountPin, setDiscountPin] = useState('');
   const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>({ kind: 'payment', index: 0 });
+  const [lastPaymentTarget, setLastPaymentTarget] = useState<
+    Exclude<AmountTarget, { kind: 'discount' } | null>
+  >({
+    kind: 'payment',
+    index: 0,
+  });
+  if (
+    amountTarget &&
+    amountTarget.kind !== 'discount' &&
+    (amountTarget.kind !== lastPaymentTarget.kind ||
+      (amountTarget.kind === 'payment' &&
+        lastPaymentTarget.kind === 'payment' &&
+        amountTarget.index !== lastPaymentTarget.index))
+  ) {
+    setLastPaymentTarget(amountTarget);
+  }
+  const restorePaymentTarget = () => {
+    setAmountTarget(lastPaymentTarget);
+  };
   const setCol1Panel = (
     next:
       | 'items'
@@ -232,8 +265,10 @@ export default function PrepaidCheckoutModal({
     if (resolved !== activeCol1Panel) {
       setActiveCol1Panel(resolved);
     }
-    if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
-      setAmountTarget({ kind: 'payment', index: 0 });
+    if (resolved === 'discount' && !locked && !discountCommitted && discountMode !== 'none') {
+      setAmountTarget({ kind: 'discount' });
+    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
     }
   };
   const setDiscountOpen = (next: boolean | ((prev: boolean) => boolean)) => {
@@ -393,6 +428,7 @@ export default function PrepaidCheckoutModal({
     setWalletLoadFailed(false);
     setWalletBalance(null);
     setWalletAmount('');
+    setLastPaymentTarget({ kind: 'payment', index: 0 });
     setAmountTarget({ kind: 'payment', index: 0 });
   }
 
@@ -522,6 +558,36 @@ export default function PrepaidCheckoutModal({
           : payment,
       ),
     );
+  };
+
+  const handleTenderButtonClick = (idx: number) => {
+    if (locked || success) return;
+    setAmountTarget({ kind: 'payment', index: idx });
+    if (
+      autoFilledSingleIndex !== null &&
+      autoFilledSingleIndex !== idx &&
+      !paymentsTouched &&
+      walletAmt === 0
+    ) {
+      const dueMinor = Math.max(0, remainingMinor);
+      const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+      setAutoFilledSingleIndex(dueMinor > 0 ? idx : null);
+      setPayments((rows) =>
+        rows.map((row, index) => {
+          if (index === idx) {
+            return { ...row, amount: dueMinor > 0 ? formatInput(dueDisplay) : '' };
+          }
+          if (index === autoFilledSingleIndex) {
+            return { ...row, amount: '', transaction_id: '' };
+          }
+          return row;
+        }),
+      );
+      return;
+    }
+    if (!payments[idx]?.amount) {
+      allocateRemainingTo(idx);
+    }
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
@@ -755,12 +821,111 @@ export default function PrepaidCheckoutModal({
     lastSubmissionRef.current = submission;
     Promise.resolve(onConfirm(...submission))
       .then((result) => {
-        if (result) setSuccess(result);
+        if (result) recordSettledSuccess(result);
       })
       .finally(() => {
         inFlightRef.current = false;
         setProcessing(false);
       });
+  };
+
+  const recordSettledSuccess = (result: PrepaidSuccess) => {
+    const submitted = lastSubmissionRef.current;
+    if (submitted) {
+      const [splitLines, submittedWallet] = submitted;
+      const cashSubmittedMinor = splitLines
+        .filter((line) => line.method === 'cash' && line.payment_method_id === undefined)
+        .reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
+      const totalSubmittedMinor =
+        splitLines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0) +
+        toMinorUnits(Number(submittedWallet) || 0);
+      const billTotalMinor = toMinorUnits(Number(result.bill.total) || 0);
+      const computedChange =
+        cashSubmittedMinor > 0 && totalSubmittedMinor > billTotalMinor
+          ? (totalSubmittedMinor - billTotalMinor) / minorFactor
+          : 0;
+      setSettledChangeAmount(computedChange);
+    } else {
+      setSettledChangeAmount(change > 0 ? change : 0);
+    }
+    setSuccess(result);
+  };
+
+  const handlePrintCompletionReceipt = async () => {
+    if (!success?.bill || printingReceipt) return;
+    const reservedWindow = reservePrintWindow?.();
+    setPrintingReceipt(true);
+    try {
+      if (onPrintBill) {
+        await onPrintBill(success.bill, reservedWindow);
+        return;
+      }
+      if (!currentTenant) {
+        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+        return;
+      }
+      const { usePrinterStore } = await import('@/hooks/usePrinter');
+      await usePrinterStore
+        .getState()
+        .printBill(success.bill, currentTenant, undefined, reservedWindow);
+      toast.success(tOrders('printReceipt'));
+    } catch {
+      toast.error(tOrders('printReceiptFailed'));
+    } finally {
+      setPrintingReceipt(false);
+    }
+  };
+
+  const confirmDisabled =
+    processing ||
+    Boolean(failure?.terminal) ||
+    (!recovery &&
+      (taxLoading ||
+        !preview ||
+        hasInvalidFixedDiscount ||
+        nonCashExceedsBalance ||
+        totalPaymentMinor < remainingMinor ||
+        Boolean(
+          preview.discountAmount > 0 &&
+          discountNeedsApprovalPin &&
+          (!discountPin ||
+            managerApprovers.loading ||
+            managerApprovers.loadFailed ||
+            managerApprovers.approvers.length === 0 ||
+            !(discountApproverId ?? managerApprovers.selectedApproverId)),
+        )));
+
+  const confirmLabel = processing
+    ? t('processingPayment')
+    : recovery
+      ? t(recovery.statusChecked ? 'retrySamePayment' : 'checkPaymentStatus')
+      : taxLoading
+        ? t('calculatingTax')
+        : t('confirmPaymentAmount', { amount: currencyFmt(remaining) });
+
+  const handlePrimarySubmit = () => {
+    if (inFlightRef.current || failure?.terminal) return;
+    if (recovery && !recovery.statusChecked && onCheckRecovery) {
+      inFlightRef.current = true;
+      setProcessing(true);
+      void onCheckRecovery().finally(() => {
+        inFlightRef.current = false;
+        setProcessing(false);
+      });
+    } else if (recovery && lastSubmissionRef.current) {
+      inFlightRef.current = true;
+      setProcessing(true);
+      Promise.resolve(onConfirm(...lastSubmissionRef.current))
+        .then((result) => {
+          if (result) recordSettledSuccess(result);
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+          setProcessing(false);
+        });
+    } else {
+      handleConfirm();
+    }
   };
 
   const modalRef = useRef<HTMLDivElement>(null);
@@ -778,7 +943,34 @@ export default function PrepaidCheckoutModal({
   }, []);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    if (success) {
+      doneButtonRef.current?.focus?.();
+    }
+  }, [success]);
+
+  const dismissHandlerRef = useRef<() => boolean>(() => true);
+  useEffect(() => {
+    dismissHandlerRef.current = () => {
+      if (locked) return true;
+      if (!success && (activeCol1Panel === 'discount' || activeCol1Panel === 'tax')) {
+        setCol1Panel('items');
+        return true;
+      }
+      onClose();
+      return true;
+    };
+  });
+
+  useEffect(() => {
+    if (!onRegisterDismissHandler) return;
+    onRegisterDismissHandler(() => dismissHandlerRef.current());
+    return () => onRegisterDismissHandler(undefined);
+  }, [onRegisterDismissHandler]);
+
+  const keyboardActionRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  useEffect(() => {
+    keyboardActionRef.current = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       const isInput =
@@ -799,13 +991,16 @@ export default function PrepaidCheckoutModal({
             target?.getAttribute?.('role') === 'button' ||
             Boolean(target?.closest?.('button, a, [role="button"]'))));
 
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !onRegisterDismissHandler) {
+        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
         e.preventDefault();
-        if (!locked) onClose();
+        dismissHandlerRef.current();
         return;
       }
 
       if (isInput) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.isComposing || e.keyCode === 229) return;
 
       if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
         if (e.repeat) {
@@ -814,12 +1009,67 @@ export default function PrepaidCheckoutModal({
         }
         if (isInteractive) return;
         e.preventDefault();
+        if (e.key === 'Enter') {
+          if (success) {
+            onClose();
+            return;
+          }
+          if (!confirmDisabled) {
+            handlePrimarySubmit();
+          }
+        }
+        return;
+      }
+
+      if (
+        success ||
+        locked ||
+        failure?.terminal ||
+        !amountTarget ||
+        (amountTarget.kind === 'discount' && discountCommitted)
+      ) {
+        return;
+      }
+      const allowDecimal = allowCurrencyDecimalKey(
+        unitAdapter.maxDecimals,
+        amountTarget.kind,
+        discountType,
+      );
+      const nextVal = applyPhysicalCheckoutKey(
+        activeAmountValue,
+        e.key,
+        allowDecimal,
+        activeAmountMax,
+      );
+      if (nextVal !== null) {
+        e.preventDefault();
+        if (isInteractive && typeof target?.blur === 'function') {
+          target.blur();
+        }
+        updateActiveAmount(nextVal);
       }
     };
+  });
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, locked]);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const listener = (e: KeyboardEvent) => keyboardActionRef.current?.(e);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
+
+  const handleTenderInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      e.key === 'Enter' &&
+      !e.repeat &&
+      !e.nativeEvent?.isComposing &&
+      e.keyCode !== 229 &&
+      !confirmDisabled
+    ) {
+      e.preventDefault();
+      handlePrimarySubmit();
+    }
+  };
 
   if (success) {
     const shareReceipt = async () => {
@@ -868,22 +1118,51 @@ export default function PrepaidCheckoutModal({
               {t('paid')}
             </span>
           </div>
-          {success.customer?.phone && (
-            <Button
-              onClick={() => void shareReceipt()}
-              variant="outline"
-              className="min-h-11 w-full rounded-xl border-emerald-500/35 bg-emerald-500/8 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+          {settledChangeAmount > 0 && (
+            <div
+              data-testid="settled-change-banner"
+              className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/12 px-4 py-2.5 dark:border-emerald-400/35 dark:bg-emerald-500/15"
             >
-              <Send size={16} className="me-2" />
-              {tCommon('shareViaWhatsApp')}
-            </Button>
+              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                {t('changeReturned')}
+              </span>
+              <span className="text-lg font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                {currencyFmt(settledChangeAmount)}
+              </span>
+            </div>
           )}
-          <Button
-            onClick={onClose}
-            className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
-          >
-            {tCommon('done')}
-          </Button>
+          <div className="space-y-2 pt-1">
+            <Button
+              type="button"
+              data-testid="completion-print-receipt-btn"
+              disabled={printingReceipt}
+              onClick={() => void handlePrintCompletionReceipt()}
+              variant="outline"
+              className="min-h-11 w-full rounded-xl bg-card font-semibold dark:border-white/12"
+            >
+              <Printer size={16} className="me-2" />
+              {tOrders('printReceiptTitle')}
+            </Button>
+            {success.customer?.phone && (
+              <Button
+                type="button"
+                onClick={() => void shareReceipt()}
+                variant="outline"
+                className="min-h-11 w-full rounded-xl border-emerald-500/35 bg-emerald-500/8 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+              >
+                <Send size={16} className="me-2" />
+                {tCommon('shareViaWhatsApp')}
+              </Button>
+            )}
+            <Button
+              ref={doneButtonRef}
+              type="button"
+              onClick={onClose}
+              className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+            >
+              {tCommon('done')}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -1081,58 +1360,6 @@ export default function PrepaidCheckoutModal({
       : []),
   ];
 
-  const confirmDisabled =
-    processing ||
-    Boolean(failure?.terminal) ||
-    (!recovery &&
-      (taxLoading ||
-        !preview ||
-        hasInvalidFixedDiscount ||
-        nonCashExceedsBalance ||
-        totalPaymentMinor < remainingMinor ||
-        Boolean(
-          preview.discountAmount > 0 &&
-          discountNeedsApprovalPin &&
-          (!discountPin ||
-            managerApprovers.loading ||
-            managerApprovers.loadFailed ||
-            managerApprovers.approvers.length === 0 ||
-            !(discountApproverId ?? managerApprovers.selectedApproverId)),
-        )));
-
-  const confirmLabel = processing
-    ? t('processingPayment')
-    : recovery
-      ? t(recovery.statusChecked ? 'retrySamePayment' : 'checkPaymentStatus')
-      : taxLoading
-        ? t('calculatingTax')
-        : t('confirmPaymentAmount', { amount: currencyFmt(remaining) });
-
-  const handlePrimarySubmit = () => {
-    if (inFlightRef.current || failure?.terminal) return;
-    if (recovery && !recovery.statusChecked && onCheckRecovery) {
-      inFlightRef.current = true;
-      setProcessing(true);
-      void onCheckRecovery().finally(() => {
-        inFlightRef.current = false;
-        setProcessing(false);
-      });
-    } else if (recovery && lastSubmissionRef.current) {
-      inFlightRef.current = true;
-      setProcessing(true);
-      Promise.resolve(onConfirm(...lastSubmissionRef.current))
-        .then((result) => {
-          if (result) setSuccess(result);
-        })
-        .finally(() => {
-          inFlightRef.current = false;
-          setProcessing(false);
-        });
-    } else {
-      handleConfirm();
-    }
-  };
-
   return (
     <div
       ref={modalRef}
@@ -1156,7 +1383,7 @@ export default function PrepaidCheckoutModal({
                   const next = !showDetails;
                   setShowDetails(next);
                   if (!next && amountTarget?.kind === 'discount') {
-                    setAmountTarget({ kind: 'payment', index: 0 });
+                    restorePaymentTarget();
                   }
                 }}
                 disabled={locked}
@@ -1652,10 +1879,7 @@ export default function PrepaidCheckoutModal({
                     <button
                       type="button"
                       title={label}
-                      onClick={() => {
-                        setAmountTarget({ kind: 'payment', index: idx });
-                        if (!payment.amount) allocateRemainingTo(idx);
-                      }}
+                      onClick={() => handleTenderButtonClick(idx)}
                       className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                     >
                       {Icon && <Icon size={15} />}
@@ -1673,6 +1897,7 @@ export default function PrepaidCheckoutModal({
                         value={payment.amount}
                         onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                         onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                        onKeyDown={handleTenderInputKeyDown}
                         placeholder="0.00"
                         inputMode="decimal"
                         className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
@@ -1692,6 +1917,7 @@ export default function PrepaidCheckoutModal({
                     type="text"
                     value={cardPayment.transaction_id ?? ''}
                     onChange={(e) => updatePaymentTransactionId(cardTenderIndex, e.target.value)}
+                    onKeyDown={handleTenderInputKeyDown}
                     placeholder={t('cardTransactionIdLabel')}
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
@@ -1745,10 +1971,7 @@ export default function PrepaidCheckoutModal({
                         <button
                           type="button"
                           title={label}
-                          onClick={() => {
-                            setAmountTarget({ kind: 'payment', index: idx });
-                            if (!payment.amount) allocateRemainingTo(idx);
-                          }}
+                          onClick={() => handleTenderButtonClick(idx)}
                           className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                         >
                           <span className="truncate">{label}</span>
@@ -1765,6 +1988,7 @@ export default function PrepaidCheckoutModal({
                             value={payment.amount}
                             onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                             onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                            onKeyDown={handleTenderInputKeyDown}
                             placeholder="0.00"
                             inputMode="decimal"
                             className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}

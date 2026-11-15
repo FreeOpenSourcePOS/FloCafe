@@ -2821,6 +2821,431 @@ async function testVisualHierarchyAndPrematurePaidGuards() {
   console.log('  ✓ Premature Paid fix, 3-state tender focus, and Hallmark craft verified');
 }
 
+async function testPrincipalUxErgonomicsAndCompletionParity() {
+  console.log('\n--- 8. Principal UX Ergonomics: 1-Tap Switch, Keyboard Flow, Discount Sync, & Completion Change ---');
+
+  await withAliases(async () => {
+    const checkoutUiPath = path.resolve(ROOT, 'frontend/src/components/pos/checkout-ui.tsx');
+    delete require.cache[checkoutUiPath];
+    const checkoutUi = require(checkoutUiPath);
+    assert.equal(
+      typeof checkoutUi.applyPhysicalCheckoutKey,
+      'function',
+      'checkout-ui exports applyPhysicalCheckoutKey for shared physical keyboard entry',
+    );
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('', '2', true), '2');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('2', '0', true), '20');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20', '.', true), '20.');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20.', '5', true), '20.5');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20.5', 'Backspace', true), '20.');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20.', 'Delete', true), '');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('95', '9', true, 100), '100');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('10', 'a', true), null);
+
+    // 8a: PaymentModal - 1-tap Card<->Cash switch, Discount auto-target + restore, keyboard digits/Enter/Escape, completion Change Returned + Print Receipt
+    const pmHarness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    const keyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWindow || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.delete(fn);
+      },
+    };
+
+    try {
+      const apiCalls: Array<{ method: string; url: string; body?: any }> = [];
+      installCheckoutComponentMocks(pmHarness, {
+        apiGet: async (url: string) => {
+          apiCalls.push({ method: 'GET', url });
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          if (url.startsWith('/bills/order/')) {
+            return {
+              data: {
+                bill: {
+                  ...makeBill('bill-ux-1', 27.0),
+                  subtotal: 30,
+                  discount_amount: 3,
+                  discount_type: 'percentage',
+                  discount_value: 10,
+                  total: 27,
+                  balance: 27,
+                },
+              },
+            };
+          }
+          return { data: {} };
+        },
+        apiPatch: async (url: string, body: any) => {
+          apiCalls.push({ method: 'PATCH', url, body });
+          return { data: { ok: true } };
+        },
+        apiPost: async (url: string, body: any) => {
+          apiCalls.push({ method: 'POST', url, body });
+          return {
+            data: {
+              bill: {
+                ...makeBill('bill-ux-1', 0),
+                total: 27,
+                paid_amount: 27,
+                balance: 0,
+                payment_status: 'paid',
+              },
+            },
+          };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let closeCount = 0;
+      let paidCount = 0;
+      let printedBills = 0;
+      let currentBill: any = {
+        ...makeBill('bill-ux-1', 30.0),
+        subtotal: 30,
+        total: 30,
+        balance: 30,
+      };
+      const renderPm = () =>
+        pmHarness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {
+            paidCount++;
+          },
+          onBillUpdate: (updated: any) => {
+            currentBill = updated;
+          },
+          onPrintBill: async () => {
+            printedBills++;
+          },
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+
+      // 1-tap Card auto-fills 30; switching to Cash moves full 30 to Cash and clears Card in 1 tap!
+      const findTenderBtn = (t: any, title: string) =>
+        collectElements(t, (el) => el.type === 'button' && el.props?.title === title)[0];
+      const findTenderInput = (t: any, label: string) =>
+        collectElements(
+          t,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === `${label} amount`,
+        )[0];
+
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderPm();
+      assert.equal(findTenderInput(tree, 'methodCard').props.value, '30', 'Card 1-tap auto-fills 30');
+      assert.equal(findTenderInput(tree, 'methodCash').props.value, '', 'Cash starts empty');
+
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderPm();
+      assert.equal(
+        findTenderInput(tree, 'methodCash').props.value,
+        '30',
+        '1-tap switch from auto-filled Card to Cash moves full balance to Cash',
+      );
+      assert.equal(
+        findTenderInput(tree, 'methodCard').props.value,
+        '',
+        '1-tap switch from auto-filled Card to Cash clears Card automatically',
+      );
+
+      // Select Card again, then open Discount: immediately targets discount ('5%' visible) and restores Card after applying!
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderPm();
+      assert.equal(findTenderInput(tree, 'methodCard').props.value, '30');
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTab.props.onClick();
+      tree = renderPm();
+      assert.ok(
+        renderToStaticMarkup(tree).includes('5%'),
+        'Opening Discount panel immediately activates discount quick-tender % pills without extra focus click',
+      );
+
+      // Physical keyboard digits '1', '0' populate discount while Discount target is active
+      const dispatchKey = (init: Record<string, any>) => {
+        for (const fn of keyListeners) {
+          fn({
+            key: '',
+            code: '',
+            repeat: false,
+            ctrlKey: false,
+            metaKey: false,
+            altKey: false,
+            shiftKey: false,
+            defaultPrevented: false,
+            target: null,
+            preventDefault() {
+              this.defaultPrevented = true;
+            },
+            ...init,
+          });
+        }
+      };
+      dispatchKey({ key: '1', code: 'Digit1' });
+      tree = renderPm();
+      dispatchKey({ key: '0', code: 'Digit0' });
+      tree = renderPm();
+
+      const applyDiscBtn = collectElements(
+        tree,
+        (el) =>
+          typeof el.props?.onClick === 'function' && String(el.props?.children) === 'applyDiscount',
+      )[0];
+      await applyDiscBtn.props.onClick();
+      tree = renderPm();
+      assert.ok(
+        !renderToStaticMarkup(tree).includes('5%'),
+        'Applying discount restores keypad target away from discount back to payment tender',
+      );
+      assert.equal(
+        findTenderInput(tree, 'methodCard').props.value,
+        '27',
+        'Auto-filled Card updates to 27 after 10% discount',
+      );
+
+      // Escape while Discount sub-panel is open backs out to Items first without closing modal
+      dispatchKey({ key: 'Escape', code: 'Escape' });
+      tree = renderPm();
+      assert.equal(closeCount, 0, 'First Escape closes Discount sub-panel instead of closing modal');
+
+      // Switch to Cash and type 40 via physical keyboard (Delete -> '4' -> '0') -> Change Returned = 13
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderPm();
+      dispatchKey({ key: 'Delete', code: 'Delete' });
+      tree = renderPm();
+      assert.equal(findTenderInput(tree, 'methodCash').props.value, '');
+
+      // Uncovered Enter does NOT submit payment
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        0,
+        'Enter while check is uncovered must not submit payment',
+      );
+
+      dispatchKey({ key: '4', code: 'Digit4' });
+      tree = renderPm();
+      dispatchKey({ key: '0', code: 'Digit0' });
+      tree = renderPm();
+      assert.equal(
+        findTenderInput(tree, 'methodCash').props.value,
+        '40',
+        'Physical keyboard digits populate active Cash tender without input focus',
+      );
+
+      // Space never submits even when covered
+      dispatchKey({ key: ' ', code: 'Space' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        0,
+        'Space must never submit payment',
+      );
+
+      // Deliberate non-repeat Enter when covered submits payment!
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderPm();
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        1,
+        'Deliberate Enter when covered submits payment',
+      );
+
+      // Post-payment completion screen shows settled Change Returned ($13.00) and Print Receipt CTA!
+      const changeBanner = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'settled-change-banner',
+      )[0];
+      assert.ok(changeBanner, 'Completion screen renders settled-change-banner when cash change > 0');
+      assert.ok(
+        renderToStaticMarkup(changeBanner).includes('13.00'),
+        'Completion screen displays exact $13.00 change returned',
+      );
+
+      const printReceiptBtn = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'completion-print-receipt-btn',
+      )[0];
+      assert.ok(printReceiptBtn, 'Completion screen renders on-demand Print Receipt button');
+      await printReceiptBtn.props.onClick();
+      assert.equal(printedBills, 1, 'Clicking Print Receipt invokes onPrintBill');
+
+      // 1-keystroke Enter on completion screen dismisses via onPaid()
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      assert.equal(paidCount, 1, 'Single Enter keystroke on completion screen invokes onPaid');
+    } finally {
+      pmHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+
+    // 8b: PrepaidCheckoutModal parity - 1-tap switch, keyboard digits + Enter confirm, completion Change Returned + Print + 1-keystroke Enter close
+    const ppHarness = createStatefulHarness();
+    const hadWin2 = 'window' in globalThis;
+    const prevWin2 = (globalThis as any).window;
+    const ppKeyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWin2 || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') ppKeyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') ppKeyListeners.delete(fn);
+      },
+    };
+    try {
+      installCheckoutComponentMocks(ppHarness, {
+        apiGet: async (url: string) => {
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          return { data: {} };
+        },
+        taxPreview: () => ({
+          tax: {
+            subtotal: 16.5,
+            discount_amount: 0,
+            discounted_subtotal: 16.5,
+            tax_amount: 0,
+            tax_breakdown: [],
+            packaging_charge: 0,
+            charges_breakdown: [],
+            round_off: 0,
+            total: 16.5,
+          },
+          loading: false,
+        }),
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+
+      let ppClosed = 0;
+      let ppPrinted = 0;
+      let ppConfirmed = 0;
+      const renderPp = () =>
+        ppHarness.renderAndSettle(PrepaidCheckoutModal, {
+          currency: 'USD',
+          onClose: () => {
+            ppClosed++;
+          },
+          onPrintBill: async () => {
+            ppPrinted++;
+          },
+          onConfirm: async () => {
+            ppConfirmed++;
+            return {
+              bill: { id: 501, bill_number: 'B-501', total: 16.5, payment_status: 'paid' },
+              customer: null,
+              pointsEarned: 0,
+            };
+          },
+        });
+
+      let ppTree = renderPp();
+      await new Promise((r) => setTimeout(r, 10));
+      ppTree = renderPp();
+
+      const dispatchPpKey = (init: Record<string, any>) => {
+        for (const fn of ppKeyListeners) {
+          fn({
+            key: '',
+            code: '',
+            repeat: false,
+            ctrlKey: false,
+            metaKey: false,
+            altKey: false,
+            shiftKey: false,
+            defaultPrevented: false,
+            target: null,
+            preventDefault() {
+              this.defaultPrevented = true;
+            },
+            ...init,
+          });
+        }
+      };
+
+      // Physical keyboard typing '2', '0' after clicking Cash button blurs focused button so subsequent Enter confirms!
+      let focusedBtnBlurred = 0;
+      const focusedButtonTarget = {
+        tagName: 'BUTTON',
+        blur() {
+          focusedBtnBlurred++;
+        },
+      };
+      dispatchPpKey({ key: '2', code: 'Digit2', target: focusedButtonTarget });
+      assert.equal(
+        focusedBtnBlurred,
+        1,
+        'Physical digit entry blurs a focused modal button so subsequent Enter submits cleanly',
+      );
+      ppTree = renderPp();
+      dispatchPpKey({ key: '0', code: 'Digit0' });
+      ppTree = renderPp();
+
+      const ppCashInput = collectElements(
+        ppTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(ppCashInput.props.value, '20', 'Prepaid keyboard digits populate Cash input');
+
+      dispatchPpKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 15));
+      ppTree = renderPp();
+      assert.equal(ppConfirmed, 1, 'Prepaid Enter when covered confirms payment');
+
+      const ppChangeBanner = collectElements(
+        ppTree,
+        (el) => el.props?.['data-testid'] === 'settled-change-banner',
+      )[0];
+      assert.ok(ppChangeBanner, 'Prepaid completion screen renders settled-change-banner');
+      assert.ok(
+        renderToStaticMarkup(ppChangeBanner).includes('3.50'),
+        'Prepaid completion screen displays exact $3.50 change returned',
+      );
+
+      const ppPrintBtn = collectElements(
+        ppTree,
+        (el) => el.props?.['data-testid'] === 'completion-print-receipt-btn',
+      )[0];
+      assert.ok(ppPrintBtn, 'Prepaid completion screen renders Print Receipt button');
+      await ppPrintBtn.props.onClick();
+      assert.equal(ppPrinted, 1, 'Prepaid completion Print Receipt invokes onPrintBill');
+
+      dispatchPpKey({ key: 'Enter', code: 'Enter' });
+      assert.equal(ppClosed, 1, 'Single Enter keystroke on Prepaid completion screen closes modal');
+    } finally {
+      ppHarness.cleanupAll();
+      if (!hadWin2) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWin2;
+    }
+  });
+
+  console.log('  ✓ Principal UX ergonomics & completion parity verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -2831,6 +3256,7 @@ async function run() {
   await testPosPageEscapeAndSessionGuards();
   await testReviewFixRegressions();
   await testVisualHierarchyAndPrematurePaidGuards();
+  await testPrincipalUxErgonomicsAndCompletionParity();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

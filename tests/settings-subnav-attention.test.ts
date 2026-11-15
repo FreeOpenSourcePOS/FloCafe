@@ -289,7 +289,9 @@ async function run() {
     assert.equal(useCloudAttentionStore.getState().tenantId, null);
     assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
 
-    await useCloudAttentionStore.getState().refreshForTenant(makeTenant({ id: 2, role: 'owner' }) as any);
+    await useCloudAttentionStore
+      .getState()
+      .refreshForTenant(makeTenant({ id: 2, role: 'owner' }) as any);
     useCloudAttentionStore.getState().syncAccount(1, {
       cloud_account_available: true,
       email: 'tenant1@flo.local',

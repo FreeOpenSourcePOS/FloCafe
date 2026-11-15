@@ -3511,10 +3511,7 @@ export default function SettingsPage() {
       if (getActiveTenantId() !== tenantId) return;
       notifyCloudAccountStatusChanged();
       if (registrationStatus === 'registered') {
-        const mobileAccessKeys = [
-          `${tenantId}:mobile-access`,
-          `${tenantId}:mobile-access:status`,
-        ];
+        const mobileAccessKeys = [`${tenantId}:mobile-access`, `${tenantId}:mobile-access:status`];
         mobileAccessKeys.forEach((key) => {
           settingsTabLoadControllers.current.get(key)?.abort();
           settingsTabLoadControllers.current.delete(key);
@@ -4757,7 +4754,8 @@ export default function SettingsPage() {
                 isOwner &&
                 (hasStoreAttentionForTenant
                   ? storeEmailNeedsAttention
-                  : cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))
+                  : cloudAccountAvailable &&
+                    Boolean(cloudAccount?.email && !cloudAccount?.verified))
               }
             />
             <SettingsNavItem

@@ -1,6 +1,6 @@
 /**
  * Regression tests for QrMenuSettingsTab automatic status refresh on Google Drive
- * reconnect, disconnect, account switch, and window focus / visibility return.
+ * reconnect, disconnect, and window focus / visibility return.
  *
  * Run: npm run test:qr-menu-settings-tab-refresh
  */
@@ -372,8 +372,8 @@ async function withMockEnv(fn: () => Promise<void>) {
   }
 }
 
-async function testReconnectViaPropsAndConnectCallback() {
-  console.log('\n--- 1. Reconnect via driveConnected transition and onConnectDrive ---');
+async function testReconnectViaConnectCallback() {
+  console.log('\n--- 1. Reconnect via onConnectDrive callback ---');
   await withMockEnv(async () => {
     const dom = createDomEventEnv();
     (globalThis as any).window = dom.fakeWindow;
@@ -393,9 +393,18 @@ async function testReconnectViaPropsAndConnectCallback() {
     const props = {
       canConnectDrive: true,
       connectingDrive: false,
-      driveConnected: false,
-      driveAccountEmail: null as string | null,
-      onConnectDrive: () => {},
+      onConnectDrive: async () => {
+        backendStatus = makeStatus({
+          connected: true,
+          published: true,
+          file_name: 'Test Cafe - Menu (abc123).pdf',
+          web_view_link: 'https://drive.google.com/file/d/menu-1/view',
+          sharing_enabled: true,
+          source: 'generated',
+          updated_at: '2026-11-14T10:00:00Z',
+          generator_prefs: makePrefs({ template: 'classic-bistro' }),
+        });
+      },
     };
 
     harness.render(QrMenuSettingsTab, props);
@@ -409,87 +418,22 @@ async function testReconnectViaPropsAndConnectCallback() {
     );
     assert.equal(qrMenuCalls, 1, 'Initial mount fetches qr-menu status once');
 
-    // Simulate OAuth completing in settings/page.tsx without unmounting QrMenuSettingsTab
-    backendStatus = makeStatus({
-      connected: true,
-      published: true,
-      file_name: 'Test Cafe - Menu (abc123).pdf',
-      web_view_link: 'https://drive.google.com/file/d/menu-1/view',
-      sharing_enabled: true,
-      source: 'generated',
-      updated_at: '2026-11-14T10:00:00Z',
-    });
-
-    harness.render(QrMenuSettingsTab, {
-      ...props,
-      connectingDrive: true,
-    });
-    harness.render(QrMenuSettingsTab, {
-      ...props,
-      connectingDrive: false,
-      driveConnected: true,
-      driveAccountEmail: 'owner@cafe.com',
-    });
-    await flushMicrotasks();
-    const connectedTree = harness.render(QrMenuSettingsTab, {
-      ...props,
-      connectingDrive: false,
-      driveConnected: true,
-      driveAccountEmail: 'owner@cafe.com',
-    });
-    const connectedMarkup = renderToStaticMarkup(connectedTree);
-    assert.ok(
-      connectedMarkup.includes('liveMenu') &&
-        connectedMarkup.includes('Test Cafe - Menu (abc123).pdf'),
-      'Connected QR Menu UI renders immediately when driveConnected flips false -> true without unmounting',
-    );
-    assert.ok(qrMenuCalls >= 2, 'driveConnected false -> true triggers fresh qr-menu fetch');
-
-    harness.cleanupAll();
-  });
-
-  // Also test standalone caller where driveConnected prop is omitted and onConnectDrive resolves async
-  await withMockEnv(async () => {
-    const dom = createDomEventEnv();
-    (globalThis as any).window = dom.fakeWindow;
-    (globalThis as any).document = dom.fakeDocument;
-
-    let backendStatus = makeStatus({ connected: false });
-    const harness = createStatefulHarness();
-    const { QrMenuSettingsTab } = loadQrMenuTabWithMocks(harness, async (url) => {
-      if (url === '/settings/google-drive/qr-menu') return { data: backendStatus };
-      return { data: {} };
-    });
-
-    const props = {
-      canConnectDrive: true,
-      connectingDrive: false,
-      onConnectDrive: async () => {
-        backendStatus = makeStatus({
-          connected: true,
-          published: false,
-          generator_prefs: makePrefs({ template: 'classic-bistro' }),
-        });
-      },
-    };
-
-    harness.render(QrMenuSettingsTab, props);
-    await flushMicrotasks();
-    const tree = harness.render(QrMenuSettingsTab, props);
     const connectBtn = collectElements(
-      tree,
+      disconnectedTree,
       (el) => el.type === 'button' && renderToStaticMarkup(el).includes('connectDrive'),
     )[0];
     assert.ok(connectBtn, 'connectDrive button rendered');
 
     await connectBtn.props.onClick();
     await flushMicrotasks();
-    const afterTree = harness.render(QrMenuSettingsTab, props);
-    const afterMarkup = renderToStaticMarkup(afterTree);
+    const connectedTree = harness.render(QrMenuSettingsTab, props);
+    const connectedMarkup = renderToStaticMarkup(connectedTree);
     assert.ok(
-      afterMarkup.includes('publishMenu'),
-      'Awaiting onConnectDrive refreshes standalone QrMenuSettingsTab to connected state',
+      connectedMarkup.includes('liveMenu') &&
+        connectedMarkup.includes('Test Cafe - Menu (abc123).pdf'),
+      'Awaiting onConnectDrive refreshes QrMenuSettingsTab to connected state without unmounting',
     );
+    assert.equal(qrMenuCalls, 2, 'onConnectDrive completion triggers fresh qr-menu fetch');
 
     harness.cleanupAll();
   });
@@ -511,8 +455,6 @@ async function testReconnectViaPropsAndConnectCallback() {
     const props = {
       canConnectDrive: true,
       connectingDrive: false,
-      driveConnected: true,
-      driveAccountEmail: 'owner@cafe.com',
       onConnectDrive: () =>
         new Promise<void>((resolve) => {
           resolveConnect = () => {
@@ -529,7 +471,7 @@ async function testReconnectViaPropsAndConnectCallback() {
       tree,
       (el) => el.type === 'button' && renderToStaticMarkup(el).includes('connectDrive'),
     )[0];
-    assert.ok(connectBtn, 'connectDrive button rendered when driveConnected prop is stale');
+    assert.ok(connectBtn, 'connectDrive button rendered');
 
     const connectPromise = connectBtn.props.onClick();
     dom.fakeWindow.dispatch('focus');
@@ -547,7 +489,7 @@ async function testReconnectViaPropsAndConnectCallback() {
 
     harness.cleanupAll();
   });
-  console.log('  ✓ Reconnect via driveConnected prop and async onConnectDrive verified');
+  console.log('  ✓ Reconnect via async onConnectDrive verified');
 }
 
 async function testFocusAndVisibilityRefresh() {
@@ -571,8 +513,6 @@ async function testFocusAndVisibilityRefresh() {
     const baseProps = {
       canConnectDrive: true,
       connectingDrive: false,
-      driveConnected: false,
-      driveAccountEmail: null,
       onConnectDrive: () => {},
     };
 
@@ -603,12 +543,15 @@ async function testFocusAndVisibilityRefresh() {
       'Window focus transitions UI to connected state',
     );
 
-    // Reset back to disconnected, verify visibilitychange only refreshes when visible
+    // Reset back to disconnected via focus, then verify visibilitychange only refreshes when visible
     backendStatus = makeStatus({ connected: false });
-    harness.render(QrMenuSettingsTab, { ...baseProps, driveConnected: true });
-    harness.render(QrMenuSettingsTab, { ...baseProps, driveConnected: false });
+    dom.fakeWindow.dispatch('focus');
     await flushMicrotasks();
-    harness.render(QrMenuSettingsTab, { ...baseProps, driveConnected: false });
+    const resetTree = harness.render(QrMenuSettingsTab, baseProps);
+    assert.ok(
+      renderToStaticMarkup(resetTree).includes('connectDrive'),
+      'Focus refresh resets UI back to disconnected state',
+    );
     const callsBeforeHidden = qrMenuCalls;
 
     backendStatus = makeStatus({ connected: true });
@@ -643,9 +586,7 @@ async function testFocusAndVisibilityRefresh() {
 }
 
 async function testDisconnectAndPrefsPreservationAndRaceSafety() {
-  console.log(
-    '\n--- 3. Disconnect, prefs preservation on focus, account switch, and race safety ---',
-  );
+  console.log('\n--- 3. Disconnect, prefs preservation on focus, and race safety ---');
   await withMockEnv(async () => {
     const dom = createDomEventEnv();
     (globalThis as any).window = dom.fakeWindow;
@@ -666,8 +607,6 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     const connectedProps = {
       canConnectDrive: true,
       connectingDrive: false,
-      driveConnected: true,
-      driveAccountEmail: 'a@cafe.com',
       onConnectDrive: () => {},
     };
 
@@ -695,7 +634,7 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     );
     assert.equal(editedCheckboxes[2].props.checked, true, 'local includePhotos edit persisted');
 
-    // Background focus refresh while still connected on same account must NOT clobber unsaved prefs
+    // Background focus refresh while still connected must NOT clobber unsaved prefs
     backendStatus = makeStatus({
       connected: true,
       published: true,
@@ -717,61 +656,47 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     assert.equal(
       afterFocusCheckboxes[2].props.checked,
       true,
-      'Background focus while connected on same account preserves unsaved checkbox edit',
+      'Background focus while connected preserves unsaved checkbox edit',
     );
     assert.equal(
       afterFocusSelects[0].props.value,
       'classic-bistro',
-      'Background focus while connected on same account preserves unsaved template edit',
+      'Background focus while connected preserves unsaved template edit',
     );
 
-    // Switching account while connected DOES reload generator_prefs from server
+    // Disconnecting Google Drive while mounted refreshes cleanly to disconnected UI
+    backendStatus = makeStatus({ connected: false });
+    dom.fakeWindow.dispatch('focus');
+    await flushMicrotasks();
+    const disconnectedTree = harness.render(QrMenuSettingsTab, connectedProps);
+    assert.ok(
+      renderToStaticMarkup(disconnectedTree).includes('connectDrive'),
+      'Focus refresh while disconnected transitions cleanly to disconnected state',
+    );
+
+    // Reconnecting after disconnect reloads generator_prefs from server
     backendStatus = makeStatus({
       connected: true,
       published: false,
       generator_prefs: makePrefs({ template: 'standard', includePhotos: false }),
     });
-    harness.render(QrMenuSettingsTab, {
-      ...connectedProps,
-      driveAccountEmail: 'b@cafe.com',
-    });
+    dom.fakeWindow.dispatch('focus');
     await flushMicrotasks();
-    const switchedTree = harness.render(QrMenuSettingsTab, {
-      ...connectedProps,
-      driveAccountEmail: 'b@cafe.com',
-    });
-    const switchedSelects = collectElements(switchedTree, (el) => el.type === 'select');
-    const switchedCheckboxes = collectElements(
-      switchedTree,
+    const reconnectedTree = harness.render(QrMenuSettingsTab, connectedProps);
+    const reconnectedSelects = collectElements(reconnectedTree, (el) => el.type === 'select');
+    const reconnectedCheckboxes = collectElements(
+      reconnectedTree,
       (el) => el.type === 'input' && el.props?.type === 'checkbox',
     );
     assert.equal(
-      switchedSelects[0].props.value,
+      reconnectedSelects[0].props.value,
       'standard',
-      'Account switch reloads generator_prefs template',
+      'Reconnect reloads generator_prefs template',
     );
     assert.equal(
-      switchedCheckboxes[2].props.checked,
+      reconnectedCheckboxes[2].props.checked,
       false,
-      'Account switch reloads generator_prefs toggles',
-    );
-
-    // Disconnecting Google Drive while mounted refreshes cleanly to disconnected UI
-    backendStatus = makeStatus({ connected: false });
-    harness.render(QrMenuSettingsTab, {
-      ...connectedProps,
-      driveConnected: false,
-      driveAccountEmail: null,
-    });
-    await flushMicrotasks();
-    const disconnectedTree = harness.render(QrMenuSettingsTab, {
-      ...connectedProps,
-      driveConnected: false,
-      driveAccountEmail: null,
-    });
-    assert.ok(
-      renderToStaticMarkup(disconnectedTree).includes('connectDrive'),
-      'driveConnected true -> false refreshes cleanly to disconnected state',
+      'Reconnect reloads generator_prefs toggles',
     );
 
     harness.cleanupAll();
@@ -799,8 +724,6 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     const props = {
       canConnectDrive: true,
       connectingDrive: false,
-      driveConnected: false,
-      driveAccountEmail: null as string | null,
       onConnectDrive: () => {},
     };
 
@@ -815,12 +738,9 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     dom.fakeWindow.dispatch('focus');
     assert.equal(pendingQrResponses.length, 2);
 
-    // Request 3 via driveConnected false -> true (fast, newer)
-    harness.render(QrMenuSettingsTab, {
-      ...props,
-      driveConnected: true,
-      driveAccountEmail: 'owner@cafe.com',
-    });
+    // Request 3 via visibilitychange (fast, newer)
+    dom.fakeDocument.visibilityState = 'visible';
+    dom.fakeDocument.dispatch('visibilitychange');
     assert.equal(pendingQrResponses.length, 3);
 
     // Resolve newer Request 3 first as connected
@@ -833,11 +753,7 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     pendingQrResponses[1].resolve({ data: makeStatus({ connected: false }) });
     await flushMicrotasks();
 
-    const finalTree = harness.render(QrMenuSettingsTab, {
-      ...props,
-      driveConnected: true,
-      driveAccountEmail: 'owner@cafe.com',
-    });
+    const finalTree = harness.render(QrMenuSettingsTab, props);
     const finalMarkup = renderToStaticMarkup(finalTree);
     assert.ok(
       finalMarkup.includes('Fresh.pdf'),
@@ -847,12 +763,12 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
     harness.cleanupAll();
   });
 
-  console.log('  ✓ Disconnect, prefs preservation, account switch, and race safety verified');
+  console.log('  ✓ Disconnect, prefs preservation, and race safety verified');
 }
 
 async function main() {
   console.log('🧪 QR Menu Settings Tab Refresh Tests');
-  await testReconnectViaPropsAndConnectCallback();
+  await testReconnectViaConnectCallback();
   await testFocusAndVisibilityRefresh();
   await testDisconnectAndPrefsPreservationAndRaceSafety();
 }

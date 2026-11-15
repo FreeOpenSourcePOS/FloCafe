@@ -59,14 +59,10 @@ function arrayBufferToDataUrl(buffer: ArrayBuffer, contentType: string): string 
 export function QrMenuSettingsTab({
   canConnectDrive,
   connectingDrive,
-  driveConnected,
-  driveAccountEmail,
   onConnectDrive,
 }: {
   canConnectDrive: boolean;
   connectingDrive: boolean;
-  driveConnected?: boolean;
-  driveAccountEmail?: string | null;
   onConnectDrive: () => void | Promise<unknown>;
 }) {
   const t = useTranslations('qrMenu');
@@ -82,29 +78,15 @@ export function QrMenuSettingsTab({
   const refreshGenerationRef = useRef(0);
   const statusRef = useRef<QrMenuStatus | null>(null);
   const connectingDriveRef = useRef(connectingDrive);
-  const currentAccountEmailRef = useRef<string | null>(driveAccountEmail ?? null);
-  const lastSyncedAccountEmailRef = useRef<string | null>(driveAccountEmail ?? null);
-  const lastDriveSyncKeyRef = useRef<string | null>(null);
-  const driveSyncKey = `${driveConnected === undefined ? '' : Boolean(driveConnected)}:${driveAccountEmail ?? ''}`;
 
   const commitFetchedStatus = useCallback((nextStatus: QrMenuStatus) => {
     const prevStatus = statusRef.current;
-    const currentAccountEmail = currentAccountEmailRef.current;
-    const prevAccountEmail = lastSyncedAccountEmailRef.current;
-    const accountSwitched = Boolean(
-      prevAccountEmail && currentAccountEmail && prevAccountEmail !== currentAccountEmail,
-    );
     const connectionChanged = prevStatus === null || prevStatus.connected !== nextStatus.connected;
 
     statusRef.current = nextStatus;
     setStatus(nextStatus);
-    if (nextStatus.connected) {
-      if (currentAccountEmail) lastSyncedAccountEmailRef.current = currentAccountEmail;
-    } else {
-      lastSyncedAccountEmailRef.current = null;
-    }
 
-    if (connectionChanged || accountSwitched) {
+    if (connectionChanged) {
       setPrefs(nextStatus.generator_prefs);
     } else {
       setPrefs((current) => current ?? nextStatus.generator_prefs);
@@ -134,10 +116,6 @@ export function QrMenuSettingsTab({
   }, [connectingDrive]);
 
   useEffect(() => {
-    currentAccountEmailRef.current = driveAccountEmail ?? null;
-  }, [driveAccountEmail]);
-
-  useEffect(() => {
     mountedRef.current = true;
     void refreshQrMenuStatus();
     api
@@ -151,16 +129,6 @@ export function QrMenuSettingsTab({
       refreshGenerationRef.current += 1;
     };
   }, [refreshQrMenuStatus]);
-
-  useEffect(() => {
-    if (lastDriveSyncKeyRef.current === null) {
-      lastDriveSyncKeyRef.current = driveSyncKey;
-      return;
-    }
-    if (lastDriveSyncKeyRef.current === driveSyncKey) return;
-    lastDriveSyncKeyRef.current = driveSyncKey;
-    void refreshQrMenuStatus({ silent: true });
-  }, [driveSyncKey, refreshQrMenuStatus]);
 
   useEffect(() => {
     const handleReturnToApp = () => {

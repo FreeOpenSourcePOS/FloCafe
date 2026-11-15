@@ -5636,8 +5636,6 @@ export default function SettingsPage() {
             <QrMenuSettingsTab
               canConnectDrive={canManageGoogleDrive}
               connectingDrive={connectingGoogleDrive}
-              driveConnected={Boolean(googleDriveStatus?.connected)}
-              driveAccountEmail={googleDriveStatus?.account_email ?? null}
               onConnectDrive={connectGoogleDrive}
             />
           </TabsContent>

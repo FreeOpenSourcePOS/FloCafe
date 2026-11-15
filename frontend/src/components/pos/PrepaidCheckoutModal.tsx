@@ -1181,7 +1181,7 @@ export default function PrepaidCheckoutModal({
           {/* Column 1: Contained Panel Swap (Items / Discount / Tax Details) + Pinned Totals Footer */}
           <fieldset
             disabled={locked}
-            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
+            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[168px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
               {activeCol1Panel === 'items' ? (
@@ -1621,7 +1621,7 @@ export default function PrepaidCheckoutModal({
           {/* Column 2: Core Tenders, Constant Card Ref Slot, Custom Tenders & Loyalty Wallet */}
           <fieldset
             disabled={locked}
-            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border bg-muted/20 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e dark:bg-background/45`}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[168px] min-w-0 flex-col gap-2.5 border-b border-border bg-muted/20 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e dark:bg-background/45`}
           >
             {/* [2A] Hero Balance Header */}
             <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">

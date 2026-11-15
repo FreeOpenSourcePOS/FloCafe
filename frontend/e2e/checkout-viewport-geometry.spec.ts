@@ -772,8 +772,14 @@ test('Checkout modals hold Light/Dark parity, RTL geometry, 3-state tender focus
       ).toBeLessThanOrEqual(mobileBounds.innerWidth);
       const keypadBox = await keypad.boundingBox();
       const payBox = await payButton.boundingBox();
+      const chipsBox = await modal.getByTestId('checkout-header-chips').boundingBox();
       expect(keypadBox).not.toBeNull();
       expect(payBox).not.toBeNull();
+      expect(chipsBox).not.toBeNull();
+      expect(
+        chipsBox!.height,
+        `390x844 ${schemeLabel} header chips must stay single-row on mobile`,
+      ).toBeLessThanOrEqual(24);
       expect(keypadBox!.x).toBeGreaterThanOrEqual(0);
       expect(keypadBox!.x + keypadBox!.width).toBeLessThanOrEqual(mobileBounds.innerWidth + 1);
       expect(keypadBox!.y).toBeGreaterThanOrEqual(0);

@@ -23,7 +23,10 @@ export function CheckoutHeaderChips({
   return (
     <div
       data-testid="checkout-header-chips"
-      className={cn('flex min-w-0 flex-wrap items-center gap-1.5', className)}
+      className={cn(
+        'flex min-w-0 max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible',
+        className,
+      )}
     >
       {chips.map((chip) => {
         const variant = chip.variant ?? 'neutral';
@@ -31,7 +34,7 @@ export function CheckoutHeaderChips({
           <span
             key={chip.key}
             className={cn(
-              'inline-flex h-5 max-w-48 items-center gap-1 rounded-md border px-2 text-[11px] font-medium leading-none',
+              'inline-flex h-5 max-w-48 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium leading-none',
               variant === 'brand' &&
                 'border-brand/25 bg-brand-light text-brand dark:border-indigo-400/35 dark:bg-[var(--color-brand-light)] dark:text-indigo-300',
               variant === 'customer' &&

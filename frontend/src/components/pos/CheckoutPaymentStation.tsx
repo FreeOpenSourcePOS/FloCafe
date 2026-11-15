@@ -165,7 +165,7 @@ export function CheckoutPaymentStation({
               disabled={item.disabled}
               onClick={item.onClick}
               className={cn(
-                'flex h-full min-h-10 flex-col items-center justify-center rounded-xl border px-1.5 text-center leading-tight transition-all select-none active:scale-[0.985] sm:min-h-11 [@media(max-height:660px)]:min-h-9',
+                'flex h-full min-h-10 flex-col items-center justify-center rounded-xl border px-1.5 text-center leading-tight transition-[color,background-color,border-color,box-shadow,transform] select-none active:scale-[0.985] sm:min-h-11 [@media(max-height:660px)]:min-h-9',
                 item.active
                   ? 'border-brand bg-brand text-white shadow-xs'
                   : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:bg-brand-light/25 dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:hover:border-indigo-400/45 dark:hover:bg-[var(--color-brand-light)]',

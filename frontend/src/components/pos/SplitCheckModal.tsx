@@ -318,7 +318,7 @@ export function SplitCheckModal({
 
   const allSelected = selectedUnits > 0 && remainingUnits === 0;
   const stepperBtnClass =
-    'size-11 min-h-11 min-w-11 rounded-lg border border-border bg-card text-foreground shadow-2xs flex items-center justify-center transition-all hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:hover:border-indigo-400/45 dark:hover:bg-[var(--color-brand-light)]';
+    'size-11 min-h-11 min-w-11 rounded-lg border border-border bg-card text-foreground shadow-2xs flex items-center justify-center transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:hover:border-indigo-400/45 dark:hover:bg-[var(--color-brand-light)]';
 
   const headerChips: CheckoutHeaderChipItem[] = [
     { key: 'bill', label: t('billNumber', { number: bill.bill_number }) },

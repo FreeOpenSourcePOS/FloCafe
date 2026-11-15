@@ -1217,7 +1217,7 @@ export default function PrepaidCheckoutModal({
                         onClick={() => {
                           if (!locked && !discountCommitted) setDiscountType('percentage');
                         }}
-                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm ${
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm ${
                           discountType === 'percentage'
                             ? 'bg-brand text-white shadow-xs'
                             : 'text-muted-foreground hover:text-foreground'
@@ -1234,7 +1234,7 @@ export default function PrepaidCheckoutModal({
                         onClick={() => {
                           if (!locked && !discountCommitted) setDiscountType('amount');
                         }}
-                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm ${
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm ${
                           discountType === 'amount'
                             ? 'bg-brand text-white shadow-xs'
                             : 'text-muted-foreground hover:text-foreground'
@@ -1631,13 +1631,13 @@ export default function PrepaidCheckoutModal({
                         setAmountTarget({ kind: 'payment', index: idx });
                         if (!payment.amount) allocateRemainingTo(idx);
                       }}
-                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
+                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                     >
                       {Icon && <Icon size={15} />}
                       <span className="truncate">{label}</span>
                     </button>
                     <div
-                      className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                      className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${rowClasses.inputBoxClass}`}
                     >
                       <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                         {inputCurrencyLabel}
@@ -1671,7 +1671,7 @@ export default function PrepaidCheckoutModal({
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses(
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-colors ${getCardReferenceSlotClasses(
                       {
                         isActive: true,
                         isMissingRequired: Boolean(
@@ -1724,12 +1724,12 @@ export default function PrepaidCheckoutModal({
                             setAmountTarget({ kind: 'payment', index: idx });
                             if (!payment.amount) allocateRemainingTo(idx);
                           }}
-                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                         >
                           <span className="truncate">{label}</span>
                         </button>
                         <div
-                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${rowClasses.inputBoxClass}`}
                         >
                           <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                             {inputCurrencyLabel}
@@ -1777,13 +1777,13 @@ export default function PrepaidCheckoutModal({
                             setAutoFilledSingleIndex(null);
                             setAmountTarget({ kind: 'wallet' });
                           }}
-                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${walletClasses.buttonClass}`}
                         >
                           <Wallet size={15} />
                           <span className="truncate">{t('loyaltyWallet')}</span>
                         </button>
                         <div
-                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${walletClasses.inputBoxClass}`}
                         >
                           <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
                             {inputCurrencyLabel}
@@ -1886,7 +1886,7 @@ export default function PrepaidCheckoutModal({
               <Button
                 onClick={handlePrimarySubmit}
                 disabled={confirmDisabled}
-                className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-all sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 size="lg"
               >
                 {confirmLabel}

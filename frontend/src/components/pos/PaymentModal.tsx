@@ -2463,7 +2463,7 @@ export default function PaymentModal({
                         type="button"
                         disabled={processing || attemptLocked || justPaid}
                         onClick={() => setDiscountType('percentage')}
-                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all sm:text-sm ${
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors sm:text-sm ${
                           discountType === 'percentage'
                             ? 'bg-brand text-white shadow-xs'
                             : 'text-muted-foreground hover:text-foreground'
@@ -2478,7 +2478,7 @@ export default function PaymentModal({
                         type="button"
                         disabled={processing || attemptLocked || justPaid}
                         onClick={() => setDiscountType('amount')}
-                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-all sm:text-sm ${
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors sm:text-sm ${
                           discountType === 'amount'
                             ? 'bg-brand text-white shadow-xs'
                             : 'text-muted-foreground hover:text-foreground'
@@ -2902,13 +2902,13 @@ export default function PaymentModal({
                           setAmountTarget({ kind: 'payment', index: idx });
                           if (!payment.amount) allocateRemainingTo(idx);
                         }}
-                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
+                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                       >
                         {Icon && <Icon size={15} />}
                         <span className="truncate">{label}</span>
                       </button>
                       <div
-                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${rowClasses.inputBoxClass}`}
                       >
                         <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                           {inputCurrencyLabel}
@@ -2950,7 +2950,7 @@ export default function PaymentModal({
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses(
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-colors ${getCardReferenceSlotClasses(
                       {
                         isActive: true,
                         isMissingRequired: Boolean(
@@ -3005,12 +3005,12 @@ export default function PaymentModal({
                               setAmountTarget({ kind: 'payment', index: idx });
                               if (!payment.amount) allocateRemainingTo(idx);
                             }}
-                            className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${rowClasses.buttonClass}`}
+                            className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                           >
                             <span className="truncate">{label}</span>
                           </button>
                           <div
-                            className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${rowClasses.inputBoxClass}`}
+                            className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${rowClasses.inputBoxClass}`}
                           >
                             <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                               {inputCurrencyLabel}
@@ -3065,13 +3065,13 @@ export default function PaymentModal({
                             setAutoFilledSingleIndex(null);
                             setAmountTarget({ kind: 'wallet' });
                           }}
-                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${walletClasses.buttonClass}`}
                         >
                           <Wallet size={15} />
                           <span className="truncate">{t('loyaltyWallet')}</span>
                         </button>
                         <div
-                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${walletClasses.inputBoxClass}`}
                         >
                           <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
                             {inputCurrencyLabel}
@@ -3185,7 +3185,7 @@ export default function PaymentModal({
                             aria-pressed={!showEqualShare}
                             data-testid="split-mode-items-tab"
                             onClick={() => setShowEqualShare(false)}
-                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                               !showEqualShare
                                 ? 'bg-brand text-white shadow-xs'
                                 : 'text-muted-foreground hover:text-foreground'
@@ -3201,7 +3201,7 @@ export default function PaymentModal({
                               setShowEqualShare(true);
                               setEqualShareNotice(null);
                             }}
-                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+                            className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                               showEqualShare
                                 ? 'bg-brand text-white shadow-xs'
                                 : 'text-muted-foreground hover:text-foreground'
@@ -3241,7 +3241,7 @@ export default function PaymentModal({
                                 data-testid="equal-share-decrement"
                                 disabled={!canDecrementEqualShare}
                                 onClick={() => stepEqualSharePayers(-1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-all hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
+                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
                               >
                                 <Minus size={15} />
                               </button>
@@ -3266,7 +3266,7 @@ export default function PaymentModal({
                                 data-testid="equal-share-increment"
                                 disabled={!canIncrementEqualShare}
                                 onClick={() => stepEqualSharePayers(1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-all hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
+                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
                               >
                                 <Plus size={15} />
                               </button>
@@ -3286,7 +3286,7 @@ export default function PaymentModal({
                                     if (attemptLocked) return;
                                     setEqualSharePayers(String(preset));
                                   }}
-                                  className={`min-h-9 min-w-10 rounded-lg border px-2.5 py-1 text-xs font-semibold tabular-nums transition-all disabled:opacity-40 ${
+                                  className={`min-h-9 min-w-10 rounded-lg border px-2.5 py-1 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
                                     activePreset
                                       ? 'border-brand bg-brand text-white shadow-xs'
                                       : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
@@ -3567,7 +3567,7 @@ export default function PaymentModal({
                 <Button
                   onClick={handlePay}
                   disabled={payCtaDisabled}
-                  className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-all sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                  className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   size="lg"
                 >
                   {payCtaLabel}

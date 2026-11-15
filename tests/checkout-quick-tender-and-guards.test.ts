@@ -4386,6 +4386,442 @@ async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
   console.log('  ✓ Paid/terminal bill CTA guard & TableCheckout header status label verified');
 }
 
+async function testTenderInputAndZeroBalanceEnterGuards() {
+  console.log('\n--- 12. Tender Input Enter With Discount Panel & Zero-Balance Unpaid Bill ---');
+
+  // 12a: PaymentModal & PrepaidCheckoutModal tender input Enter submits once amountTarget leaves discount even while Discount tab remains open
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let payCalls = 0;
+    try {
+      installCheckoutComponentMocks(harness, {
+        apiPost: async (url: string) => {
+          if (String(url).endsWith('/payments')) {
+            payCalls++;
+            return {
+              data: {
+                bill: {
+                  ...makeBill('bill-tender-focus-enter', 20),
+                  balance: 0,
+                  payment_status: 'paid',
+                },
+              },
+            };
+          }
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const bill = makeBill('bill-tender-focus-enter', 20);
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderPm();
+
+      const cashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      cashBtn.props.onClick();
+      tree = renderPm();
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTab.props.onClick();
+      tree = renderPm();
+
+      const cashInputWhileDiscountTarget = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.ok(cashInputWhileDiscountTarget, 'PaymentModal cash amount input renders');
+      let preventedWhileTargetDiscount = false;
+      cashInputWhileDiscountTarget.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          preventedWhileTargetDiscount = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(payCalls, 0, 'Enter in tender input stays blocked while amountTarget is discount');
+      assert.equal(
+        preventedWhileTargetDiscount,
+        false,
+        'Enter in tender input is not intercepted while amountTarget is discount',
+      );
+
+      cashInputWhileDiscountTarget.props.onFocus();
+      tree = renderPm();
+
+      const discountTabStillOpen = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['data-testid'] === 'col1-tab-discount' &&
+          el.props?.['aria-selected'] === true,
+      )[0];
+      assert.ok(discountTabStillOpen, 'Discount panel remains open in Col 1 after focusing tender input');
+
+      const cashInputFocused = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      let preventedOnFocusedTender = false;
+      cashInputFocused.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          preventedOnFocusedTender = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        preventedOnFocusedTender,
+        true,
+        'Enter in focused tender input calls preventDefault even while Discount panel is open',
+      );
+      assert.equal(
+        payCalls,
+        1,
+        'Enter in focused tender input submits payment while Discount panel is open',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  await withAliases(async () => {
+    const ppHarness = createStatefulHarness();
+    let confirmCalls = 0;
+    try {
+      installCheckoutComponentMocks(ppHarness, {
+        cartState: {
+          items: [
+            {
+              key: 'item-1',
+              product: { id: 1, name: 'Latte', price: 15 },
+              quantity: 1,
+              variant: null,
+              addons: [],
+              notes: '',
+            },
+          ],
+          orderType: 'takeaway',
+          tableId: null,
+          customer: null,
+          deliveryAddress: '',
+          notes: '',
+          getSubtotal: () => 15,
+        },
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+      const renderPp = () =>
+        ppHarness.renderAndSettle(PrepaidCheckoutModal, {
+          currency: 'USD',
+          onClose: () => {},
+          onConfirm: async () => {
+            confirmCalls++;
+            return {
+              bill: { id: 602, bill_number: 'B-602', total: 15, payment_status: 'paid' },
+              customer: null,
+              pointsEarned: 0,
+            };
+          },
+        });
+
+      let tree = renderPp();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPp();
+
+      const discountToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      discountToggle.props.onClick();
+      tree = renderPp();
+
+      const ppCashInputDiscountTarget = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.ok(ppCashInputDiscountTarget, 'Prepaid cash amount input renders');
+      ppCashInputDiscountTarget.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(confirmCalls, 0, 'Prepaid tender Enter stays blocked while amountTarget is discount');
+
+      ppCashInputDiscountTarget.props.onFocus();
+      tree = renderPp();
+
+      const ppCashInputFocused = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      let ppPreventedOnFocusedTender = false;
+      ppCashInputFocused.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          ppPreventedOnFocusedTender = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        ppPreventedOnFocusedTender,
+        true,
+        'Prepaid Enter in focused tender input calls preventDefault while Discount panel is open',
+      );
+      assert.equal(
+        confirmCalls,
+        1,
+        'Prepaid Enter in focused tender input submits while Discount panel is open',
+      );
+    } finally {
+      ppHarness.cleanupAll();
+    }
+  });
+
+  // 12b: Zero-balance unpaid bills settle on both window Enter and tender input Enter, while paid/cancelled bills stay blocked
+  for (const mode of ['window-enter', 'tender-input-enter'] as const) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      const hadWindow = 'window' in globalThis;
+      const prevWindow = (globalThis as any).window;
+      const keyListeners = new Set<(e: any) => void>();
+      (globalThis as any).window = {
+        ...(prevWindow || {}),
+        addEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.add(fn);
+        },
+        removeEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.delete(fn);
+        },
+      };
+
+      let zeroPayCalls = 0;
+      let lastPayUrl = '';
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiPost: async (url: string) => {
+            lastPayUrl = String(url);
+            if (lastPayUrl.endsWith('/payment') || lastPayUrl.endsWith('/payments')) {
+              zeroPayCalls++;
+              return {
+                data: {
+                  bill: {
+                    ...makeBill('bill-zero-enter', 0),
+                    total: 0,
+                    balance: 0,
+                    paid_amount: 0,
+                    payment_status: 'paid',
+                  },
+                },
+              };
+            }
+            return { data: {} };
+          },
+        });
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+        const zeroUnpaidBill = {
+          ...makeBill('bill-zero-enter', 0),
+          subtotal: 20,
+          discount_amount: 20,
+          discount_type: 'percentage',
+          discount_value: 100,
+          total: 0,
+          balance: 0,
+          paid_amount: 0,
+          payment_status: 'unpaid',
+        };
+        const renderPm = () =>
+          harness.renderAndSettle(PaymentModal, {
+            bill: zeroUnpaidBill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+          });
+
+        let tree = renderPm();
+        await new Promise((r) => setTimeout(r, 15));
+        tree = renderPm();
+
+        if (mode === 'window-enter') {
+          for (const listener of keyListeners) {
+            listener({
+              key: 'Enter',
+              code: 'Enter',
+              repeat: false,
+              isComposing: false,
+              keyCode: 13,
+              ctrlKey: false,
+              metaKey: false,
+              altKey: false,
+              target: { tagName: 'DIV', getAttribute: () => null, closest: () => null },
+              preventDefault() {},
+            });
+          }
+        } else {
+          const cashInput = collectElements(
+            tree,
+            (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+          )[0];
+          assert.ok(cashInput, 'PaymentModal cash input renders for zero-balance unpaid bill');
+          cashInput.props.onKeyDown({
+            key: 'Enter',
+            repeat: false,
+            nativeEvent: { isComposing: false },
+            keyCode: 13,
+            preventDefault() {},
+          });
+        }
+
+        await new Promise((r) => setTimeout(r, 15));
+        assert.equal(
+          zeroPayCalls,
+          1,
+          `Zero-balance unpaid bill submits on ${mode}`,
+        );
+        assert.ok(
+          lastPayUrl.endsWith('/payment'),
+          `Zero-balance unpaid bill settles through /payment on ${mode}`,
+        );
+      } finally {
+        harness.cleanupAll();
+        if (hadWindow) {
+          (globalThis as any).window = prevWindow;
+        } else {
+          delete (globalThis as any).window;
+        }
+      }
+    });
+  }
+
+  for (const blockedScenario of [
+    {
+      name: 'already-paid zero-balance bill',
+      bill: { ...makeBill('bill-paid-zero-enter', 0), total: 20, balance: 0, paid_amount: 20, payment_status: 'paid' },
+    },
+    {
+      name: 'cancelled zero-balance bill',
+      bill: {
+        ...makeBill('bill-cancelled-zero-enter', 0),
+        total: 0,
+        balance: 0,
+        paid_amount: 0,
+        payment_status: 'unpaid',
+        order: { id: 101, order_number: 'ORD-CANC', order_status: 'cancelled', items: [] },
+      },
+    },
+  ]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      const hadWindow = 'window' in globalThis;
+      const prevWindow = (globalThis as any).window;
+      const keyListeners = new Set<(e: any) => void>();
+      (globalThis as any).window = {
+        ...(prevWindow || {}),
+        addEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.add(fn);
+        },
+        removeEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.delete(fn);
+        },
+      };
+      let payCalls = 0;
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiPost: async (url: string) => {
+            if (String(url).endsWith('/payment') || String(url).endsWith('/payments')) {
+              payCalls++;
+            }
+            return { data: {} };
+          },
+        });
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+        const renderPm = () =>
+          harness.renderAndSettle(PaymentModal, {
+            bill: blockedScenario.bill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+          });
+        let tree = renderPm();
+        await new Promise((r) => setTimeout(r, 15));
+        tree = renderPm();
+
+        for (const listener of keyListeners) {
+          listener({
+            key: 'Enter',
+            code: 'Enter',
+            repeat: false,
+            isComposing: false,
+            keyCode: 13,
+            ctrlKey: false,
+            metaKey: false,
+            altKey: false,
+            target: { tagName: 'DIV', getAttribute: () => null, closest: () => null },
+            preventDefault() {},
+          });
+        }
+        const cashInput = collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+        )[0];
+        cashInput?.props?.onKeyDown({
+          key: 'Enter',
+          repeat: false,
+          nativeEvent: { isComposing: false },
+          keyCode: 13,
+          preventDefault() {},
+        });
+        await new Promise((r) => setTimeout(r, 15));
+        assert.equal(payCalls, 0, `Enter stays blocked on ${blockedScenario.name}`);
+      } finally {
+        harness.cleanupAll();
+        if (hadWindow) {
+          (globalThis as any).window = prevWindow;
+        } else {
+          delete (globalThis as any).window;
+        }
+      }
+    });
+  }
+
+  console.log('  ✓ Tender input Enter with discount panel & zero-balance unpaid Enter guards verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -4400,6 +4836,7 @@ async function run() {
   await testConfirmDialogAndCardReferenceSwitchGuards();
   await testGreptileReviewRegressions();
   await testPaidBillCtaDisabledAndTableCheckoutHeaderStatus();
+  await testTenderInputAndZeroBalanceEnterGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

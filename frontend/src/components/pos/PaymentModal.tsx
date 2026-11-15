@@ -2585,7 +2585,6 @@ export default function PaymentModal({
             amountTarget?.kind !== 'discount' &&
             !payCtaDisabled &&
             !pendingAttempt &&
-            remainingMinor > 0 &&
             totalPaymentMinor >= remainingMinor
           ) {
             void handlePay();
@@ -2631,11 +2630,9 @@ export default function PaymentModal({
       !e.nativeEvent?.isComposing &&
       e.keyCode !== 229 &&
       !isConfirmOpen &&
-      activeCol1Panel !== 'discount' &&
       amountTarget?.kind !== 'discount' &&
       !payCtaDisabled &&
       !pendingAttempt &&
-      remainingMinor > 0 &&
       totalPaymentMinor >= remainingMinor
     ) {
       e.preventDefault();

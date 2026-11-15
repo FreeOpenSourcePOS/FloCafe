@@ -1083,7 +1083,6 @@ export default function PrepaidCheckoutModal({
       !e.repeat &&
       !e.nativeEvent?.isComposing &&
       e.keyCode !== 229 &&
-      activeCol1Panel !== 'discount' &&
       amountTarget?.kind !== 'discount' &&
       !confirmDisabled
     ) {

@@ -188,22 +188,81 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async ({ request }) => {
   const token = getE2eToken();
   const headers = { Authorization: `Bearer ${token}` };
+  const cleanupErrors: string[] = [];
+
   for (const orderId of createdOrderIds) {
-    await request
-      .patch(`${BASE}/api/orders/${orderId}/status`, {
+    try {
+      const checkRes = await request.get(`${BASE}/api/orders/${orderId}`, { headers });
+      if (checkRes.status() === 404) continue;
+      if (!checkRes.ok()) {
+        cleanupErrors.push(
+          `inspect order ${orderId}: HTTP ${checkRes.status()} ${await checkRes.text().catch(() => '')}`,
+        );
+        continue;
+      }
+      const order = (await checkRes.json()).order as
+        | { status?: string; release_status?: string; bill?: { payment_status?: string } }
+        | undefined;
+      if (!order || order.status === 'completed' || order.status === 'cancelled') continue;
+
+      if (order.bill?.payment_status === 'paid') {
+        if (order.release_status !== 'released') {
+          const releaseRes = await request.post(`${BASE}/api/orders/${orderId}/release`, {
+            headers,
+          });
+          if (!releaseRes.ok()) {
+            cleanupErrors.push(
+              `release paid order ${orderId}: HTTP ${releaseRes.status()} ${await releaseRes.text().catch(() => '')}`,
+            );
+            continue;
+          }
+        }
+        const completeRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+          headers,
+          data: { status: 'completed' },
+        });
+        if (!completeRes.ok()) {
+          cleanupErrors.push(
+            `complete paid order ${orderId}: HTTP ${completeRes.status()} ${await completeRes.text().catch(() => '')}`,
+          );
+        }
+        continue;
+      }
+
+      const res = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
         headers,
         data: { status: 'cancelled', reason: 'E2E cleanup' },
-      })
-      .catch(() => {});
+      });
+      if (!res.ok()) {
+        cleanupErrors.push(
+          `cancel order ${orderId}: HTTP ${res.status()} ${await res.text().catch(() => '')}`,
+        );
+      }
+    } catch (err) {
+      cleanupErrors.push(`cleanup order ${orderId}: ${String(err)}`);
+    }
   }
-  await request.put(`${BASE}/api/settings/theme_mode`, {
-    headers,
-    data: { value: priorThemeMode },
-  });
-  await request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
-    headers,
-    data: { value: priorScheduledEnabled },
-  });
+
+  for (const [key, value] of [
+    ['theme_mode', priorThemeMode],
+    ['scheduled_orders_enabled', priorScheduledEnabled],
+  ] as const) {
+    try {
+      const res = await request.put(`${BASE}/api/settings/${key}`, {
+        headers,
+        data: { value },
+      });
+      if (!res.ok()) {
+        cleanupErrors.push(
+          `restore ${key}=${value}: HTTP ${res.status()} ${await res.text().catch(() => '')}`,
+        );
+      }
+    } catch (err) {
+      cleanupErrors.push(`restore ${key}=${value}: ${String(err)}`);
+    }
+  }
+
+  expect(cleanupErrors, `E2E afterAll cleanup errors:\n${cleanupErrors.join('\n')}`).toEqual([]);
 });
 
 test('dark mode themes Expenses filter and form calendar inputs without breaking fill() and reverts cleanly in light mode', async ({

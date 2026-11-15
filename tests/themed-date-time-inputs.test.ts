@@ -78,6 +78,7 @@ const originalLoad = Module._load;
 const reactPath = frontendRequire.resolve('react');
 const reactJsxRuntimePath = frontendRequire.resolve('react/jsx-runtime');
 const reactDomPath = frontendRequire.resolve('react-dom');
+const reactDomClientPath = frontendRequire.resolve('react-dom/client');
 const reactDomServerPath = frontendRequire.resolve('react-dom/server');
 const useIntlPath = frontendRequire.resolve('use-intl');
 const zustandPath = frontendRequire.resolve('zustand');
@@ -91,6 +92,7 @@ Module._resolveFilename = function (request: string, parent: any, isMain: boolea
   if (request === 'react') resolvedRequest = reactPath;
   else if (request === 'react/jsx-runtime') resolvedRequest = reactJsxRuntimePath;
   else if (request === 'react-dom') resolvedRequest = reactDomPath;
+  else if (request === 'react-dom/client') resolvedRequest = reactDomClientPath;
   else if (request === 'react-dom/server') resolvedRequest = reactDomServerPath;
   else if (request === 'use-intl') resolvedRequest = useIntlPath;
   else if (request === 'zustand') resolvedRequest = zustandPath;
@@ -283,6 +285,210 @@ try {
   } as any);
   assert.equal(disabledCalls, 0, 'openTemporalPicker no-ops when input is disabled');
   openTemporalPicker(null);
+
+  // 3b-mounted. Verify React 19 callback-ref cleanup runs on ref prop change and unmount
+  const { createRoot } = frontendRequire('react-dom/client');
+  const createMinimalDom = () => {
+    const noop = () => {};
+    const makeNode = (
+      nodeType: number,
+      tagName = '',
+      namespaceURI = 'http://www.w3.org/1999/xhtml',
+    ) => {
+      const node: any = {
+        nodeType,
+        tagName: tagName.toUpperCase(),
+        nodeName: tagName.toUpperCase(),
+        namespaceURI,
+        parentNode: null,
+        childNodes: [] as any[],
+        attributes: new Map<string, string>(),
+        style: {},
+        disabled: false,
+        readOnly: false,
+        value: '',
+        defaultValue: '',
+        type: '',
+        className: '',
+        get firstChild() {
+          return this.childNodes[0] ?? null;
+        },
+        get lastChild() {
+          return this.childNodes[this.childNodes.length - 1] ?? null;
+        },
+        get nextSibling() {
+          if (!this.parentNode) return null;
+          const idx = this.parentNode.childNodes.indexOf(this);
+          return idx >= 0 ? (this.parentNode.childNodes[idx + 1] ?? null) : null;
+        },
+        get previousSibling() {
+          if (!this.parentNode) return null;
+          const idx = this.parentNode.childNodes.indexOf(this);
+          return idx > 0 ? (this.parentNode.childNodes[idx - 1] ?? null) : null;
+        },
+        setAttribute(k: string, v: string) {
+          this.attributes.set(k, String(v));
+          if (k === 'disabled') this.disabled = true;
+          if (k === 'readonly') this.readOnly = true;
+          if (k === 'type') this.type = String(v);
+        },
+        removeAttribute(k: string) {
+          this.attributes.delete(k);
+          if (k === 'disabled') this.disabled = false;
+          if (k === 'readonly') this.readOnly = false;
+        },
+        getAttribute(k: string) {
+          return this.attributes.get(k) ?? null;
+        },
+        appendChild(child: any) {
+          return this.insertBefore(child, null);
+        },
+        insertBefore(child: any, before: any) {
+          if (child.parentNode) child.parentNode.removeChild(child);
+          child.parentNode = this;
+          const idx = before ? this.childNodes.indexOf(before) : -1;
+          if (idx >= 0) this.childNodes.splice(idx, 0, child);
+          else this.childNodes.push(child);
+          return child;
+        },
+        removeChild(child: any) {
+          const idx = this.childNodes.indexOf(child);
+          if (idx >= 0) this.childNodes.splice(idx, 1);
+          child.parentNode = null;
+          return child;
+        },
+        addEventListener: noop,
+        removeEventListener: noop,
+        dispatchEvent: () => true,
+        focus: noop,
+      };
+      return node;
+    };
+
+    const doc: any = {
+      nodeType: 9,
+      activeElement: null,
+      HTMLIFrameElement: function HTMLIFrameElement() {},
+      addEventListener: noop,
+      removeEventListener: noop,
+      createElement(tag: string) {
+        const el = makeNode(1, tag);
+        el.ownerDocument = doc;
+        return el;
+      },
+      createElementNS(ns: string, tag: string) {
+        const el = makeNode(1, tag, ns);
+        el.ownerDocument = doc;
+        return el;
+      },
+      createTextNode(text: string) {
+        const tn = makeNode(3);
+        tn.nodeValue = String(text);
+        tn.data = String(text);
+        tn.ownerDocument = doc;
+        return tn;
+      },
+    };
+    doc.defaultView = doc;
+    doc.documentElement = doc.createElement('html');
+    doc.body = doc.createElement('body');
+    doc.documentElement.appendChild(doc.body);
+    return { doc, container: doc.createElement('div') };
+  };
+
+  const { doc: mountedDoc, container } = createMinimalDom();
+  const prevWindow = (globalThis as any).window;
+  const prevActEnv = (globalThis as any).IS_REACT_ACT_ENVIRONMENT;
+  (globalThis as any).document = mountedDoc;
+  (globalThis as any).window = mountedDoc;
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+  try {
+    const root = createRoot(container);
+    const cb1Calls: Array<unknown> = [];
+    const cb2Calls: Array<unknown> = [];
+    let cb1CleanupCount = 0;
+    let cb2CleanupCount = 0;
+
+    const cb1 = (node: HTMLInputElement | null) => {
+      cb1Calls.push(node);
+      return () => {
+        cb1CleanupCount += 1;
+      };
+    };
+    const cb2 = (node: HTMLInputElement | null) => {
+      cb2Calls.push(node);
+      return () => {
+        cb2CleanupCount += 1;
+      };
+    };
+
+    React.act(() => {
+      root.render(React.createElement(DatePickerInput, { ref: cb1, type: 'date' }));
+    });
+    assert.equal(cb1Calls.length, 1, 'initial mount attaches first callback ref');
+    assert.ok(cb1Calls[0], 'initial callback ref receives mounted input element');
+    assert.equal(cb1CleanupCount, 0, 'callback-ref cleanup does not run while still mounted');
+
+    React.act(() => {
+      root.render(React.createElement(DatePickerInput, { ref: cb2, type: 'date' }));
+    });
+    assert.equal(cb1CleanupCount, 1, 'changing ref prop invokes prior callback-ref cleanup once');
+    assert.deepEqual(
+      cb1Calls.length,
+      1,
+      'prior callback ref is not called with null when it returned a cleanup function',
+    );
+    assert.equal(cb2Calls.length, 1, 'new callback ref attaches to input element');
+    assert.equal(cb2Calls[0], cb1Calls[0], 'new callback ref receives the same input element');
+    assert.equal(cb2CleanupCount, 0, 'new callback-ref cleanup waits until next change or unmount');
+
+    React.act(() => {
+      root.unmount();
+    });
+    assert.equal(cb2CleanupCount, 1, 'unmount invokes active callback-ref cleanup once');
+    assert.equal(
+      cb2Calls.length,
+      1,
+      'callback ref returning cleanup is not called with null on unmount',
+    );
+
+    // Also verify object ref and void callback ref still attach and clear to null on unmount
+    const objContainer = mountedDoc.createElement('div');
+    const objRoot = createRoot(objContainer);
+    const objRef = React.createRef() as React.RefObject<HTMLInputElement | null>;
+    const voidCalls: Array<HTMLInputElement | null> = [];
+    const voidCb = (node: HTMLInputElement | null) => {
+      voidCalls.push(node);
+    };
+    React.act(() => {
+      objRoot.render(
+        React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(DatePickerInput, { ref: objRef, type: 'date' }),
+          React.createElement(DatePickerInput, { ref: voidCb, type: 'time' }),
+        ),
+      );
+    });
+    assert.ok(objRef.current, 'object ref attaches to mounted input element');
+    assert.equal(voidCalls.length, 1, 'void callback ref attaches once on mount');
+    assert.ok(voidCalls[0], 'void callback ref receives mounted input element');
+
+    React.act(() => {
+      objRoot.unmount();
+    });
+    assert.equal(objRef.current, null, 'object ref clears to null on unmount');
+    assert.deepEqual(voidCalls.length, 2, 'void callback ref clears on unmount');
+    assert.equal(voidCalls[1], null, 'void callback ref receives null on unmount');
+  } finally {
+    if (prevActEnv === undefined) delete (globalThis as any).IS_REACT_ACT_ENVIRONMENT;
+    else (globalThis as any).IS_REACT_ACT_ENVIRONMENT = prevActEnv;
+    if (prevWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = prevWindow;
+    if (origDocument === undefined) delete (globalThis as any).document;
+    else (globalThis as any).document = origDocument;
+  }
 
   // 3c. Verify OrderDetailsDrawer renders themed datetime-local input with exact id/testid and error border
   const { useCartStore } = require('@/store/cart');

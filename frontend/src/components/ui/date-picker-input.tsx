@@ -26,9 +26,9 @@ export function openTemporalPicker(input: HTMLInputElement | null): void {
   input.focus();
 }
 
-function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null): void {
+function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null): (() => void) | void {
   if (typeof ref === 'function') {
-    ref(value);
+    return ref(value) as (() => void) | void;
   } else if (ref && typeof ref === 'object') {
     (ref as React.MutableRefObject<T | null>).current = value;
   }
@@ -44,11 +44,30 @@ export function DatePickerInput({
   ...props
 }: DatePickerInputProps) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const refCleanupRef = React.useRef<(() => void) | null>(null);
 
   const setRefs = React.useCallback(
     (node: HTMLInputElement | null) => {
+      const detach = () => {
+        inputRef.current = null;
+        const refCleanup = refCleanupRef.current;
+        refCleanupRef.current = null;
+        if (refCleanup) {
+          refCleanup();
+        } else {
+          assignRef(ref, null);
+        }
+      };
+
+      if (node === null) {
+        detach();
+        return;
+      }
+
       inputRef.current = node;
-      assignRef(ref, node);
+      const cleanup = assignRef(ref, node);
+      refCleanupRef.current = typeof cleanup === 'function' ? cleanup : null;
+      return detach;
     },
     [ref],
   );

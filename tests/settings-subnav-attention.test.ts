@@ -1,0 +1,285 @@
+/**
+ * Regression tests for shared cloud attention state between the sidebar
+ * Settings indicator and Settings sub-navigation items (`Account`, `Privacy`).
+ *
+ * Run: npm run test:settings-subnav-attention
+ */
+
+import assert from 'node:assert/strict';
+import path from 'node:path';
+
+const ROOT = path.join(__dirname, '..');
+const Module = require('node:module') as {
+  createRequire: (filename: string) => NodeRequire;
+  _resolveFilename: (...args: any[]) => string;
+  _load: (request: string, parent: any, isMain: boolean) => any;
+};
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+const zustandPath = frontendRequire.resolve('zustand');
+const originalResolveFilename = Module._resolveFilename;
+const originalLoad = Module._load;
+
+type MockApiCall = { path: string };
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function makeTenant(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 1,
+    business_name: 'E2E Cafe',
+    role: 'owner',
+    plan: 'free',
+    status: 'active',
+    business_type: 'restaurant',
+    language: 'en',
+    ...overrides,
+  };
+}
+
+async function run() {
+  const apiCalls: MockApiCall[] = [];
+  let getHandler: (url: string) => Promise<{ data: any }> = async () => ({ data: {} });
+
+  Module._resolveFilename = function (request: string, parent: any, ...rest: any[]) {
+    if (request.startsWith('@/')) {
+      const target = path.join(ROOT, 'frontend/src', request.slice(2));
+      return originalResolveFilename.call(this, target, parent, ...rest);
+    }
+    if (request === 'zustand') {
+      return zustandPath;
+    }
+    return originalResolveFilename.call(this, request, parent, ...rest);
+  };
+
+  Module._load = function (request: string, parent: any, isMain: boolean) {
+    if (request === '@/lib/api') {
+      return {
+        __esModule: true,
+        default: {
+          get: async (url: string) => {
+            apiCalls.push({ path: url });
+            return getHandler(url);
+          },
+        },
+      };
+    }
+    return originalLoad.apply(this, arguments as any);
+  };
+
+  try {
+    const storePath = require.resolve('../frontend/src/store/cloud-attention');
+    delete require.cache[storePath];
+    const { deriveCloudAttention, useCloudAttentionStore } =
+      require('../frontend/src/store/cloud-attention') as typeof import('../frontend/src/store/cloud-attention');
+
+    // 1. Pure derivation: unverified email activates Account only
+    const unverified = deriveCloudAttention({
+      canManageCloudAccount: true,
+      account: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+      accountLoadFailed: false,
+      cloud: { cloud_registration_status: 'registered', cloud_deletion_status: '' },
+    });
+    assert.deepEqual(unverified, {
+      emailNeedsAttention: true,
+      deletionNeedsAttention: false,
+      anyNeedsAttention: true,
+    });
+
+    // 2. Pure derivation: actionable deletion statuses activate Privacy only
+    for (const status of ['pending', 'processing', 'failed'] as const) {
+      const fromAccount = deriveCloudAttention({
+        canManageCloudAccount: true,
+        account: {
+          cloud_account_available: false,
+          email: null,
+          verified: false,
+          deletion_request: { status },
+        },
+        accountLoadFailed: false,
+        cloud: { cloud_registration_status: 'deletion_pending', cloud_deletion_status: '' },
+      });
+      assert.deepEqual(
+        fromAccount,
+        {
+          emailNeedsAttention: false,
+          deletionNeedsAttention: true,
+          anyNeedsAttention: true,
+        },
+        `account deletion_request.status=${status} must mark deletionNeedsAttention`,
+      );
+
+      const fromCloudStatus = deriveCloudAttention({
+        canManageCloudAccount: true,
+        account: {
+          cloud_account_available: false,
+          email: null,
+          verified: false,
+          deletion_request: null,
+        },
+        accountLoadFailed: false,
+        cloud: { cloud_registration_status: 'deletion_pending', cloud_deletion_status: status },
+      });
+      assert.deepEqual(
+        fromCloudStatus,
+        {
+          emailNeedsAttention: false,
+          deletionNeedsAttention: true,
+          anyNeedsAttention: true,
+        },
+        `cloud_deletion_status=${status} must mark deletionNeedsAttention`,
+      );
+    }
+
+    // 3. Terminal deletion and verified email produce no attention
+    assert.deepEqual(
+      deriveCloudAttention({
+        canManageCloudAccount: true,
+        account: {
+          cloud_account_available: false,
+          email: null,
+          verified: false,
+          deletion_request: { status: 'pending' },
+        },
+        accountLoadFailed: false,
+        cloud: { cloud_registration_status: 'deleted', cloud_deletion_status: 'deleted' },
+      }),
+      {
+        emailNeedsAttention: false,
+        deletionNeedsAttention: false,
+        anyNeedsAttention: false,
+      },
+    );
+
+    assert.deepEqual(
+      deriveCloudAttention({
+        canManageCloudAccount: true,
+        account: { cloud_account_available: true, email: 'owner@flo.local', verified: true },
+        accountLoadFailed: false,
+        cloud: { cloud_registration_status: 'registered', cloud_deletion_status: '' },
+      }),
+      {
+        emailNeedsAttention: false,
+        deletionNeedsAttention: false,
+        anyNeedsAttention: false,
+      },
+    );
+
+    // 4. Non-owner / missing cloud.account.manage permission never shows attention
+    assert.deepEqual(
+      deriveCloudAttention({
+        canManageCloudAccount: false,
+        account: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+        accountLoadFailed: false,
+        cloud: { cloud_registration_status: 'registered', cloud_deletion_status: 'failed' },
+      }),
+      {
+        emailNeedsAttention: false,
+        deletionNeedsAttention: false,
+        anyNeedsAttention: false,
+      },
+    );
+
+    // 5. Store refresh deduplicates same-tenant non-forced refreshes and syncs updates
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') {
+        return {
+          data: { cloud_account_available: true, email: 'owner@flo.local', verified: false },
+        };
+      }
+      if (url === '/settings/cloud') {
+        return { data: { cloud_registration_status: 'registered', cloud_deletion_status: '' } };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    };
+
+    const ownerTenant = makeTenant({ id: 1, role: 'owner' });
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(apiCalls.length, 2);
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, true);
+    assert.equal(useCloudAttentionStore.getState().deletionNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, true);
+
+    // Non-forced repeat for same tenant does not refetch
+    await useCloudAttentionStore.getState().refreshForTenant(ownerTenant as any);
+    assert.equal(apiCalls.length, 2);
+
+    // Syncing verified account clears attention immediately without network calls
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'owner@flo.local',
+      verified: true,
+    });
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
+
+    // 6. Custom role with cloud.account.manage but without cloud.manage still detects unverified email
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    const customAccountOnlyTenant = makeTenant({
+      id: 2,
+      role: 'manager',
+      permission_ids: ['settings.view', 'cloud.account.manage'],
+    });
+    await useCloudAttentionStore.getState().refreshForTenant(customAccountOnlyTenant as any);
+    assert.deepEqual(
+      apiCalls.map((c) => c.path),
+      ['/settings/cloud/account'],
+    );
+    assert.equal(useCloudAttentionStore.getState().emailNeedsAttention, true);
+
+    // 7. Tenant switch discards stale in-flight response from previous tenant
+    useCloudAttentionStore.getState().reset();
+    apiCalls.length = 0;
+    const slowAccount = createDeferred<{ data: any }>();
+    getHandler = async (url) => {
+      if (url === '/settings/cloud/account') return slowAccount.promise;
+      return { data: { cloud_registration_status: 'registered', cloud_deletion_status: '' } };
+    };
+    const pendingRefresh = useCloudAttentionStore
+      .getState()
+      .refreshForTenant(makeTenant({ id: 10, role: 'owner' }) as any);
+    // Switch to non-owner tenant before tenant 10 resolves
+    await useCloudAttentionStore
+      .getState()
+      .refreshForTenant(makeTenant({ id: 11, role: 'cashier' }) as any);
+    slowAccount.resolve({
+      data: { cloud_account_available: true, email: 'stale@flo.local', verified: false },
+    });
+    await pendingRefresh;
+    assert.equal(useCloudAttentionStore.getState().tenantId, 11);
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
+
+    // 8. Session boundary resets cloud attention state
+    useCloudAttentionStore.getState().syncAccount(1, {
+      cloud_account_available: true,
+      email: 'owner@flo.local',
+      verified: false,
+    });
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, true);
+    const { notifySessionBoundary } =
+      require('../frontend/src/store/session-events') as typeof import('../frontend/src/store/session-events');
+    notifySessionBoundary('logout');
+    assert.equal(useCloudAttentionStore.getState().anyNeedsAttention, false);
+    assert.equal(useCloudAttentionStore.getState().tenantId, null);
+
+    console.log('settings-subnav-attention unit tests: all assertions passed');
+  } finally {
+    Module._resolveFilename = originalResolveFilename;
+    Module._load = originalLoad;
+  }
+}
+
+void run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

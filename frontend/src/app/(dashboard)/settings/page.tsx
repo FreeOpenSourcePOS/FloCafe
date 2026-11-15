@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useId, useLayoutEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
+import {
+  ACTIONABLE_CLOUD_DELETION_STATUSES,
+  notifyCloudAccountStatusChanged,
+  useCloudAttentionStore,
+} from '@/store/cloud-attention';
 import {
   usePosSettingsStore,
   normalizeAutoLockMinutesValue,
@@ -118,7 +123,6 @@ import { searchSettingsCatalog, type SettingsSearchResult } from '@/lib/settings
 
 const HIGHLIGHT_CLASSES = ['ring-2', 'ring-brand', 'ring-offset-2', 'transition-all'] as const;
 
-const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 const GOOGLE_DRIVE_JOB_POLL_INTERVAL_MS = 500;
 const GOOGLE_DRIVE_JOB_STATUS_RETRY_WINDOW_MS = 30_000;
 // Must match RESTORE_CONFIRMATION in main/routes/database.ts.
@@ -148,11 +152,6 @@ async function fetchGoogleDriveJob(jobId: string) {
       await new Promise((resolve) => window.setTimeout(resolve, delay));
     }
   }
-}
-
-function notifyCloudAccountStatusChanged(): void {
-  if (typeof window !== 'undefined')
-    window.dispatchEvent(new Event(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT));
 }
 
 const CLASSIC_PREVIEW = `   STORE NAME
@@ -249,28 +248,38 @@ function SettingsNavItem({
   attention?: boolean;
 }) {
   const isActive = active === value;
+  const attentionDescId = useId();
   return (
-    <button
-      onClick={() => onClick(value)}
-      className={[
-        'flex items-center w-full min-w-0 text-start text-sm rounded-md py-1.5 transition-colors',
-        indent ? 'ps-5 pe-2 border-s-2 ms-1 text-xs md:ms-0' : 'px-3',
-        isActive
-          ? 'bg-brand/10 text-brand font-semibold' + (indent ? ' border-brand' : '')
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground' +
-            (indent ? ' border-transparent' : ''),
-      ].join(' ')}
-    >
-      <span className="min-w-0 truncate">{label}</span>
+    <>
+      <button
+        onClick={() => onClick(value)}
+        aria-describedby={attention ? attentionDescId : undefined}
+        className={[
+          'flex items-center shrink-0 md:shrink w-auto md:w-full min-w-0 whitespace-nowrap md:whitespace-normal text-start text-sm rounded-md py-1.5 transition-colors',
+          indent ? 'ps-5 pe-2 border-s-2 ms-1 text-xs md:ms-0' : 'px-3',
+          isActive
+            ? 'bg-brand/10 text-brand font-semibold' + (indent ? ' border-brand' : '')
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground' +
+              (indent ? ' border-transparent' : ''),
+        ].join(' ')}
+      >
+        <span className="min-w-0 truncate">{label}</span>
+        {attention && (
+          <span
+            data-testid={`settings-nav-attention-${value}`}
+            aria-hidden="true"
+            className="ms-1.5 md:ms-auto shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+          >
+            1
+          </span>
+        )}
+      </button>
       {attention && (
-        <span
-          className="ms-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
-          aria-label="Action required"
-        >
-          1
+        <span id={attentionDescId} className="sr-only">
+          Action required
         </span>
       )}
-    </button>
+    </>
   );
 }
 
@@ -433,6 +442,11 @@ export default function SettingsPage() {
   const canManageKdsView = isAdmin || tenantCan(currentTenant, 'kitchen.use');
   const canManageWhatsapp = tenantCan(currentTenant, 'whatsapp.manage');
   const canUseWhatsapp = tenantCan(currentTenant, 'whatsapp.use');
+  const cloudAttentionTenantId = useCloudAttentionStore((s) => s.tenantId);
+  const storeEmailNeedsAttention = useCloudAttentionStore((s) => s.emailNeedsAttention);
+  const storeDeletionNeedsAttention = useCloudAttentionStore((s) => s.deletionNeedsAttention);
+  const syncCloudAttentionAccount = useCloudAttentionStore((s) => s.syncAccount);
+  const syncCloudAttentionStatus = useCloudAttentionStore((s) => s.syncCloudStatus);
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -876,24 +890,45 @@ export default function SettingsPage() {
     !cloudAccountLoadFailed && cloudAccount?.cloud_account_available !== false;
   const cloudDeletionStatus = cloudAccount?.deletion_request?.status || '';
   const cloudDeletionPending = cloudDeletionStatus === 'pending';
-  const cloudDeletionNeedsResolution = ['pending', 'processing', 'failed'].includes(
-    cloudDeletionStatus,
-  );
+  const cloudDeletionNeedsResolution = (
+    ACTIONABLE_CLOUD_DELETION_STATUSES as readonly string[]
+  ).includes(cloudDeletionStatus);
   const cloudDeletionCanCancel =
     ['pending', 'processing'].includes(cloudDeletionStatus) &&
     Boolean(cloudAccount?.deletion_request?.id);
 
   const fetchCloudAccount = async (signal?: AbortSignal): Promise<boolean> => {
+    const tenantId = getActiveTenantId();
     try {
       const { data } = await api.get('/settings/cloud/account', signal ? { signal } : undefined);
       if (signal?.aborted) return false;
       setCloudAccount(data);
       setCloudAccountLoadFailed(false);
+      if (isOwner && tenantId !== null) syncCloudAttentionAccount(tenantId, data, false);
       return true;
     } catch (error) {
       if (isRequestCancelled(error)) return false;
       setCloudAccountLoadFailed(true);
+      if (isOwner && tenantId !== null) syncCloudAttentionAccount(tenantId, null, true);
       return false;
+    }
+  };
+
+  const updateCloudAccountPreference = async (patch: {
+    product_updates?: boolean;
+    marketing?: boolean;
+  }) => {
+    setCloudAccountBusy(true);
+    try {
+      const { data } = await api.put('/settings/cloud/account/preferences', patch);
+      const next = cloudAccount ? { ...cloudAccount, ...data } : data;
+      setCloudAccount(next);
+      const tenantId = getActiveTenantId();
+      if (isOwner && tenantId !== null) syncCloudAttentionAccount(tenantId, next, false);
+    } catch {
+      toast.error(t('couldNotSavePreference'));
+    } finally {
+      setCloudAccountBusy(false);
     }
   };
 
@@ -1953,12 +1988,15 @@ export default function SettingsPage() {
   const cloudDeletionNeedsAction =
     !cloudDeletionFinal &&
     (cloudDeletionNeedsResolution ||
-      ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
+      (ACTIONABLE_CLOUD_DELETION_STATUSES as readonly string[]).includes(
+        cloudStatus.cloud_deletion_status,
+      ));
 
   const refreshCloudStatus = async () => {
+    const tenantId = getActiveTenantId();
     try {
       const { data } = await api.get('/settings/cloud');
-      setCloudStatus({
+      const nextCloudStatus = {
         cloud_registration_status: data.cloud_registration_status || 'unregistered',
         cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
         cloud_connected: !!data.cloud_connected,
@@ -1966,7 +2004,9 @@ export default function SettingsPage() {
         cloud_last_heartbeat: data.cloud_last_heartbeat || null,
         cloud_last_error: data.cloud_last_error || null,
         cloud_deletion_status: data.cloud_deletion_status || '',
-      });
+      };
+      setCloudStatus(nextCloudStatus);
+      if (isOwner && tenantId !== null) syncCloudAttentionStatus(tenantId, nextCloudStatus);
       setCloudSettings((previous) => ({
         ...previous,
         cloud_sync_enabled: !!data.cloud_sync_enabled,
@@ -2622,7 +2662,7 @@ export default function SettingsPage() {
               );
               setCloudSettings(mergedCloudSettings);
               setSavedCloudSettings(settings);
-              setCloudStatus({
+              const nextCloudStatus = {
                 cloud_registration_status: data.cloud_registration_status || 'unregistered',
                 cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
                 cloud_connected: !!data.cloud_connected,
@@ -2630,7 +2670,11 @@ export default function SettingsPage() {
                 cloud_last_heartbeat: data.cloud_last_heartbeat || null,
                 cloud_last_error: data.cloud_last_error || null,
                 cloud_deletion_status: data.cloud_deletion_status || '',
-              });
+              };
+              setCloudStatus(nextCloudStatus);
+              if (isOwner && tenantId !== null) {
+                syncCloudAttentionStatus(tenantId, nextCloudStatus);
+              }
               cloudHydrationSucceeded.current = true;
               cloudHydrated.current = true;
             })();
@@ -3357,7 +3401,7 @@ export default function SettingsPage() {
       const next = { ...cloudSettings, ...res.data };
       setCloudSettings(next);
       setSavedCloudSettings(next);
-      setCloudStatus({
+      const nextCloudStatus = {
         cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
         cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
         cloud_connected: !!res.data.cloud_connected,
@@ -3365,7 +3409,10 @@ export default function SettingsPage() {
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
         cloud_last_error: res.data.cloud_last_error || null,
         cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
+      };
+      setCloudStatus(nextCloudStatus);
+      const tenantId = getActiveTenantId();
+      if (isOwner && tenantId !== null) syncCloudAttentionStatus(tenantId, nextCloudStatus);
       await fetchCloudAccount();
       notifyCloudAccountStatusChanged();
       if (!silent) toast.success(t('cloudSaved'));
@@ -3392,7 +3439,7 @@ export default function SettingsPage() {
       cloudHydrated.current = false;
       cloudHydrationSucceeded.current = false;
       cloudHydrationPromise.current = null;
-      setCloudStatus({
+      const nextCloudStatus = {
         cloud_registration_status: registrationStatus,
         cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
         cloud_connected: !!res.data.cloud_connected,
@@ -3400,7 +3447,10 @@ export default function SettingsPage() {
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
         cloud_last_error: res.data.cloud_last_error || null,
         cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
+      };
+      setCloudStatus(nextCloudStatus);
+      const tenantId = getActiveTenantId();
+      if (isOwner && tenantId !== null) syncCloudAttentionStatus(tenantId, nextCloudStatus);
       setCloudSettings((prev) => ({
         ...prev,
         cloud_api_key: res.data.cloud_api_key || prev.cloud_api_key,
@@ -4647,8 +4697,11 @@ export default function SettingsPage() {
               active={activeTab}
               onClick={handleSettingsTabChange}
               attention={
-                cloudDeletionNeedsAction ||
-                (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))
+                isOwner &&
+                ((cloudAttentionTenantId === (currentTenant?.id ?? null) &&
+                  storeEmailNeedsAttention) ||
+                  (cloudAccountAvailable &&
+                    Boolean(cloudAccount?.email && !cloudAccount?.verified)))
               }
             />
             <SettingsNavItem
@@ -4656,6 +4709,12 @@ export default function SettingsPage() {
               value="privacy"
               active={activeTab}
               onClick={handleSettingsTabChange}
+              attention={
+                isOwner &&
+                ((cloudAttentionTenantId === (currentTenant?.id ?? null) &&
+                  storeDeletionNeedsAttention) ||
+                  cloudDeletionNeedsAction)
+              }
             />
             <SettingsNavItem
               label={t('tabUpdates')}
@@ -6489,19 +6548,8 @@ export default function SettingsPage() {
                         <Toggle
                           value={Boolean(cloudAccount?.product_updates)}
                           label={t('cloudPrefProductUpdates')}
-                          onChange={async (value) => {
-                            setCloudAccountBusy(true);
-                            try {
-                              const { data } = await api.put(
-                                '/settings/cloud/account/preferences',
-                                { product_updates: value },
-                              );
-                              setCloudAccount(data);
-                            } catch {
-                              toast.error(t('couldNotSavePreference'));
-                            } finally {
-                              setCloudAccountBusy(false);
-                            }
+                          onChange={(value) => {
+                            void updateCloudAccountPreference({ product_updates: value });
                           }}
                         />
                       </label>
@@ -6510,19 +6558,8 @@ export default function SettingsPage() {
                         <Toggle
                           value={Boolean(cloudAccount?.marketing)}
                           label={t('cloudPrefMarketing')}
-                          onChange={async (value) => {
-                            setCloudAccountBusy(true);
-                            try {
-                              const { data } = await api.put(
-                                '/settings/cloud/account/preferences',
-                                { marketing: value },
-                              );
-                              setCloudAccount(data);
-                            } catch {
-                              toast.error(t('couldNotSavePreference'));
-                            } finally {
-                              setCloudAccountBusy(false);
-                            }
+                          onChange={(value) => {
+                            void updateCloudAccountPreference({ marketing: value });
                           }}
                         />
                       </label>
@@ -6631,7 +6668,7 @@ export default function SettingsPage() {
                         if (!(await confirm(t('cloudStopAllConfirm')))) return;
                         try {
                           const { data } = await api.post('/settings/cloud/stop-all');
-                          setCloudStatus({
+                          const nextCloudStatus = {
                             cloud_registration_status:
                               data.cloud_registration_status || 'unregistered',
                             cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
@@ -6640,7 +6677,12 @@ export default function SettingsPage() {
                             cloud_last_heartbeat: data.cloud_last_heartbeat || null,
                             cloud_last_error: data.cloud_last_error || null,
                             cloud_deletion_status: data.cloud_deletion_status || '',
-                          });
+                          };
+                          setCloudStatus(nextCloudStatus);
+                          const tenantId = getActiveTenantId();
+                          if (isOwner && tenantId !== null) {
+                            syncCloudAttentionStatus(tenantId, nextCloudStatus);
+                          }
                           setCloudSettings((previous) => ({
                             ...previous,
                             cloud_sync_enabled: !!data.cloud_sync_enabled,

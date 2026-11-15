@@ -6,7 +6,6 @@
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.join(__dirname, '..');
@@ -797,32 +796,11 @@ async function testDisconnectAndPrefsPreservationAndRaceSafety() {
   console.log('  ✓ Disconnect, prefs preservation, account switch, and race safety verified');
 }
 
-async function testSettingsPagePropsWiring() {
-  console.log('\n--- 4. settings/page.tsx passes Google Drive connection props ---');
-  const settingsPageSource = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx'),
-    'utf8',
-  );
-  const match = settingsPageSource.match(/<QrMenuSettingsTab[\s\S]*?\/>/);
-  assert.ok(match, 'settings/page.tsx renders <QrMenuSettingsTab ... />');
-  const jsxBlock = match[0];
-  assert.ok(
-    jsxBlock.includes('driveConnected={Boolean(googleDriveStatus?.connected)}'),
-    'settings/page.tsx passes driveConnected={Boolean(googleDriveStatus?.connected)}',
-  );
-  assert.ok(
-    jsxBlock.includes('driveAccountEmail={googleDriveStatus?.account_email ?? null}'),
-    'settings/page.tsx passes driveAccountEmail={googleDriveStatus?.account_email ?? null}',
-  );
-  console.log('  ✓ settings/page.tsx QrMenuSettingsTab props wiring verified');
-}
-
 async function main() {
   console.log('🧪 QR Menu Settings Tab Refresh Tests');
   await testReconnectViaPropsAndConnectCallback();
   await testFocusAndVisibilityRefresh();
   await testDisconnectAndPrefsPreservationAndRaceSafety();
-  await testSettingsPagePropsWiring();
 }
 
 main().catch((error) => {

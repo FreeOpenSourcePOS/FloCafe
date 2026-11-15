@@ -1202,10 +1202,13 @@ async function main() {
     setSetting('currency', 'INR');
     setSetting('timezone', 'Invalid/Zone');
     setSetting('business_day_start_time', '04:00');
-    const fallbackCountryTz = validateReportResponse(invokeReport('dashboard', { date: '2026-09-10' }), {
-      view: 'dashboard',
-      date: '2026-09-10',
-    });
+    const fallbackCountryTz = validateReportResponse(
+      invokeReport('dashboard', { date: '2026-09-10' }),
+      {
+        view: 'dashboard',
+        date: '2026-09-10',
+      },
+    );
     assertEqualOrThrow(
       fallbackCountryTz.meta.timezone,
       'Asia/Kolkata',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, CheckCircle2, Percent, Wallet, ChevronDown, Send } from 'lucide-react';
+import { X, CheckCircle2, Percent, Wallet, ChevronDown, Send, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
@@ -32,7 +32,6 @@ import {
   CHECKOUT_PRIMARY_CTA_CLASS,
   CheckoutHeaderChips,
   CheckoutQtyBadge,
-  CheckoutTagIcon,
   type CheckoutHeaderChipItem,
   getCardReferenceSlotClasses,
   getTenderRowClasses,
@@ -1193,7 +1192,7 @@ export default function PrepaidCheckoutModal({
                   }`}
                   aria-expanded={discountOpen}
                 >
-                  <CheckoutTagIcon className="size-3.5" />
+                  <Tag className="size-3.5 shrink-0" />
                   <span>
                     {preview?.discountAmount
                       ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}`

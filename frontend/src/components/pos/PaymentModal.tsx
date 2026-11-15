@@ -13,6 +13,8 @@ import {
   Users,
   Minus,
   Plus,
+  ShieldAlert,
+  Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api, {
@@ -51,8 +53,6 @@ import {
   CHECKOUT_PRIMARY_CTA_CLASS,
   CheckoutHeaderChips,
   CheckoutQtyBadge,
-  CheckoutShieldIcon,
-  CheckoutTagIcon,
   type CheckoutHeaderChipItem,
   getCardReferenceSlotClasses,
   getTenderRowClasses,
@@ -2369,7 +2369,7 @@ export default function PaymentModal({
                         : 'border-amber-500/45 bg-amber-500/10 text-amber-800 hover:bg-amber-500/18 dark:text-amber-200'
                     }`}
                   >
-                    <CheckoutShieldIcon className="size-3.5" />
+                    <ShieldAlert className="size-3.5 shrink-0" />
                     {t('managerPin')}
                   </button>
                 )}
@@ -2388,7 +2388,7 @@ export default function PaymentModal({
                           : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
                     }`}
                   >
-                    <CheckoutTagIcon className="size-3.5" />
+                    <Tag className="size-3.5 shrink-0" />
                     <span>
                       {Number(bill.discount_amount) > 0
                         ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`

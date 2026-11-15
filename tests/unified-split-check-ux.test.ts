@@ -214,6 +214,8 @@ async function run() {
       ChevronDown: Icon,
       Banknote: Icon,
       CreditCard: Icon,
+      Tag: Icon,
+      ShieldAlert: Icon,
     },
     '@/components/ui/button': {
       Button: ({ children, variant: _variant, size: _size, ...props }: any) =>

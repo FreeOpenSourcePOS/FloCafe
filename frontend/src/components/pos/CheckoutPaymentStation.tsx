@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { CheckCircle2, ChevronDown, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Tag, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { CheckoutReadyIcon, CheckoutTagIcon } from '@/components/pos/checkout-ui';
 
 export interface CheckoutStationReadout {
   activeLabel: string;
@@ -30,7 +29,7 @@ export interface CheckoutChangeDisplay {
 }
 
 export interface CheckoutStatusBanner {
-  tone: 'idle-due' | 'idle-partial' | 'idle-ready' | 'idle-settled' | 'warning' | 'error';
+  tone: 'idle-due' | 'idle-ready' | 'idle-settled' | 'warning' | 'error';
   partial?: boolean;
   message: string;
   nextStep?: string | null;
@@ -83,9 +82,7 @@ export function CheckoutPaymentStation({
           : 'border border-border bg-muted text-muted-foreground';
 
   const isAlertTone = statusBanner?.tone === 'error' || statusBanner?.tone === 'warning';
-  const isPartialBanner =
-    statusBanner?.tone === 'idle-partial' ||
-    (statusBanner?.tone === 'idle-due' && Boolean(statusBanner.partial));
+  const isPartialBanner = statusBanner?.tone === 'idle-due' && Boolean(statusBanner.partial);
 
   const bannerSurfaceClass =
     statusBanner?.tone === 'error'
@@ -121,7 +118,7 @@ export function CheckoutPaymentStation({
         <div className="flex h-5 items-center justify-between gap-2">
           <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-brand dark:text-indigo-300">
             {readout.isDiscountTarget ? (
-              <CheckoutTagIcon className="size-3.5" />
+              <Tag className="size-3.5 shrink-0" />
             ) : (
               <span
                 aria-hidden="true"
@@ -282,7 +279,7 @@ export function CheckoutPaymentStation({
                     {statusBanner.tone === 'idle-settled' ? (
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                     ) : statusBanner.tone === 'idle-ready' ? (
-                      <CheckoutReadyIcon className="h-3.5 w-3.5 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                     ) : null}
                     <span className="break-words">{statusBanner.message}</span>
                   </div>

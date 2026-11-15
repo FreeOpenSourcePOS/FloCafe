@@ -195,6 +195,9 @@ function verifyPrepaidCheckoutModalDiscountPreservation(): void {
       Banknote: Icon,
       CreditCard: Icon,
       Send: Icon,
+      Tag: Icon,
+      User: Icon,
+      ShieldAlert: Icon,
     },
     '@/components/ui/button': {
       Button: ({ children, variant: _variant, size: _size, ...props }: any) =>

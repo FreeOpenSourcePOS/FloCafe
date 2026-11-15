@@ -215,7 +215,6 @@ export default function PrepaidCheckoutModal({
   const [activeCol1Panel, setActiveCol1Panel] = useState<'items' | 'discount' | 'tax'>(
     hasInitialDiscount ? 'discount' : 'items',
   );
-  const discountOpen = activeCol1Panel === 'discount';
   const [discountType, setDiscountType] = useState<DiscountType>(
     hasInitialDiscount && initialDiscount ? initialDiscount.type : 'percentage',
   );
@@ -253,27 +252,6 @@ export default function PrepaidCheckoutModal({
   }
   const restorePaymentTarget = () => {
     setAmountTarget(lastPaymentTarget);
-  };
-  const setCol1Panel = (
-    next:
-      | 'items'
-      | 'discount'
-      | 'tax'
-      | ((prev: 'items' | 'discount' | 'tax') => 'items' | 'discount' | 'tax'),
-  ) => {
-    const resolved = typeof next === 'function' ? next(activeCol1Panel) : next;
-    if (resolved !== activeCol1Panel) {
-      setActiveCol1Panel(resolved);
-    }
-    if (resolved === 'discount' && !locked && !discountCommitted && discountMode !== 'none') {
-      setAmountTarget({ kind: 'discount' });
-    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
-      restorePaymentTarget();
-    }
-  };
-  const setDiscountOpen = (next: boolean | ((prev: boolean) => boolean)) => {
-    const resolved = typeof next === 'function' ? next(activeCol1Panel === 'discount') : next;
-    setCol1Panel(resolved ? 'discount' : 'items');
   };
   const [showDetails, setShowDetails] = useState(false);
 
@@ -350,16 +328,22 @@ export default function PrepaidCheckoutModal({
   const [reconciledDiscountMode, setReconciledDiscountMode] = useState(discountMode);
   if (discountMode !== reconciledDiscountMode) {
     setReconciledDiscountMode(discountMode);
-    if (discountMode === 'none' && !committedInitialDiscountUnchanged) {
-      setDiscountType(defaultDiscountTypeForMode(discountMode));
-      setDiscountValue('');
-      setDiscountReason('');
-      setDiscountPin('');
-      setPaymentsTouched(false);
-      setAmountTarget((target) =>
-        target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
-      );
+    if (discountMode === 'none') {
+      setActiveCol1Panel((panel) => (panel === 'discount' ? 'items' : panel));
+      if (!committedInitialDiscountUnchanged) {
+        setDiscountType(defaultDiscountTypeForMode(discountMode));
+        setDiscountValue('');
+        setDiscountReason('');
+        setDiscountPin('');
+        setPaymentsTouched(false);
+        setAmountTarget((target) =>
+          target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
+        );
+      }
     }
+  }
+  if (discountModeLoaded && discountMode === 'none' && activeCol1Panel === 'discount') {
+    setActiveCol1Panel('items');
   }
 
   if (
@@ -459,6 +443,37 @@ export default function PrepaidCheckoutModal({
       total: tax.total,
     };
   }, [tax]);
+
+  const canShowDiscountPanel = discountModeLoaded && discountMode !== 'none';
+  const canShowTaxPanel = Boolean(preview);
+  const effectiveCol1Panel: 'items' | 'discount' | 'tax' =
+    activeCol1Panel === 'discount' && canShowDiscountPanel
+      ? 'discount'
+      : activeCol1Panel === 'tax' && canShowTaxPanel
+        ? 'tax'
+        : 'items';
+  const discountOpen = effectiveCol1Panel === 'discount';
+  const setCol1Panel = (
+    next:
+      | 'items'
+      | 'discount'
+      | 'tax'
+      | ((prev: 'items' | 'discount' | 'tax') => 'items' | 'discount' | 'tax'),
+  ) => {
+    const resolved = typeof next === 'function' ? next(effectiveCol1Panel) : next;
+    if (resolved !== activeCol1Panel) {
+      setActiveCol1Panel(resolved);
+    }
+    if (resolved === 'discount' && !locked && !discountCommitted && canShowDiscountPanel) {
+      setAmountTarget({ kind: 'discount' });
+    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
+    }
+  };
+  const setDiscountOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === 'function' ? next(discountOpen) : next;
+    setCol1Panel(resolved ? 'discount' : 'items');
+  };
 
   const remaining = preview?.total ?? 0;
 
@@ -971,7 +986,7 @@ export default function PrepaidCheckoutModal({
   useEffect(() => {
     dismissHandlerRef.current = () => {
       if (locked) return true;
-      if (!success && (activeCol1Panel === 'discount' || activeCol1Panel === 'tax')) {
+      if (!success && (effectiveCol1Panel === 'discount' || effectiveCol1Panel === 'tax')) {
         setCol1Panel('items');
         return true;
       }
@@ -1431,7 +1446,7 @@ export default function PrepaidCheckoutModal({
             className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[168px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
-              {activeCol1Panel === 'items' ? (
+              {effectiveCol1Panel === 'items' ? (
                 <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
                   <span>{t('items')}</span>
                   <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border/80 bg-muted px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:border-white/10">
@@ -1447,11 +1462,11 @@ export default function PrepaidCheckoutModal({
                   <span className="rtl-flip">&larr;</span>
                   <span>{tCommon('back')}</span>
                   <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    {activeCol1Panel === 'discount' ? t('discount') : t('tax')}
+                    {effectiveCol1Panel === 'discount' ? t('discount') : t('tax')}
                   </span>
                 </button>
               )}
-              {discountModeLoaded && discountMode !== 'none' && (
+              {canShowDiscountPanel && (
                 <button
                   type="button"
                   onClick={() => setDiscountOpen((open) => !open)}
@@ -1479,7 +1494,7 @@ export default function PrepaidCheckoutModal({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              {activeCol1Panel === 'discount' && discountModeLoaded && discountMode !== 'none' ? (
+              {effectiveCol1Panel === 'discount' ? (
                 <div className="space-y-2.5">
                   <div className="flex gap-1 rounded-xl border border-border/80 bg-muted/60 p-1 dark:border-white/10 dark:bg-muted/35">
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
@@ -1624,7 +1639,7 @@ export default function PrepaidCheckoutModal({
                     ) : null}
                   </div>
                 </div>
-              ) : activeCol1Panel === 'tax' && preview ? (
+              ) : effectiveCol1Panel === 'tax' && preview ? (
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
                     <span>{t('tax')}</span>
@@ -1821,7 +1836,7 @@ export default function PrepaidCheckoutModal({
                 <button
                   type="button"
                   onClick={() => setCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
-                  aria-expanded={activeCol1Panel === 'tax'}
+                  aria-expanded={effectiveCol1Panel === 'tax'}
                   className="flex w-full items-center justify-between text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <span className="inline-flex items-center gap-1">
@@ -1829,7 +1844,7 @@ export default function PrepaidCheckoutModal({
                     {preview.taxBreakdown.length > 0 && (
                       <ChevronDown
                         size={12}
-                        className={`transition-transform ${activeCol1Panel === 'tax' ? 'rotate-180' : ''}`}
+                        className={`transition-transform ${effectiveCol1Panel === 'tax' ? 'rotate-180' : ''}`}
                       />
                     )}
                   </span>

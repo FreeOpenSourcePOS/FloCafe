@@ -371,7 +371,6 @@ export default function PaymentModal({
   const [activeCol1Panel, setActiveCol1Panel] = useState<
     'items' | 'discount' | 'tax' | 'kitchen-override'
   >(() => (initialOverridePin ? 'kitchen-override' : 'items'));
-  const showDiscount = activeCol1Panel === 'discount';
   const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
@@ -410,36 +409,6 @@ export default function PaymentModal({
       kind: 'payment',
       index: payments[lastPaymentTarget.index] ? lastPaymentTarget.index : 0,
     });
-  };
-  const setCol1Panel = (
-    next:
-      | 'items'
-      | 'discount'
-      | 'tax'
-      | 'kitchen-override'
-      | ((
-          prev: 'items' | 'discount' | 'tax' | 'kitchen-override',
-        ) => 'items' | 'discount' | 'tax' | 'kitchen-override'),
-  ) => {
-    const resolved = typeof next === 'function' ? next(activeCol1Panel) : next;
-    if (resolved !== activeCol1Panel) {
-      setActiveCol1Panel(resolved);
-    }
-    if (
-      resolved === 'discount' &&
-      !attemptLocked &&
-      !justPaid &&
-      !billReadOnly &&
-      discountMode !== 'none'
-    ) {
-      setAmountTarget({ kind: 'discount' });
-    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
-      restorePaymentTarget();
-    }
-  };
-  const setShowDiscount = (next: boolean | ((prev: boolean) => boolean)) => {
-    const resolved = typeof next === 'function' ? next(activeCol1Panel === 'discount') : next;
-    setCol1Panel(resolved ? 'discount' : 'items');
   };
   const [showDetails, setShowDetails] = useState(Boolean(initialOverridePin));
   const [billDetails, setBillDetails] = useState<{
@@ -550,6 +519,47 @@ export default function PaymentModal({
   const appliedCharges: AppliedCharge[] = parseAppliedCharges(bill.charges_breakdown);
   const applicableCharges = chargesForOrderType(charges, bill.order?.type || '');
   const scheduledOrderEditLocked = isScheduledOrderEditLocked(bill.order, [bill]);
+  const canShowDiscountPanel =
+    !bill.split_group_id && !scheduledOrderEditLocked && discountMode !== 'none';
+  const effectiveCol1Panel: 'items' | 'discount' | 'tax' | 'kitchen-override' =
+    activeCol1Panel === 'kitchen-override' && kitchenOverrideRequired
+      ? 'kitchen-override'
+      : activeCol1Panel === 'discount' && canShowDiscountPanel
+        ? 'discount'
+        : activeCol1Panel === 'tax'
+          ? 'tax'
+          : 'items';
+  const showDiscount = effectiveCol1Panel === 'discount';
+  const setCol1Panel = (
+    next:
+      | 'items'
+      | 'discount'
+      | 'tax'
+      | 'kitchen-override'
+      | ((
+          prev: 'items' | 'discount' | 'tax' | 'kitchen-override',
+        ) => 'items' | 'discount' | 'tax' | 'kitchen-override'),
+  ) => {
+    const resolved = typeof next === 'function' ? next(effectiveCol1Panel) : next;
+    if (resolved !== activeCol1Panel) {
+      setActiveCol1Panel(resolved);
+    }
+    if (
+      resolved === 'discount' &&
+      !attemptLocked &&
+      !justPaid &&
+      !billReadOnly &&
+      canShowDiscountPanel
+    ) {
+      setAmountTarget({ kind: 'discount' });
+    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
+    }
+  };
+  const setShowDiscount = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === 'function' ? next(showDiscount) : next;
+    setCol1Panel(resolved ? 'discount' : 'items');
+  };
   // The backend rejects a waiver on a split check (its charges are already
   // allocated) and on a settled bill, so the toggle is not offered there.
   const canToggleCharges =
@@ -842,6 +852,7 @@ export default function PaymentModal({
       setDiscountValue('');
       setDiscountReason('');
       setDiscountPin('');
+      setActiveCol1Panel((panel) => (panel === 'discount' ? 'items' : panel));
       setAmountTarget((target) =>
         target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
       );
@@ -856,6 +867,16 @@ export default function PaymentModal({
     setAmountTarget((target) =>
       target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
     );
+  }
+
+  if (
+    (activeCol1Panel === 'discount' && !canShowDiscountPanel) ||
+    (activeCol1Panel === 'kitchen-override' && !kitchenOverrideRequired)
+  ) {
+    setActiveCol1Panel('items');
+    if (amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
+    }
   }
 
   // Proportionally update payment inputs when remaining balance changes,
@@ -1728,6 +1749,7 @@ export default function PaymentModal({
       setPaymentOutcomeUnknown(false);
       setRequestFailure(null);
       setKitchenOverrideRequired(false);
+      setActiveCol1Panel((panel) => (panel === 'kitchen-override' ? 'items' : panel));
       if (updatedBill.payment_status !== 'paid') {
         setPayments((rows) =>
           rows.map((row) => (row.transaction_id ? { ...row, transaction_id: '' } : row)),
@@ -2242,9 +2264,9 @@ export default function PaymentModal({
       }
       if (
         !justPaid &&
-        (activeCol1Panel === 'discount' ||
-          activeCol1Panel === 'tax' ||
-          (activeCol1Panel === 'kitchen-override' && !initialOverridePin))
+        (effectiveCol1Panel === 'discount' ||
+          effectiveCol1Panel === 'tax' ||
+          (effectiveCol1Panel === 'kitchen-override' && !initialOverridePin))
       ) {
         setCol1Panel('items');
         return true;
@@ -2698,7 +2720,7 @@ export default function PaymentModal({
             className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[168px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
-              {activeCol1Panel === 'items' ? (
+              {effectiveCol1Panel === 'items' ? (
                 <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
                   <span>{t('items')}</span>
                   <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border/80 bg-muted px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:border-white/10">
@@ -2714,9 +2736,9 @@ export default function PaymentModal({
                   <span className="rtl-flip">&larr;</span>
                   <span>{tCommon('back')}</span>
                   <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    {activeCol1Panel === 'discount'
+                    {effectiveCol1Panel === 'discount'
                       ? t('discount')
-                      : activeCol1Panel === 'kitchen-override'
+                      : effectiveCol1Panel === 'kitchen-override'
                         ? t('managerPin')
                         : t('tax')}
                   </span>
@@ -2732,7 +2754,7 @@ export default function PaymentModal({
                       )
                     }
                     className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
-                      activeCol1Panel === 'kitchen-override'
+                      effectiveCol1Panel === 'kitchen-override'
                         ? 'border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200'
                         : 'border-amber-500/45 bg-amber-500/10 text-amber-800 hover:bg-amber-500/18 dark:text-amber-200'
                     }`}
@@ -2741,7 +2763,7 @@ export default function PaymentModal({
                     {t('managerPin')}
                   </button>
                 )}
-                {!bill.split_group_id && !scheduledOrderEditLocked && discountMode !== 'none' && (
+                {canShowDiscountPanel && (
                   <button
                     type="button"
                     data-testid="col1-tab-discount"
@@ -2772,7 +2794,7 @@ export default function PaymentModal({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              {activeCol1Panel === 'kitchen-override' && kitchenOverrideRequired ? (
+              {effectiveCol1Panel === 'kitchen-override' ? (
                 <div
                   role="alert"
                   className="space-y-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-900 dark:border-amber-400/35 dark:bg-amber-500/12 dark:text-amber-200"
@@ -2822,10 +2844,7 @@ export default function PaymentModal({
                     <p className="text-xs font-medium text-destructive">{kitchenDeliveryError}</p>
                   )}
                 </div>
-              ) : activeCol1Panel === 'discount' &&
-                !bill.split_group_id &&
-                !scheduledOrderEditLocked &&
-                discountMode !== 'none' ? (
+              ) : effectiveCol1Panel === 'discount' ? (
                 <div className="space-y-2.5">
                   <div className="flex gap-1 rounded-xl border border-border/80 bg-muted/60 p-1 dark:border-white/10 dark:bg-muted/35">
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
@@ -2970,7 +2989,7 @@ export default function PaymentModal({
                     </Button>
                   )}
                 </div>
-              ) : activeCol1Panel === 'tax' ? (
+              ) : effectiveCol1Panel === 'tax' ? (
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
                     <span>{t('tax')}</span>
@@ -3152,7 +3171,7 @@ export default function PaymentModal({
               <button
                 type="button"
                 onClick={() => setCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
-                aria-expanded={activeCol1Panel === 'tax'}
+                aria-expanded={effectiveCol1Panel === 'tax'}
                 className="flex w-full items-center justify-between text-muted-foreground transition-colors hover:text-foreground"
               >
                 <span className="inline-flex items-center gap-1">
@@ -3160,7 +3179,7 @@ export default function PaymentModal({
                   {taxComponents.length > 0 && (
                     <ChevronDown
                       size={12}
-                      className={`transition-transform ${activeCol1Panel === 'tax' ? 'rotate-180' : ''}`}
+                      className={`transition-transform ${effectiveCol1Panel === 'tax' ? 'rotate-180' : ''}`}
                     />
                   )}
                 </span>

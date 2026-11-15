@@ -4831,6 +4831,341 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
   console.log('  ✓ Tender input Enter with discount panel & zero-balance unpaid Enter guards verified');
 }
 
+async function testCol1PanelHeaderBodyConsistency() {
+  // 1. PrepaidCheckoutModal: initialDiscount while discountModeLoaded=false, then discount_mode='none' vs 'both'
+  for (const mode of ['none', 'both'] as const) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      let closeCount = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('settings/discount')) {
+              return { data: { discount_mode: mode, discount_requires_approval: false } };
+            }
+            if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+            return { data: {} };
+          },
+        });
+        const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+        delete require.cache[ppPath];
+        const PrepaidCheckoutModal = require(ppPath).default;
+        const props = {
+          currency: 'USD',
+          initialDiscount: { type: 'percentage' as const, value: 10, reason: 'VIP' },
+          onClose: () => {
+            closeCount++;
+          },
+          onConfirm: async () => undefined,
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        };
+
+        // Initial render before /settings/discount resolves (discountModeLoaded === false)
+        let tree = harness.render(PrepaidCheckoutModal, props);
+        const initialMarkup = renderToStaticMarkup(tree);
+        assert.ok(
+          !initialMarkup.includes('discountReasonPlaceholder'),
+          'Prepaid items body renders before discountModeLoaded',
+        );
+        assert.ok(
+          !initialMarkup.includes('>back<'),
+          'Prepaid header does not show Back badge before discountModeLoaded',
+        );
+        assert.equal(
+          registeredDismiss?.(),
+          true,
+          'Dismiss handler exists on initial PrepaidCheckoutModal render',
+        );
+        assert.equal(
+          closeCount,
+          1,
+          'Escape closes modal on initial render when discount panel is not yet eligible',
+        );
+        closeCount = 0;
+
+        // Settle /settings/discount
+        await new Promise((r) => setTimeout(r, 10));
+        tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+        const settledMarkup = renderToStaticMarkup(tree);
+        if (mode === 'none') {
+          assert.ok(
+            !settledMarkup.includes('discountReasonPlaceholder'),
+            'Prepaid discount body stays hidden when discount_mode=none',
+          );
+          assert.ok(
+            !settledMarkup.includes('>back<'),
+            'Prepaid header shows Items (not Back [Discount]) when discount_mode=none',
+          );
+          registeredDismiss?.();
+          assert.equal(
+            closeCount,
+            1,
+            'Escape closes modal directly when discount_mode=none',
+          );
+        } else {
+          assert.ok(
+            settledMarkup.includes('discountReasonPlaceholder'),
+            'Prepaid discount body renders once discountModeLoaded and discount_mode=both',
+          );
+          assert.ok(
+            settledMarkup.includes('>back<'),
+            'Prepaid header shows Back badge matching Discount panel when discount_mode=both',
+          );
+          registeredDismiss?.();
+          assert.equal(
+            closeCount,
+            0,
+            'First Escape backs out of visible Discount panel instead of closing modal',
+          );
+        }
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 2. PrepaidCheckoutModal: Tax panel falls back cleanly when tax preview becomes null
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+    let returnNullTax = false;
+    try {
+      installCheckoutComponentMocks(harness, {
+        taxPreview: () =>
+          returnNullTax
+            ? { tax: null, loading: false }
+            : {
+                tax: {
+                  subtotal: 20,
+                  discount_amount: 0,
+                  discounted_subtotal: 20,
+                  tax_amount: 2,
+                  total: 22,
+                  tax_breakdown: [{ title: 'VAT', rate: 10, amount: 2 }],
+                  packaging_charge: 0,
+                  charges_breakdown: [],
+                  round_off: 0,
+                },
+                loading: false,
+              },
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+      const props = {
+        currency: 'USD',
+        onClose: () => {
+          closeCount++;
+        },
+        onConfirm: async () => undefined,
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      let tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+      await new Promise((r) => setTimeout(r, 10));
+      tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+
+      const taxBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['aria-expanded'] !== undefined && renderToStaticMarkup(el).includes('tax'),
+      )[0];
+      assert.ok(taxBtn, 'Tax toggle button renders in PrepaidCheckoutModal summary');
+      taxBtn.props.onClick();
+      tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+      assert.ok(
+        renderToStaticMarkup(tree).includes('>back<'),
+        'Prepaid header shows Back badge while Tax panel is active',
+      );
+
+      returnNullTax = true;
+      tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+      assert.ok(
+        !renderToStaticMarkup(tree).includes('>back<'),
+        'Prepaid header agrees with Items fallback when preview becomes null',
+      );
+      registeredDismiss?.();
+      assert.equal(
+        closeCount,
+        1,
+        'Escape closes modal when Tax panel falls back to Items',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 3a. PaymentModal: discount panel resets when split_group_id makes it ineligible
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+    try {
+      let currentBill: any = makeBill('bill-col1-pm', 20);
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('printers')) return { data: { printers: [] } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {},
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.ok(discountTab, 'PaymentModal discount tab renders');
+      discountTab.props.onClick();
+      tree = renderPm();
+      assert.ok(
+        renderToStaticMarkup(tree).includes('>back<') &&
+          renderToStaticMarkup(tree).includes('discountReasonPlaceholder'),
+        'PaymentModal shows Back + Discount panel while eligible',
+      );
+
+      // Bill updates to a split check -> discount panel becomes ineligible
+      currentBill = { ...currentBill, split_group_id: 'split-1' };
+      tree = renderPm();
+      const splitMarkup = renderToStaticMarkup(tree);
+      assert.ok(
+        !splitMarkup.includes('discountReasonPlaceholder'),
+        'PaymentModal hides Discount body on split check',
+      );
+      assert.ok(
+        !splitMarkup.includes('>back<'),
+        'PaymentModal header resets to Items when Discount becomes ineligible on split check',
+      );
+      registeredDismiss?.();
+      assert.equal(
+        closeCount,
+        1,
+        'Escape closes PaymentModal instead of being trapped on hidden Discount',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 3b. PaymentModal: partial payment clearing kitchenOverrideRequired resets header/body to Items
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+    try {
+      const currentBill: any = makeBill('bill-col1-ko', 20);
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('printers')) return { data: { printers: [] } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'none', discount_requires_approval: false } };
+          if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+        apiPost: async (url: string) => {
+          if (String(url).endsWith('/payment')) {
+            return {
+              data: {
+                bill: {
+                  ...currentBill,
+                  paid_amount: 10,
+                  balance: 10,
+                  payment_status: 'partial',
+                },
+              },
+            };
+          }
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          initialOverridePin: '1234',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {},
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        });
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+      assert.ok(
+        renderToStaticMarkup(tree).includes('kitchenDeliveryOverridePrompt'),
+        'PaymentModal opens kitchen-override panel with initialOverridePin',
+      );
+
+      const cashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashInput.props.onChange({ target: { value: '10' } });
+      tree = renderPm();
+      const payBtn = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      await payBtn.props.onClick();
+      tree = renderPm();
+      const afterPartialMarkup = renderToStaticMarkup(tree);
+      assert.ok(
+        !afterPartialMarkup.includes('kitchenDeliveryOverridePrompt'),
+        'Kitchen override body clears after partial payment',
+      );
+      assert.ok(
+        !afterPartialMarkup.includes('>back<'),
+        'PaymentModal header resets to Items when partial payment clears kitchenOverrideRequired',
+      );
+      registeredDismiss?.();
+      assert.equal(closeCount, 1, 'Escape closes PaymentModal after partial payment clears kitchen override');
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  console.log('  ✓ Column 1 panel header/body/dismiss consistency verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -4846,6 +5181,7 @@ async function run() {
   await testGreptileReviewRegressions();
   await testPaidBillCtaDisabledAndTableCheckoutHeaderStatus();
   await testTenderInputAndZeroBalanceEnterGuards();
+  await testCol1PanelHeaderBodyConsistency();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

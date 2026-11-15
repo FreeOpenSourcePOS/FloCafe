@@ -2116,6 +2116,12 @@ export default function PaymentModal({
     return [];
   })();
 
+  const billTerminal =
+    bill.payment_status === 'refunded' ||
+    bill.payment_status === 'partially_refunded' ||
+    bill.order?.status === 'cancelled';
+  const isBillPaid = bill.payment_status === 'paid' && remainingMinor <= 0;
+
   const stationStatusBanner: CheckoutStatusBanner | null = (() => {
     if (requestFailure) {
       return {
@@ -2131,13 +2137,22 @@ export default function PaymentModal({
         closeLabel: t('close'),
       };
     }
-    if (remainingMinor <= 0) {
+    if (isBillPaid) {
       return {
         tone: 'idle-settled',
         message: t('paid'),
       };
     }
-    if (totalPaymentMinor === 0) {
+    if (billTerminal) {
+      return {
+        tone: 'warning',
+        message:
+          bill.order?.status === 'cancelled'
+            ? tOrders('noFurtherActions')
+            : t('paymentBillRefunded'),
+      };
+    }
+    if (totalPaymentMinor === 0 && remainingMinor > 0) {
       return {
         tone: 'idle-due',
         message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
@@ -2169,9 +2184,10 @@ export default function PaymentModal({
         : currencyFmt(toStoredUnit(parseFloat(discountValue) || 0))
       : currencyFmt(toStoredUnit(parseFloat(activeAmountValue) || 0));
 
-  const readoutStatusTone: 'settled' | 'ready' | 'due' | 'partial' | 'change' =
-    remainingMinor <= 0
-      ? 'settled'
+  const readoutStatusTone: 'settled' | 'ready' | 'due' | 'partial' | 'change' = isBillPaid
+    ? 'settled'
+    : billTerminal
+      ? 'due'
       : change > 0
         ? 'change'
         : totalPaymentMinor >= remainingMinor
@@ -2180,9 +2196,10 @@ export default function PaymentModal({
             ? 'partial'
             : 'due';
 
-  const readoutStatusPillText =
-    remainingMinor <= 0
-      ? t('paid')
+  const readoutStatusPillText = isBillPaid
+    ? t('paid')
+    : billTerminal
+      ? undefined
       : change > 0
         ? `${t('changeReturned')}: ${currencyFmt(change)}`
         : totalPaymentMinor >= remainingMinor
@@ -2233,11 +2250,6 @@ export default function PaymentModal({
   );
 
   const taxComponents = resolveTaxComponents(bill);
-
-  const billTerminal =
-    bill.payment_status === 'refunded' ||
-    bill.payment_status === 'partially_refunded' ||
-    bill.order?.status === 'cancelled';
 
   const payCtaDisabled =
     processing ||
@@ -3510,10 +3522,9 @@ export default function PaymentModal({
                 readout={{
                   activeLabel: activeAmountLabel,
                   amountText: readoutFormattedAmount,
-                  paidSummaryText:
-                    remainingMinor <= 0
-                      ? `${t('paid')}: ${currencyFmt(totalPayment)}`
-                      : `${t('payment')}: ${currencyFmt(totalPayment)}`,
+                  paidSummaryText: isBillPaid
+                    ? `${t('paid')}: ${currencyFmt(totalPayment)}`
+                    : `${t('payment')}: ${currencyFmt(totalPayment)}`,
                   dueSummaryText: `${t('total')}: ${currencyFmt(remaining)}`,
                   statusPillText: readoutStatusPillText,
                   statusTone: readoutStatusTone,

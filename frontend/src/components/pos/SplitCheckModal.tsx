@@ -473,7 +473,7 @@ export function SplitCheckModal({
             <table className="w-full text-sm">
               <thead>
                 <tr>
-                  <th className="text-start p-2.5 text-xs font-semibold text-muted-foreground sticky start-0 bg-card">
+                  <th className="text-start p-2.5 text-xs font-semibold text-muted-foreground sticky start-0 z-10 bg-card">
                     {t('items')}
                   </th>
                   {Array.from({ length: count }, (_, i) => (
@@ -504,7 +504,7 @@ export function SplitCheckModal({
                   const rowUnassigned = maxItemQty - rowAssigned;
                   return (
                     <tr key={item.id} className="border-t border-border/80 dark:border-white/10">
-                      <td className="p-2.5 sticky start-0 bg-card">
+                      <td className="p-2.5 sticky start-0 z-10 bg-card">
                         <div className="flex items-center gap-2">
                           <CheckoutQtyBadge>{item.quantity}</CheckoutQtyBadge>
                           <span className="font-semibold text-foreground">{item.product_name}</span>
@@ -576,7 +576,7 @@ export function SplitCheckModal({
               </tbody>
               <tfoot>
                 <tr className="border-t border-border bg-muted/35 font-semibold dark:border-white/10 dark:bg-muted/20">
-                  <td className="p-3 text-foreground sticky start-0 bg-muted/35 dark:bg-muted/20">
+                  <td className="p-3 text-foreground sticky start-0 z-10 bg-muted">
                     {t('estimatedItemsTotal')}
                   </td>
                   {totals.map((total, i) => (
@@ -599,7 +599,7 @@ export function SplitCheckModal({
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="text-start p-2.5 text-xs font-semibold text-muted-foreground sticky start-0 bg-card">
+                    <th className="text-start p-2.5 text-xs font-semibold text-muted-foreground sticky start-0 z-10 bg-card">
                       {t('items')}
                     </th>
                     <th className="p-2.5 min-w-28 text-xs font-semibold text-muted-foreground">
@@ -622,14 +622,14 @@ export function SplitCheckModal({
                         key={item.id}
                         className={`border-t border-border/80 transition-colors dark:border-white/10 ${
                           selectedQty > 0
-                            ? 'bg-brand/5 bg-brand-light/30 dark:bg-[var(--color-brand-light)]'
+                            ? 'bg-brand-light dark:bg-[var(--color-brand-light)]'
                             : ''
                         }`}
                       >
                         <td
-                          className={`p-2.5 sticky start-0 transition-colors ${
+                          className={`p-2.5 sticky start-0 z-10 transition-colors ${
                             selectedQty > 0
-                              ? 'bg-brand-light/30 dark:bg-[var(--color-brand-light)]'
+                              ? 'bg-brand-light dark:bg-[var(--color-brand-light)]'
                               : 'bg-card'
                           }`}
                         >

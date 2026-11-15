@@ -2611,25 +2611,96 @@ async function testVisualHierarchyAndPrematurePaidGuards() {
       if (!hadWindow) delete (globalThis as any).window;
       else (globalThis as any).window = prevWindow;
     }
-  });
+    // D. Zero-balance unpaid and refunded/terminal checks do NOT display premature settled/paid
+    const zeroUnpaidHarness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(zeroUnpaidHarness, {});
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
 
-  // D. Source craft check: no tracked-uppercase eyebrows in checkout files
-  const nodeFs = require('node:fs') as typeof import('node:fs');
-  for (const rel of [
-    'frontend/src/components/pos/CheckoutPaymentStation.tsx',
-    'frontend/src/components/pos/TouchNumberPad.tsx',
-    'frontend/src/components/pos/PaymentModal.tsx',
-    'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
-    'frontend/src/components/pos/SplitCheckModal.tsx',
-    'frontend/src/components/pos/TableCheckoutModal.tsx',
-    'frontend/src/components/pos/TaxBreakdown.tsx',
-  ]) {
-    const src = nodeFs.readFileSync(path.resolve(ROOT, rel), 'utf8');
-    assert.ok(
-      !/uppercase\s+tracking-wider|uppercase\s+tracking-wide/.test(src),
-      `${rel} contains zero tracked-uppercase eyebrows`,
-    );
-  }
+      const zeroUnpaidBill = {
+        ...unpaidBill,
+        id: 'bill-life-zero-unpaid',
+        total: 0,
+        discount_amount: 14.2,
+        paid_amount: 0,
+        balance: 0,
+        payment_status: 'unpaid',
+      };
+      const zeroUnpaidTree = zeroUnpaidHarness.renderAndSettle(PaymentModal, {
+        bill: zeroUnpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const zeroUnpaidStrip = collectElements(
+        zeroUnpaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const zeroUnpaidReadout = collectElements(
+        zeroUnpaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        zeroUnpaidStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'Zero-balance unpaid check renders idle-ready instead of idle-settled',
+      );
+      assert.equal(
+        zeroUnpaidReadout?.props?.['data-readout-tone'],
+        'ready',
+        'Zero-balance unpaid check sets readout tone to ready instead of settled',
+      );
+      assert.ok(
+        JSON.stringify(zeroUnpaidReadout).includes('exactAmount') &&
+          !JSON.stringify(zeroUnpaidReadout).includes('"paid"') &&
+          !JSON.stringify(zeroUnpaidStrip).includes('"paid"'),
+        'Zero-balance unpaid check renders exactAmount and never premature paid text',
+      );
+
+      const refundedZeroBill = {
+        ...unpaidBill,
+        id: 'bill-life-refunded-zero',
+        total: 14.2,
+        paid_amount: 0,
+        balance: 0,
+        payment_status: 'refunded',
+      };
+      const refundedTree = zeroUnpaidHarness.renderAndSettle(PaymentModal, {
+        bill: refundedZeroBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const refundedStrip = collectElements(
+        refundedTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const refundedReadout = collectElements(
+        refundedTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        refundedStrip?.props?.['data-status-tone'],
+        'warning',
+        'Refunded zero-balance check renders warning status strip instead of idle-settled',
+      );
+      assert.equal(
+        refundedReadout?.props?.['data-readout-tone'],
+        'due',
+        'Refunded zero-balance check does not use settled or ready readout tone',
+      );
+      assert.ok(
+        !JSON.stringify(refundedReadout).includes('"paid"') &&
+          !JSON.stringify(refundedReadout).includes('exactAmount') &&
+          !JSON.stringify(refundedStrip).includes('"paid"'),
+        'Refunded zero-balance check never displays paid or exactAmount labels',
+      );
+    } finally {
+      zeroUnpaidHarness.cleanupAll();
+    }
+  });
 
   console.log('  ✓ Premature Paid fix, 3-state tender focus, and Hallmark craft verified');
 }

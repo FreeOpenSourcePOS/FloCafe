@@ -6,7 +6,10 @@
 import { resolveCurrencyPrefix } from '../main/printers/formatting-helpers';
 import { getCurrencySymbol, COUNTRIES } from '../main/countries';
 import { listSupportedCurrencyCodes } from '../shared/currencies';
-import { GENERIC_THERMAL_CAPABILITIES, LATIN_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  LATIN_THERMAL_CAPABILITIES,
+} from '../shared/print/thermal-capabilities';
 import {
   normalizeCurrencyToAscii,
   resolveAsciiCurrencyFallback,
@@ -66,7 +69,11 @@ assertOrThrow(
   'unknown symbol falls back to ISO code',
 );
 assertEqualOrThrow(normalizeCurrencyToAscii('сом.'), 'TJS', 'Tajikistani somoni Cyrillic symbol');
-assertEqualOrThrow(normalizeCurrencyToAscii('100 сом.'), '100 TJS', 'Tajikistani somoni price line');
+assertEqualOrThrow(
+  normalizeCurrencyToAscii('100 сом.'),
+  '100 TJS',
+  'Tajikistani somoni price line',
+);
 assertEqualOrThrow(normalizeCurrencyToAscii('Íkr'), 'ISK', 'Icelandic krona Belarusian symbol');
 assertEqualOrThrow(normalizeCurrencyToAscii('грн.'), 'UAH', 'Ukrainian hryvnia Cyrillic symbol');
 assertEqualOrThrow(

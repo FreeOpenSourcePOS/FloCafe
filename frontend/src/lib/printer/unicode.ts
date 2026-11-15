@@ -13,7 +13,10 @@ export {
   stripCurrencyTokens,
 } from '@print/currency';
 
-export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
+export function normalizeThermalText(
+  text: string,
+  capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES,
+): string {
   return normalizeThermalTextByCapabilities(text, capabilities);
 }
 

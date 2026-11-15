@@ -2228,9 +2228,7 @@ export default function PaymentModal({
           },
         ]
       : []),
-    ...(orderTypeKey
-      ? [{ key: 'type', label: t(orderTypeKey), variant: 'brand' as const }]
-      : []),
+    ...(orderTypeKey ? [{ key: 'type', label: t(orderTypeKey), variant: 'brand' as const }] : []),
     ...(headerTableName
       ? [
           {
@@ -2490,8 +2488,16 @@ export default function PaymentModal({
                       </button>
                     )}
                   </div>
-                  <div className="relative">
-                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-brand dark:text-indigo-300">
+                  <div
+                    className={`flex min-h-11 items-center rounded-xl border bg-card pe-3 transition-colors ${
+                      processing || attemptLocked || justPaid ? 'cursor-not-allowed opacity-60' : ''
+                    } ${
+                      amountTarget?.kind === 'discount'
+                        ? 'border-brand ring-2 ring-brand/20'
+                        : 'border-border focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 dark:border-white/10'
+                    }`}
+                  >
+                    <span className="shrink-0 ps-3 pe-2 text-sm font-semibold text-brand dark:text-indigo-300">
                       {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                     </span>
                     <input
@@ -2507,11 +2513,7 @@ export default function PaymentModal({
                       }
                       step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                       inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                      className={`min-h-11 w-full rounded-xl border bg-card pe-3 ps-9 py-2 text-base font-bold tabular-nums text-foreground outline-none transition-colors ${
-                        amountTarget?.kind === 'discount'
-                          ? 'border-brand ring-2 ring-brand/20'
-                          : 'border-border focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10'
-                      }`}
+                      className="min-w-0 flex-1 bg-transparent py-2 text-base font-bold tabular-nums text-foreground outline-none disabled:cursor-not-allowed"
                     />
                   </div>
                   <input
@@ -2859,9 +2861,7 @@ export default function PaymentModal({
             {/* [2A] Hero Balance Header */}
             <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="min-w-0">
-                <span className="text-xs font-semibold text-muted-foreground">
-                  {t('totalDue')}
-                </span>
+                <span className="text-xs font-semibold text-muted-foreground">{t('totalDue')}</span>
                 {cartCustomer && (
                   <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-medium text-foreground">
                     <User size={12} className="shrink-0 text-brand dark:text-indigo-300" />
@@ -2950,21 +2950,25 @@ export default function PaymentModal({
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses({
-                      isActive: true,
-                      isMissingRequired: Boolean(
-                        (parseFloat(cardPayment.amount) || 0) > 0 &&
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses(
+                      {
+                        isActive: true,
+                        isMissingRequired: Boolean(
+                          (parseFloat(cardPayment.amount) || 0) > 0 &&
                           !cardPayment.transaction_id?.trim(),
-                      ),
-                    })}`}
+                        ),
+                      },
+                    )}`}
                   />
                 ) : (
                   <div
                     aria-hidden="true"
-                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses({
-                      isActive: false,
-                      isMissingRequired: false,
-                    })}`}
+                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses(
+                      {
+                        isActive: false,
+                        isMissingRequired: false,
+                      },
+                    )}`}
                   >
                     <span className="truncate">{t('cardTransactionIdLabel')}</span>
                   </div>
@@ -2979,7 +2983,8 @@ export default function PaymentModal({
                   {payments.map((payment, idx) => {
                     if (payment.payment_method_id === undefined) return null;
                     const label = tenderLabel(payment);
-                    const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
+                    const isFocused =
+                      amountTarget?.kind === 'payment' && amountTarget.index === idx;
                     const isAppliedShare = appliedEqualShare?.index === idx;
                     const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
                     const rowDisabled = processing || attemptLocked || justPaid;
@@ -3036,89 +3041,90 @@ export default function PaymentModal({
                 </div>
               )}
 
-              {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (() => {
-                const walletDisabled =
-                  processing ||
-                  attemptLocked ||
-                  justPaid ||
-                  !walletBalance ||
-                  walletBalance <= 0;
-                const walletClasses = getTenderRowClasses({
-                  isFocused: amountTarget?.kind === 'wallet',
-                  isAllocated: walletAmt > 0,
-                  disabled: walletDisabled,
-                });
-                return (
-                  <div className="flex h-[74px] shrink-0 flex-col justify-between">
-                    <div className="flex min-h-12">
-                      <button
-                        type="button"
-                        disabled={walletDisabled}
-                        onClick={() => {
-                          if (attemptLocked || justPaid || !walletBalance) return;
-                          const dueMinor = remainingWalletMinor();
-                          const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
-                          setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
-                          setAutoFilledSingleIndex(null);
-                          setAmountTarget({ kind: 'wallet' });
-                        }}
-                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
-                      >
-                        <Wallet size={15} />
-                        <span className="truncate">{t('loyaltyWallet')}</span>
-                      </button>
-                      <div
-                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
-                      >
-                        <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
-                          {inputCurrencyLabel}
-                        </span>
-                        <input
-                          type="number"
-                          value={walletAmount}
+              {loyaltySettings?.loyalty_enabled &&
+                effectiveCustomerId &&
+                (() => {
+                  const walletDisabled =
+                    processing || attemptLocked || justPaid || !walletBalance || walletBalance <= 0;
+                  const walletClasses = getTenderRowClasses({
+                    isFocused: amountTarget?.kind === 'wallet',
+                    isAllocated: walletAmt > 0,
+                    disabled: walletDisabled,
+                  });
+                  return (
+                    <div className="flex h-[74px] shrink-0 flex-col justify-between">
+                      <div className="flex min-h-12">
+                        <button
+                          type="button"
                           disabled={walletDisabled}
-                          onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                          onChange={(e) => {
-                            if (attemptLocked || justPaid) return;
-                            const v = e.target.value;
-                            const maxWalletCurrencyStored = Math.floor(
-                              (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
-                            );
-                            const maxDisplay = toDisplayUnit(
-                              Math.min(maxWalletCurrencyStored, remaining),
-                            );
-                            const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
-                            setWalletAmount(clamped);
+                          onClick={() => {
+                            if (attemptLocked || justPaid || !walletBalance) return;
+                            const dueMinor = remainingWalletMinor();
+                            const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+                            setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
                             setAutoFilledSingleIndex(null);
-                            setPaymentsTouched(true);
+                            setAmountTarget({ kind: 'wallet' });
                           }}
-                          placeholder="0.00"
-                          inputMode="decimal"
-                          className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
-                          step={inputCurrencyStep}
-                          min="0"
-                          max={toDisplayUnit(
-                            Math.min(
-                              Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
-                              remaining,
-                            ),
-                          )}
-                        />
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
+                        >
+                          <Wallet size={15} />
+                          <span className="truncate">{t('loyaltyWallet')}</span>
+                        </button>
+                        <div
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
+                        >
+                          <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
+                            {inputCurrencyLabel}
+                          </span>
+                          <input
+                            type="number"
+                            value={walletAmount}
+                            disabled={walletDisabled}
+                            onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                            onChange={(e) => {
+                              if (attemptLocked || justPaid) return;
+                              const v = e.target.value;
+                              const maxWalletCurrencyStored = Math.floor(
+                                (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
+                              );
+                              const maxDisplay = toDisplayUnit(
+                                Math.min(maxWalletCurrencyStored, remaining),
+                              );
+                              const clamped =
+                                parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
+                              setWalletAmount(clamped);
+                              setAutoFilledSingleIndex(null);
+                              setPaymentsTouched(true);
+                            }}
+                            placeholder="0.00"
+                            inputMode="decimal"
+                            className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
+                            step={inputCurrencyStep}
+                            min="0"
+                            max={toDisplayUnit(
+                              Math.min(
+                                Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
+                                remaining,
+                              ),
+                            )}
+                          />
+                        </div>
                       </div>
+                      <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
+                        {walletBalance === null
+                          ? '…'
+                          : walletBalance > 0
+                            ? t('pointsApproxValue', {
+                                count: fmtNum(walletBalance),
+                                value: currencyFmt(
+                                  Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE),
+                                ),
+                              })
+                            : t('noBalance')}
+                      </p>
                     </div>
-                    <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
-                      {walletBalance === null
-                        ? '…'
-                        : walletBalance > 0
-                          ? t('pointsApproxValue', {
-                              count: fmtNum(walletBalance),
-                              value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                            })
-                          : t('noBalance')}
-                    </p>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
               {/* Unified Split section (contained internally so even 20 Equal Share rows never grow Column 2) */}
               {!justPaid && (remainingMinor > 0 || hasSplitChecksPanel) && (

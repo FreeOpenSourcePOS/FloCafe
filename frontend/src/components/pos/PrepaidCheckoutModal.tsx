@@ -1244,8 +1244,16 @@ export default function PrepaidCheckoutModal({
                       </button>
                     )}
                   </div>
-                  <div className="relative">
-                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-brand dark:text-indigo-300">
+                  <div
+                    className={`flex min-h-11 items-center rounded-xl border pe-3 transition-colors ${
+                      locked || discountCommitted ? 'cursor-not-allowed bg-muted' : 'bg-card'
+                    } ${
+                      amountTarget?.kind === 'discount'
+                        ? 'border-brand ring-2 ring-brand/20'
+                        : 'border-border focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 dark:border-white/10'
+                    }`}
+                  >
+                    <span className="shrink-0 ps-3 pe-2 text-sm font-semibold text-brand dark:text-indigo-300">
                       {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                     </span>
                     <input
@@ -1269,11 +1277,7 @@ export default function PrepaidCheckoutModal({
                       }
                       step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                       inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                      className={`min-h-11 w-full rounded-xl border bg-card pe-3 ps-9 py-2 text-base font-bold tabular-nums text-foreground outline-none transition-colors disabled:cursor-not-allowed disabled:bg-muted ${
-                        amountTarget?.kind === 'discount'
-                          ? 'border-brand ring-2 ring-brand/20'
-                          : 'border-border focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10'
-                      }`}
+                      className="min-w-0 flex-1 bg-transparent py-2 text-base font-bold tabular-nums text-foreground outline-none disabled:cursor-not-allowed"
                     />
                   </div>
                   <input
@@ -1667,21 +1671,25 @@ export default function PrepaidCheckoutModal({
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses({
-                      isActive: true,
-                      isMissingRequired: Boolean(
-                        (parseFloat(cardPayment.amount) || 0) > 0 &&
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all ${getCardReferenceSlotClasses(
+                      {
+                        isActive: true,
+                        isMissingRequired: Boolean(
+                          (parseFloat(cardPayment.amount) || 0) > 0 &&
                           !cardPayment.transaction_id?.trim(),
-                      ),
-                    })}`}
+                        ),
+                      },
+                    )}`}
                   />
                 ) : (
                   <div
                     aria-hidden="true"
-                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses({
-                      isActive: false,
-                      isMissingRequired: false,
-                    })}`}
+                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses(
+                      {
+                        isActive: false,
+                        isMissingRequired: false,
+                      },
+                    )}`}
                   >
                     <span className="truncate">{t('cardTransactionIdLabel')}</span>
                   </div>
@@ -1699,7 +1707,8 @@ export default function PrepaidCheckoutModal({
                       (method) => method.id === payment.payment_method_id,
                     );
                     const label = custom?.name || tCommon('unknown');
-                    const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
+                    const isFocused =
+                      amountTarget?.kind === 'payment' && amountTarget.index === idx;
                     const isAllocated = (parseFloat(payment.amount) || 0) > 0;
                     const rowClasses = getTenderRowClasses({
                       isFocused,
@@ -1744,83 +1753,89 @@ export default function PrepaidCheckoutModal({
                 </div>
               )}
 
-              {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (() => {
-                const walletDisabled = locked || !walletBalance || walletBalance <= 0;
-                const walletClasses = getTenderRowClasses({
-                  isFocused: amountTarget?.kind === 'wallet',
-                  isAllocated: walletAmt > 0,
-                  disabled: walletDisabled,
-                });
-                return (
-                  <div className="flex h-[74px] shrink-0 flex-col justify-between">
-                    <div className="flex min-h-12">
-                      <button
-                        type="button"
-                        disabled={walletDisabled}
-                        onClick={() => {
-                          if (!walletBalance) return;
-                          const dueMinor = remainingWalletMinor();
-                          const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
-                          setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
-                          setAutoFilledSingleIndex(null);
-                          setAmountTarget({ kind: 'wallet' });
-                        }}
-                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
-                      >
-                        <Wallet size={15} />
-                        <span className="truncate">{t('loyaltyWallet')}</span>
-                      </button>
-                      <div
-                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
-                      >
-                        <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
-                          {inputCurrencyLabel}
-                        </span>
-                        <input
-                          type="number"
-                          value={walletAmount}
-                          onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const maxWalletCurrencyStored = Math.floor(
-                              (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
-                            );
-                            const maxDisplay = toDisplayUnit(
-                              Math.min(maxWalletCurrencyStored, remaining),
-                            );
-                            const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
-                            setWalletAmount(clamped);
-                            setAutoFilledSingleIndex(null);
-                            setPaymentsTouched(true);
-                          }}
-                          placeholder="0.00"
+              {loyaltySettings?.loyalty_enabled &&
+                customer &&
+                !walletLoadFailed &&
+                (() => {
+                  const walletDisabled = locked || !walletBalance || walletBalance <= 0;
+                  const walletClasses = getTenderRowClasses({
+                    isFocused: amountTarget?.kind === 'wallet',
+                    isAllocated: walletAmt > 0,
+                    disabled: walletDisabled,
+                  });
+                  return (
+                    <div className="flex h-[74px] shrink-0 flex-col justify-between">
+                      <div className="flex min-h-12">
+                        <button
+                          type="button"
                           disabled={walletDisabled}
-                          inputMode="decimal"
-                          className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
-                          step={inputCurrencyStep}
-                          min="0"
-                          max={toDisplayUnit(
-                            Math.min(
-                              Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
-                              remaining,
-                            ),
-                          )}
-                        />
+                          onClick={() => {
+                            if (!walletBalance) return;
+                            const dueMinor = remainingWalletMinor();
+                            const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+                            setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
+                            setAutoFilledSingleIndex(null);
+                            setAmountTarget({ kind: 'wallet' });
+                          }}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-all sm:w-36 ${walletClasses.buttonClass}`}
+                        >
+                          <Wallet size={15} />
+                          <span className="truncate">{t('loyaltyWallet')}</span>
+                        </button>
+                        <div
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-all ${walletClasses.inputBoxClass}`}
+                        >
+                          <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
+                            {inputCurrencyLabel}
+                          </span>
+                          <input
+                            type="number"
+                            value={walletAmount}
+                            onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const maxWalletCurrencyStored = Math.floor(
+                                (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
+                              );
+                              const maxDisplay = toDisplayUnit(
+                                Math.min(maxWalletCurrencyStored, remaining),
+                              );
+                              const clamped =
+                                parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
+                              setWalletAmount(clamped);
+                              setAutoFilledSingleIndex(null);
+                              setPaymentsTouched(true);
+                            }}
+                            placeholder="0.00"
+                            disabled={walletDisabled}
+                            inputMode="decimal"
+                            className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
+                            step={inputCurrencyStep}
+                            min="0"
+                            max={toDisplayUnit(
+                              Math.min(
+                                Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
+                                remaining,
+                              ),
+                            )}
+                          />
+                        </div>
                       </div>
+                      <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
+                        {walletBalance === null
+                          ? '…'
+                          : walletBalance > 0
+                            ? t('pointsApproxValue', {
+                                count: fmtNum(walletBalance),
+                                value: currencyFmt(
+                                  Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE),
+                                ),
+                              })
+                            : t('noBalance')}
+                      </p>
                     </div>
-                    <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
-                      {walletBalance === null
-                        ? '…'
-                        : walletBalance > 0
-                          ? t('pointsApproxValue', {
-                              count: fmtNum(walletBalance),
-                              value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                            })
-                          : t('noBalance')}
-                    </p>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
             </div>
           </fieldset>
 

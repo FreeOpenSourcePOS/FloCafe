@@ -621,9 +621,7 @@ export function SplitCheckModal({
                       <tr
                         key={item.id}
                         className={`border-t border-border/80 transition-colors dark:border-white/10 ${
-                          selectedQty > 0
-                            ? 'bg-brand-light dark:bg-[var(--color-brand-light)]'
-                            : ''
+                          selectedQty > 0 ? 'bg-brand-light dark:bg-[var(--color-brand-light)]' : ''
                         }`}
                       >
                         <td

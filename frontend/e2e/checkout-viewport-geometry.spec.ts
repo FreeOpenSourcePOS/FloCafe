@@ -889,7 +889,8 @@ test('Principal UX E2E: 1280x800 Equal Share unclipped, 1-tap tender switch, sta
     tables_required: true,
     card_transaction_id_required: false,
   });
-  let createdTableId: number | null = null;
+  let createdTableId: string | null = null;
+  let createdOrderId: number | null = null;
 
   try {
     await page.request.put(`${BASE}/api/settings/split_checks_enabled`, {
@@ -923,11 +924,11 @@ test('Principal UX E2E: 1280x800 Equal Share unclipped, 1-tap tender switch, sta
     const uniqueTableLabel = `UX${Date.now().toString().slice(-4)}`;
     const createdTblRes = await page.request.post(`${BASE}/api/tables`, {
       headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
-      data: { number: uniqueTableLabel, name: uniqueTableLabel, capacity: 4 },
+      data: { number: uniqueTableLabel, name: uniqueTableLabel, capacity: 4, floor: 'Ground' },
     });
     expect(createdTblRes.ok()).toBeTruthy();
     const createdTable = (await createdTblRes.json()).table as {
-      id: number;
+      id: string;
       number?: string;
       name?: string;
     };
@@ -959,6 +960,7 @@ test('Principal UX E2E: 1280x800 Equal Share unclipped, 1-tap tender switch, sta
     });
     expect(dineInRes.ok()).toBeTruthy();
     const { order: dineInOrder } = await dineInRes.json();
+    createdOrderId = dineInOrder.id;
 
     // 1. Stacked-modal Escape on /pos: TableCheckoutModal -> SplitCheckModal -> 1st Escape -> 2nd Escape
     await page.goto(`${BASE}/pos`);
@@ -1087,6 +1089,14 @@ test('Principal UX E2E: 1280x800 Equal Share unclipped, 1-tap tender switch, sta
     await page.keyboard.press('Enter');
     await expect(prepaidModal).toBeHidden({ timeout: 5000 });
   } finally {
+    if (createdOrderId !== null) {
+      await page.request
+        .patch(`${BASE}/api/orders/${createdOrderId}/status`, {
+          headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+          data: { status: 'cancelled', reason: 'E2E cleanup' },
+        })
+        .catch(() => {});
+    }
     if (createdTableId !== null) {
       await page.request
         .post(`${BASE}/api/tables/${createdTableId}/deactivate`, {

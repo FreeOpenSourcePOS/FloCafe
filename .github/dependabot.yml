@@ -14,9 +14,17 @@ updates:
     commit-message:
       prefix: "chore(deps):"
     groups:
+      oxc-tooling:
+        group-by: "dependency-name"
+        patterns:
+          - "oxfmt"
+          - "oxlint"
       minor-and-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - "oxfmt"
+          - "oxlint"
         update-types:
           - "minor"
           - "patch"

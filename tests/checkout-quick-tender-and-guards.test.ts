@@ -433,12 +433,19 @@ function installCheckoutComponentMocks(
     taxPreview?: (args: any) => any;
     apiGet?: (url: string) => Promise<any>;
     apiPost?: (url: string, body: any) => Promise<any>;
-    apiPatch?: (url: string, body: any) => Promise<any>;
+    apiPatch?: (url: string, body: any, config?: any) => Promise<any>;
+    operationReference?: string;
     charges?: any[];
     chargesBreakdown?: any[];
     optedInChargeIds?: Set<string>;
     onToggleWaiveCharge?: (id: string) => void;
     onToggleOptedInCharge?: (id: string) => void;
+    managerApprovers?: {
+      approvers: Array<{ id: string | number; name: string; role: string; has_pin?: boolean }>;
+      selectedApproverId: string | null;
+      loading?: boolean;
+      loadFailed?: boolean;
+    };
   } = {},
 ) {
   const Icon = () => null;
@@ -588,10 +595,10 @@ function installCheckoutComponentMocks(
     if (request === '@/hooks/useManagerApprovers') {
       return {
         useManagerApprovers: () => ({
-          approvers: [],
-          selectedApproverId: null,
-          loading: false,
-          loadFailed: false,
+          approvers: overrides.managerApprovers?.approvers ?? [],
+          selectedApproverId: overrides.managerApprovers?.selectedApproverId ?? null,
+          loading: overrides.managerApprovers?.loading ?? false,
+          loadFailed: overrides.managerApprovers?.loadFailed ?? false,
         }),
       };
     }
@@ -653,15 +660,15 @@ function installCheckoutComponentMocks(
         },
         post: async (url: string, body: any) =>
           overrides.apiPost ? overrides.apiPost(url, body) : { data: {} },
-        patch: async (url: string, body: any) =>
-          overrides.apiPatch ? overrides.apiPatch(url, body) : { data: {} },
+        patch: async (url: string, body: any, config?: any) =>
+          overrides.apiPatch ? overrides.apiPatch(url, body, config) : { data: {} },
         defaults: { headers: { common: {} } },
       };
       return {
         __esModule: true,
         default: apiObj,
         captureClientOperationFailure: async () => {},
-        createOperationReference: () => 'op-ref-1',
+        createOperationReference: () => overrides.operationReference ?? 'op-ref-1',
         operationHeaders: (id: string) => ({ 'X-Operation-Id': id }),
       };
     }
@@ -5085,6 +5092,10 @@ async function testCol1PanelHeaderBodyConsistency() {
     try {
       const currentBill: any = makeBill('bill-col1-ko', 20);
       installCheckoutComponentMocks(harness, {
+        managerApprovers: {
+          approvers: [{ id: 'mgr-1', name: 'Manager', role: 'manager', has_pin: true }],
+          selectedApproverId: 'mgr-1',
+        },
         apiGet: async (url: string) => {
           if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
           if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
@@ -5096,7 +5107,7 @@ async function testCol1PanelHeaderBodyConsistency() {
           return { data: {} };
         },
         apiPost: async (url: string) => {
-          if (String(url).endsWith('/payment')) {
+          if (String(url).endsWith('/payment') || String(url).endsWith('/payments')) {
             return {
               data: {
                 bill: {
@@ -5166,6 +5177,226 @@ async function testCol1PanelHeaderBodyConsistency() {
   console.log('  ✓ Column 1 panel header/body/dismiss consistency verified');
 }
 
+async function testDiscountPinErrorAndStatusStripRecovery() {
+  console.log('\n--- 13. Discount PIN Structured Error, Stale Banner Clear & Status Strip Alignment ---');
+
+  // 13a. CheckoutPaymentStation must align overflowing status strip alerts from the top (no items-center clipping)
+  await withAliases(async () => {
+    const stationPath = path.resolve(ROOT, 'frontend/src/components/pos/CheckoutPaymentStation.tsx');
+    delete require.cache[stationPath];
+    const harness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(harness);
+      const { CheckoutPaymentStation } = require(stationPath);
+      const alertMarkup = renderToStaticMarkup(
+        harness.hooksReact.createElement(
+          CheckoutPaymentStation,
+          {
+            readout: {
+              activeLabel: 'Card',
+              amountText: '$64.20',
+              paidSummaryText: 'Payment: $64.20',
+              dueSummaryText: 'Total: $64.20',
+              statusPillText: 'Exact due',
+              statusTone: 'ready',
+            },
+            quickTenders: [],
+            keypad: harness.hooksReact.createElement('div', null, 'keypad'),
+            changeDisplay: {
+              label: 'Change Returned',
+              formattedAmount: '$0.00',
+              visible: false,
+            },
+            statusBanner: {
+              tone: 'error',
+              message: 'This transaction reference is already recorded on another bill.',
+              nextStep: 'Correct the payment details or choose another method, then try again.',
+              technicalDetails: '{"operation":"payment.create"}',
+              technicalDetailsLabel: 'Technical details',
+              closeLabel: 'Close',
+            },
+          },
+          harness.hooksReact.createElement('button', { type: 'button' }, 'Pay $64.20'),
+        ),
+      );
+      const stripSlice = alertMarkup.slice(
+        alertMarkup.indexOf('data-testid="checkout-status-strip"'),
+      );
+      const scrollBoxMatch = stripSlice.match(/<div class="([^"]*overflow-y-auto[^"]*)"/);
+      assert.ok(scrollBoxMatch, 'checkout-status-strip renders scrollable message container');
+      assert.ok(
+        !scrollBoxMatch![1].split(/\s+/).includes('items-center'),
+        'checkout-status-strip scroll container must not use items-center (which clips top of overflowing headlines)',
+      );
+      assert.ok(
+        scrollBoxMatch![1].split(/\s+/).includes('items-start'),
+        'checkout-status-strip scroll container aligns overflowing alerts at items-start',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 13b. PaymentModal discount wrong-PIN error shows kitchenDeliveryOverrideInvalid (not unknown) and clears on valid retry
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    const opRef = '22222222-3333-4444-8555-666666666666';
+    let currentBill: any = makeBill('bill-disc-pin', 100);
+    try {
+      installCheckoutComponentMocks(harness, {
+        operationReference: opRef,
+        managerApprovers: {
+          approvers: [{ id: 'mgr-1', name: 'Manager', role: 'manager', has_pin: true }],
+          selectedApproverId: 'mgr-1',
+        },
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('printers')) return { data: { printers: [] } };
+          if (String(url).includes('settings/discount')) {
+            return { data: { discount_mode: 'both', discount_requires_approval: true } };
+          }
+          if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+        apiPatch: async (url: string, body: any) => {
+          if (!String(url).includes('/discount')) return { data: {} };
+          if (body.override_pin !== '1234') {
+            throw {
+              response: {
+                status: 403,
+                data: {
+                  error: 'Invalid manager PIN',
+                  reason_code: 'discount.rejected',
+                  operation: 'order.discount',
+                  stage: 'validation',
+                  classification: 'expected_rejection',
+                  outcome: 'not_applied',
+                  correlation_id: opRef,
+                },
+              },
+            };
+          }
+          currentBill = {
+            ...currentBill,
+            discount_type: body.discount_type,
+            discount_value: body.discount_value,
+            discount_amount: 10,
+            total: 90,
+            balance: 90,
+          };
+          return { data: { order: currentBill.order } };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+          onBillUpdate: (updated: any) => {
+            currentBill = updated;
+          },
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+
+      // Open discount panel
+      const discountTabBtn = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTabBtn.props.onClick();
+      tree = renderPm();
+
+      // Enter 10% discount and wrong manager PIN
+      const discInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      discInput.props.onChange({ target: { value: '10' } });
+      tree = renderPm();
+
+      const pinInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'password',
+      )[0];
+      pinInput.props.onChange({ target: { value: '0000' } });
+      tree = renderPm();
+
+      const applyBtn = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['data-testid'] !== 'col1-tab-discount' &&
+          typeof el.props?.onClick === 'function' &&
+          JSON.stringify(el.props?.children).includes('applyDiscount'),
+      )[0];
+      assert.ok(applyBtn, 'Apply Discount submit button found');
+      await applyBtn.props.onClick();
+      tree = renderPm();
+
+      const errorStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        errorStrip?.props?.['data-status-tone'],
+        'error',
+        'Invalid discount PIN displays error status strip',
+      );
+      const errorStripText = JSON.stringify(errorStrip);
+      assert.ok(
+        errorStripText.includes('kitchenDeliveryOverrideInvalid') &&
+          !errorStripText.includes('discountOutcomeUnknown'),
+        'Invalid discount PIN reports invalid PIN instead of discountOutcomeUnknown',
+      );
+
+      // Retry with valid manager PIN
+      const retryPinInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'password',
+      )[0];
+      retryPinInput.props.onChange({ target: { value: '1234' } });
+      tree = renderPm();
+
+      const retryApplyBtn = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['data-testid'] !== 'col1-tab-discount' &&
+          typeof el.props?.onClick === 'function' &&
+          (JSON.stringify(el.props?.children).includes('applyDiscount') ||
+            JSON.stringify(el.props?.children).includes('updateDiscount')),
+      )[0];
+      assert.ok(retryApplyBtn, 'Retry Apply Discount submit button found');
+      await retryApplyBtn.props.onClick();
+      tree = renderPm();
+
+      const clearedStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.notEqual(
+        clearedStrip?.props?.['data-status-tone'],
+        'error',
+        'Successful discount retry clears stale error banner from status strip',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  console.log('  ✓ Discount PIN error, stale banner clear & status strip alignment verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -5182,6 +5413,7 @@ async function run() {
   await testPaidBillCtaDisabledAndTableCheckoutHeaderStatus();
   await testTenderInputAndZeroBalanceEnterGuards();
   await testCol1PanelHeaderBodyConsistency();
+  await testDiscountPinErrorAndStatusStripRecovery();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

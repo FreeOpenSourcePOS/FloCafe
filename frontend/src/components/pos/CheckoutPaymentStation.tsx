@@ -267,19 +267,19 @@ export function CheckoutPaymentStation({
           data-status-tone={statusBanner?.tone ?? 'none'}
           role={isAlertTone ? 'alert' : undefined}
           className={cn(
-            'flex h-[60px] min-h-[52px] flex-col justify-center gap-1 overflow-hidden rounded-xl border px-2.5 py-1.5 transition-colors sm:h-[68px] [@media(max-height:660px)]:h-12 [@media(max-height:660px)]:min-h-12 [@media(max-height:660px)]:py-1',
+            'flex h-[60px] min-h-[52px] flex-col justify-center gap-0.5 overflow-hidden rounded-xl border px-2.5 py-1 transition-colors sm:h-[68px] [@media(max-height:660px)]:h-12 [@media(max-height:660px)]:min-h-12 [@media(max-height:660px)]:py-0.5',
             bannerSurfaceClass,
           )}
         >
           {statusBanner ? (
             <>
-              <div className="flex min-h-0 flex-1 items-center justify-between gap-2 overflow-y-auto">
-                <div className="min-w-0 flex-1 text-xs leading-snug">
-                  <div className="flex items-center gap-1.5 font-semibold">
+              <div className="flex min-h-0 flex-1 items-start justify-between gap-2 overflow-y-auto">
+                <div className="my-auto min-w-0 flex-1 text-xs leading-tight">
+                  <div className="flex items-start gap-1.5 font-semibold">
                     {statusBanner.tone === 'idle-settled' ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     ) : statusBanner.tone === 'idle-ready' ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     ) : null}
                     <span className="break-words">{statusBanner.message}</span>
                   </div>
@@ -299,7 +299,7 @@ export function CheckoutPaymentStation({
                     onClick={() =>
                       setDetailsToken(detailsOpen ? null : (statusBanner.technicalDetails ?? null))
                     }
-                    className="ms-auto inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium underline-offset-2 hover:underline"
+                    className="ms-auto inline-flex items-center gap-0.5 rounded px-1.5 py-0 text-[11px] font-medium leading-tight underline-offset-2 hover:underline"
                   >
                     <span>{statusBanner.technicalDetailsLabel || 'Technical details'}</span>
                     <ChevronDown

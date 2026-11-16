@@ -1466,6 +1466,7 @@ export default function PaymentModal({
       return;
     }
     setApplyingDiscount(true);
+    setRequestFailure(null);
     const operationId = createOperationReference();
     try {
       const storedDiscountValue =
@@ -1484,6 +1485,7 @@ export default function PaymentModal({
         },
         { headers: operationHeaders(operationId) },
       );
+      setRequestFailure(null);
       toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
       setDiscountPin('');
       setDiscountApproverId(null);
@@ -1522,7 +1524,13 @@ export default function PaymentModal({
       const message = confirmedNoChange
         ? failure.displayCode
           ? displayMessages[failure.displayCode] || t('operationNotSaved')
-          : t('operationNotSaved')
+          : failure.serverError === 'Invalid manager PIN'
+            ? t('kitchenDeliveryOverrideInvalid')
+            : failure.serverError === 'Manager PIN required for discounts'
+              ? t('managerPinRequired')
+              : failure.status === 429 && failure.serverError
+                ? failure.serverError
+                : t('operationNotSaved')
         : t('discountOutcomeUnknown');
       setRequestFailure({
         message,

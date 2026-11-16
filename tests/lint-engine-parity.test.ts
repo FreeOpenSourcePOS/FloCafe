@@ -537,6 +537,49 @@ assert.strictEqual(
   rootPackage.devDependencies.oxfmt,
   'both packages must pin the same exact Oxfmt version',
 );
+assert.match(
+  rootPackage.devDependencies.oxlint,
+  /^\d+\.\d+\.\d+$/,
+  'the root package must pin an exact Oxlint version',
+);
+assert.strictEqual(
+  frontendPackage.devDependencies.oxlint,
+  rootPackage.devDependencies.oxlint,
+  'both packages must pin the same exact Oxlint version',
+);
+
+type DependabotUpdate = {
+  'package-ecosystem'?: string;
+  directory?: string;
+  directories?: string[];
+  groups?: Record<string, { patterns?: string[] }>;
+};
+const YAML = require('js-yaml') as { load: (text: string) => unknown };
+const dependabotConfig = YAML.load(readText(path.join(rootDir, '.github', 'dependabot.yml'))) as {
+  updates?: DependabotUpdate[];
+};
+const npmDependabotUpdates = (dependabotConfig.updates || []).filter(
+  (entry) => entry['package-ecosystem'] === 'npm',
+);
+assert.strictEqual(
+  npmDependabotUpdates.length,
+  1,
+  'Dependabot must configure a single npm update block so root and frontend bump in lockstep',
+);
+assert.strictEqual(
+  npmDependabotUpdates[0].directory,
+  undefined,
+  'the lockstep npm Dependabot block must use `directories` rather than a single `directory`',
+);
+assert.ok(
+  npmDependabotUpdates[0].directories?.includes('/') &&
+    npmDependabotUpdates[0].directories?.includes('/frontend'),
+  'the lockstep npm Dependabot block must cover both "/" and "/frontend"',
+);
+assert.ok(
+  npmDependabotUpdates[0].groups?.['minor-and-patch']?.patterns?.includes('*'),
+  'the lockstep npm Dependabot block must keep the minor-and-patch wildcard group',
+);
 
 const rootOxfmtVersion = runOxfmt(backendOxfmt, rootDir, ['--version']);
 const frontendOxfmtVersion = runOxfmt(frontendOxfmt, frontendDir, ['--version']);

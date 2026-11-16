@@ -22,7 +22,7 @@
     "libphonenumber-js": "^1.13.16",
     "lucide-react": "^1.72.0",
     "next": "16.4.6",
-    "posthog-js": "^1.447.15",
+    "posthog-js": "^1.448.0",
     "radix-ui": "^1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

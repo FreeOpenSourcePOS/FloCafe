@@ -604,7 +604,9 @@ const groupCoversPackage = (group: DependabotGroup, pkgName: string) =>
 
 for (const sharedTool of ['oxfmt', 'oxlint']) {
   assert.ok(
-    minorAndPatchGroup?.['exclude-patterns']?.some((pattern) => matchesPattern(pattern, sharedTool)),
+    minorAndPatchGroup?.['exclude-patterns']?.some((pattern) =>
+      matchesPattern(pattern, sharedTool),
+    ),
     `minor-and-patch must exclude ${sharedTool} for cross-directory lockstep bumps`,
   );
   const matchingGroups = Object.entries(npmGroups).filter(([, group]) =>

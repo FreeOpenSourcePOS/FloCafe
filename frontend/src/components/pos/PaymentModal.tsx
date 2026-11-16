@@ -3432,8 +3432,7 @@ export default function PaymentModal({
               {loyaltySettings?.loyalty_enabled &&
                 effectiveCustomerId &&
                 (() => {
-                  const walletDisabled =
-                    controlsDisabled || !walletBalance || walletBalance <= 0;
+                  const walletDisabled = controlsDisabled || !walletBalance || walletBalance <= 0;
                   const walletClasses = getTenderRowClasses({
                     isFocused: amountTarget?.kind === 'wallet',
                     isAllocated: walletAmt > 0,
@@ -3446,8 +3445,7 @@ export default function PaymentModal({
                           type="button"
                           disabled={walletDisabled}
                           onClick={() => {
-                            if (attemptLocked || justPaid || billReadOnly || !walletBalance)
-                              return;
+                            if (attemptLocked || justPaid || billReadOnly || !walletBalance) return;
                             const dueMinor = remainingWalletMinor();
                             const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
                             setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');

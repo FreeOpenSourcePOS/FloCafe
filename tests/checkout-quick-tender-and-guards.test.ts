@@ -4175,7 +4175,10 @@ async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
             el.props.className.includes('rounded-full') &&
             el.props.className.includes('px-2.5'),
         )[0];
-        assert.ok(headerBadge, `TableCheckoutModal header badge rendered for ${statusCase.payment_status}`);
+        assert.ok(
+          headerBadge,
+          `TableCheckoutModal header badge rendered for ${statusCase.payment_status}`,
+        );
         const badgeText = renderToStaticMarkup(headerBadge);
         assert.ok(
           badgeText.includes(statusCase.expectedText),
@@ -4464,7 +4467,11 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         },
       });
       await new Promise((r) => setTimeout(r, 10));
-      assert.equal(payCalls, 0, 'Enter in tender input stays blocked while amountTarget is discount');
+      assert.equal(
+        payCalls,
+        0,
+        'Enter in tender input stays blocked while amountTarget is discount',
+      );
       assert.equal(
         preventedWhileTargetDiscount,
         false,
@@ -4481,7 +4488,10 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
           el.props?.['data-testid'] === 'col1-tab-discount' &&
           el.props?.['aria-expanded'] === true,
       )[0];
-      assert.ok(discountTabStillOpen, 'Discount panel remains open in Col 1 after focusing tender input');
+      assert.ok(
+        discountTabStillOpen,
+        'Discount panel remains open in Col 1 after focusing tender input',
+      );
 
       const cashInputFocused = collectElements(
         tree,
@@ -4570,7 +4580,11 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         preventDefault() {},
       });
       await new Promise((r) => setTimeout(r, 10));
-      assert.equal(confirmCalls, 0, 'Prepaid tender Enter stays blocked while amountTarget is discount');
+      assert.equal(
+        confirmCalls,
+        0,
+        'Prepaid tender Enter stays blocked while amountTarget is discount',
+      );
 
       ppCashInputDiscountTarget.props.onFocus();
       tree = renderPp();
@@ -4639,7 +4653,8 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         installCheckoutComponentMocks(harness, {
           apiGet: async (url: string) => {
             if (String(url).includes('/bills/')) return { data: { bill: zeroUnpaidBill } };
-            if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
             if (String(url).includes('payment-methods')) return { data: { methods: [] } };
             if (String(url).includes('printers')) return { data: { printers: [] } };
             if (String(url).includes('settings/discount'))
@@ -4712,11 +4727,7 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         }
 
         await new Promise((r) => setTimeout(r, 15));
-        assert.equal(
-          zeroPayCalls,
-          1,
-          `Zero-balance unpaid bill submits on ${mode}`,
-        );
+        assert.equal(zeroPayCalls, 1, `Zero-balance unpaid bill submits on ${mode}`);
         assert.ok(
           lastPayUrl.endsWith('/payment'),
           `Zero-balance unpaid bill settles through /payment on ${mode}`,
@@ -4735,7 +4746,13 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
   for (const blockedScenario of [
     {
       name: 'already-paid zero-balance bill',
-      bill: { ...makeBill('bill-paid-zero-enter', 0), total: 20, balance: 0, paid_amount: 20, payment_status: 'paid' },
+      bill: {
+        ...makeBill('bill-paid-zero-enter', 0),
+        total: 20,
+        balance: 0,
+        paid_amount: 20,
+        payment_status: 'paid',
+      },
     },
     {
       name: 'cancelled zero-balance bill',
@@ -4768,7 +4785,8 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
         installCheckoutComponentMocks(harness, {
           apiGet: async (url: string) => {
             if (String(url).includes('/bills/')) return { data: { bill: blockedScenario.bill } };
-            if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
             if (String(url).includes('payment-methods')) return { data: { methods: [] } };
             if (String(url).includes('printers')) return { data: { printers: [] } };
             if (String(url).includes('settings/discount'))
@@ -4835,7 +4853,9 @@ async function testTenderInputAndZeroBalanceEnterGuards() {
     });
   }
 
-  console.log('  ✓ Tender input Enter with discount panel & zero-balance unpaid Enter guards verified');
+  console.log(
+    '  ✓ Tender input Enter with discount panel & zero-balance unpaid Enter guards verified',
+  );
 }
 
 async function testCol1PanelHeaderBodyConsistency() {
@@ -4851,7 +4871,8 @@ async function testCol1PanelHeaderBodyConsistency() {
             if (String(url).includes('settings/discount')) {
               return { data: { discount_mode: mode, discount_requires_approval: false } };
             }
-            if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
             if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
             if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
             return { data: {} };
@@ -4909,11 +4930,7 @@ async function testCol1PanelHeaderBodyConsistency() {
             'Prepaid header shows Items (not Back [Discount]) when discount_mode=none',
           );
           registeredDismiss?.();
-          assert.equal(
-            closeCount,
-            1,
-            'Escape closes modal directly when discount_mode=none',
-          );
+          assert.equal(closeCount, 1, 'Escape closes modal directly when discount_mode=none');
         } else {
           assert.ok(
             settledMarkup.includes('discountReasonPlaceholder'),
@@ -4982,7 +4999,10 @@ async function testCol1PanelHeaderBodyConsistency() {
 
       const taxBtn = collectElements(
         tree,
-        (el) => el.type === 'button' && el.props?.['aria-expanded'] !== undefined && renderToStaticMarkup(el).includes('tax'),
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('tax'),
       )[0];
       assert.ok(taxBtn, 'Tax toggle button renders in PrepaidCheckoutModal summary');
       taxBtn.props.onClick();
@@ -4999,11 +5019,7 @@ async function testCol1PanelHeaderBodyConsistency() {
         'Prepaid header agrees with Items fallback when preview becomes null',
       );
       registeredDismiss?.();
-      assert.equal(
-        closeCount,
-        1,
-        'Escape closes modal when Tax panel falls back to Items',
-      );
+      assert.equal(closeCount, 1, 'Escape closes modal when Tax panel falls back to Items');
     } finally {
       harness.cleanupAll();
     }
@@ -5168,7 +5184,11 @@ async function testCol1PanelHeaderBodyConsistency() {
         'PaymentModal header resets to Items when partial payment clears kitchenOverrideRequired',
       );
       registeredDismiss?.();
-      assert.equal(closeCount, 1, 'Escape closes PaymentModal after partial payment clears kitchen override');
+      assert.equal(
+        closeCount,
+        1,
+        'Escape closes PaymentModal after partial payment clears kitchen override',
+      );
     } finally {
       harness.cleanupAll();
     }
@@ -5178,11 +5198,16 @@ async function testCol1PanelHeaderBodyConsistency() {
 }
 
 async function testDiscountPinErrorAndStatusStripRecovery() {
-  console.log('\n--- 13. Discount PIN Structured Error, Stale Banner Clear & Status Strip Alignment ---');
+  console.log(
+    '\n--- 13. Discount PIN Structured Error, Stale Banner Clear & Status Strip Alignment ---',
+  );
 
   // 13a. CheckoutPaymentStation must align overflowing status strip alerts from the top (no items-center clipping)
   await withAliases(async () => {
-    const stationPath = path.resolve(ROOT, 'frontend/src/components/pos/CheckoutPaymentStation.tsx');
+    const stationPath = path.resolve(
+      ROOT,
+      'frontend/src/components/pos/CheckoutPaymentStation.tsx',
+    );
     delete require.cache[stationPath];
     const harness = createStatefulHarness();
     try {

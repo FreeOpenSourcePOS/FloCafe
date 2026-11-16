@@ -561,6 +561,14 @@ export default function POSPage() {
   const registerPaymentModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
     paymentModalDismissRef.current = handler;
   }, []);
+  const prepaidModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerPrepaidModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    prepaidModalDismissRef.current = handler;
+  }, []);
+  const tableCheckoutDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerTableCheckoutDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    tableCheckoutDismissRef.current = handler;
+  }, []);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -3986,13 +3994,12 @@ export default function POSPage() {
           return true;
         }
         if (showPrepaidCheckout) {
+          if (prepaidModalDismissRef.current) {
+            return prepaidModalDismissRef.current();
+          }
           if (!submitting && !prepaidRecovery) {
             closePrepaidCheckoutModal();
           }
-          return true;
-        }
-        if (checkoutTable) {
-          setCheckoutTable(null);
           return true;
         }
         if (paymentBill) {
@@ -4000,6 +4007,13 @@ export default function POSPage() {
             return paymentModalDismissRef.current();
           }
           setPaymentBill(null);
+          return true;
+        }
+        if (checkoutTable) {
+          if (tableCheckoutDismissRef.current) {
+            return tableCheckoutDismissRef.current();
+          }
+          setCheckoutTable(null);
           return true;
         }
         if (refundModalTarget) {
@@ -4075,6 +4089,22 @@ export default function POSPage() {
       cartItemCount: cart.items.length,
     },
   );
+
+  const reserveModalPrintWindow = () => {
+    const printer = usePrinterStore.getState();
+    const expectedBrowserPrint =
+      printer.printMethod === 'browser' ||
+      (printer.printMethod === 'escpos' &&
+        !printer.hardwarePrinter &&
+        !printerService.isConnected &&
+        printer.status !== 'connecting');
+    return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
+  };
+
+  const handleModalPrintBill = async (bill: Bill, reservedWindow?: Window | null) => {
+    const originContext = readLiveSupportContext();
+    await printBillForTenant(bill, true, reservedWindow, originContext);
+  };
 
   return (
     <>
@@ -4537,25 +4567,14 @@ export default function POSPage() {
           tables={tables}
           currency={currency}
           cartItemCount={cart.itemCount()}
+          onRegisterDismissHandler={registerTableCheckoutDismiss}
           onClose={() => {
             setCheckoutTable(null);
             refreshTables();
           }}
           onAddItems={handleAddItemsToOrder}
-          onPrintBill={async (bill, reservedWindow) => {
-            const originContext = readLiveSupportContext();
-            await printBillForTenant(bill, true, reservedWindow, originContext);
-          }}
-          reservePrintWindow={() => {
-            const printer = usePrinterStore.getState();
-            const expectedBrowserPrint =
-              printer.printMethod === 'browser' ||
-              (printer.printMethod === 'escpos' &&
-                !printer.hardwarePrinter &&
-                !printerService.isConnected &&
-                printer.status !== 'connecting');
-            return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
-          }}
+          onPrintBill={handleModalPrintBill}
+          reservePrintWindow={reserveModalPrintWindow}
           canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
           canReadBills={tenantCan(currentTenant, 'bills.read')}
           onPayment={(bill, overridePin) => {
@@ -4631,6 +4650,8 @@ export default function POSPage() {
           currency={currency}
           initialOverridePin={checkoutOverridePin}
           onRegisterDismissHandler={registerPaymentModalDismiss}
+          onPrintBill={handleModalPrintBill}
+          reservePrintWindow={reserveModalPrintWindow}
           onClose={() => {
             setPaymentBill(null);
             setCheckoutOverridePin(undefined);
@@ -4715,6 +4736,9 @@ export default function POSPage() {
           orderCommitted={Boolean(prepaidModalAttempt?.order || prepaidModalAttempt?.bill)}
           recovery={prepaidRecovery}
           failure={prepaidFailure}
+          onRegisterDismissHandler={registerPrepaidModalDismiss}
+          onPrintBill={handleModalPrintBill}
+          reservePrintWindow={reserveModalPrintWindow}
           onCheckRecovery={async () => {
             const originContext = readLiveSupportContext();
             try {

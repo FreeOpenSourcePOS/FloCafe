@@ -1167,7 +1167,9 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
   const orderRequests: Array<Record<string, unknown>> = [];
   const toastErrors: string[] = [];
   const printedBillIds: number[] = [];
+  const printedReservedWindows: unknown[] = [];
   const printOrderStatuses: Array<string | undefined> = [];
+  let activeTenant = { id: 't-1', country: 'US', currency: 'USD', role: 'owner' };
   let currentSearchParams = new URLSearchParams();
   let deferNextActiveFetch = false;
   let deferredActiveFetch: ((value: unknown) => void) | null = null;
@@ -1439,6 +1441,24 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
               },
             };
           }
+          if (url === '/bills/998') {
+            activeTenant = { id: 't-2', country: 'US', currency: 'USD', role: 'owner' };
+            throw new Error('Bill not found on switched tenant');
+          }
+          if (url === '/bills/997') {
+            activeTenant = { id: 't-2', country: 'US', currency: 'USD', role: 'owner' };
+            return {
+              data: {
+                bill: {
+                  id: 997,
+                  order_id: 999,
+                  total: 12,
+                  balance: 0,
+                  payment_status: 'paid',
+                },
+              },
+            };
+          }
           if (url === '/tables') {
             return {
               data: {
@@ -1471,12 +1491,12 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     '@/store/auth': {
       useAuthStore: Object.assign(
         () => ({
-          currentTenant: { id: 't-1', country: 'US', currency: 'USD', role: 'owner' },
+          currentTenant: activeTenant,
           user: { id: 'u-1', name: 'Owner' },
         }),
         {
           getState: () => ({
-            currentTenant: { id: 't-1', country: 'US', currency: 'USD', role: 'owner' },
+            currentTenant: activeTenant,
           }),
         },
       ),
@@ -1509,13 +1529,28 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       }),
     },
     '@/hooks/usePrinter': {
-      usePrinterStore: () => ({
-        printBill: async (bill: { id: number }) => {
-          printedBillIds.push(bill.id);
-          return [];
+      usePrinterStore: Object.assign(
+        () => ({
+          printBill: async (
+            bill: { id: number },
+            _tenant: unknown,
+            _opts: unknown,
+            reservedWindow?: unknown,
+          ) => {
+            printedBillIds.push(bill.id);
+            printedReservedWindows.push(reservedWindow);
+            return [];
+          },
+          printDeliverySlip: async () => [],
+        }),
+        {
+          getState: () => ({
+            printMethod: 'browser',
+            hardwarePrinter: null,
+            status: 'disconnected',
+          }),
         },
-        printDeliverySlip: async () => [],
-      }),
+      ),
       isPrintCancelledOnTenantChangeError: () => false,
     },
     '@/hooks/use-confirm': {
@@ -2061,6 +2096,123 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
         findTableSelect(tree)?.props.value,
         'tbl-42',
         'OrdersTableQuerySync applies URL table param and keeps Table select visible',
+      );
+
+      // 10. PaymentModal on /orders forwards reservePrintWindow and prints a departing split bill not yet in orders
+      tree = await flushAll(350);
+      const detailForSplit = collectElements(tree, (el) => el.type === DetailPanelStub)[0];
+      if (detailForSplit?.props?.onPayBill) {
+        await detailForSplit.props.onPayBill(order103.bills[0]);
+      } else {
+        const masterSplit2 = collectElements(tree, (el) => el.type === MasterListStub)[0];
+        masterSplit2.props.onSelect(103);
+        tree = renderPage();
+        await collectElements(tree, (el) => el.type === DetailPanelStub)[0].props.onPayBill(
+          order103.bills[0],
+        );
+      }
+      tree = renderPage();
+      const splitSourceModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(splitSourceModal, 'PaymentModal opens before split');
+      assert.equal(
+        typeof splitSourceModal.props.reservePrintWindow,
+        'function',
+        'OrdersPage passes reservePrintWindow to PaymentModal',
+      );
+
+      const departingBill = {
+        id: 999,
+        order_id: 999,
+        bill_number: 'B-999',
+        total: 12,
+        balance: 0,
+        payment_status: 'paid',
+        order: {
+          id: 999,
+          order_number: 'ORD-999',
+          status: 'completed',
+          type: 'dine_in',
+          items: [],
+        },
+      };
+      splitSourceModal.props.onSplit(departingBill);
+      tree = await flushAll(20);
+      const departingModal = collectElements(tree, (el) => el.type === PaymentModalStub)[0];
+      assert.ok(departingModal, 'PaymentModal reopens for departing split bill 999');
+
+      const fakeReservedWindow = {
+        closed: false,
+        close() {
+          this.closed = true;
+        },
+      };
+      await departingModal.props.onPrintBill(departingBill, fakeReservedWindow);
+      assert.deepEqual(
+        toastErrors,
+        [],
+        'Completion print for departing split bill does not emit billNotFound',
+      );
+      assert.equal(
+        printedBillIds[printedBillIds.length - 1],
+        999,
+        'Completion print prints departing split bill directly',
+      );
+      assert.equal(
+        printedReservedWindows[printedReservedWindows.length - 1],
+        fakeReservedWindow,
+        'Completion print forwards reservedWindow to printBill',
+      );
+
+      // 11. Tenant switch during completion print (both rejected /bills/:id with fallbackBill and resolved /bills/:id) aborts printing and closes reservedWindow
+      const printsBeforeSwitch = printedBillIds.length;
+      const switchedRejectWindow = {
+        closed: false,
+        close() {
+          this.closed = true;
+        },
+      };
+      await departingModal.props.onPrintBill({ ...departingBill, id: 998 }, switchedRejectWindow);
+      assert.equal(
+        printedBillIds.length,
+        printsBeforeSwitch,
+        'Tenant switch during rejected /bills/:id with fallbackBill skips printBill',
+      );
+      assert.equal(
+        switchedRejectWindow.closed,
+        true,
+        'Tenant switch during rejected /bills/:id closes reservedWindow',
+      );
+      assert.deepEqual(
+        toastErrors,
+        [],
+        'Tenant switch during rejected /bills/:id does not emit error toast',
+      );
+
+      activeTenant = { id: 't-1', country: 'US', currency: 'USD', role: 'owner' };
+      tree = renderPage();
+      const departingModalAfterReset = collectElements(
+        tree,
+        (el) => el.type === PaymentModalStub,
+      )[0];
+      const switchedResolveWindow = {
+        closed: false,
+        close() {
+          this.closed = true;
+        },
+      };
+      await departingModalAfterReset.props.onPrintBill(
+        { ...departingBill, id: 997 },
+        switchedResolveWindow,
+      );
+      assert.equal(
+        printedBillIds.length,
+        printsBeforeSwitch,
+        'Tenant switch during resolved /bills/:id skips printBill',
+      );
+      assert.equal(
+        switchedResolveWindow.closed,
+        true,
+        'Tenant switch during resolved /bills/:id closes reservedWindow',
       );
     } finally {
       globalThis.setInterval = originalSetInterval;

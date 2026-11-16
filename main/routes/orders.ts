@@ -4734,18 +4734,42 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
         if (!override_pin) {
-          return res
-            .status(403)
-            .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
+          return res.status(403).json({
+            ...structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Manager PIN required for discounts',
+            ),
+            requiresApproval: true,
+          });
         }
         const canonicalIp = normalizeIpForRateLimit(clientIp);
         const rateLimitKey = `pin:${canonicalIp}:discount`;
         if (isPinRateLimited(rateLimitKey)) {
-          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+          return res
+            .status(429)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                'Too many PIN attempts. Try again in 15 minutes.',
+              ),
+            );
         }
         if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
           checkPinRateLimit(rateLimitKey);
-          return res.status(403).json({ error: 'Invalid manager PIN' });
+          return res
+            .status(403)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                'Invalid manager PIN',
+              ),
+            );
         }
         const candidateUsers = explicitApproverId
           ? (db
@@ -4783,10 +4807,28 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
         });
 
         if (verifiedResult.rateLimited) {
-          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+          return res
+            .status(429)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                'Too many PIN attempts. Try again in 15 minutes.',
+              ),
+            );
         }
         if (!verifiedResult.user) {
-          return res.status(403).json({ error: 'Invalid manager PIN' });
+          return res
+            .status(403)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                'Invalid manager PIN',
+              ),
+            );
         }
         approvedByUserId = verifiedResult.user.id;
         preVerifiedOrderDiscountPinHash = verifiedResult.user.pin_hash;

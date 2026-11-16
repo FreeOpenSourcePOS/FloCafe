@@ -9,6 +9,12 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import {
+  CHECKOUT_PRIMARY_CTA_CLASS,
+  CheckoutHeaderChips,
+  CheckoutQtyBadge,
+  type CheckoutHeaderChipItem,
+} from './checkout-ui';
 
 type SplitMode = 'table' | 'guest';
 
@@ -311,55 +317,76 @@ export function SplitCheckModal({
   };
 
   const allSelected = selectedUnits > 0 && remainingUnits === 0;
+  const stepperBtnClass =
+    'size-11 min-h-11 min-w-11 rounded-lg border border-border bg-card text-foreground shadow-2xs flex items-center justify-center transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:hover:border-indigo-400/45 dark:hover:bg-[var(--color-brand-light)]';
+
+  const headerChips: CheckoutHeaderChipItem[] = [
+    { key: 'bill', label: t('billNumber', { number: bill.bill_number }) },
+    ...(bill.split_label
+      ? [{ key: 'split', label: bill.split_label, variant: 'brand' as const }]
+      : []),
+    ...(order?.order_number
+      ? [{ key: 'order', label: t('orderNumber', { number: order.order_number }) }]
+      : []),
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-0 sm:p-4">
-      <div className="bg-card flex h-[100dvh] w-full max-w-[1400px] flex-col overflow-hidden sm:h-[95dvh] sm:rounded-2xl">
-        <div className="p-5 border-b flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold">{t('splitCheck')}</h2>
-            <p className="text-sm text-muted-foreground">
-              {t('billNumber', { number: bill.bill_number })}
-              {bill.split_label ? ` · ${bill.split_label}` : ''}
-              {' · '}
+      <div className="bg-card border border-border/80 shadow-xl flex h-[100dvh] w-full max-w-[1400px] flex-col overflow-hidden sm:h-[95dvh] sm:rounded-2xl dark:border-white/10">
+        <div className="px-5 py-4 border-b border-border/80 bg-card flex items-start justify-between gap-3 dark:border-white/10">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold tracking-tight text-foreground">{t('splitCheck')}</h2>
+            <CheckoutHeaderChips chips={headerChips} className="mt-1.5" />
+            <p className="mt-1.5 text-xs text-muted-foreground">
               {mode === 'guest' ? t('selectItemsHint') : t('splitCheckHint')}
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             disabled={saving}
             aria-label={tCommon('close')}
-            className="touch-target"
+            className="touch-target shrink-0 rounded-xl border border-border/75 bg-muted/40 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 dark:border-white/10"
           >
             <X size={20} />
           </button>
         </div>
-        <div className="p-5 border-b flex flex-wrap items-center gap-2">
-          <Button
-            variant={mode === 'guest' ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-11"
-            onClick={() => setMode('guest')}
-            disabled={saving}
-          >
-            {t('splitModeSelected')}
-          </Button>
-          <Button
-            variant={mode === 'table' ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-11"
-            onClick={() => setMode('table')}
-            disabled={saving || !canSplitTable}
-          >
-            {t('splitModeAll')}
-          </Button>
+        <div className="px-5 py-3.5 border-b border-border/80 bg-muted/30 flex flex-wrap items-center gap-3 dark:border-white/10 dark:bg-muted/15">
+          <div className="inline-flex rounded-xl border border-border/80 bg-muted/60 p-1 dark:border-white/10 dark:bg-muted/35">
+            <Button
+              variant={mode === 'guest' ? 'default' : 'ghost'}
+              size="sm"
+              className={
+                mode === 'guest'
+                  ? 'min-h-11 rounded-lg bg-brand text-white shadow-xs hover:bg-brand-hover'
+                  : 'min-h-11 rounded-lg text-muted-foreground hover:text-foreground'
+              }
+              onClick={() => setMode('guest')}
+              disabled={saving}
+            >
+              {t('splitModeSelected')}
+            </Button>
+            <Button
+              variant={mode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              className={
+                mode === 'table'
+                  ? 'min-h-11 rounded-lg bg-brand text-white shadow-xs hover:bg-brand-hover'
+                  : 'min-h-11 rounded-lg text-muted-foreground hover:text-foreground'
+              }
+              onClick={() => setMode('table')}
+              disabled={saving || !canSplitTable}
+            >
+              {t('splitModeAll')}
+            </Button>
+          </div>
           {mode === 'table' ? (
             <div className="flex flex-wrap items-center gap-2 ms-auto">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="min-h-11"
+                className="min-h-11 rounded-lg bg-card dark:border-white/10"
                 onClick={distributeEvenly}
                 disabled={saving || !canSplitTable || items.length === 0}
                 data-testid="split-distribute-evenly"
@@ -367,7 +394,9 @@ export function SplitCheckModal({
                 <RotateCcw size={14} className="me-1.5" />
                 {t('distributeEvenly')}
               </Button>
-              <span className="text-sm text-muted-foreground ms-1">{t('numberOfChecks')}</span>
+              <span className="text-sm font-medium text-muted-foreground ms-1">
+                {t('numberOfChecks')}
+              </span>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -375,7 +404,7 @@ export function SplitCheckModal({
                   data-testid="split-check-count-decrement"
                   onClick={() => resize(count - 1)}
                   disabled={saving || count <= MIN_CHECKS}
-                  className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                  className={stepperBtnClass}
                 >
                   <Minus size={15} />
                 </button>
@@ -393,7 +422,7 @@ export function SplitCheckModal({
                     const parsed = Number(e.target.value);
                     if (Number.isFinite(parsed) && parsed >= MIN_CHECKS) resize(Math.trunc(parsed));
                   }}
-                  className="min-h-11 w-14 rounded-lg border bg-card px-2 py-1 text-center font-semibold tabular-nums"
+                  className="min-h-11 w-14 rounded-lg border border-border bg-card px-2 py-1 text-center font-semibold tabular-nums text-foreground shadow-2xs outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                 />
                 <button
                   type="button"
@@ -401,24 +430,34 @@ export function SplitCheckModal({
                   data-testid="split-check-count-increment"
                   onClick={() => resize(count + 1)}
                   disabled={saving || count >= maxTableChecks}
-                  className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                  className={stepperBtnClass}
                 >
                   <Plus size={15} />
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-3 ms-auto text-sm">
-              <span className="text-muted-foreground">{t('selectedQuantity')}</span>
-              <strong>{selectedUnits}</strong>
-              <span className="text-muted-foreground">{t('remainingQuantity')}</span>
-              <strong>{remainingUnits}</strong>
+            <div className="flex flex-wrap items-center gap-2.5 ms-auto text-sm tabular-nums">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
+                  selectedUnits > 0
+                    ? 'border-brand/30 bg-brand-light text-brand dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                    : 'border-border/80 bg-card text-muted-foreground dark:border-white/10'
+                }`}
+              >
+                <span>{t('selectedQuantity')}</span>
+                <strong className="font-bold">{selectedUnits}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground dark:border-white/10">
+                <span>{t('remainingQuantity')}</span>
+                <strong className="font-bold text-foreground">{remainingUnits}</strong>
+              </span>
               {selectedUnits > 0 && (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="min-h-11"
+                  className="min-h-11 rounded-lg"
                   onClick={() => setSelected({})}
                   disabled={saving}
                   data-testid="guest-split-clear"
@@ -434,7 +473,9 @@ export function SplitCheckModal({
             <table className="w-full text-sm">
               <thead>
                 <tr>
-                  <th className="text-start p-2 sticky start-0 bg-card">{t('items')}</th>
+                  <th className="text-start p-2.5 text-xs font-semibold text-muted-foreground sticky start-0 z-10 bg-card">
+                    {t('items')}
+                  </th>
                   {Array.from({ length: count }, (_, i) => (
                     <th key={i} className="p-2 min-w-36">
                       <input
@@ -447,7 +488,7 @@ export function SplitCheckModal({
                             ),
                           )
                         }
-                        className="min-h-11 w-full text-center border rounded-lg px-2 py-1 bg-card"
+                        className="min-h-11 w-full rounded-lg border border-border bg-card px-2.5 py-1 text-center font-medium text-foreground shadow-2xs outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                       />
                     </th>
                   ))}
@@ -462,17 +503,20 @@ export function SplitCheckModal({
                   );
                   const rowUnassigned = maxItemQty - rowAssigned;
                   return (
-                    <tr key={item.id} className="border-t">
-                      <td className="p-2 sticky start-0 bg-card">
-                        <div className="font-medium">{item.product_name}</div>
-                        <div className="text-xs text-muted-foreground">
+                    <tr key={item.id} className="border-t border-border/80 dark:border-white/10">
+                      <td className="p-2.5 sticky start-0 z-10 bg-card">
+                        <div className="flex items-center gap-2">
+                          <CheckoutQtyBadge>{item.quantity}</CheckoutQtyBadge>
+                          <span className="font-semibold text-foreground">{item.product_name}</span>
+                        </div>
+                        <div className="mt-0.5 ps-7 text-xs tabular-nums text-muted-foreground">
                           {item.quantity} × {fmt(Number(item.total) / item.quantity)}
                         </div>
                         {rowUnassigned > 0 && (
-                          <div className="mt-1">
+                          <div className="mt-1.5 ps-7">
                             <span
                               data-testid={`split-row-unassigned-${item.id}`}
-                              className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                              className="inline-flex items-center rounded-full border border-amber-500/35 bg-amber-500/12 px-2.5 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-300"
                             >
                               {t('remainingCount', { count: rowUnassigned })}
                             </span>
@@ -490,7 +534,7 @@ export function SplitCheckModal({
                                 data-testid={`split-cell-dec-${item.id}-${i}`}
                                 disabled={saving || cellQty <= 0}
                                 onClick={() => updateTableCell(item, i, cellQty - 1)}
-                                className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                                className={stepperBtnClass}
                               >
                                 <Minus size={15} />
                               </button>
@@ -506,7 +550,11 @@ export function SplitCheckModal({
                                 onChange={(e) =>
                                   updateTableCell(item, i, Number(e.target.value) || 0)
                                 }
-                                className="min-h-11 w-12 text-center border rounded-lg px-1 py-1 font-semibold tabular-nums bg-card"
+                                className={`min-h-11 w-12 rounded-lg border px-1 py-1 text-center font-semibold tabular-nums outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 ${
+                                  cellQty > 0
+                                    ? 'border-brand/40 bg-brand-light/35 text-brand dark:border-indigo-400/45 dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                                    : 'border-border bg-card text-foreground dark:border-white/10'
+                                }`}
                               />
                               <button
                                 type="button"
@@ -514,7 +562,7 @@ export function SplitCheckModal({
                                 data-testid={`split-cell-inc-${item.id}-${i}`}
                                 disabled={saving || cellQty >= maxItemQty}
                                 onClick={() => updateTableCell(item, i, cellQty + 1)}
-                                className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                                className={stepperBtnClass}
                               >
                                 <Plus size={15} />
                               </button>
@@ -527,10 +575,15 @@ export function SplitCheckModal({
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t font-semibold">
-                  <td className="p-2">{t('estimatedItemsTotal')}</td>
+                <tr className="border-t-2 border-border bg-card font-semibold dark:border-white/15">
+                  <td className="sticky start-0 z-10 bg-card p-3 text-foreground">
+                    {t('estimatedItemsTotal')}
+                  </td>
                   {totals.map((total, i) => (
-                    <td key={i} className="p-2 text-center tabular-nums">
+                    <td
+                      key={i}
+                      className="p-3 text-center tabular-nums text-brand dark:text-indigo-300"
+                    >
                       {fmt(total)}
                     </td>
                   ))}
@@ -546,10 +599,18 @@ export function SplitCheckModal({
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="text-start p-2 sticky start-0 bg-card">{t('items')}</th>
-                    <th className="p-2 min-w-28">{t('sourceQuantity')}</th>
-                    <th className="p-2 min-w-44">{t('selectedQuantity')}</th>
-                    <th className="p-2 min-w-28">{t('remainingQuantity')}</th>
+                    <th className="text-start p-2.5 text-xs font-semibold text-muted-foreground sticky start-0 z-10 bg-card">
+                      {t('items')}
+                    </th>
+                    <th className="p-2.5 min-w-28 text-xs font-semibold text-muted-foreground">
+                      {t('sourceQuantity')}
+                    </th>
+                    <th className="p-2.5 min-w-44 text-xs font-semibold text-muted-foreground">
+                      {t('selectedQuantity')}
+                    </th>
+                    <th className="p-2.5 min-w-28 text-xs font-semibold text-muted-foreground">
+                      {t('remainingQuantity')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -559,16 +620,31 @@ export function SplitCheckModal({
                     return (
                       <tr
                         key={item.id}
-                        className={`border-t transition-colors ${selectedQty > 0 ? 'bg-brand/5' : ''}`}
+                        className={`border-t border-border/80 transition-colors dark:border-white/10 ${
+                          selectedQty > 0 ? 'bg-brand-light dark:bg-[var(--color-brand-light)]' : ''
+                        }`}
                       >
-                        <td className="p-2 sticky start-0 bg-card">
-                          <div className="font-medium">{item.product_name}</div>
-                          <div className="text-xs text-muted-foreground">
+                        <td
+                          className={`p-2.5 sticky start-0 z-10 transition-colors ${
+                            selectedQty > 0
+                              ? 'bg-brand-light dark:bg-[var(--color-brand-light)]'
+                              : 'bg-card'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <CheckoutQtyBadge>{item.quantity}</CheckoutQtyBadge>
+                            <span className="font-semibold text-foreground">
+                              {item.product_name}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 ps-7 text-xs tabular-nums text-muted-foreground">
                             {item.quantity} × {fmt(Number(item.total) / item.quantity)}
                           </div>
                         </td>
-                        <td className="p-2 text-center tabular-nums">{item.quantity}</td>
-                        <td className="p-2">
+                        <td className="p-2.5 text-center font-medium tabular-nums">
+                          {item.quantity}
+                        </td>
+                        <td className="p-2.5">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
@@ -576,7 +652,7 @@ export function SplitCheckModal({
                               data-testid={`guest-item-dec-${item.id}`}
                               disabled={saving || selectedQty <= 0}
                               onClick={() => setQuantity(item, selectedQty - 1)}
-                              className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                              className={stepperBtnClass}
                             >
                               <Minus size={15} />
                             </button>
@@ -590,7 +666,11 @@ export function SplitCheckModal({
                               aria-label={t('selectedQuantity')}
                               value={selectedQty}
                               onChange={(e) => setQuantity(item, Number(e.target.value))}
-                              className="min-h-11 w-16 text-center border rounded-lg px-2 py-1 font-semibold tabular-nums bg-card"
+                              className={`min-h-11 w-16 rounded-lg border px-2 py-1 text-center font-semibold tabular-nums outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 ${
+                                selectedQty > 0
+                                  ? 'border-brand/40 bg-brand-light/35 text-brand dark:border-indigo-400/45 dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                                  : 'border-border bg-card text-foreground dark:border-white/10'
+                              }`}
                             />
                             <button
                               type="button"
@@ -598,13 +678,15 @@ export function SplitCheckModal({
                               data-testid={`guest-item-inc-${item.id}`}
                               disabled={saving || selectedQty >= maxItemQty}
                               onClick={() => setQuantity(item, selectedQty + 1)}
-                              className="size-11 min-h-11 min-w-11 rounded-full bg-muted flex items-center justify-center transition-colors hover:bg-muted/80 disabled:opacity-40"
+                              className={stepperBtnClass}
                             >
                               <Plus size={15} />
                             </button>
                           </div>
                         </td>
-                        <td className="p-2 text-center tabular-nums">{maxItemQty - selectedQty}</td>
+                        <td className="p-2.5 text-center font-medium tabular-nums">
+                          {maxItemQty - selectedQty}
+                        </td>
                       </tr>
                     );
                   })}
@@ -618,60 +700,67 @@ export function SplitCheckModal({
               <p className="mt-3 text-sm text-muted-foreground">{t('allItemsSelected')}</p>
             )}
             {items.length > 0 && (
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="text-sm">
-                  <span className="block text-muted-foreground mb-1">{t('leavingGuestLabel')}</span>
+                  <span className="block text-xs font-medium text-muted-foreground mb-1.5">
+                    {t('leavingGuestLabel')}
+                  </span>
                   <input
                     value={guestLabel}
                     maxLength={MAX_LABEL_LENGTH}
                     onChange={(e) => setGuestLabel(e.target.value)}
-                    className="w-full border rounded px-2 py-1"
+                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground shadow-2xs outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="block text-muted-foreground mb-1">
+                  <span className="block text-xs font-medium text-muted-foreground mb-1.5">
                     {t('remainingCheckLabel')}
                   </span>
                   <input
                     value={remainderLabel}
                     maxLength={MAX_LABEL_LENGTH}
                     onChange={(e) => setRemainderLabel(e.target.value)}
-                    className="w-full border rounded px-2 py-1"
+                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground shadow-2xs outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                   />
                 </label>
               </div>
             )}
             {items.length > 0 && (
-              <div className="mt-4 space-y-1 border-t pt-3 text-sm">
-                <div className="flex justify-between">
+              <div className="mt-4 space-y-1.5 rounded-xl border border-border bg-muted/35 p-3.5 text-sm tabular-nums dark:border-white/10 dark:bg-muted/20">
+                <div className="flex justify-between font-semibold text-foreground">
                   <span>{t('estimatedLeavingGuestTotal')}</span>
-                  <strong>{fmt(guestEstimate)}</strong>
+                  <strong className="text-brand dark:text-indigo-300">{fmt(guestEstimate)}</strong>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('remainingCheckLabel')}</span>
-                  <span>{fmt(remainingEstimate)}</span>
+                  <span className="font-medium text-foreground">{fmt(remainingEstimate)}</span>
                 </div>
-                <p className="text-xs text-muted-foreground">{t('estimateDisclaimer')}</p>
+                <p className="pt-0.5 text-xs text-muted-foreground">{t('estimateDisclaimer')}</p>
               </div>
             )}
           </div>
         )}
-        <div className="shrink-0 p-5 border-t flex justify-end gap-2">
+        <div className="shrink-0 px-5 py-4 border-t border-border/80 bg-muted/25 flex justify-end gap-2.5 dark:border-white/10 dark:bg-muted/15">
           {mode === 'table' && unassignedUnits > 0 && (
             <span
               data-testid="split-unassigned-total"
-              className="me-auto self-center text-sm text-muted-foreground"
+              className="me-auto inline-flex items-center self-center rounded-full border border-amber-500/35 bg-amber-500/12 px-3 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300"
               aria-live="polite"
             >
               {t('remainingCount', { count: unassignedUnits })}
             </span>
           )}
-          <Button variant="outline" onClick={onClose} disabled={saving} className="min-h-11">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={saving}
+            className="min-h-11 rounded-xl bg-card dark:border-white/10"
+          >
             {tCommon('cancel')}
           </Button>
           {mode === 'table' ? (
             <Button
-              className="min-h-11"
+              className={`min-h-11 rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
               data-testid="split-create-checks"
               onClick={submitAllItems}
               disabled={saving || !canSplitTable || items.length === 0 || invalidTableAllocation}
@@ -679,12 +768,16 @@ export function SplitCheckModal({
               {saving ? tCommon('saving') : t('createChecks')}
             </Button>
           ) : allSelected ? (
-            <Button onClick={onClose} disabled={saving} className="min-h-11">
+            <Button
+              onClick={onClose}
+              disabled={saving}
+              className={`min-h-11 rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+            >
               {t('payThisCheck')}
             </Button>
           ) : (
             <Button
-              className="min-h-11"
+              className={`min-h-11 rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
               onClick={submitLeavingGuest}
               disabled={saving || selectedUnits === 0 || items.length === 0}
             >

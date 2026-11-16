@@ -214,6 +214,8 @@ async function run() {
       ChevronDown: Icon,
       Banknote: Icon,
       CreditCard: Icon,
+      Tag: Icon,
+      ShieldAlert: Icon,
     },
     '@/components/ui/button': {
       Button: ({ children, variant: _variant, size: _size, ...props }: any) =>
@@ -521,7 +523,11 @@ async function run() {
       true,
       'guest + button disabled once selected reaches item.quantity (1)',
     );
-    assert.match(rendered.html, /bg-brand\/5/, 'selected row receives visual highlight');
+    assert.match(
+      rendered.html,
+      /<tr[^>]*\bbg-brand-light\b/,
+      'selected row receives visual highlight',
+    );
     const clearGuestBtn = findByTestId(rendered.tree, 'guest-split-clear');
     assert(clearGuestBtn, 'Clear button appears when selectedUnits > 0');
     clearGuestBtn.props.onClick();

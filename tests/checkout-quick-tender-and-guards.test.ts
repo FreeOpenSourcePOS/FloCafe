@@ -427,16 +427,25 @@ function installCheckoutComponentMocks(
   harness: ReturnType<typeof createStatefulHarness>,
   overrides: {
     confirmFn?: () => Promise<boolean>;
+    isConfirmOpen?: () => boolean;
     splitSavingRef?: { current: boolean };
     discount?: { type: 'amount' | 'percentage'; value: number; reason?: string } | null;
+    taxPreview?: (args: any) => any;
     apiGet?: (url: string) => Promise<any>;
     apiPost?: (url: string, body: any) => Promise<any>;
-    apiPatch?: (url: string, body: any) => Promise<any>;
+    apiPatch?: (url: string, body: any, config?: any) => Promise<any>;
+    operationReference?: string;
     charges?: any[];
     chargesBreakdown?: any[];
     optedInChargeIds?: Set<string>;
     onToggleWaiveCharge?: (id: string) => void;
     onToggleOptedInCharge?: (id: string) => void;
+    managerApprovers?: {
+      approvers: Array<{ id: string | number; name: string; role: string; has_pin?: boolean }>;
+      selectedApproverId: string | null;
+      loading?: boolean;
+      loadFailed?: boolean;
+    };
   } = {},
 ) {
   const Icon = () => null;
@@ -478,6 +487,7 @@ function installCheckoutComponentMocks(
   };
 
   for (const rel of [
+    'frontend/src/components/pos/checkout-ui.tsx',
     'frontend/src/components/pos/CheckoutPaymentStation.tsx',
     'frontend/src/components/pos/TouchNumberPad.tsx',
     'frontend/src/components/pos/TaxBreakdown.tsx',
@@ -534,6 +544,9 @@ function installCheckoutComponentMocks(
     if (request === '@/hooks/use-tax-preview') {
       return {
         useTaxPreview: (args: any) => {
+          if (overrides.taxPreview) {
+            return overrides.taxPreview(args);
+          }
           const disc = overrides.discount ?? args?.discount;
           const discountAmt =
             disc && disc.value > 0
@@ -582,10 +595,10 @@ function installCheckoutComponentMocks(
     if (request === '@/hooks/useManagerApprovers') {
       return {
         useManagerApprovers: () => ({
-          approvers: [],
-          selectedApproverId: null,
-          loading: false,
-          loadFailed: false,
+          approvers: overrides.managerApprovers?.approvers ?? [],
+          selectedApproverId: overrides.managerApprovers?.selectedApproverId ?? null,
+          loading: overrides.managerApprovers?.loading ?? false,
+          loadFailed: overrides.managerApprovers?.loadFailed ?? false,
         }),
       };
     }
@@ -594,6 +607,7 @@ function installCheckoutComponentMocks(
         useConfirm: () => ({
           confirm: overrides.confirmFn ?? (async () => true),
           ConfirmDialog: null,
+          isConfirmOpen: overrides.isConfirmOpen ? overrides.isConfirmOpen() : false,
         }),
       };
     }
@@ -646,15 +660,15 @@ function installCheckoutComponentMocks(
         },
         post: async (url: string, body: any) =>
           overrides.apiPost ? overrides.apiPost(url, body) : { data: {} },
-        patch: async (url: string, body: any) =>
-          overrides.apiPatch ? overrides.apiPatch(url, body) : { data: {} },
+        patch: async (url: string, body: any, config?: any) =>
+          overrides.apiPatch ? overrides.apiPatch(url, body, config) : { data: {} },
         defaults: { headers: { common: {} } },
       };
       return {
         __esModule: true,
         default: apiObj,
         captureClientOperationFailure: async () => {},
-        createOperationReference: () => 'op-ref-1',
+        createOperationReference: () => overrides.operationReference ?? 'op-ref-1',
         operationHeaders: (id: string) => ({ 'X-Operation-Id': id }),
       };
     }
@@ -2283,6 +2297,3131 @@ async function testReviewFixRegressions() {
   );
 }
 
+async function testVisualHierarchyAndPrematurePaidGuards() {
+  console.log('\n--- 7. Premature Paid Fix, 3-State Tender Focus & Hallmark Craft ---');
+
+  await withAliases(async () => {
+    const unpaidBill = {
+      id: 'bill-life-1',
+      bill_number: 'BILL-0099',
+      order_id: 'ord-99',
+      subtotal: 14.2,
+      discount_amount: 0,
+      discounted_subtotal: 14.2,
+      tax_amount: 0,
+      total: 14.2,
+      paid_amount: 0,
+      balance: 14.2,
+      payment_status: 'unpaid',
+      order: {
+        id: 'ord-99',
+        order_number: '99',
+        order_type: 'dine_in',
+        table_name: 'T4',
+        customer: { id: 'cust-1', name: 'Ava Chen', phone: '5550199', loyalty_points: 0 },
+        items: [{ id: 'it-1', product_name: 'Flat White', quantity: 2, subtotal: 14.2 }],
+      },
+    };
+
+    // A. PaymentModal unpaid check invariants
+    const pmHarness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(pmHarness, {});
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+
+      // Header uses structured metadata chips without dot-joined subtitle strings
+      const headerChips = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-header-chips',
+      )[0];
+      assert.ok(headerChips, 'PaymentModal renders structured checkout-header-chips');
+      assert.ok(
+        !JSON.stringify(headerChips).includes(' · '),
+        'PaymentModal header chips do not join metadata with middle dots',
+      );
+
+      // Idle ($0.00 entered): status strip is idle-due with balanceDue, CTA disabled & neutral
+      let statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-due',
+        'Unpaid PaymentModal at $0.00 uses idle-due status tone',
+      );
+      let readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.ok(
+        !JSON.stringify(readoutZone).includes('"paid"'),
+        'Unpaid PaymentModal readout does not render premature paid label at $0.00',
+      );
+
+      // Default focus is Cash (index 0) at $0.00 -> Cash row has focused brand state, Card is idle
+      const cashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      let cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      assert.ok(
+        String(cashBtn?.props?.className || '').includes('bg-brand'),
+        'Focused Cash tender button at $0.00 shows brand focus state',
+      );
+      assert.ok(
+        !String(cardBtn?.props?.className || '').includes('bg-brand '),
+        'Unfocused Card tender button at $0.00 stays in idle surface state',
+      );
+
+      // Focus Card input at $0.00 -> Card immediately shows focused brand highlight even at $0.00
+      let cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      cardInput.props.onFocus();
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      assert.ok(
+        String(cardBtn?.props?.className || '').includes('bg-brand'),
+        'Focusing Card at $0.00 highlights Card tender button immediately',
+      );
+
+      // Enter partial Cash ($5.00) while Card is $0.00 -> status stays idle-due ($9.20 remaining)
+      let cashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashInput.props.onChange({ target: { value: '5' } });
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-due',
+        'Partial tender ($5.00 of $14.20) keeps idle-due tone',
+      );
+      assert.ok(
+        JSON.stringify(statusStrip).includes('9.20'),
+        'Partial tender status strip displays remaining $9.20 balanceDue',
+      );
+
+      // Clicking Card when Cash has $5.00 auto-fills remaining $9.20 onto Card (total $14.20 === remaining $14.20)
+      // BEFORE submitting: MUST use idle-ready + exactAmount, NEVER idle-settled or paid!
+      cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      cardBtn.props.onClick();
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'Exact tender before submit uses idle-ready tone instead of premature idle-settled',
+      );
+      assert.ok(
+        !JSON.stringify(statusStrip).includes('"paid"'),
+        'Exact tender status strip never displays premature paid text before submit',
+      );
+      assert.ok(
+        JSON.stringify(readoutZone).includes('exactAmount') &&
+          !JSON.stringify(readoutZone).includes('"paid"'),
+        'Exact tender Zone 3A readout shows exactAmount pill and never premature paid',
+      );
+
+      // Active Primary Pay CTA uses bg-brand
+      const footerZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'footer',
+      )[0];
+      const payButtons = collectElements(footerZone, (el) => el.type === 'button');
+      const primaryPayBtn = payButtons[payButtons.length - 1];
+      assert.ok(
+        String(primaryPayBtn?.props?.className || '').includes('bg-brand'),
+        'Enabled Primary Pay CTA uses FloCafe bg-brand styling',
+      );
+
+      // Overpayment ($20.00 Cash, $0.00 Card -> $5.80 change) BEFORE submitting:
+      cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      cardInput.props.onChange({ target: { value: '' } });
+      const cashInputEl = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashInputEl.props.onChange({ target: { value: '20' } });
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'Cash overpayment before submit uses idle-ready tone instead of premature idle-settled',
+      );
+      assert.ok(
+        !JSON.stringify(statusStrip).includes('"paid"') &&
+          !JSON.stringify(readoutZone).includes('"paid"'),
+        'Cash overpayment never shows premature paid text in readout or status strip',
+      );
+      assert.equal(
+        readoutZone?.props?.['data-readout-tone'],
+        'change',
+        'Cash overpayment sets readout statusTone to change',
+      );
+
+      // Over-allocated non-cash tender ($0.00 Cash, $20.00 Card on $14.20 balance):
+      // MUST warn with paymentAboveBalance, set readout tone to due, hide exactAmount pill, and disable Pay CTA!
+      const cashClearEl = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashClearEl.props.onChange({ target: { value: '' } });
+      cardInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      cardInput.props.onChange({ target: { value: '20' } });
+      tree = pmHarness.renderAndSettle(PaymentModal, {
+        bill: unpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      statusStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      readoutZone = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      const overCardFooter = collectElements(
+        tree,
+        (el) => el.props?.['data-checkout-zone'] === 'footer',
+      )[0];
+      const overCardPayBtns = collectElements(overCardFooter, (el) => el.type === 'button');
+      const overCardPrimaryBtn = overCardPayBtns[overCardPayBtns.length - 1];
+      assert.equal(
+        statusStrip?.props?.['data-status-tone'],
+        'warning',
+        'Card over-allocation renders warning status strip instead of idle-ready',
+      );
+      assert.ok(
+        JSON.stringify(statusStrip).includes('paymentAboveBalance'),
+        'Card over-allocation status strip displays paymentAboveBalance',
+      );
+      assert.equal(
+        readoutZone?.props?.['data-readout-tone'],
+        'due',
+        'Card over-allocation sets readout statusTone to due (never ready)',
+      );
+      assert.ok(
+        !JSON.stringify(readoutZone).includes('exactAmount') &&
+          !JSON.stringify(readoutZone).includes('"paid"'),
+        'Card over-allocation hides exactAmount and paid pills in readout',
+      );
+      assert.equal(
+        Boolean(overCardPrimaryBtn?.props?.disabled),
+        true,
+        'Card over-allocation disables Primary Pay CTA',
+      );
+    } finally {
+      pmHarness.cleanupAll();
+    }
+
+    // B. Already-settled zero-balance check DOES show idle-settled / paid and recorded paid_amount
+    const settledHarness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(settledHarness, {});
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const zeroSettledBill = {
+        ...unpaidBill,
+        id: 'bill-life-settled',
+        total: 14.2,
+        paid_amount: 14.2,
+        balance: 0,
+        payment_status: 'paid',
+      };
+      const settledTree = settledHarness.renderAndSettle(PaymentModal, {
+        bill: zeroSettledBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const settledStrip = collectElements(
+        settledTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const settledReadout = collectElements(
+        settledTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        settledStrip?.props?.['data-status-tone'],
+        'idle-settled',
+        'Already-settled zero-balance check renders idle-settled status strip',
+      );
+      assert.ok(
+        JSON.stringify(settledReadout).includes('paid: $14.20'),
+        'Already-settled bill readout summary displays recorded bill.paid_amount ($14.20) instead of $0.00',
+      );
+    } finally {
+      settledHarness.cleanupAll();
+    }
+
+    // C. PrepaidCheckoutModal: auto-filled exact tender uses idle-ready + exactAmount, never paid!
+    const prepaidHarness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    if (!hadWindow) {
+      (globalThis as any).window = { addEventListener: () => {}, removeEventListener: () => {} };
+    }
+    try {
+      installCheckoutComponentMocks(prepaidHarness, {});
+      const prepaidPath = path.resolve(
+        ROOT,
+        'frontend/src/components/pos/PrepaidCheckoutModal.tsx',
+      );
+      delete require.cache[prepaidPath];
+      const PrepaidCheckoutModal = require(prepaidPath).default;
+      const prepaidProps = {
+        currency: 'USD',
+        onClose: () => {},
+        onConfirm: async () => {},
+        initialDiscount: null,
+      };
+      let prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      let prepaidStrip = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        prepaidStrip?.props?.['data-status-tone'],
+        'idle-due',
+        'PrepaidCheckoutModal starts at idle-due before tender is entered',
+      );
+      const prepaidCashBtn = collectElements(
+        prepaidTree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      prepaidCashBtn.props.onClick();
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidStrip = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const prepaidReadout = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        prepaidStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'PrepaidCheckoutModal with exact auto-filled tender uses idle-ready instead of idle-settled',
+      );
+      assert.ok(
+        !JSON.stringify(prepaidStrip).includes('"paid"') &&
+          !JSON.stringify(prepaidReadout).includes('"paid"'),
+        'PrepaidCheckoutModal never displays premature paid text before payment submission',
+      );
+      const prepaidChips = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-header-chips',
+      )[0];
+      assert.ok(prepaidChips, 'PrepaidCheckoutModal renders structured checkout-header-chips');
+
+      // PrepaidCheckoutModal Card over-allocation ($0.00 Cash, $99.00 Card) warns, sets readout due, and disables Confirm CTA
+      const prepaidCashInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      prepaidCashInput.props.onChange({ target: { value: '' } });
+      const prepaidCardInput = collectElements(
+        prepaidTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCard amount',
+      )[0];
+      prepaidCardInput.props.onChange({ target: { value: '99' } });
+      prepaidTree = prepaidHarness.renderAndSettle(PrepaidCheckoutModal, prepaidProps);
+      prepaidStrip = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const prepaidOverReadout = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      const prepaidFooter = collectElements(
+        prepaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'footer',
+      )[0];
+      const prepaidFooterBtns = collectElements(prepaidFooter, (el) => el.type === 'button');
+      const prepaidConfirmBtn = prepaidFooterBtns[prepaidFooterBtns.length - 1];
+      assert.equal(
+        prepaidStrip?.props?.['data-status-tone'],
+        'warning',
+        'PrepaidCheckoutModal Card over-allocation renders warning status strip',
+      );
+      assert.ok(
+        JSON.stringify(prepaidStrip).includes('paymentAboveBalance'),
+        'PrepaidCheckoutModal Card over-allocation displays paymentAboveBalance',
+      );
+      assert.equal(
+        prepaidOverReadout?.props?.['data-readout-tone'],
+        'due',
+        'PrepaidCheckoutModal Card over-allocation sets readout statusTone to due',
+      );
+      assert.ok(
+        !JSON.stringify(prepaidOverReadout).includes('exactAmount') &&
+          !JSON.stringify(prepaidOverReadout).includes('"paid"'),
+        'PrepaidCheckoutModal Card over-allocation hides exactAmount and paid pills in readout',
+      );
+      assert.equal(
+        Boolean(prepaidConfirmBtn?.props?.disabled),
+        true,
+        'PrepaidCheckoutModal Card over-allocation disables Confirm Payment CTA',
+      );
+    } finally {
+      prepaidHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+    // D. Zero-balance unpaid and refunded/terminal checks do NOT display premature settled/paid
+    const zeroUnpaidHarness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(zeroUnpaidHarness, {});
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const zeroUnpaidBill = {
+        ...unpaidBill,
+        id: 'bill-life-zero-unpaid',
+        total: 0,
+        discount_amount: 14.2,
+        paid_amount: 0,
+        balance: 0,
+        payment_status: 'unpaid',
+      };
+      const zeroUnpaidTree = zeroUnpaidHarness.renderAndSettle(PaymentModal, {
+        bill: zeroUnpaidBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const zeroUnpaidStrip = collectElements(
+        zeroUnpaidTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const zeroUnpaidReadout = collectElements(
+        zeroUnpaidTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        zeroUnpaidStrip?.props?.['data-status-tone'],
+        'idle-ready',
+        'Zero-balance unpaid check renders idle-ready instead of idle-settled',
+      );
+      assert.equal(
+        zeroUnpaidReadout?.props?.['data-readout-tone'],
+        'ready',
+        'Zero-balance unpaid check sets readout tone to ready instead of settled',
+      );
+      assert.ok(
+        JSON.stringify(zeroUnpaidReadout).includes('exactAmount') &&
+          !JSON.stringify(zeroUnpaidReadout).includes('"paid"') &&
+          !JSON.stringify(zeroUnpaidStrip).includes('"paid"'),
+        'Zero-balance unpaid check renders exactAmount and never premature paid text',
+      );
+
+      const refundedZeroBill = {
+        ...unpaidBill,
+        id: 'bill-life-refunded-zero',
+        total: 14.2,
+        paid_amount: 0,
+        balance: 0,
+        payment_status: 'refunded',
+      };
+      const refundedTree = zeroUnpaidHarness.renderAndSettle(PaymentModal, {
+        bill: refundedZeroBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      });
+      const refundedStrip = collectElements(
+        refundedTree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      const refundedReadout = collectElements(
+        refundedTree,
+        (el) => el.props?.['data-checkout-zone'] === 'readout',
+      )[0];
+      assert.equal(
+        refundedStrip?.props?.['data-status-tone'],
+        'warning',
+        'Refunded zero-balance check renders warning status strip instead of idle-settled',
+      );
+      assert.equal(
+        refundedReadout?.props?.['data-readout-tone'],
+        'due',
+        'Refunded zero-balance check does not use settled or ready readout tone',
+      );
+      assert.ok(
+        !JSON.stringify(refundedReadout).includes('"paid"') &&
+          !JSON.stringify(refundedReadout).includes('exactAmount') &&
+          !JSON.stringify(refundedStrip).includes('"paid"'),
+        'Refunded zero-balance check never displays paid or exactAmount labels',
+      );
+    } finally {
+      zeroUnpaidHarness.cleanupAll();
+    }
+  });
+
+  console.log('  ✓ Premature Paid fix, 3-state tender focus, and Hallmark craft verified');
+}
+
+async function testPrincipalUxErgonomicsAndCompletionParity() {
+  console.log(
+    '\n--- 8. Principal UX Ergonomics: 1-Tap Switch, Keyboard Flow, Discount Sync, & Completion Change ---',
+  );
+
+  await withAliases(async () => {
+    const checkoutUiPath = path.resolve(ROOT, 'frontend/src/components/pos/checkout-ui.tsx');
+    delete require.cache[checkoutUiPath];
+    const checkoutUi = require(checkoutUiPath);
+    assert.equal(
+      typeof checkoutUi.applyPhysicalCheckoutKey,
+      'function',
+      'checkout-ui exports applyPhysicalCheckoutKey for shared physical keyboard entry',
+    );
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('', '2', true), '2');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('2', '0', true), '20');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20', '.', true), '20.');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20.', '5', true), '20.5');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20.5', 'Backspace', true), '20.');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('20.', 'Delete', true), '');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('95', '9', true, 100), '100');
+    assert.equal(checkoutUi.applyPhysicalCheckoutKey('10', 'a', true), null);
+
+    // 8a: PaymentModal - 1-tap Card<->Cash switch, Discount auto-target + restore, keyboard digits/Enter/Escape, completion Change Returned + Print Receipt
+    const pmHarness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    const keyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWindow || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.delete(fn);
+      },
+    };
+
+    try {
+      const apiCalls: Array<{ method: string; url: string; body?: any }> = [];
+      installCheckoutComponentMocks(pmHarness, {
+        apiGet: async (url: string) => {
+          apiCalls.push({ method: 'GET', url });
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          if (url.startsWith('/bills/order/')) {
+            return {
+              data: {
+                bill: {
+                  ...makeBill('bill-ux-1', 27.0),
+                  subtotal: 30,
+                  discount_amount: 3,
+                  discount_type: 'percentage',
+                  discount_value: 10,
+                  total: 27,
+                  balance: 27,
+                },
+              },
+            };
+          }
+          return { data: {} };
+        },
+        apiPatch: async (url: string, body: any) => {
+          apiCalls.push({ method: 'PATCH', url, body });
+          return { data: { ok: true } };
+        },
+        apiPost: async (url: string, body: any) => {
+          apiCalls.push({ method: 'POST', url, body });
+          return {
+            data: {
+              bill: {
+                ...makeBill('bill-ux-1', 0),
+                total: 27,
+                paid_amount: 27,
+                balance: 0,
+                payment_status: 'paid',
+              },
+            },
+          };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let closeCount = 0;
+      let paidCount = 0;
+      let printedBills = 0;
+      let currentBill: any = {
+        ...makeBill('bill-ux-1', 30.0),
+        subtotal: 30,
+        total: 30,
+        balance: 30,
+      };
+      const renderPm = () =>
+        pmHarness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {
+            paidCount++;
+          },
+          onBillUpdate: (updated: any) => {
+            currentBill = updated;
+          },
+          onPrintBill: async () => {
+            printedBills++;
+          },
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+
+      // 1-tap Card auto-fills 30; switching to Cash moves full 30 to Cash and clears Card in 1 tap!
+      const findTenderBtn = (t: any, title: string) =>
+        collectElements(t, (el) => el.type === 'button' && el.props?.title === title)[0];
+      const findTenderInput = (t: any, label: string) =>
+        collectElements(
+          t,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === `${label} amount`,
+        )[0];
+
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderPm();
+      assert.equal(
+        findTenderInput(tree, 'methodCard').props.value,
+        '30',
+        'Card 1-tap auto-fills 30',
+      );
+      assert.equal(findTenderInput(tree, 'methodCash').props.value, '', 'Cash starts empty');
+
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderPm();
+      assert.equal(
+        findTenderInput(tree, 'methodCash').props.value,
+        '30',
+        '1-tap switch from auto-filled Card to Cash moves full balance to Cash',
+      );
+      assert.equal(
+        findTenderInput(tree, 'methodCard').props.value,
+        '',
+        '1-tap switch from auto-filled Card to Cash clears Card automatically',
+      );
+
+      // Select Card again, then open Discount: immediately targets discount ('5%' visible) and restores Card after applying!
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderPm();
+      assert.equal(findTenderInput(tree, 'methodCard').props.value, '30');
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTab.props.onClick();
+      tree = renderPm();
+      assert.ok(
+        renderToStaticMarkup(tree).includes('5%'),
+        'Opening Discount panel immediately activates discount quick-tender % pills without extra focus click',
+      );
+
+      // Physical keyboard digits '1', '0' populate discount while Discount target is active
+      const dispatchKey = (init: Record<string, any>) => {
+        for (const fn of keyListeners) {
+          fn({
+            key: '',
+            code: '',
+            repeat: false,
+            ctrlKey: false,
+            metaKey: false,
+            altKey: false,
+            shiftKey: false,
+            defaultPrevented: false,
+            target: null,
+            preventDefault() {
+              this.defaultPrevented = true;
+            },
+            ...init,
+          });
+        }
+      };
+      dispatchKey({ key: '1', code: 'Digit1' });
+      tree = renderPm();
+      dispatchKey({ key: '0', code: 'Digit0' });
+      tree = renderPm();
+
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        0,
+        'Enter while editing unapplied discount must not submit payment',
+      );
+
+      const applyDiscBtn = collectElements(
+        tree,
+        (el) =>
+          typeof el.props?.onClick === 'function' && String(el.props?.children) === 'applyDiscount',
+      )[0];
+      await applyDiscBtn.props.onClick();
+      tree = renderPm();
+      assert.ok(
+        !renderToStaticMarkup(tree).includes('5%'),
+        'Applying discount restores keypad target away from discount back to payment tender',
+      );
+      assert.equal(
+        findTenderInput(tree, 'methodCard').props.value,
+        '27',
+        'Auto-filled Card updates to 27 after 10% discount',
+      );
+
+      // Escape while Discount sub-panel is open backs out to Items first without closing modal
+      dispatchKey({ key: 'Escape', code: 'Escape' });
+      tree = renderPm();
+      assert.equal(
+        closeCount,
+        0,
+        'First Escape closes Discount sub-panel instead of closing modal',
+      );
+
+      // Switch to Cash and type 40 via physical keyboard (Delete -> '4' -> '0') -> Change Returned = 13
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderPm();
+      dispatchKey({ key: 'Delete', code: 'Delete' });
+      tree = renderPm();
+      assert.equal(findTenderInput(tree, 'methodCash').props.value, '');
+
+      // Uncovered Enter does NOT submit payment
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        0,
+        'Enter while check is uncovered must not submit payment',
+      );
+
+      dispatchKey({ key: '4', code: 'Digit4' });
+      tree = renderPm();
+      dispatchKey({ key: '0', code: 'Digit0' });
+      tree = renderPm();
+      assert.equal(
+        findTenderInput(tree, 'methodCash').props.value,
+        '40',
+        'Physical keyboard digits populate active Cash tender without input focus',
+      );
+
+      // Space never submits even when covered
+      dispatchKey({ key: ' ', code: 'Space' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        0,
+        'Space must never submit payment',
+      );
+
+      // Deliberate non-repeat Enter when covered submits payment!
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderPm();
+      assert.equal(
+        apiCalls.filter((c) => c.method === 'POST').length,
+        1,
+        'Deliberate Enter when covered submits payment',
+      );
+
+      // Post-payment completion screen shows settled Change Returned ($13.00) and Print Receipt CTA!
+      const changeBanner = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'settled-change-banner',
+      )[0];
+      assert.ok(
+        changeBanner,
+        'Completion screen renders settled-change-banner when cash change > 0',
+      );
+      assert.ok(
+        renderToStaticMarkup(changeBanner).includes('13.00'),
+        'Completion screen displays exact $13.00 change returned',
+      );
+
+      const printReceiptBtn = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'completion-print-receipt-btn',
+      )[0];
+      assert.ok(printReceiptBtn, 'Completion screen renders on-demand Print Receipt button');
+      await printReceiptBtn.props.onClick();
+      assert.equal(printedBills, 1, 'Clicking Print Receipt invokes onPrintBill');
+
+      // 1-keystroke Enter on completion screen dismisses via onPaid()
+      dispatchKey({ key: 'Enter', code: 'Enter' });
+      assert.equal(paidCount, 1, 'Single Enter keystroke on completion screen invokes onPaid');
+    } finally {
+      pmHarness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+
+    // 8b: PrepaidCheckoutModal parity - 1-tap switch, keyboard digits + Enter confirm, completion Change Returned + Print + 1-keystroke Enter close
+    const ppHarness = createStatefulHarness();
+    const hadWin2 = 'window' in globalThis;
+    const prevWin2 = (globalThis as any).window;
+    const ppKeyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWin2 || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') ppKeyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') ppKeyListeners.delete(fn);
+      },
+    };
+    try {
+      installCheckoutComponentMocks(ppHarness, {
+        apiGet: async (url: string) => {
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          return { data: {} };
+        },
+        taxPreview: () => ({
+          tax: {
+            subtotal: 16.5,
+            discount_amount: 0,
+            discounted_subtotal: 16.5,
+            tax_amount: 0,
+            tax_breakdown: [],
+            packaging_charge: 0,
+            charges_breakdown: [],
+            round_off: 0,
+            total: 16.5,
+          },
+          loading: false,
+        }),
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+
+      let ppClosed = 0;
+      let ppPrinted = 0;
+      let ppConfirmed = 0;
+      const renderPp = () =>
+        ppHarness.renderAndSettle(PrepaidCheckoutModal, {
+          currency: 'USD',
+          onClose: () => {
+            ppClosed++;
+          },
+          onPrintBill: async () => {
+            ppPrinted++;
+          },
+          onConfirm: async () => {
+            ppConfirmed++;
+            return {
+              bill: { id: 501, bill_number: 'B-501', total: 16.5, payment_status: 'paid' },
+              customer: null,
+              pointsEarned: 0,
+            };
+          },
+        });
+
+      let ppTree = renderPp();
+      await new Promise((r) => setTimeout(r, 10));
+      ppTree = renderPp();
+
+      const dispatchPpKey = (init: Record<string, any>) => {
+        for (const fn of ppKeyListeners) {
+          fn({
+            key: '',
+            code: '',
+            repeat: false,
+            ctrlKey: false,
+            metaKey: false,
+            altKey: false,
+            shiftKey: false,
+            defaultPrevented: false,
+            target: null,
+            preventDefault() {
+              this.defaultPrevented = true;
+            },
+            ...init,
+          });
+        }
+      };
+
+      // Physical keyboard typing '2', '0' after clicking Cash button blurs focused button so subsequent Enter confirms!
+      let focusedBtnBlurred = 0;
+      const focusedButtonTarget = {
+        tagName: 'BUTTON',
+        blur() {
+          focusedBtnBlurred++;
+        },
+      };
+      dispatchPpKey({ key: '2', code: 'Digit2', target: focusedButtonTarget });
+      assert.equal(
+        focusedBtnBlurred,
+        1,
+        'Physical digit entry blurs a focused modal button so subsequent Enter submits cleanly',
+      );
+      ppTree = renderPp();
+      dispatchPpKey({ key: '0', code: 'Digit0' });
+      ppTree = renderPp();
+
+      const ppCashInput = collectElements(
+        ppTree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.equal(ppCashInput.props.value, '20', 'Prepaid keyboard digits populate Cash input');
+
+      const ppDiscountToggle = collectElements(
+        ppTree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      assert.ok(ppDiscountToggle, 'Prepaid Discounts toggle renders');
+      ppDiscountToggle.props.onClick();
+      ppTree = renderPp();
+      dispatchPpKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal(
+        ppConfirmed,
+        0,
+        'Prepaid Enter while Discount target is active must not submit checkout early',
+      );
+      const ppDiscountToggleAfter = collectElements(
+        ppTree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discount'),
+      )[0];
+      assert.ok(ppDiscountToggleAfter, 'Prepaid Discounts toggle still renders after opening');
+      ppDiscountToggleAfter.props.onClick();
+      ppTree = renderPp();
+
+      dispatchPpKey({ key: 'Enter', code: 'Enter' });
+      await new Promise((r) => setTimeout(r, 15));
+      ppTree = renderPp();
+      assert.equal(ppConfirmed, 1, 'Prepaid Enter when covered confirms payment');
+
+      const ppChangeBanner = collectElements(
+        ppTree,
+        (el) => el.props?.['data-testid'] === 'settled-change-banner',
+      )[0];
+      assert.ok(ppChangeBanner, 'Prepaid completion screen renders settled-change-banner');
+      assert.ok(
+        renderToStaticMarkup(ppChangeBanner).includes('3.50'),
+        'Prepaid completion screen displays exact $3.50 change returned',
+      );
+
+      const ppPrintBtn = collectElements(
+        ppTree,
+        (el) => el.props?.['data-testid'] === 'completion-print-receipt-btn',
+      )[0];
+      assert.ok(ppPrintBtn, 'Prepaid completion screen renders Print Receipt button');
+      await ppPrintBtn.props.onClick();
+      assert.equal(ppPrinted, 1, 'Prepaid completion Print Receipt invokes onPrintBill');
+
+      dispatchPpKey({ key: 'Enter', code: 'Enter' });
+      assert.equal(ppClosed, 1, 'Single Enter keystroke on Prepaid completion screen closes modal');
+    } finally {
+      ppHarness.cleanupAll();
+      if (!hadWin2) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWin2;
+    }
+  });
+
+  console.log('  ✓ Principal UX ergonomics & completion parity verified');
+}
+
+async function testConfirmDialogAndCardReferenceSwitchGuards() {
+  console.log('\n--- 9. ConfirmDialog Keyboard/Escape Guards & 1-Tap Card Reference Clearing ---');
+
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    const hadWindow = 'window' in globalThis;
+    const prevWindow = (globalThis as any).window;
+    const keyListeners = new Set<(e: any) => void>();
+    (globalThis as any).window = {
+      ...(prevWindow || {}),
+      addEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.add(fn);
+      },
+      removeEventListener: (ev: string, fn: (e: any) => void) => {
+        if (ev === 'keydown') keyListeners.delete(fn);
+      },
+    };
+
+    try {
+      let confirmOpen = false;
+      let resolveConfirm: ((accepted: boolean) => void) | null = null;
+      let payCalls = 0;
+
+      installCheckoutComponentMocks(harness, {
+        isConfirmOpen: () => confirmOpen,
+        confirmFn: () =>
+          new Promise<boolean>((resolve) => {
+            confirmOpen = true;
+            resolveConfirm = (accepted) => {
+              confirmOpen = false;
+              resolve(accepted);
+            };
+          }),
+        apiGet: async (url: string) => {
+          if (url === '/settings/card_transaction_id_required') {
+            return { data: { setting: { value: 'true' } } };
+          }
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          }
+          return { data: {} };
+        },
+        apiPost: async () => {
+          payCalls++;
+          return {
+            data: {
+              bill: {
+                ...makeBill('bill-guard-1', 0),
+                total: 30,
+                paid_amount: 30,
+                balance: 0,
+                payment_status: 'paid',
+              },
+            },
+          };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      let closeCount = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+      const renderModal = (withDismissHandler: boolean) =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: { ...makeBill('bill-guard-1', 30), subtotal: 30, total: 30, balance: 30 },
+          currency: 'USD',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {},
+          ...(withDismissHandler
+            ? {
+                onRegisterDismissHandler: (fn?: () => boolean) => {
+                  registeredDismiss = fn;
+                },
+              }
+            : {}),
+        });
+
+      let tree = renderModal(true);
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderModal(true);
+
+      const findTenderBtn = (t: any, title: string) =>
+        collectElements(t, (el) => el.type === 'button' && el.props?.title === title)[0];
+      const findTenderInput = (t: any, label: string) =>
+        collectElements(
+          t,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === `${label} amount`,
+        )[0];
+
+      // 1-tap Card -> type card ref -> 1-tap Cash clears stale card ref
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderModal(true);
+      const cardRefBefore = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.ok(cardRefBefore, 'Card transaction_id input renders when Card is auto-filled');
+      cardRefBefore.props.onChange({ target: { value: 'TXN-999' } });
+      tree = renderModal(true);
+      assert.equal(
+        collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+        )[0].props.value,
+        'TXN-999',
+      );
+
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderModal(true);
+      assert.equal(findTenderInput(tree, 'methodCash').props.value, '30');
+
+      findTenderBtn(tree, 'methodCard').props.onClick();
+      tree = renderModal(true);
+      const cardRefAfter = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.equal(
+        cardRefAfter.props.value,
+        '',
+        '1-tap switch away from Card clears stale transaction_id',
+      );
+
+      // Open partial-payment ConfirmDialog via Cash = 10 -> click Pay
+      findTenderBtn(tree, 'methodCash').props.onClick();
+      tree = renderModal(true);
+      findTenderInput(tree, 'methodCash').props.onChange({ target: { value: '10' } });
+      tree = renderModal(true);
+
+      const payBtn = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.ok(payBtn, 'Pay CTA button rendered');
+      const payPromise = payBtn.props.onClick();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderModal(true);
+      assert.equal(confirmOpen, true, 'Partial payment opens ConfirmDialog');
+
+      const dispatchKey = (init: Record<string, any>) => {
+        const event = {
+          key: '',
+          code: '',
+          repeat: false,
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+          defaultPrevented: false,
+          target: { tagName: 'BUTTON', getAttribute: () => null, closest: () => null },
+          preventDefault() {
+            this.defaultPrevented = true;
+          },
+          ...init,
+        };
+        for (const fn of keyListeners) fn(event);
+        return event;
+      };
+
+      // Registered dismiss handler (POS Escape path) must return true without closing PaymentModal
+      assert.equal(
+        registeredDismiss?.(),
+        true,
+        'Registered dismiss handler swallows Escape while ConfirmDialog is open',
+      );
+      assert.equal(closeCount, 0, 'PaymentModal stays open while ConfirmDialog is open');
+
+      // Enter / Space / digit keys must not be intercepted or mutate state behind ConfirmDialog
+      const enterEvent = dispatchKey({ key: 'Enter', code: 'Enter' });
+      const spaceEvent = dispatchKey({ key: ' ', code: 'Space' });
+      const digitEvent = dispatchKey({ key: '5', code: 'Digit5' });
+      tree = renderModal(true);
+      assert.equal(
+        enterEvent.defaultPrevented,
+        false,
+        'Enter is not prevented behind ConfirmDialog',
+      );
+      assert.equal(
+        spaceEvent.defaultPrevented,
+        false,
+        'Space is not prevented behind ConfirmDialog',
+      );
+      assert.equal(
+        digitEvent.defaultPrevented,
+        false,
+        'Digit is not intercepted behind ConfirmDialog',
+      );
+      assert.equal(payCalls, 0, 'Payment is not submitted behind ConfirmDialog');
+      assert.equal(
+        findTenderInput(tree, 'methodCash').props.value,
+        '10',
+        'Cash amount is not mutated while ConfirmDialog is open',
+      );
+
+      // Standalone Escape (without onRegisterDismissHandler) also stays open while ConfirmDialog is open
+      tree = renderModal(false);
+      dispatchKey({ key: 'Escape', code: 'Escape' });
+      assert.equal(
+        closeCount,
+        0,
+        'Standalone Escape does not close PaymentModal behind ConfirmDialog',
+      );
+
+      // Cancel ConfirmDialog, then Escape closes PaymentModal normally
+      resolveConfirm?.(false);
+      await payPromise;
+      tree = renderModal(false);
+      dispatchKey({ key: 'Escape', code: 'Escape' });
+      assert.equal(closeCount, 1, 'Escape closes PaymentModal once ConfirmDialog closes');
+    } finally {
+      harness.cleanupAll();
+      if (!hadWindow) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+    }
+  });
+
+  console.log('  ✓ ConfirmDialog keyboard/Escape guards & 1-tap card ref clearing verified');
+}
+
+async function testGreptileReviewRegressions() {
+  console.log('\n--- 10. Input Enter Discount Guard & Partial-Bill Recovered Cash Change ---');
+
+  // 10a: PaymentModal & PrepaidCheckoutModal input Enter on card ref / tender inputs does NOT bypass open Discount panel
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let payCalls = 0;
+    try {
+      installCheckoutComponentMocks(harness, {
+        apiPost: async (url: string) => {
+          if (String(url).endsWith('/payments')) {
+            payCalls++;
+            return {
+              data: {
+                bill: { ...makeBill('bill-disc-enter', 20), balance: 0, payment_status: 'paid' },
+              },
+            };
+          }
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const bill = makeBill('bill-disc-enter', 20);
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderPm();
+      const cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      assert.ok(cardBtn, 'PaymentModal Card tender button renders');
+      cardBtn.props.onClick();
+      tree = renderPm();
+
+      const cardRefSetup = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.ok(cardRefSetup, 'PaymentModal card reference input renders');
+      cardRefSetup.props.onChange({ target: { value: 'TXN-123' } });
+      tree = renderPm();
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.ok(discountTab, 'PaymentModal Discount tab renders');
+      discountTab.props.onClick();
+      tree = renderPm();
+
+      const cardRefInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      assert.ok(cardRefInput, 'PaymentModal card reference input still renders');
+      let preventedWhileDiscountOpen = false;
+      cardRefInput.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          preventedWhileDiscountOpen = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(
+        payCalls,
+        0,
+        'Enter in #payment-card-transaction-id does not submit while Discount panel is open',
+      );
+      assert.equal(
+        preventedWhileDiscountOpen,
+        false,
+        'Enter in #payment-card-transaction-id is not intercepted while Discount panel is open',
+      );
+
+      // Close Discount panel, then Enter in #payment-card-transaction-id submits normally
+      const discountTabClose = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTabClose.props.onClick();
+      tree = renderPm();
+      const cardRefAfterClose = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'payment-card-transaction-id',
+      )[0];
+      cardRefAfterClose.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        payCalls,
+        1,
+        'Enter in #payment-card-transaction-id submits once Discount panel is closed',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  await withAliases(async () => {
+    const ppHarness = createStatefulHarness();
+    let confirmCalls = 0;
+    try {
+      installCheckoutComponentMocks(ppHarness, {
+        cartState: {
+          items: [
+            {
+              key: 'item-1',
+              product: { id: 1, name: 'Latte', price: 15 },
+              quantity: 1,
+              variant: null,
+              addons: [],
+              notes: '',
+            },
+          ],
+          orderType: 'takeaway',
+          tableId: null,
+          customer: null,
+          deliveryAddress: '',
+          notes: '',
+          getSubtotal: () => 15,
+        },
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+      const renderPp = () =>
+        ppHarness.renderAndSettle(PrepaidCheckoutModal, {
+          currency: 'USD',
+          onClose: () => {},
+          onConfirm: async () => {
+            confirmCalls++;
+            return {
+              bill: { id: 601, bill_number: 'B-601', total: 15, payment_status: 'paid' },
+              customer: null,
+              pointsEarned: 0,
+            };
+          },
+        });
+
+      let tree = renderPp();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPp();
+
+      const cardBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCard',
+      )[0];
+      cardBtn.props.onClick();
+      tree = renderPp();
+
+      const ppCardRefSetup = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'prepaid-card-transaction-id',
+      )[0];
+      assert.ok(ppCardRefSetup, 'Prepaid card reference input renders');
+      ppCardRefSetup.props.onChange({ target: { value: 'TXN-456' } });
+      tree = renderPp();
+
+      const discountToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      assert.ok(discountToggle, 'Prepaid Discounts toggle renders');
+      discountToggle.props.onClick();
+      tree = renderPp();
+
+      const ppCardRef = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'prepaid-card-transaction-id',
+      )[0];
+      assert.ok(ppCardRef, 'Prepaid card reference input still renders');
+      ppCardRef.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(
+        confirmCalls,
+        0,
+        'Enter in #prepaid-card-transaction-id does not submit while Discount panel is open',
+      );
+
+      // Close Discount panel, then Enter in #prepaid-card-transaction-id submits normally
+      const discountToggleClose = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discount'),
+      )[0];
+      discountToggleClose.props.onClick();
+      tree = renderPp();
+      const ppCardRefAfterClose = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.id === 'prepaid-card-transaction-id',
+      )[0];
+      ppCardRefAfterClose.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        confirmCalls,
+        1,
+        'Enter in #prepaid-card-transaction-id submits once Discount panel is closed',
+      );
+    } finally {
+      ppHarness.cleanupAll();
+    }
+  });
+
+  // 10b: Partially paid $100 bill ($40 prior payment, balance $60) + $100 cash tender -> lost response -> checkPaymentStatus updates balance to 0 -> idempotent replay preserves $40.00 change and $60.00 settled amount
+  for (const includeServerPaymentDetails of [true, false]) {
+    await withAliases(async () => {
+      const storageMap = new Map<string, string>();
+      const hadWindow = 'window' in globalThis;
+      const prevWindow = (globalThis as any).window;
+      (globalThis as any).window = {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        sessionStorage: {
+          getItem: (k: string) => storageMap.get(k) ?? null,
+          setItem: (k: string, v: string) => {
+            storageMap.set(k, v);
+          },
+          removeItem: (k: string) => {
+            storageMap.delete(k);
+          },
+        },
+      };
+
+      const harness = createStatefulHarness();
+      try {
+        const partialBill = {
+          ...makeBill('bill-partial-change', 100),
+          total: 100,
+          paid_amount: 40,
+          balance: 60,
+          payment_status: 'partial',
+        };
+        const settledServerBill = {
+          ...partialBill,
+          paid_amount: 100,
+          balance: 0,
+          payment_status: 'paid',
+          ...(includeServerPaymentDetails
+            ? {
+                payment_details: [
+                  { method: 'card', amount: 40, requested_amount: 40 },
+                  {
+                    method: 'cash',
+                    amount: 60,
+                    requested_amount: 100,
+                    tendered_amount: 100,
+                    change_amount: 40,
+                  },
+                ],
+              }
+            : {}),
+        };
+
+        let payAttempts = 0;
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/bill-partial-change')) {
+              return { data: { bill: settledServerBill } };
+            }
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            if (String(url).endsWith('/payments')) {
+              payAttempts++;
+              if (payAttempts === 1) {
+                throw new Error('Network timeout after server committed payment');
+              }
+              return { data: { bill: settledServerBill, loyaltyPointsEarned: 0 } };
+            }
+            return { data: {} };
+          },
+        });
+
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+
+        let activeBill: any = partialBill;
+        const renderPm = () =>
+          harness.renderAndSettle(PaymentModal, {
+            bill: activeBill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+            onBillUpdate: (updated: any) => {
+              activeBill = updated;
+            },
+          });
+
+        let tree = renderPm();
+        const cashBtn = collectElements(
+          tree,
+          (el) => el.type === 'button' && el.props?.title === 'methodCash',
+        )[0];
+        cashBtn.props.onClick();
+        tree = renderPm();
+
+        const cashInput = collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+        )[0];
+        cashInput.props.onChange({ target: { value: '100' } });
+        tree = renderPm();
+
+        // 1. Submit $100 cash tender -> network timeout locks pendingAttempt
+        const payCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(payCta, 'Initial Pay CTA rendered');
+        await payCta.props.onClick();
+        tree = renderPm();
+
+        // 2. Check payment status -> updates activeBill.balance to 0, activeBill.paid_amount to 100
+        const checkCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(checkCta, 'Check Payment Status CTA rendered');
+        await checkCta.props.onClick();
+        tree = renderPm();
+        assert.equal(activeBill.balance, 0, 'checkPaymentStatus updates bill.balance to 0');
+
+        // 3. Replay idempotent payment -> completion screen must show $60.00 settled now and $40.00 cash change
+        const retryCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        assert.ok(retryCta, 'Retry Same Payment CTA rendered');
+        await retryCta.props.onClick();
+        tree = renderPm();
+
+        const changeBanner = collectElements(
+          tree,
+          (el) => el.props?.['data-testid'] === 'settled-change-banner',
+        )[0];
+        assert.ok(
+          changeBanner,
+          `Recovered partial-bill cash payment renders settled-change-banner (payment_details=${includeServerPaymentDetails})`,
+        );
+        const changeMarkup = renderToStaticMarkup(changeBanner);
+        assert.ok(
+          changeMarkup.includes('$40.00'),
+          `Recovered partial-bill cash payment displays $40.00 change (got ${changeMarkup})`,
+        );
+
+        const receiptCard = collectElements(tree, (el) => el.props?.role === 'status')[0];
+        const receiptMarkup = renderToStaticMarkup(receiptCard);
+        assert.ok(
+          receiptMarkup.includes('$60.00'),
+          `Recovered partial-bill cash payment displays $60.00 settled now instead of $100.00 cumulative (got ${receiptMarkup})`,
+        );
+      } finally {
+        harness.cleanupAll();
+        if (!hadWindow) delete (globalThis as any).window;
+        else (globalThis as any).window = prevWindow;
+      }
+    });
+  }
+
+  console.log('  ✓ Input Enter discount guard & recovered partial-bill cash change verified');
+}
+
+async function testPaidBillCtaDisabledAndTableCheckoutHeaderStatus() {
+  console.log('\n--- 11. Paid/Terminal Bill Pay CTA & TableCheckout Header Status Label ---');
+
+  // 11a: Already-paid and terminal bills disable Pay CTA, block handlePay POST, and disable inputs
+  for (const scenario of [
+    {
+      name: 'already-paid zero-balance bill',
+      billOverrides: { payment_status: 'paid', balance: 0, paid_amount: 20 },
+      expectedLabel: 'paid',
+    },
+    {
+      name: 'refunded terminal bill',
+      billOverrides: { payment_status: 'refunded', balance: 20, paid_amount: 0 },
+      expectedLabel: 'refunded',
+    },
+    {
+      name: 'partially refunded terminal bill',
+      billOverrides: { payment_status: 'partially_refunded', balance: 10, paid_amount: 10 },
+      expectedLabel: 'partiallyrefunded',
+    },
+    {
+      name: 'cancelled order terminal bill',
+      billOverrides: {
+        payment_status: 'unpaid',
+        balance: 20,
+        paid_amount: 0,
+        order: { ...makeBill('bill-cancelled', 20).order, status: 'cancelled' },
+      },
+      expectedLabel: 'cancelled',
+      expectCancelledSplitNotice: true,
+    },
+  ]) {
+    for (const splitSettingFails of [false, true]) {
+      await withAliases(async () => {
+        const harness = createStatefulHarness();
+        try {
+          let postCalls = 0;
+          installCheckoutComponentMocks(harness, {
+            apiGet: async (url: string) => {
+              if (String(url).includes('loyalty/settings'))
+                return { data: { loyalty_enabled: false } };
+              if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+              if (String(url).includes('settings/split_checks_enabled')) {
+                if (splitSettingFails) throw new Error('network error');
+                return { data: { setting: { value: 'true' } } };
+              }
+              if (String(url).includes('settings/discount'))
+                return { data: { discount_mode: 'both', discount_requires_approval: false } };
+              return { data: {} };
+            },
+            apiPost: async () => {
+              postCalls++;
+              return { data: {} };
+            },
+          });
+          const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+          delete require.cache[pmPath];
+          const PaymentModal = require(pmPath).default;
+
+          const bill = {
+            ...makeBill(`bill-${scenario.name.replace(/\s+/g, '-')}`, 20),
+            ...scenario.billOverrides,
+          };
+          const props = {
+            bill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+          };
+          harness.renderAndSettle(PaymentModal, props);
+          await new Promise((r) => setTimeout(r, 15));
+          const tree = harness.renderAndSettle(PaymentModal, props);
+
+          const payCta = collectElements(
+            tree,
+            (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+          ).pop();
+          assert.ok(payCta, `${scenario.name}: primary Pay CTA rendered`);
+          assert.equal(
+            Boolean(payCta.props.disabled),
+            true,
+            `${scenario.name}: primary Pay CTA must be disabled`,
+          );
+          const ctaText = renderToStaticMarkup(payCta).toLowerCase();
+          assert.ok(
+            ctaText.includes(scenario.expectedLabel),
+            `${scenario.name}: CTA label includes "${scenario.expectedLabel}" (got "${ctaText}")`,
+          );
+
+          await payCta.props.onClick();
+          assert.equal(
+            postCalls,
+            0,
+            `${scenario.name}: invoking Pay CTA handler must not POST a payment`,
+          );
+
+          const keypadFieldset = collectElements(tree, (el) => el.type === 'fieldset')[0];
+          assert.equal(
+            Boolean(keypadFieldset?.props?.disabled),
+            true,
+            `${scenario.name}: keypad fieldset is disabled`,
+          );
+
+          const cashInput = collectElements(
+            tree,
+            (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+          )[0];
+          assert.equal(
+            Boolean(cashInput?.props?.disabled),
+            true,
+            `${scenario.name}: tender input is disabled`,
+          );
+
+          const discountTab = collectElements(
+            tree,
+            (el) => el.props?.['data-testid'] === 'col1-tab-discount',
+          )[0];
+          assert.equal(
+            Boolean(discountTab?.props?.disabled),
+            true,
+            `${scenario.name}: discount tab is disabled`,
+          );
+
+          const splitSection = collectElements(
+            tree,
+            (el) => el.props?.['data-testid'] === 'split-check-section',
+          )[0];
+          assert.ok(
+            splitSection,
+            `${scenario.name} (splitSettingFails=${splitSettingFails}): split-check-section rendered`,
+          );
+          const splitButtons = collectElements(
+            splitSection,
+            (el) => el.type === 'button' || typeof el.props?.onClick === 'function',
+          );
+          assert.ok(splitButtons.length > 0, `${scenario.name}: split section renders button`);
+          for (const btn of splitButtons) {
+            assert.equal(
+              Boolean(btn.props?.disabled),
+              true,
+              `${scenario.name} (splitSettingFails=${splitSettingFails}): split-check button must be disabled`,
+            );
+          }
+          if (scenario.expectCancelledSplitNotice && !splitSettingFails) {
+            const splitMarkup = renderToStaticMarkup(splitSection);
+            assert.ok(
+              splitMarkup.includes('noFurtherActions'),
+              `${scenario.name}: split section shows cancelled notice (got "${splitMarkup}")`,
+            );
+          }
+        } finally {
+          harness.cleanupAll();
+        }
+      });
+    }
+  }
+
+  // 11b: TableCheckoutModal header badge formats partial / refunded / paid / unpaid consistently
+  for (const statusCase of [
+    { payment_status: 'partial', expectedText: 'partiallyPaid' },
+    { payment_status: 'partially_paid', expectedText: 'partiallyPaid' },
+    { payment_status: 'partially_refunded', expectedText: 'partiallyRefunded' },
+    { payment_status: 'refunded', expectedText: 'refunded' },
+    { payment_status: 'paid', expectedText: 'paid' },
+    { payment_status: 'unpaid', expectedText: 'unpaid' },
+  ]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return { data: { table: { id: 7, name: 'T7', activeOrder: { id: 77 } } } };
+            }
+            if (String(url).includes('/orders/')) {
+              return {
+                data: {
+                  order: {
+                    id: 77,
+                    order_number: 707,
+                    type: 'dine_in',
+                    subtotal: 25,
+                    tax_amount: 0,
+                    total: 25,
+                    items: [],
+                    bill: {
+                      id: 701,
+                      bill_number: 'B-701',
+                      total: 25,
+                      balance: statusCase.payment_status === 'paid' ? 0 : 10,
+                      payment_status: statusCase.payment_status,
+                    },
+                    bills: [],
+                  },
+                },
+              };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'false' } } };
+            }
+            return { data: {} };
+          },
+        });
+        const baseLoad = Module._load;
+        Module._load = function (request: string, parent: any, isMain: boolean) {
+          if (
+            request === '@/components/tables/MoveTableModal' ||
+            request === '@/components/orders/EditOrderItemModal'
+          ) {
+            return { __esModule: true, default: () => null };
+          }
+          return baseLoad.call(this, request, parent, isMain);
+        };
+
+        const tcmPath = path.resolve(ROOT, 'frontend/src/components/pos/TableCheckoutModal.tsx');
+        delete require.cache[tcmPath];
+        const TableCheckoutModal = require(tcmPath).default;
+
+        const props = {
+          table: { id: 7, name: 'T7', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {},
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+        };
+
+        harness.renderAndSettle(TableCheckoutModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+        const headerBadge = collectElements(
+          tree,
+          (el) =>
+            el.type === 'span' &&
+            typeof el.props?.className === 'string' &&
+            el.props.className.includes('rounded-full') &&
+            el.props.className.includes('px-2.5'),
+        )[0];
+        assert.ok(
+          headerBadge,
+          `TableCheckoutModal header badge rendered for ${statusCase.payment_status}`,
+        );
+        const badgeText = renderToStaticMarkup(headerBadge);
+        assert.ok(
+          badgeText.includes(statusCase.expectedText),
+          `TableCheckoutModal header badge for ${statusCase.payment_status} renders "${statusCase.expectedText}" (got "${badgeText}")`,
+        );
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 11c: Unhydrated bill prop (no .order) picks up cancelled status from GET /bills/:id detailOrder
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    try {
+      const unhydratedBill = {
+        ...makeBill('bill-detail-cancelled', 20),
+        order: undefined,
+      };
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/bill-detail-cancelled')) {
+            return {
+              data: {
+                bill: {
+                  ...unhydratedBill,
+                  order: { ...makeBill('bill-detail-cancelled', 20).order, status: 'cancelled' },
+                },
+              },
+            };
+          }
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('settings/split_checks_enabled'))
+            return { data: { setting: { value: 'true' } } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+
+      const props = {
+        bill: unhydratedBill,
+        currency: 'USD',
+        onClose: () => {},
+        onPaid: () => {},
+      };
+      harness.renderAndSettle(PaymentModal, props);
+      await new Promise((r) => setTimeout(r, 15));
+      const tree = harness.renderAndSettle(PaymentModal, props);
+
+      const payCta = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      assert.equal(
+        Boolean(payCta?.props?.disabled),
+        true,
+        'Unhydrated bill with cancelled detailOrder disables Pay CTA',
+      );
+      assert.ok(
+        renderToStaticMarkup(payCta).toLowerCase().includes('cancelled'),
+        'Unhydrated bill with cancelled detailOrder labels Pay CTA Cancelled',
+      );
+
+      const strip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.ok(
+        renderToStaticMarkup(strip).includes('noFurtherActions'),
+        'Unhydrated bill with cancelled detailOrder shows noFurtherActions banner',
+      );
+
+      const splitSection = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'split-check-section',
+      )[0];
+      assert.ok(splitSection, 'Split section rendered for cancelled detailOrder');
+      for (const btn of collectElements(splitSection, (el) => el.type === 'button')) {
+        assert.equal(
+          Boolean(btn.props?.disabled),
+          true,
+          'Cancelled detailOrder disables Split Check button',
+        );
+      }
+      assert.ok(
+        renderToStaticMarkup(splitSection).includes('noFurtherActions'),
+        'Cancelled detailOrder split section explains noFurtherActions',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 11d: Completion WhatsApp actions pass settledBill (with post-settlement fields and hydrated order)
+  for (const waReady of [false, true]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      try {
+        const sentBills: any[] = [];
+        const sharedBills: any[] = [];
+        const splitPropBill = {
+          ...makeBill('bill-wa-settled', 20),
+          order: undefined,
+        };
+        const hydratedOrder = {
+          ...makeBill('bill-wa-settled', 20).order,
+          customer: { id: 9, name: 'Ada', phone: '5551234', country_code: '+1' },
+        };
+        const settledServerBill = {
+          ...splitPropBill,
+          payment_status: 'paid',
+          paid_amount: 20,
+          balance: 0,
+        };
+
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/bill-wa-settled')) {
+              return { data: { bill: { ...splitPropBill, order: hydratedOrder } } };
+            }
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('settings/split_checks_enabled'))
+              return { data: { setting: { value: 'false' } } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            if (String(url).endsWith('/payments')) {
+              return { data: { bill: settledServerBill, loyaltyPointsEarned: 0 } };
+            }
+            return { data: {} };
+          },
+        });
+        const baseLoad = Module._load;
+        Module._load = function (request: string, parent: any, isMain: boolean) {
+          if (request === '@/hooks/useWhatsAppReady') {
+            return { useWhatsAppReady: () => waReady };
+          }
+          if (request === '@/lib/whatsapp-share') {
+            return {
+              sendBillViaFlo: async (passedBill: any) => {
+                sentBills.push(passedBill);
+              },
+              shareBillViaWhatsApp: async (passedBill: any) => {
+                sharedBills.push(passedBill);
+                return true;
+              },
+            };
+          }
+          return baseLoad.call(this, request, parent, isMain);
+        };
+
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+
+        const props = {
+          bill: splitPropBill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        };
+        harness.renderAndSettle(PaymentModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        let tree = harness.renderAndSettle(PaymentModal, props);
+
+        const cashBtn = collectElements(
+          tree,
+          (el) => el.type === 'button' && el.props?.title === 'methodCash',
+        )[0];
+        cashBtn.props.onClick();
+        tree = harness.renderAndSettle(PaymentModal, props);
+
+        const payCta = collectElements(
+          tree,
+          (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+        ).pop();
+        await payCta.props.onClick();
+        tree = harness.renderAndSettle(PaymentModal, props);
+
+        const waBtn = collectElements(
+          tree,
+          (el) =>
+            typeof el.props?.onClick === 'function' &&
+            renderToStaticMarkup(el).includes(waReady ? 'sendViaWhatsApp' : 'shareViaWhatsApp'),
+        )[0];
+        assert.ok(waBtn, `WhatsApp completion button rendered (waReady=${waReady})`);
+        await waBtn.props.onClick();
+
+        const passed = waReady ? sentBills[0] : sharedBills[0];
+        assert.ok(passed, `WhatsApp handler invoked with bill (waReady=${waReady})`);
+        assert.equal(
+          passed.payment_status,
+          'paid',
+          `WhatsApp handler receives settled payment_status='paid' (waReady=${waReady})`,
+        );
+        assert.ok(
+          Array.isArray(passed.order?.items) && passed.order.items.length > 0,
+          `WhatsApp handler receives hydrated order items (waReady=${waReady})`,
+        );
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  console.log('  ✓ Paid/terminal bill CTA guard & TableCheckout header status label verified');
+}
+
+async function testTenderInputAndZeroBalanceEnterGuards() {
+  console.log('\n--- 12. Tender Input Enter With Discount Panel & Zero-Balance Unpaid Bill ---');
+
+  // 12a: PaymentModal & PrepaidCheckoutModal tender input Enter submits once amountTarget leaves discount even while Discount tab remains open
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let payCalls = 0;
+    try {
+      installCheckoutComponentMocks(harness, {
+        apiPost: async (url: string) => {
+          if (String(url).endsWith('/payments')) {
+            payCalls++;
+            return {
+              data: {
+                bill: {
+                  ...makeBill('bill-tender-focus-enter', 20),
+                  balance: 0,
+                  payment_status: 'paid',
+                },
+              },
+            };
+          }
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const bill = makeBill('bill-tender-focus-enter', 20);
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 15));
+      tree = renderPm();
+
+      const cashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      cashBtn.props.onClick();
+      tree = renderPm();
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTab.props.onClick();
+      tree = renderPm();
+
+      const cashInputWhileDiscountTarget = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.ok(cashInputWhileDiscountTarget, 'PaymentModal cash amount input renders');
+      let preventedWhileTargetDiscount = false;
+      cashInputWhileDiscountTarget.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          preventedWhileTargetDiscount = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(
+        payCalls,
+        0,
+        'Enter in tender input stays blocked while amountTarget is discount',
+      );
+      assert.equal(
+        preventedWhileTargetDiscount,
+        false,
+        'Enter in tender input is not intercepted while amountTarget is discount',
+      );
+
+      cashInputWhileDiscountTarget.props.onFocus();
+      tree = renderPm();
+
+      const discountTabStillOpen = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['data-testid'] === 'col1-tab-discount' &&
+          el.props?.['aria-expanded'] === true,
+      )[0];
+      assert.ok(
+        discountTabStillOpen,
+        'Discount panel remains open in Col 1 after focusing tender input',
+      );
+
+      const cashInputFocused = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      let preventedOnFocusedTender = false;
+      cashInputFocused.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          preventedOnFocusedTender = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        preventedOnFocusedTender,
+        true,
+        'Enter in focused tender input calls preventDefault even while Discount panel is open',
+      );
+      assert.equal(
+        payCalls,
+        1,
+        'Enter in focused tender input submits payment while Discount panel is open',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  await withAliases(async () => {
+    const ppHarness = createStatefulHarness();
+    let confirmCalls = 0;
+    try {
+      installCheckoutComponentMocks(ppHarness);
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+      const renderPp = () =>
+        ppHarness.renderAndSettle(PrepaidCheckoutModal, {
+          currency: 'USD',
+          onClose: () => {},
+          onConfirm: async () => {
+            confirmCalls++;
+            return {
+              bill: { id: 602, bill_number: 'B-602', total: 20, payment_status: 'paid' },
+              customer: null,
+              pointsEarned: 0,
+            };
+          },
+        });
+
+      let tree = renderPp();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPp();
+
+      const ppCashBtn = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'methodCash',
+      )[0];
+      assert.ok(ppCashBtn, 'Prepaid Cash tender button renders');
+      ppCashBtn.props.onClick();
+      tree = renderPp();
+
+      const discountToggle = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('discounts'),
+      )[0];
+      discountToggle.props.onClick();
+      tree = renderPp();
+
+      const ppCashInputDiscountTarget = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      assert.ok(ppCashInputDiscountTarget, 'Prepaid cash amount input renders');
+      ppCashInputDiscountTarget.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {},
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.equal(
+        confirmCalls,
+        0,
+        'Prepaid tender Enter stays blocked while amountTarget is discount',
+      );
+
+      ppCashInputDiscountTarget.props.onFocus();
+      tree = renderPp();
+
+      const ppCashInputFocused = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      let ppPreventedOnFocusedTender = false;
+      ppCashInputFocused.props.onKeyDown({
+        key: 'Enter',
+        repeat: false,
+        nativeEvent: { isComposing: false },
+        keyCode: 13,
+        preventDefault() {
+          ppPreventedOnFocusedTender = true;
+        },
+      });
+      await new Promise((r) => setTimeout(r, 15));
+      assert.equal(
+        ppPreventedOnFocusedTender,
+        true,
+        'Prepaid Enter in focused tender input calls preventDefault while Discount panel is open',
+      );
+      assert.equal(
+        confirmCalls,
+        1,
+        'Prepaid Enter in focused tender input submits while Discount panel is open',
+      );
+    } finally {
+      ppHarness.cleanupAll();
+    }
+  });
+
+  // 12b: Zero-balance unpaid bills settle on both window Enter and tender input Enter, while paid/cancelled bills stay blocked
+  for (const mode of ['window-enter', 'tender-input-enter'] as const) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      const hadWindow = 'window' in globalThis;
+      const prevWindow = (globalThis as any).window;
+      const keyListeners = new Set<(e: any) => void>();
+      (globalThis as any).window = {
+        ...(prevWindow || {}),
+        addEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.add(fn);
+        },
+        removeEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.delete(fn);
+        },
+      };
+
+      let zeroPayCalls = 0;
+      let lastPayUrl = '';
+      const zeroUnpaidBill = {
+        ...makeBill('bill-zero-enter', 0),
+        subtotal: 20,
+        discount_amount: 20,
+        discount_type: 'percentage',
+        discount_value: 100,
+        total: 0,
+        balance: 0,
+        paid_amount: 0,
+        payment_status: 'unpaid',
+      };
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/')) return { data: { bill: zeroUnpaidBill } };
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('printers')) return { data: { printers: [] } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            lastPayUrl = String(url);
+            if (lastPayUrl.endsWith('/payment') || lastPayUrl.endsWith('/payments')) {
+              zeroPayCalls++;
+              return {
+                data: {
+                  bill: {
+                    ...makeBill('bill-zero-enter', 0),
+                    total: 0,
+                    balance: 0,
+                    paid_amount: 0,
+                    payment_status: 'paid',
+                  },
+                },
+              };
+            }
+            return { data: {} };
+          },
+        });
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+        const renderPm = () =>
+          harness.renderAndSettle(PaymentModal, {
+            bill: zeroUnpaidBill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+          });
+
+        let tree = renderPm();
+        await new Promise((r) => setTimeout(r, 15));
+        tree = renderPm();
+
+        if (mode === 'window-enter') {
+          for (const listener of keyListeners) {
+            listener({
+              key: 'Enter',
+              code: 'Enter',
+              repeat: false,
+              isComposing: false,
+              keyCode: 13,
+              ctrlKey: false,
+              metaKey: false,
+              altKey: false,
+              target: { tagName: 'DIV', getAttribute: () => null, closest: () => null },
+              preventDefault() {},
+            });
+          }
+        } else {
+          const cashInput = collectElements(
+            tree,
+            (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+          )[0];
+          assert.ok(cashInput, 'PaymentModal cash input renders for zero-balance unpaid bill');
+          cashInput.props.onKeyDown({
+            key: 'Enter',
+            repeat: false,
+            nativeEvent: { isComposing: false },
+            keyCode: 13,
+            preventDefault() {},
+          });
+        }
+
+        await new Promise((r) => setTimeout(r, 15));
+        assert.equal(zeroPayCalls, 1, `Zero-balance unpaid bill submits on ${mode}`);
+        assert.ok(
+          lastPayUrl.endsWith('/payment'),
+          `Zero-balance unpaid bill settles through /payment on ${mode}`,
+        );
+      } finally {
+        harness.cleanupAll();
+        if (hadWindow) {
+          (globalThis as any).window = prevWindow;
+        } else {
+          delete (globalThis as any).window;
+        }
+      }
+    });
+  }
+
+  for (const blockedScenario of [
+    {
+      name: 'already-paid zero-balance bill',
+      bill: {
+        ...makeBill('bill-paid-zero-enter', 0),
+        total: 20,
+        balance: 0,
+        paid_amount: 20,
+        payment_status: 'paid',
+      },
+    },
+    {
+      name: 'cancelled zero-balance bill',
+      bill: {
+        ...makeBill('bill-cancelled-zero-enter', 0),
+        total: 0,
+        balance: 0,
+        paid_amount: 0,
+        payment_status: 'unpaid',
+        order: { id: 101, order_number: 'ORD-CANC', status: 'cancelled', items: [] },
+      },
+    },
+  ]) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      const hadWindow = 'window' in globalThis;
+      const prevWindow = (globalThis as any).window;
+      const keyListeners = new Set<(e: any) => void>();
+      (globalThis as any).window = {
+        ...(prevWindow || {}),
+        addEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.add(fn);
+        },
+        removeEventListener: (ev: string, fn: (e: any) => void) => {
+          if (ev === 'keydown') keyListeners.delete(fn);
+        },
+      };
+      let payCalls = 0;
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('/bills/')) return { data: { bill: blockedScenario.bill } };
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+            if (String(url).includes('printers')) return { data: { printers: [] } };
+            if (String(url).includes('settings/discount'))
+              return { data: { discount_mode: 'both', discount_requires_approval: false } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'true' } } };
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            if (String(url).endsWith('/payment') || String(url).endsWith('/payments')) {
+              payCalls++;
+            }
+            return { data: {} };
+          },
+        });
+        const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+        delete require.cache[pmPath];
+        const PaymentModal = require(pmPath).default;
+        const renderPm = () =>
+          harness.renderAndSettle(PaymentModal, {
+            bill: blockedScenario.bill,
+            currency: 'USD',
+            onClose: () => {},
+            onPaid: () => {},
+          });
+        let tree = renderPm();
+        await new Promise((r) => setTimeout(r, 15));
+        tree = renderPm();
+
+        for (const listener of keyListeners) {
+          listener({
+            key: 'Enter',
+            code: 'Enter',
+            repeat: false,
+            isComposing: false,
+            keyCode: 13,
+            ctrlKey: false,
+            metaKey: false,
+            altKey: false,
+            target: { tagName: 'DIV', getAttribute: () => null, closest: () => null },
+            preventDefault() {},
+          });
+        }
+        const cashInput = collectElements(
+          tree,
+          (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+        )[0];
+        cashInput?.props?.onKeyDown({
+          key: 'Enter',
+          repeat: false,
+          nativeEvent: { isComposing: false },
+          keyCode: 13,
+          preventDefault() {},
+        });
+        await new Promise((r) => setTimeout(r, 15));
+        assert.equal(payCalls, 0, `Enter stays blocked on ${blockedScenario.name}`);
+      } finally {
+        harness.cleanupAll();
+        if (hadWindow) {
+          (globalThis as any).window = prevWindow;
+        } else {
+          delete (globalThis as any).window;
+        }
+      }
+    });
+  }
+
+  console.log(
+    '  ✓ Tender input Enter with discount panel & zero-balance unpaid Enter guards verified',
+  );
+}
+
+async function testCol1PanelHeaderBodyConsistency() {
+  // 1. PrepaidCheckoutModal: initialDiscount while discountModeLoaded=false, then discount_mode='none' vs 'both'
+  for (const mode of ['none', 'both'] as const) {
+    await withAliases(async () => {
+      const harness = createStatefulHarness();
+      let closeCount = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+      try {
+        installCheckoutComponentMocks(harness, {
+          apiGet: async (url: string) => {
+            if (String(url).includes('settings/discount')) {
+              return { data: { discount_mode: mode, discount_requires_approval: false } };
+            }
+            if (String(url).includes('loyalty/settings'))
+              return { data: { loyalty_enabled: false } };
+            if (String(url).includes('payment-methods')) return { data: { payment_methods: [] } };
+            if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+            return { data: {} };
+          },
+        });
+        const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+        delete require.cache[ppPath];
+        const PrepaidCheckoutModal = require(ppPath).default;
+        const props = {
+          currency: 'USD',
+          initialDiscount: { type: 'percentage' as const, value: 10, reason: 'VIP' },
+          onClose: () => {
+            closeCount++;
+          },
+          onConfirm: async () => undefined,
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        };
+
+        // Initial render before /settings/discount resolves (discountModeLoaded === false)
+        let tree = harness.render(PrepaidCheckoutModal, props);
+        const initialMarkup = renderToStaticMarkup(tree);
+        assert.ok(
+          !initialMarkup.includes('discountReasonPlaceholder'),
+          'Prepaid items body renders before discountModeLoaded',
+        );
+        assert.ok(
+          !initialMarkup.includes('>back<'),
+          'Prepaid header does not show Back badge before discountModeLoaded',
+        );
+        assert.equal(
+          registeredDismiss?.(),
+          true,
+          'Dismiss handler exists on initial PrepaidCheckoutModal render',
+        );
+        assert.equal(
+          closeCount,
+          1,
+          'Escape closes modal on initial render when discount panel is not yet eligible',
+        );
+        closeCount = 0;
+
+        // Settle /settings/discount
+        await new Promise((r) => setTimeout(r, 10));
+        tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+        const settledMarkup = renderToStaticMarkup(tree);
+        if (mode === 'none') {
+          assert.ok(
+            !settledMarkup.includes('discountReasonPlaceholder'),
+            'Prepaid discount body stays hidden when discount_mode=none',
+          );
+          assert.ok(
+            !settledMarkup.includes('>back<'),
+            'Prepaid header shows Items (not Back [Discount]) when discount_mode=none',
+          );
+          registeredDismiss?.();
+          assert.equal(closeCount, 1, 'Escape closes modal directly when discount_mode=none');
+        } else {
+          assert.ok(
+            settledMarkup.includes('discountReasonPlaceholder'),
+            'Prepaid discount body renders once discountModeLoaded and discount_mode=both',
+          );
+          assert.ok(
+            settledMarkup.includes('>back<'),
+            'Prepaid header shows Back badge matching Discount panel when discount_mode=both',
+          );
+          registeredDismiss?.();
+          assert.equal(
+            closeCount,
+            0,
+            'First Escape backs out of visible Discount panel instead of closing modal',
+          );
+        }
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 2. PrepaidCheckoutModal: Tax panel falls back cleanly when tax preview becomes null
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+    let returnNullTax = false;
+    try {
+      installCheckoutComponentMocks(harness, {
+        taxPreview: () =>
+          returnNullTax
+            ? { tax: null, loading: false }
+            : {
+                tax: {
+                  subtotal: 20,
+                  discount_amount: 0,
+                  discounted_subtotal: 20,
+                  tax_amount: 2,
+                  total: 22,
+                  tax_breakdown: [{ title: 'VAT', rate: 10, amount: 2 }],
+                  packaging_charge: 0,
+                  charges_breakdown: [],
+                  round_off: 0,
+                },
+                loading: false,
+              },
+      });
+      const ppPath = path.resolve(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+      delete require.cache[ppPath];
+      const PrepaidCheckoutModal = require(ppPath).default;
+      const props = {
+        currency: 'USD',
+        onClose: () => {
+          closeCount++;
+        },
+        onConfirm: async () => undefined,
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      let tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+      await new Promise((r) => setTimeout(r, 10));
+      tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+
+      const taxBtn = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['aria-expanded'] !== undefined &&
+          renderToStaticMarkup(el).includes('tax'),
+      )[0];
+      assert.ok(taxBtn, 'Tax toggle button renders in PrepaidCheckoutModal summary');
+      taxBtn.props.onClick();
+      tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+      assert.ok(
+        renderToStaticMarkup(tree).includes('>back<'),
+        'Prepaid header shows Back badge while Tax panel is active',
+      );
+
+      returnNullTax = true;
+      tree = harness.renderAndSettle(PrepaidCheckoutModal, props);
+      assert.ok(
+        !renderToStaticMarkup(tree).includes('>back<'),
+        'Prepaid header agrees with Items fallback when preview becomes null',
+      );
+      registeredDismiss?.();
+      assert.equal(closeCount, 1, 'Escape closes modal when Tax panel falls back to Items');
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 3a. PaymentModal: discount panel resets when split_group_id makes it ineligible
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+    try {
+      let currentBill: any = makeBill('bill-col1-pm', 20);
+      installCheckoutComponentMocks(harness, {
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('printers')) return { data: { printers: [] } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'both', discount_requires_approval: false } };
+          if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {},
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+
+      const discountTab = collectElements(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      assert.ok(discountTab, 'PaymentModal discount tab renders');
+      discountTab.props.onClick();
+      tree = renderPm();
+      assert.ok(
+        renderToStaticMarkup(tree).includes('>back<') &&
+          renderToStaticMarkup(tree).includes('discountReasonPlaceholder'),
+        'PaymentModal shows Back + Discount panel while eligible',
+      );
+
+      // Bill updates to a split check -> discount panel becomes ineligible
+      currentBill = { ...currentBill, split_group_id: 'split-1' };
+      tree = renderPm();
+      const splitMarkup = renderToStaticMarkup(tree);
+      assert.ok(
+        !splitMarkup.includes('discountReasonPlaceholder'),
+        'PaymentModal hides Discount body on split check',
+      );
+      assert.ok(
+        !splitMarkup.includes('>back<'),
+        'PaymentModal header resets to Items when Discount becomes ineligible on split check',
+      );
+      registeredDismiss?.();
+      assert.equal(
+        closeCount,
+        1,
+        'Escape closes PaymentModal instead of being trapped on hidden Discount',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 3b. PaymentModal: partial payment clearing kitchenOverrideRequired resets header/body to Items
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+    try {
+      const currentBill: any = makeBill('bill-col1-ko', 20);
+      installCheckoutComponentMocks(harness, {
+        managerApprovers: {
+          approvers: [{ id: 'mgr-1', name: 'Manager', role: 'manager', has_pin: true }],
+          selectedApproverId: 'mgr-1',
+        },
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('printers')) return { data: { printers: [] } };
+          if (String(url).includes('settings/discount'))
+            return { data: { discount_mode: 'none', discount_requires_approval: false } };
+          if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+        apiPost: async (url: string) => {
+          if (String(url).endsWith('/payment') || String(url).endsWith('/payments')) {
+            return {
+              data: {
+                bill: {
+                  ...currentBill,
+                  paid_amount: 10,
+                  balance: 10,
+                  payment_status: 'partial',
+                },
+              },
+            };
+          }
+          return { data: {} };
+        },
+      });
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          initialOverridePin: '1234',
+          onClose: () => {
+            closeCount++;
+          },
+          onPaid: () => {},
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        });
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+      assert.ok(
+        renderToStaticMarkup(tree).includes('kitchenDeliveryOverridePrompt'),
+        'PaymentModal opens kitchen-override panel with initialOverridePin',
+      );
+
+      const cashInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.['aria-label'] === 'methodCash amount',
+      )[0];
+      cashInput.props.onChange({ target: { value: '10' } });
+      tree = renderPm();
+      const payBtn = collectElements(
+        tree,
+        (el) => typeof el.props?.onClick === 'function' && el.props?.size === 'lg',
+      ).pop();
+      await payBtn.props.onClick();
+      tree = renderPm();
+      const afterPartialMarkup = renderToStaticMarkup(tree);
+      assert.ok(
+        !afterPartialMarkup.includes('kitchenDeliveryOverridePrompt'),
+        'Kitchen override body clears after partial payment',
+      );
+      assert.ok(
+        !afterPartialMarkup.includes('>back<'),
+        'PaymentModal header resets to Items when partial payment clears kitchenOverrideRequired',
+      );
+      registeredDismiss?.();
+      assert.equal(
+        closeCount,
+        1,
+        'Escape closes PaymentModal after partial payment clears kitchen override',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  console.log('  ✓ Column 1 panel header/body/dismiss consistency verified');
+}
+
+async function testDiscountPinErrorAndStatusStripRecovery() {
+  console.log(
+    '\n--- 13. Discount PIN Structured Error, Stale Banner Clear & Status Strip Alignment ---',
+  );
+
+  // 13a. CheckoutPaymentStation must align overflowing status strip alerts from the top (no items-center clipping)
+  await withAliases(async () => {
+    const stationPath = path.resolve(
+      ROOT,
+      'frontend/src/components/pos/CheckoutPaymentStation.tsx',
+    );
+    delete require.cache[stationPath];
+    const harness = createStatefulHarness();
+    try {
+      installCheckoutComponentMocks(harness);
+      const { CheckoutPaymentStation } = require(stationPath);
+      const alertMarkup = renderToStaticMarkup(
+        harness.hooksReact.createElement(
+          CheckoutPaymentStation,
+          {
+            readout: {
+              activeLabel: 'Card',
+              amountText: '$64.20',
+              paidSummaryText: 'Payment: $64.20',
+              dueSummaryText: 'Total: $64.20',
+              statusPillText: 'Exact due',
+              statusTone: 'ready',
+            },
+            quickTenders: [],
+            keypad: harness.hooksReact.createElement('div', null, 'keypad'),
+            changeDisplay: {
+              label: 'Change Returned',
+              formattedAmount: '$0.00',
+              visible: false,
+            },
+            statusBanner: {
+              tone: 'error',
+              message: 'This transaction reference is already recorded on another bill.',
+              nextStep: 'Correct the payment details or choose another method, then try again.',
+              technicalDetails: '{"operation":"payment.create"}',
+              technicalDetailsLabel: 'Technical details',
+              closeLabel: 'Close',
+            },
+          },
+          harness.hooksReact.createElement('button', { type: 'button' }, 'Pay $64.20'),
+        ),
+      );
+      const stripSlice = alertMarkup.slice(
+        alertMarkup.indexOf('data-testid="checkout-status-strip"'),
+      );
+      const scrollBoxMatch = stripSlice.match(/<div class="([^"]*overflow-y-auto[^"]*)"/);
+      assert.ok(scrollBoxMatch, 'checkout-status-strip renders scrollable message container');
+      assert.ok(
+        !scrollBoxMatch![1].split(/\s+/).includes('items-center'),
+        'checkout-status-strip scroll container must not use items-center (which clips top of overflowing headlines)',
+      );
+      assert.ok(
+        scrollBoxMatch![1].split(/\s+/).includes('items-start'),
+        'checkout-status-strip scroll container aligns overflowing alerts at items-start',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 13b. PaymentModal discount wrong-PIN error shows kitchenDeliveryOverrideInvalid (not unknown) and clears on valid retry
+  await withAliases(async () => {
+    const harness = createStatefulHarness();
+    const opRef = '22222222-3333-4444-8555-666666666666';
+    let currentBill: any = makeBill('bill-disc-pin', 100);
+    try {
+      installCheckoutComponentMocks(harness, {
+        operationReference: opRef,
+        managerApprovers: {
+          approvers: [{ id: 'mgr-1', name: 'Manager', role: 'manager', has_pin: true }],
+          selectedApproverId: 'mgr-1',
+        },
+        apiGet: async (url: string) => {
+          if (String(url).includes('/bills/')) return { data: { bill: currentBill } };
+          if (String(url).includes('loyalty/settings')) return { data: { loyalty_enabled: false } };
+          if (String(url).includes('payment-methods')) return { data: { methods: [] } };
+          if (String(url).includes('printers')) return { data: { printers: [] } };
+          if (String(url).includes('settings/discount')) {
+            return { data: { discount_mode: 'both', discount_requires_approval: true } };
+          }
+          if (String(url).includes('settings')) return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+        apiPatch: async (url: string, body: any) => {
+          if (!String(url).includes('/discount')) return { data: {} };
+          if (body.override_pin !== '1234') {
+            throw {
+              response: {
+                status: 403,
+                data: {
+                  error: 'Invalid manager PIN',
+                  reason_code: 'discount.rejected',
+                  operation: 'order.discount',
+                  stage: 'validation',
+                  classification: 'expected_rejection',
+                  outcome: 'not_applied',
+                  correlation_id: opRef,
+                },
+              },
+            };
+          }
+          currentBill = {
+            ...currentBill,
+            discount_type: body.discount_type,
+            discount_value: body.discount_value,
+            discount_amount: 10,
+            total: 90,
+            balance: 90,
+          };
+          return { data: { order: currentBill.order } };
+        },
+      });
+
+      const pmPath = path.resolve(ROOT, 'frontend/src/components/pos/PaymentModal.tsx');
+      delete require.cache[pmPath];
+      const PaymentModal = require(pmPath).default;
+      const renderPm = () =>
+        harness.renderAndSettle(PaymentModal, {
+          bill: currentBill,
+          currency: 'USD',
+          onClose: () => {},
+          onPaid: () => {},
+          onBillUpdate: (updated: any) => {
+            currentBill = updated;
+          },
+        });
+
+      let tree = renderPm();
+      await new Promise((r) => setTimeout(r, 10));
+      tree = renderPm();
+
+      // Open discount panel
+      const discountTabBtn = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'col1-tab-discount',
+      )[0];
+      discountTabBtn.props.onClick();
+      tree = renderPm();
+
+      // Enter 10% discount and wrong manager PIN
+      const discInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number' && el.props?.max === 100,
+      )[0];
+      discInput.props.onChange({ target: { value: '10' } });
+      tree = renderPm();
+
+      const pinInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'password',
+      )[0];
+      pinInput.props.onChange({ target: { value: '0000' } });
+      tree = renderPm();
+
+      const applyBtn = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['data-testid'] !== 'col1-tab-discount' &&
+          typeof el.props?.onClick === 'function' &&
+          JSON.stringify(el.props?.children).includes('applyDiscount'),
+      )[0];
+      assert.ok(applyBtn, 'Apply Discount submit button found');
+      await applyBtn.props.onClick();
+      tree = renderPm();
+
+      const errorStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.equal(
+        errorStrip?.props?.['data-status-tone'],
+        'error',
+        'Invalid discount PIN displays error status strip',
+      );
+      const errorStripText = JSON.stringify(errorStrip);
+      assert.ok(
+        errorStripText.includes('kitchenDeliveryOverrideInvalid') &&
+          !errorStripText.includes('discountOutcomeUnknown'),
+        'Invalid discount PIN reports invalid PIN instead of discountOutcomeUnknown',
+      );
+
+      // Retry with valid manager PIN
+      const retryPinInput = collectElements(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'password',
+      )[0];
+      retryPinInput.props.onChange({ target: { value: '1234' } });
+      tree = renderPm();
+
+      const retryApplyBtn = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.['data-testid'] !== 'col1-tab-discount' &&
+          typeof el.props?.onClick === 'function' &&
+          (JSON.stringify(el.props?.children).includes('applyDiscount') ||
+            JSON.stringify(el.props?.children).includes('updateDiscount')),
+      )[0];
+      assert.ok(retryApplyBtn, 'Retry Apply Discount submit button found');
+      await retryApplyBtn.props.onClick();
+      tree = renderPm();
+
+      const clearedStrip = collectElements(
+        tree,
+        (el) => el.props?.['data-testid'] === 'checkout-status-strip',
+      )[0];
+      assert.notEqual(
+        clearedStrip?.props?.['data-status-tone'],
+        'error',
+        'Successful discount retry clears stale error banner from status strip',
+      );
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  console.log('  ✓ Discount PIN error, stale banner clear & status strip alignment verified');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -2292,6 +5431,14 @@ async function run() {
   await testExactQuickValuesAndDiscountTargetReset();
   await testPosPageEscapeAndSessionGuards();
   await testReviewFixRegressions();
+  await testVisualHierarchyAndPrematurePaidGuards();
+  await testPrincipalUxErgonomicsAndCompletionParity();
+  await testConfirmDialogAndCardReferenceSwitchGuards();
+  await testGreptileReviewRegressions();
+  await testPaidBillCtaDisabledAndTableCheckoutHeaderStatus();
+  await testTenderInputAndZeroBalanceEnterGuards();
+  await testCol1PanelHeaderBodyConsistency();
+  await testDiscountPinErrorAndStatusStripRecovery();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

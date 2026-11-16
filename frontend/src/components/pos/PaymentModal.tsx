@@ -13,6 +13,9 @@ import {
   Users,
   Minus,
   Plus,
+  Printer,
+  ShieldAlert,
+  Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api, {
@@ -36,7 +39,11 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
-import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
+import {
+  allowCurrencyDecimalKey,
+  getDiscountInputStep,
+  normalizeFixedDiscountValue,
+} from '@/lib/currency-input';
 import {
   allocateRemainingMinor,
   computeQuickCashDisplayAmounts,
@@ -47,6 +54,15 @@ import {
   type CheckoutQuickTenderOption,
   type CheckoutStatusBanner,
 } from '@/components/pos/CheckoutPaymentStation';
+import {
+  CHECKOUT_PRIMARY_CTA_CLASS,
+  CheckoutHeaderChips,
+  CheckoutQtyBadge,
+  type CheckoutHeaderChipItem,
+  applyPhysicalCheckoutKey,
+  getCardReferenceSlotClasses,
+  getTenderRowClasses,
+} from '@/components/pos/checkout-ui';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -91,6 +107,8 @@ interface Props {
    */
   onSplit?: (departingBill?: Bill) => void;
   onRegisterDismissHandler?: (handler: (() => boolean) | undefined) => void;
+  onPrintBill?: (bill: Bill, reservedWindow?: Window | null) => Promise<void> | void;
+  reservePrintWindow?: () => Window | null | undefined;
 }
 
 interface Payment {
@@ -131,6 +149,7 @@ type PendingPaymentAttempt = {
     transaction_id?: string;
   }[];
   customerId: string | number | null;
+  balanceAtSubmit?: number;
 };
 
 function getSessionStorageSafe() {
@@ -153,6 +172,10 @@ function readRestoredPostpaidAttempt(bill: Bill, storageKey: string): PendingPay
   }
   const candidate = stored as unknown as Partial<PendingPaymentAttempt>;
   if (!candidate.key || !Array.isArray(candidate.lines)) return null;
+  const savedBalance =
+    typeof candidate.balanceAtSubmit === 'number' && Number.isFinite(candidate.balanceAtSubmit)
+      ? candidate.balanceAtSubmit
+      : Number(bill.balance);
   return {
     billId: bill.id,
     key: candidate.key,
@@ -160,6 +183,7 @@ function readRestoredPostpaidAttempt(bill: Bill, storageKey: string): PendingPay
     zeroBalance: Boolean(candidate.zeroBalance),
     lines: candidate.lines,
     customerId: candidate.customerId ?? null,
+    ...(Number.isFinite(savedBalance) && savedBalance > 0 ? { balanceAtSubmit: savedBalance } : {}),
   };
 }
 
@@ -193,12 +217,14 @@ export default function PaymentModal({
   onBillUpdate,
   onSplit,
   onRegisterDismissHandler,
+  onPrintBill,
+  reservePrintWindow,
 }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
   const selectedCustomer = useCartStore((s) => s.customer);
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, ConfirmDialog, isConfirmOpen } = useConfirm();
   const t = useTranslations('pos');
   const tExpenses = useTranslations('expenses');
   const locale = useLocale();
@@ -235,6 +261,7 @@ export default function PaymentModal({
     'INR';
   const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
+  const remainingMinor = toMinorUnits(remaining);
 
   const buildAttemptPaymentRows = (
     attempt: PendingPaymentAttempt | null,
@@ -304,8 +331,13 @@ export default function PaymentModal({
 
   const [justPaid, setJustPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
+  const [paidChangeAmount, setPaidChangeAmount] = useState(0);
+  const [settledBill, setSettledBill] = useState<Bill | null>(null);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const doneButtonRef = useRef<HTMLButtonElement>(null);
   const [payments, setPayments] = useState<Payment[]>(buildAttemptPaymentRows(pendingAttempt, []));
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
@@ -339,7 +371,6 @@ export default function PaymentModal({
   const [activeCol1Panel, setActiveCol1Panel] = useState<
     'items' | 'discount' | 'tax' | 'kitchen-override'
   >(() => (initialOverridePin ? 'kitchen-override' : 'items'));
-  const showDiscount = activeCol1Panel === 'discount';
   const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
@@ -353,27 +384,31 @@ export default function PaymentModal({
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(
     targetFromAttempt(pendingAttempt, payments),
   );
-  const setCol1Panel = (
-    next:
-      | 'items'
-      | 'discount'
-      | 'tax'
-      | 'kitchen-override'
-      | ((
-          prev: 'items' | 'discount' | 'tax' | 'kitchen-override',
-        ) => 'items' | 'discount' | 'tax' | 'kitchen-override'),
-  ) => {
-    const resolved = typeof next === 'function' ? next(activeCol1Panel) : next;
-    if (resolved !== activeCol1Panel) {
-      setActiveCol1Panel(resolved);
+  const [lastPaymentTarget, setLastPaymentTarget] = useState<
+    Exclude<AmountTarget, { kind: 'discount' } | null>
+  >({
+    kind: 'payment',
+    index: 0,
+  });
+  if (
+    amountTarget &&
+    amountTarget.kind !== 'discount' &&
+    (amountTarget.kind !== lastPaymentTarget.kind ||
+      (amountTarget.kind === 'payment' &&
+        lastPaymentTarget.kind === 'payment' &&
+        amountTarget.index !== lastPaymentTarget.index))
+  ) {
+    setLastPaymentTarget(amountTarget);
+  }
+  const restorePaymentTarget = () => {
+    if (lastPaymentTarget.kind === 'wallet') {
+      setAmountTarget({ kind: 'wallet' });
+      return;
     }
-    if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
-      setAmountTarget({ kind: 'payment', index: 0 });
-    }
-  };
-  const setShowDiscount = (next: boolean | ((prev: boolean) => boolean)) => {
-    const resolved = typeof next === 'function' ? next(activeCol1Panel === 'discount') : next;
-    setCol1Panel(resolved ? 'discount' : 'items');
+    setAmountTarget({
+      kind: 'payment',
+      index: payments[lastPaymentTarget.index] ? lastPaymentTarget.index : 0,
+    });
   };
   const [showDetails, setShowDetails] = useState(Boolean(initialOverridePin));
   const [billDetails, setBillDetails] = useState<{
@@ -398,6 +433,13 @@ export default function PaymentModal({
   }, [bill.id]);
   const detailOrder = billDetails?.id === bill.id ? billDetails.order : null;
   const contextOrder = detailOrder ?? bill.order;
+  const isOrderCancelled = contextOrder?.status === 'cancelled';
+  const billTerminal =
+    bill.payment_status === 'refunded' ||
+    bill.payment_status === 'partially_refunded' ||
+    isOrderCancelled;
+  const isBillPaid = bill.payment_status === 'paid' && remainingMinor <= 0;
+  const billReadOnly = billTerminal || isBillPaid;
   const orderCustomer = detailOrder?.customer ?? bill.order?.customer;
   const cartCustomer = effectiveCustomerId
     ? String(orderCustomer?.id) === String(effectiveCustomerId)
@@ -477,15 +519,55 @@ export default function PaymentModal({
   const appliedCharges: AppliedCharge[] = parseAppliedCharges(bill.charges_breakdown);
   const applicableCharges = chargesForOrderType(charges, bill.order?.type || '');
   const scheduledOrderEditLocked = isScheduledOrderEditLocked(bill.order, [bill]);
+  const canShowDiscountPanel =
+    !bill.split_group_id && !scheduledOrderEditLocked && discountMode !== 'none';
+  const effectiveCol1Panel: 'items' | 'discount' | 'tax' | 'kitchen-override' =
+    activeCol1Panel === 'kitchen-override' && kitchenOverrideRequired
+      ? 'kitchen-override'
+      : activeCol1Panel === 'discount' && canShowDiscountPanel
+        ? 'discount'
+        : activeCol1Panel === 'tax'
+          ? 'tax'
+          : 'items';
+  const showDiscount = effectiveCol1Panel === 'discount';
+  const setCol1Panel = (
+    next:
+      | 'items'
+      | 'discount'
+      | 'tax'
+      | 'kitchen-override'
+      | ((
+          prev: 'items' | 'discount' | 'tax' | 'kitchen-override',
+        ) => 'items' | 'discount' | 'tax' | 'kitchen-override'),
+  ) => {
+    const resolved = typeof next === 'function' ? next(effectiveCol1Panel) : next;
+    if (resolved !== activeCol1Panel) {
+      setActiveCol1Panel(resolved);
+    }
+    if (
+      resolved === 'discount' &&
+      !attemptLocked &&
+      !justPaid &&
+      !billReadOnly &&
+      canShowDiscountPanel
+    ) {
+      setAmountTarget({ kind: 'discount' });
+    } else if (resolved !== 'discount' && amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
+    }
+  };
+  const setShowDiscount = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === 'function' ? next(showDiscount) : next;
+    setCol1Panel(resolved ? 'discount' : 'items');
+  };
   // The backend rejects a waiver on a split check (its charges are already
   // allocated) and on a settled bill, so the toggle is not offered there.
   const canToggleCharges =
     !bill.split_group_id &&
     !scheduledOrderEditLocked &&
+    !billReadOnly &&
     bill.payment_status !== 'paid' &&
-    Number(bill.paid_amount || 0) === 0 &&
-    bill.payment_status !== 'refunded' &&
-    bill.payment_status !== 'partially_refunded';
+    Number(bill.paid_amount || 0) === 0;
   const canReadBills = tenantCan(currentTenant, 'bills.read');
   const canGenerateBill = tenantCan(currentTenant, 'bills.generate');
   const splitCheckItems = (bill.order?.items || []).filter(
@@ -503,7 +585,11 @@ export default function PaymentModal({
     | 'splitCheckWholeUnitsOnly'
     | 'splitCheckTwoUnitsRequired'
     | 'splitCheckFailed';
-  type SplitEligibilityResult = { open: true } | { unknown: true } | { reason: SplitReasonKey };
+  type SplitEligibilityResult =
+    | { open: true }
+    | { unknown: true }
+    | { cancelled: true }
+    | { reason: SplitReasonKey };
   const splitEligibility: SplitEligibilityResult = (() => {
     // 1. Reading eligibility and generating an allocation are both configured
     //    permissions; both are explained the same way.
@@ -513,8 +599,12 @@ export default function PaymentModal({
     if (attemptLocked || paymentOutcomeUnknown || processing) {
       return { reason: 'splitCheckResolvePaymentFirst' } as const;
     }
+    if (isOrderCancelled) {
+      return { cancelled: true } as const;
+    }
     // 3. Only an untouched unpaid check is divisible.
     if (
+      billTerminal ||
       bill.payment_status !== 'unpaid' ||
       Number(bill.paid_amount || 0) > 0 ||
       Boolean(bill.payment_details)
@@ -705,7 +795,10 @@ export default function PaymentModal({
       setPaymentOutcomeUnknown(Boolean(restored));
       setJustPaid(false);
       setPaidAmount(null);
+      setPaidChangeAmount(0);
+      setSettledBill(null);
       setPointsEarned(0);
+      setLastPaymentTarget({ kind: 'payment', index: 0 });
       setDiscountPin('');
       setDiscountApproverId(null);
       setShowDetails(false);
@@ -759,6 +852,7 @@ export default function PaymentModal({
       setDiscountValue('');
       setDiscountReason('');
       setDiscountPin('');
+      setActiveCol1Panel((panel) => (panel === 'discount' ? 'items' : panel));
       setAmountTarget((target) =>
         target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
       );
@@ -773,6 +867,16 @@ export default function PaymentModal({
     setAmountTarget((target) =>
       target?.kind === 'discount' ? { kind: 'payment', index: 0 } : target,
     );
+  }
+
+  if (
+    (activeCol1Panel === 'discount' && !canShowDiscountPanel) ||
+    (activeCol1Panel === 'kitchen-override' && !kitchenOverrideRequired)
+  ) {
+    setActiveCol1Panel('items');
+    if (amountTarget?.kind === 'discount') {
+      restorePaymentTarget();
+    }
   }
 
   // Proportionally update payment inputs when remaining balance changes,
@@ -925,14 +1029,26 @@ export default function PaymentModal({
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
   const attemptTotalMinor = (attempt: PendingPaymentAttempt) =>
     attempt.lines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
+  const attemptNonCashMinor = (attempt: PendingPaymentAttempt) =>
+    attempt.lines
+      .filter((line) => line.method !== 'cash')
+      .reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
   const lockedAttemptTotalMinor =
     attemptLocked && pendingAttempt ? attemptTotalMinor(pendingAttempt) : null;
+  const lockedAttemptNonCashMinor =
+    attemptLocked && pendingAttempt ? attemptNonCashMinor(pendingAttempt) : null;
   const totalPaymentMinor =
     lockedAttemptTotalMinor ??
     payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) +
       toMinorUnits(walletAmt);
+  const nonCashTotalMinor =
+    lockedAttemptNonCashMinor ??
+    payments
+      .filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) +
+      toMinorUnits(walletAmt);
   const totalPayment = totalPaymentMinor / minorFactor;
-  const remainingMinor = toMinorUnits(remaining);
+  const nonCashExceedsBalance = nonCashTotalMinor > remainingMinor;
 
   // Equal shares divide the remaining authoritative balance in the tenant's
   // smallest unit, so no share is created or lost to rounding.
@@ -958,13 +1074,17 @@ export default function PaymentModal({
   const canDecrementEqualShare =
     !processing &&
     !attemptLocked &&
+    !justPaid &&
+    !billReadOnly &&
     !(equalSharePayers.trim() !== '' && Number(equalSharePayers) <= MIN_EQUAL_SHARE_PAYERS);
   const canIncrementEqualShare =
     !processing &&
     !attemptLocked &&
+    !justPaid &&
+    !billReadOnly &&
     !(equalSharePayers.trim() !== '' && Number(equalSharePayers) >= MAX_EQUAL_SHARE_PAYERS);
   const stepEqualSharePayers = (delta: -1 | 1) => {
-    if (processing || attemptLocked) return;
+    if (processing || attemptLocked || justPaid || billReadOnly) return;
     const trimmed = equalSharePayers.trim();
     const parsed = Number(trimmed);
     if (!trimmed || !Number.isFinite(parsed)) {
@@ -1015,7 +1135,7 @@ export default function PaymentModal({
 
   const applyEqualShare = async (index: number) => {
     const shareMinor = equalShareShares[0];
-    if (processing || attemptLocked || shareMinor === undefined) return;
+    if (processing || attemptLocked || justPaid || billReadOnly || shareMinor === undefined) return;
     const amountInput = String(toDisplayUnit(minorToStored(shareMinor)));
     const replacing = payments.filter(
       (row, rowIndex) =>
@@ -1120,7 +1240,7 @@ export default function PaymentModal({
   }
 
   const updatePaymentAmount = (idx: number, value: string) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     setPaymentsTouched(true);
     setAutoFilledSingleIndex(null);
     setAppliedEqualShare((current) => (current?.index === idx ? null : current));
@@ -1130,7 +1250,7 @@ export default function PaymentModal({
   };
 
   const updatePaymentTransactionId = (idx: number, value: string) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     setPayments((current) =>
       current.map((payment, index) =>
         index === idx ? { ...payment, transaction_id: value } : payment,
@@ -1144,7 +1264,7 @@ export default function PaymentModal({
     payment.payment_method_id === undefined;
 
   const allocateRemainingTo = (idx: number) => {
-    if (attemptLocked || justPaid) return;
+    if (attemptLocked || justPaid || billReadOnly) return;
     const rowMinor = payments.map((payment) =>
       toMinorUnits(toStoredUnit(parseFloat(payment.amount) || 0)),
     );
@@ -1172,6 +1292,34 @@ export default function PaymentModal({
     );
   };
 
+  const handleTenderButtonClick = (idx: number) => {
+    if (attemptLocked || justPaid || billReadOnly) return;
+    setAmountTarget({ kind: 'payment', index: idx });
+    if (
+      autoFilledSingleIndex !== null &&
+      autoFilledSingleIndex !== idx &&
+      !paymentsTouched &&
+      walletAmt === 0
+    ) {
+      const dueMinor = Math.max(0, remainingMinor);
+      const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+      setAppliedEqualShare(null);
+      setAutoFilledSingleIndex(dueMinor > 0 ? idx : null);
+      setPaymentsTouched(false);
+      setPayments((current) =>
+        current.map((payment, index) =>
+          index === idx
+            ? { ...payment, amount: dueMinor > 0 ? formatInput(dueDisplay) : '' }
+            : { ...payment, amount: '', transaction_id: '' },
+        ),
+      );
+      return;
+    }
+    if (!payments[idx]?.amount) {
+      allocateRemainingTo(idx);
+    }
+  };
+
   const activeAmountLabel =
     amountTarget?.kind === 'discount'
       ? t('discount')
@@ -1195,7 +1343,7 @@ export default function PaymentModal({
       : rawActiveAmountValue;
 
   const updateActiveAmount = (value: string) => {
-    if (!amountTarget || attemptLocked || justPaid) return;
+    if (!amountTarget || attemptLocked || justPaid || billReadOnly) return;
     if (amountTarget.kind === 'payment') {
       updatePaymentAmount(amountTarget.index, value);
       return;
@@ -1267,7 +1415,7 @@ export default function PaymentModal({
       : payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 
   const change =
-    hasCash && totalPaymentMinor > remainingMinor
+    !nonCashExceedsBalance && hasCash && totalPaymentMinor > remainingMinor
       ? (totalPaymentMinor - remainingMinor) / minorFactor
       : 0;
 
@@ -1277,6 +1425,7 @@ export default function PaymentModal({
   const handleApplyDiscount = async (customVal?: number) => {
     if (
       justPaid ||
+      billReadOnly ||
       applyingDiscount ||
       processing ||
       updatingChargeId ||
@@ -1317,6 +1466,7 @@ export default function PaymentModal({
       return;
     }
     setApplyingDiscount(true);
+    setRequestFailure(null);
     const operationId = createOperationReference();
     try {
       const storedDiscountValue =
@@ -1335,6 +1485,7 @@ export default function PaymentModal({
         },
         { headers: operationHeaders(operationId) },
       );
+      setRequestFailure(null);
       toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
       setDiscountPin('');
       setDiscountApproverId(null);
@@ -1342,6 +1493,8 @@ export default function PaymentModal({
         setShowDiscount(false);
         setDiscountValue('');
         setDiscountReason('');
+      } else if (amountTarget?.kind === 'discount') {
+        restorePaymentTarget();
       }
       // Refresh bill without closing modal
       const { data } = await api.get(`/bills/order/${bill.order_id}`, {
@@ -1371,7 +1524,13 @@ export default function PaymentModal({
       const message = confirmedNoChange
         ? failure.displayCode
           ? displayMessages[failure.displayCode] || t('operationNotSaved')
-          : t('operationNotSaved')
+          : failure.serverError === 'Invalid manager PIN'
+            ? t('kitchenDeliveryOverrideInvalid')
+            : failure.serverError === 'Manager PIN required for discounts'
+              ? t('managerPinRequired')
+              : failure.status === 429 && failure.serverError
+                ? failure.serverError
+                : t('operationNotSaved')
         : t('discountOutcomeUnknown');
       setRequestFailure({
         message,
@@ -1412,6 +1571,8 @@ export default function PaymentModal({
     if (
       openingSplitCheck ||
       attemptLocked ||
+      justPaid ||
+      billReadOnly ||
       applyingDiscount ||
       updatingChargeId ||
       chargeStateUncertain
@@ -1445,6 +1606,7 @@ export default function PaymentModal({
       );
       const untouchedUnpaid =
         freshBill.payment_status === 'unpaid' &&
+        splitOrder?.status !== 'cancelled' &&
         Number(freshBill.paid_amount || 0) === 0 &&
         !freshBill.payment_details;
       const wholeUnits = items.every(
@@ -1517,6 +1679,7 @@ export default function PaymentModal({
       zeroBalance,
       lines: zeroBalance ? [{ method: 'cash', amount: null }] : splitLines,
       customerId: effectiveCustomerId,
+      ...(remaining > 0 ? { balanceAtSubmit: remaining } : {}),
     };
   };
 
@@ -1594,6 +1757,7 @@ export default function PaymentModal({
       setPaymentOutcomeUnknown(false);
       setRequestFailure(null);
       setKitchenOverrideRequired(false);
+      setActiveCol1Panel((panel) => (panel === 'kitchen-override' ? 'items' : panel));
       if (updatedBill.payment_status !== 'paid') {
         setPayments((rows) =>
           rows.map((row) => (row.transaction_id ? { ...row, transaction_id: '' } : row)),
@@ -1628,11 +1792,58 @@ export default function PaymentModal({
         toast.success(t('paymentRecorded'));
       }
       const attemptAmount = attempt.zeroBalance ? 0 : attemptTotalMinor(attempt) / minorFactor;
-      const maxSettleable =
+      const recordedTail =
+        !attempt.zeroBalance &&
+        attempt.lines.length > 0 &&
+        Array.isArray(updatedBill.payment_details) &&
+        updatedBill.payment_details.length >= attempt.lines.length
+          ? updatedBill.payment_details.slice(-attempt.lines.length)
+          : null;
+      const recordedTailMatches = Boolean(
+        recordedTail &&
+        recordedTail.every((detail, idx) => {
+          const line = attempt.lines[idx];
+          const requested =
+            (detail as { requested_amount?: number }).requested_amount ??
+            detail.tendered_amount ??
+            detail.amount;
+          return (
+            detail?.method === line.method &&
+            (detail?.payment_method_id ?? undefined) === (line.payment_method_id ?? undefined) &&
+            toMinorUnits(Number(requested) || 0) === toMinorUnits(Number(line.amount) || 0)
+          );
+        }),
+      );
+      const priorRemaining =
         remaining > 0
           ? remaining
-          : Math.max(0, Number(updatedBill.paid_amount ?? updatedBill.total ?? attemptAmount));
-      setPaidAmount(attempt.zeroBalance ? 0 : Math.min(attemptAmount, maxSettleable));
+          : typeof attempt.balanceAtSubmit === 'number' && attempt.balanceAtSubmit > 0
+            ? attempt.balanceAtSubmit
+            : Math.max(0, Number(updatedBill.paid_amount ?? updatedBill.total ?? attemptAmount));
+      const settledNow = attempt.zeroBalance
+        ? 0
+        : recordedTailMatches && recordedTail
+          ? recordedTail.reduce((sum, d) => sum + toMinorUnits(Number(d.amount) || 0), 0) /
+            minorFactor
+          : Math.min(attemptAmount, priorRemaining);
+      const attemptHasCash = attempt.lines.some(
+        (line) => line.method === 'cash' && (Number(line.amount) || 0) > 0,
+      );
+      const settledChange = attempt.zeroBalance
+        ? 0
+        : recordedTailMatches && recordedTail
+          ? recordedTail.reduce((sum, d) => sum + toMinorUnits(Number(d.change_amount) || 0), 0) /
+            minorFactor
+          : attemptHasCash && attemptTotalMinor(attempt) > toMinorUnits(settledNow)
+            ? (attemptTotalMinor(attempt) - toMinorUnits(settledNow)) / minorFactor
+            : 0;
+      setSettledBill({
+        ...bill,
+        ...updatedBill,
+        order: updatedBill.order ?? detailOrder ?? bill.order,
+      });
+      setPaidChangeAmount(settledChange);
+      setPaidAmount(settledNow);
       setJustPaid(true);
     } catch (error: unknown) {
       const response = (
@@ -1846,11 +2057,17 @@ export default function PaymentModal({
   };
 
   const handlePay = async () => {
+    const hasLockedAttempt = Boolean(
+      pendingAttemptRef.current && pendingAttemptRef.current.billId === bill.id,
+    );
     if (
       processing ||
       applyingDiscount ||
       updatingChargeId ||
       chargeStateUncertain ||
+      justPaid ||
+      billTerminal ||
+      (!hasLockedAttempt && isBillPaid) ||
       inFlightRef.current
     )
       return;
@@ -1898,12 +2115,7 @@ export default function PaymentModal({
         toast.error(t('cardTransactionIdMissing'));
         return;
       }
-      const nonCashTotalMinor =
-        payments
-          .filter((p) => p.method !== 'cash')
-          .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) +
-        toMinorUnits(walletAmt);
-      if (nonCashTotalMinor > remainingMinor) {
+      if (nonCashExceedsBalance) {
         toast.error(t('paymentAboveBalance'));
         return;
       }
@@ -1945,6 +2157,11 @@ export default function PaymentModal({
     country: currentTenant?.country || '',
   };
 
+  const completionBill = (() => {
+    const base = settledBill ?? bill;
+    return base.order || !contextOrder ? base : { ...base, order: contextOrder };
+  })();
+
   const handleSendWhatsApp = async () => {
     const phone = cartCustomer?.phone;
     if (!phone) {
@@ -1953,7 +2170,14 @@ export default function PaymentModal({
     }
     setSendingWa(true);
     try {
-      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned }, locale);
+      await sendBillViaFlo(
+        completionBill,
+        phone,
+        tenantForShare,
+        whatsappSendT,
+        { pointsEarned },
+        locale,
+      );
     } finally {
       setSendingWa(false);
     }
@@ -1966,7 +2190,7 @@ export default function PaymentModal({
     }
     try {
       const opened = await shareBillViaWhatsApp(
-        bill,
+        completionBill,
         { phone: cartCustomer.phone, country_code: cartCustomer.country_code },
         tenantForShare,
         { pointsEarned },
@@ -1978,19 +2202,63 @@ export default function PaymentModal({
     }
   };
 
+  const handlePrintCompletionReceipt = async () => {
+    if (printingReceipt) return;
+    const targetBill = completionBill;
+    const reservedWindow = reservePrintWindow?.();
+    setPrintingReceipt(true);
+    try {
+      if (onPrintBill) {
+        await onPrintBill(targetBill, reservedWindow);
+        return;
+      }
+      if (!currentTenant) {
+        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+        return;
+      }
+      const { usePrinterStore } = await import('@/hooks/usePrinter');
+      await usePrinterStore
+        .getState()
+        .printBill(targetBill, currentTenant, undefined, reservedWindow);
+    } catch {
+      toast.error(tOrders('printReceiptFailed'));
+    } finally {
+      setPrintingReceipt(false);
+    }
+  };
+
+  const isDismissLocked = () =>
+    processing ||
+    attemptLocked ||
+    paymentOutcomeUnknown ||
+    applyingDiscount ||
+    Boolean(updatingChargeId) ||
+    chargeStateUncertain ||
+    splitCheckSaving ||
+    inFlightRef.current;
+
+  const handleCloseButtonClick = () => {
+    if (isDismissLocked() || isConfirmOpen) return;
+    if (splitCheckOrder) {
+      setSplitCheckOrder(null);
+      return;
+    }
+    if (chargeApprovalId) {
+      setChargeApprovalId(null);
+      setChargeApprovalPin('');
+      return;
+    }
+    if (justPaid) {
+      onPaid();
+    } else {
+      onClose();
+    }
+  };
+
   const dismissHandlerRef = useRef<() => boolean>(() => true);
   useEffect(() => {
     dismissHandlerRef.current = () => {
-      if (
-        processing ||
-        attemptLocked ||
-        paymentOutcomeUnknown ||
-        applyingDiscount ||
-        updatingChargeId ||
-        chargeStateUncertain ||
-        splitCheckSaving ||
-        inFlightRef.current
-      ) {
+      if (isDismissLocked() || isConfirmOpen) {
         return true;
       }
       if (splitCheckOrder) {
@@ -2000,6 +2268,15 @@ export default function PaymentModal({
       if (chargeApprovalId) {
         setChargeApprovalId(null);
         setChargeApprovalPin('');
+        return true;
+      }
+      if (
+        !justPaid &&
+        (effectiveCol1Panel === 'discount' ||
+          effectiveCol1Panel === 'tax' ||
+          (effectiveCol1Panel === 'kitchen-override' && !initialOverridePin))
+      ) {
+        setCol1Panel('items');
         return true;
       }
       if (justPaid) {
@@ -2031,7 +2308,7 @@ export default function PaymentModal({
   );
 
   const quickTenderOptions: CheckoutQuickTenderOption[] = (() => {
-    if (processing || attemptLocked || justPaid) return [];
+    if (processing || attemptLocked || justPaid || billReadOnly) return [];
     if (amountTarget?.kind === 'discount' && discountType === 'percentage') {
       return [5, 10, 15, 20].map((pct) => ({
         label: `${pct}%`,
@@ -2121,15 +2398,52 @@ export default function PaymentModal({
         closeLabel: t('close'),
       };
     }
-    if (totalPaymentMinor < remainingMinor && remainingMinor > 0) {
+    if (isBillPaid) {
+      return {
+        tone: 'idle-settled',
+        message: t('paid'),
+      };
+    }
+    if (billTerminal) {
+      return {
+        tone: 'warning',
+        message: isOrderCancelled ? tOrders('noFurtherActions') : t('paymentBillRefunded'),
+      };
+    }
+    if (nonCashExceedsBalance) {
+      return {
+        tone: 'warning',
+        message: t('paymentAboveBalance'),
+      };
+    }
+    if (totalPaymentMinor === 0 && remainingMinor > 0) {
       return {
         tone: 'idle-due',
+        message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
+      };
+    }
+    if (totalPaymentMinor < remainingMinor) {
+      return {
+        tone: 'idle-due',
+        partial: true,
         message: `${t('balanceDue')}: ${currencyFmt((remainingMinor - totalPaymentMinor) / minorFactor)}`,
       };
     }
+    if (change > 0 && !nonCashExceedsBalance) {
+      return {
+        tone: 'idle-ready',
+        message: `${t('totalDue')}: ${currencyFmt(remaining)}`,
+      };
+    }
+    if (!nonCashExceedsBalance && totalPaymentMinor === remainingMinor) {
+      return {
+        tone: 'idle-ready',
+        message: `${t('totalDue')}: ${currencyFmt(remaining)} - ${t('exactAmount')}`,
+      };
+    }
     return {
-      tone: 'idle-settled',
-      message: t('paid'),
+      tone: 'idle-due',
+      message: `${t('balanceDue')}: ${currencyFmt(remaining)}`,
     };
   })();
 
@@ -2140,15 +2454,72 @@ export default function PaymentModal({
         : currencyFmt(toStoredUnit(parseFloat(discountValue) || 0))
       : currencyFmt(toStoredUnit(parseFloat(activeAmountValue) || 0));
 
-  const readoutStatusTone: 'settled' | 'due' | 'change' =
-    change > 0 ? 'change' : totalPaymentMinor >= remainingMinor ? 'settled' : 'due';
+  const readoutStatusTone: 'settled' | 'ready' | 'due' | 'partial' | 'change' = isBillPaid
+    ? 'settled'
+    : billTerminal || nonCashExceedsBalance
+      ? 'due'
+      : change > 0 && !nonCashExceedsBalance
+        ? 'change'
+        : !nonCashExceedsBalance && totalPaymentMinor === remainingMinor
+          ? 'ready'
+          : totalPaymentMinor > 0
+            ? 'partial'
+            : 'due';
+
+  const readoutStatusPillText = isBillPaid
+    ? t('paid')
+    : billTerminal || nonCashExceedsBalance
+      ? undefined
+      : change > 0 && !nonCashExceedsBalance
+        ? `${t('changeReturned')}: ${currencyFmt(change)}`
+        : !nonCashExceedsBalance && totalPaymentMinor === remainingMinor
+          ? t('exactAmount')
+          : undefined;
+
+  const rawOrderType =
+    contextOrder?.type || (contextOrder as { order_type?: string } | undefined)?.order_type;
+  const orderTypeKey =
+    rawOrderType && rawOrderType in ORDER_TYPE_KEYS
+      ? ORDER_TYPE_KEYS[rawOrderType as keyof typeof ORDER_TYPE_KEYS]
+      : null;
+  const headerTableName =
+    contextOrder?.table?.name || (contextOrder as { table_name?: string } | undefined)?.table_name;
+  const headerChips: CheckoutHeaderChipItem[] = [
+    { key: 'bill', label: t('billNumber', { number: bill.bill_number }), variant: 'neutral' },
+    ...(bill.split_label
+      ? [{ key: 'split', label: bill.split_label, variant: 'brand' as const }]
+      : []),
+    ...(contextOrder?.order_number
+      ? [
+          {
+            key: 'order',
+            label: t('orderNumber', { number: contextOrder.order_number }),
+            variant: 'neutral' as const,
+          },
+        ]
+      : []),
+    ...(orderTypeKey ? [{ key: 'type', label: t(orderTypeKey), variant: 'brand' as const }] : []),
+    ...(headerTableName
+      ? [
+          {
+            key: 'table',
+            label: t('tableLabel', { name: headerTableName }),
+            variant: 'neutral' as const,
+          },
+        ]
+      : []),
+    ...(cartCustomer?.name
+      ? [{ key: 'customer', label: cartCustomer.name, variant: 'customer' as const }]
+      : []),
+  ];
+
+  const visibleOrderItems = (detailOrder?.items || []).filter(
+    (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
+  );
 
   const taxComponents = resolveTaxComponents(bill);
 
-  const billTerminal =
-    bill.payment_status === 'refunded' ||
-    bill.payment_status === 'partially_refunded' ||
-    bill.order?.status === 'cancelled';
+  const controlsDisabled = processing || attemptLocked || justPaid || billReadOnly;
 
   const payCtaDisabled =
     processing ||
@@ -2157,6 +2528,8 @@ export default function PaymentModal({
     Boolean(updatingChargeId) ||
     chargeStateUncertain ||
     billTerminal ||
+    (!attemptLocked && isBillPaid) ||
+    (!pendingAttempt && nonCashExceedsBalance) ||
     (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
     Boolean(
       kitchenOverridePin &&
@@ -2166,31 +2539,150 @@ export default function PaymentModal({
         !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
     );
 
+  const terminalCtaLabel = isOrderCancelled
+    ? tOrders('cancelled')
+    : bill.payment_status === 'partially_refunded'
+      ? tOrders('partiallyRefunded')
+      : tOrders('refunded');
+
   const payCtaLabel = processing
     ? t('processingPayment')
-    : paymentOutcomeUnknown
-      ? t('checkPaymentStatus')
-      : pendingAttempt
-        ? t('retrySamePayment')
-        : `${t('pay')} ${currencyFmt(totalPayment)}`;
+    : billTerminal
+      ? terminalCtaLabel
+      : paymentOutcomeUnknown
+        ? t('checkPaymentStatus')
+        : pendingAttempt
+          ? t('retrySamePayment')
+          : isBillPaid
+            ? t('paid')
+            : `${t('pay')} ${currencyFmt(totalPayment)}`;
+
+  useEffect(() => {
+    if (justPaid) {
+      doneButtonRef.current?.focus?.();
+    }
+  }, [justPaid]);
+
+  const keyboardActionRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  useEffect(() => {
+    keyboardActionRef.current = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isInput =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        Boolean(target?.isContentEditable);
+      const isInsideModal =
+        !modalRef.current ||
+        !target ||
+        (typeof Node !== 'undefined' && !(target instanceof Node)) ||
+        modalRef.current.contains(target as Node);
+      const isInteractive =
+        isInput ||
+        (isInsideModal &&
+          (tag === 'BUTTON' ||
+            tag === 'A' ||
+            target?.getAttribute?.('role') === 'button' ||
+            Boolean(target?.closest?.('button, a, [role="button"]'))));
+
+      if (e.key === 'Escape' && !onRegisterDismissHandler) {
+        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+        e.preventDefault();
+        dismissHandlerRef.current();
+        return;
+      }
+
+      if (splitCheckOrder || chargeApprovalId || isConfirmOpen) return;
+      if (isInput) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.isComposing || e.keyCode === 229) return;
+
+      if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
+        if (e.repeat) {
+          e.preventDefault();
+          return;
+        }
+        if (isInteractive) return;
+        e.preventDefault();
+        if (e.key === 'Enter') {
+          if (justPaid) {
+            onPaid();
+            return;
+          }
+          if (
+            amountTarget?.kind !== 'discount' &&
+            !payCtaDisabled &&
+            !pendingAttempt &&
+            totalPaymentMinor >= remainingMinor
+          ) {
+            void handlePay();
+          }
+        }
+        return;
+      }
+
+      if (justPaid || billReadOnly || isDismissLocked() || openingSplitCheck || !amountTarget)
+        return;
+      const allowDecimal = allowCurrencyDecimalKey(
+        unitAdapter.maxDecimals,
+        amountTarget.kind,
+        discountType,
+      );
+      const nextVal = applyPhysicalCheckoutKey(
+        activeAmountValue,
+        e.key,
+        allowDecimal,
+        activeAmountMax,
+      );
+      if (nextVal !== null) {
+        e.preventDefault();
+        if (isInteractive && typeof target?.blur === 'function') {
+          target.blur();
+        }
+        updateActiveAmount(nextVal);
+      }
+    };
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const listener = (e: KeyboardEvent) => keyboardActionRef.current?.(e);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
+
+  const handleTenderInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      e.key === 'Enter' &&
+      !e.repeat &&
+      !e.nativeEvent?.isComposing &&
+      e.keyCode !== 229 &&
+      !isConfirmOpen &&
+      amountTarget?.kind !== 'discount' &&
+      !payCtaDisabled &&
+      !pendingAttempt &&
+      totalPaymentMinor >= remainingMinor
+    ) {
+      e.preventDefault();
+      void handlePay();
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3">
-      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden bg-card shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl">
+    <div
+      ref={modalRef}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-3"
+    >
+      <div className="flex h-[calc(100dvh-0px)] w-full flex-col overflow-hidden border-border bg-background shadow-2xl sm:h-[min(94dvh,920px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-2xl sm:border dark:border-white/12">
         {/* Compact Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5">
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-foreground sm:text-lg">{t('payment')}</h2>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {t('billNumber', { number: bill.bill_number })}
-              {bill.split_label ? ` · ${bill.split_label}` : ''}
-              {contextOrder?.order_number
-                ? ` · ${t('orderNumber', { number: contextOrder.order_number })}`
-                : ''}
-              {contextOrder?.type ? ` · ${t(ORDER_TYPE_KEYS[contextOrder.type])}` : ''}
-              {contextOrder?.table?.name ? ` · ${contextOrder.table.name}` : ''}
-              {cartCustomer ? ` · ${cartCustomer.name}` : ''}
-            </p>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card/85 px-4 py-2.5 sm:px-5 [@media(max-height:660px)]:py-1.5 dark:bg-card/55">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="shrink-0 text-base font-bold tracking-tight text-foreground sm:text-lg">
+              {t('payment')}
+            </h2>
+            <CheckoutHeaderChips chips={headerChips} />
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -2199,20 +2691,20 @@ export default function PaymentModal({
                 const next = !showDetails;
                 setShowDetails(next);
                 if (!next && amountTarget?.kind === 'discount') {
-                  setAmountTarget({ kind: 'payment', index: 0 });
+                  restorePaymentTarget();
                 }
               }}
               aria-expanded={showDetails}
-              className={`touch-target rounded-lg border px-3 text-sm font-medium lg:hidden ${
+              className={`touch-target rounded-lg border px-3 text-sm font-medium transition-colors lg:hidden ${
                 !showDetails && kitchenOverrideRequired
-                  ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
-                  : 'border-border'
+                  ? 'border-amber-500/60 bg-amber-500/12 text-amber-800 dark:text-amber-200'
+                  : 'border-border bg-card hover:bg-muted dark:border-white/10'
               }`}
             >
               {showDetails ? t('close') : kitchenOverrideRequired ? t('managerPin') : t('items')}
             </button>
             <button
-              onClick={() => dismissHandlerRef.current()}
+              onClick={handleCloseButtonClick}
               disabled={
                 processing ||
                 attemptLocked ||
@@ -2222,7 +2714,7 @@ export default function PaymentModal({
                 chargeStateUncertain ||
                 splitCheckSaving
               }
-              className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+              className="touch-target rounded-full border border-border/70 bg-muted/70 text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground active:scale-[0.98] dark:border-white/10"
               aria-label={t('close')}
             >
               <X size={16} />
@@ -2233,24 +2725,28 @@ export default function PaymentModal({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(280px,1fr)_minmax(310px,1.08fr)_minmax(320px,0.96fr)] lg:overflow-hidden">
           {/* Column 1: Contained Panel Swap (Items / Discount / Tax / Kitchen Override) + Pinned Totals Footer */}
           <div
-            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'flex' : 'hidden lg:flex'} max-lg:min-h-[168px] min-w-0 flex-col gap-2.5 border-b border-border bg-card/35 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 lg:min-h-0 lg:overflow-hidden lg:border-b-0 lg:border-e dark:bg-card/20`}
           >
             <div className="flex shrink-0 items-center justify-between gap-2">
-              {activeCol1Panel === 'items' ? (
-                <h3 className="text-sm font-semibold text-foreground">{t('items')}</h3>
+              {effectiveCol1Panel === 'items' ? (
+                <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <span>{t('items')}</span>
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border/80 bg-muted px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:border-white/10">
+                    {fmtNum(visibleOrderItems.length)}
+                  </span>
+                </h3>
               ) : (
                 <button
                   type="button"
                   onClick={() => setCol1Panel('items')}
-                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-border bg-muted/60 px-2.5 text-xs font-semibold text-foreground hover:bg-muted"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground shadow-2xs transition-colors hover:border-brand/40 hover:bg-muted/60 dark:border-white/10"
                 >
-                  <span>&larr;</span>
+                  <span className="rtl-flip">&larr;</span>
                   <span>{tCommon('back')}</span>
-                  <span className="text-muted-foreground">
-                    ·{' '}
-                    {activeCol1Panel === 'discount'
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {effectiveCol1Panel === 'discount'
                       ? t('discount')
-                      : activeCol1Panel === 'kitchen-override'
+                      : effectiveCol1Panel === 'kitchen-override'
                         ? t('managerPin')
                         : t('tax')}
                   </span>
@@ -2265,28 +2761,32 @@ export default function PaymentModal({
                         panel === 'kitchen-override' ? 'items' : 'kitchen-override',
                       )
                     }
-                    className={`inline-flex h-8 items-center rounded-lg border px-2 text-xs font-semibold transition-colors ${
-                      activeCol1Panel === 'kitchen-override'
-                        ? 'border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200'
-                        : 'border-amber-400/60 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
+                    className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+                      effectiveCol1Panel === 'kitchen-override'
+                        ? 'border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200'
+                        : 'border-amber-500/45 bg-amber-500/10 text-amber-800 hover:bg-amber-500/18 dark:text-amber-200'
                     }`}
                   >
+                    <ShieldAlert className="size-3.5 shrink-0" />
                     {t('managerPin')}
                   </button>
                 )}
-                {!bill.split_group_id && !scheduledOrderEditLocked && discountMode !== 'none' && (
+                {canShowDiscountPanel && (
                   <button
                     type="button"
                     data-testid="col1-tab-discount"
-                    disabled={processing || attemptLocked || justPaid}
+                    disabled={controlsDisabled}
                     onClick={() => setShowDiscount((open) => !open)}
                     aria-expanded={showDiscount}
-                    className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       showDiscount
-                        ? 'border-brand bg-brand/10 text-brand'
-                        : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'
+                        ? 'border-brand bg-brand-light text-brand shadow-2xs dark:border-indigo-400/50 dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                        : Number(bill.discount_amount) > 0
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:border-emerald-500/60 dark:text-emerald-300'
+                          : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
                     }`}
                   >
+                    <Tag className="size-3.5 shrink-0" />
                     <span>
                       {Number(bill.discount_amount) > 0
                         ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`
@@ -2301,20 +2801,22 @@ export default function PaymentModal({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3">
-              {activeCol1Panel === 'kitchen-override' && kitchenOverrideRequired ? (
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              {effectiveCol1Panel === 'kitchen-override' ? (
                 <div
                   role="alert"
-                  className="space-y-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-200"
+                  className="space-y-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-900 dark:border-amber-400/35 dark:bg-amber-500/12 dark:text-amber-200"
                 >
                   {kitchenUndeliveredCount > 0 && (
-                    <p className="text-sm font-medium">
+                    <p className="text-sm font-semibold">
                       {t('kitchenItemsPendingWarning', { count: kitchenUndeliveredCount })}
                     </p>
                   )}
                   <p className="text-sm">{t('kitchenDeliveryOverridePrompt')}</p>
                   {kitchenUndeliveredItems.length > 0 && (
-                    <p className="break-words text-xs">{kitchenUndeliveredItems.join(', ')}</p>
+                    <p className="break-words text-xs opacity-90">
+                      {kitchenUndeliveredItems.join(', ')}
+                    </p>
                   )}
                   <div className="space-y-2 text-start">
                     <ApproverSelect
@@ -2328,7 +2830,7 @@ export default function PaymentModal({
                       }}
                       loading={managerApprovers.loading}
                       loadFailed={managerApprovers.loadFailed}
-                      disabled={processing || attemptLocked || justPaid}
+                      disabled={controlsDisabled}
                     />
                     <input
                       type="password"
@@ -2336,32 +2838,33 @@ export default function PaymentModal({
                       pattern="[0-9]*"
                       maxLength={6}
                       value={kitchenOverridePin}
-                      disabled={processing || attemptLocked || justPaid}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         setKitchenOverridePin(event.target.value.replace(/\D/g, '').slice(0, 6));
                         setKitchenDeliveryError('');
                       }}
                       placeholder={t('managerPin')}
                       aria-label={t('managerPin')}
-                      className="min-h-11 w-full rounded-lg border border-amber-300 bg-card px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-amber-700"
+                      className="min-h-11 w-full rounded-lg border border-amber-500/45 bg-card px-3 py-2 text-center text-lg font-semibold tracking-[0.5em] text-foreground outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                     />
                   </div>
                   {kitchenDeliveryError && (
-                    <p className="text-xs text-red-700 dark:text-red-300">{kitchenDeliveryError}</p>
+                    <p className="text-xs font-medium text-destructive">{kitchenDeliveryError}</p>
                   )}
                 </div>
-              ) : activeCol1Panel === 'discount' &&
-                !bill.split_group_id &&
-                !scheduledOrderEditLocked &&
-                discountMode !== 'none' ? (
+              ) : effectiveCol1Panel === 'discount' ? (
                 <div className="space-y-2.5">
-                  <div className="flex overflow-hidden rounded-lg border border-border">
+                  <div className="flex gap-1 rounded-xl border border-border/80 bg-muted/60 p-1 dark:border-white/10 dark:bg-muted/35">
                     {isDiscountTypeAllowed(discountMode, 'percentage') && (
                       <button
                         type="button"
-                        disabled={processing || attemptLocked || justPaid}
+                        disabled={controlsDisabled}
                         onClick={() => setDiscountType('percentage')}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors sm:text-sm ${
+                          discountType === 'percentage'
+                            ? 'bg-brand text-white shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       >
                         <Percent size={14} />
                         {t('percentage')}
@@ -2370,22 +2873,34 @@ export default function PaymentModal({
                     {isDiscountTypeAllowed(discountMode, 'amount') && (
                       <button
                         type="button"
-                        disabled={processing || attemptLocked || justPaid}
+                        disabled={controlsDisabled}
                         onClick={() => setDiscountType('amount')}
-                        className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        className={`touch-target flex-1 gap-1.5 rounded-lg text-xs font-semibold transition-colors sm:text-sm ${
+                          discountType === 'amount'
+                            ? 'bg-brand text-white shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       >
                         {t('flatAmount')}
                       </button>
                     )}
                   </div>
-                  <div className="relative">
-                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  <div
+                    className={`flex min-h-11 items-center rounded-xl border bg-card pe-3 transition-colors ${
+                      controlsDisabled ? 'cursor-not-allowed opacity-60' : ''
+                    } ${
+                      amountTarget?.kind === 'discount'
+                        ? 'border-brand ring-2 ring-brand/20'
+                        : 'border-border focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 dark:border-white/10'
+                    }`}
+                  >
+                    <span className="shrink-0 ps-3 pe-2 text-sm font-semibold text-brand dark:text-indigo-300">
                       {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                     </span>
                     <input
                       type="number"
                       value={discountValue}
-                      disabled={processing || attemptLocked || justPaid}
+                      disabled={controlsDisabled}
                       onFocus={() => setAmountTarget({ kind: 'discount' })}
                       onChange={(e) => setDiscountValue(e.target.value)}
                       placeholder={discountType === 'percentage' ? '0' : '0.00'}
@@ -2395,19 +2910,19 @@ export default function PaymentModal({
                       }
                       step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                       inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                      className="min-h-11 w-full rounded-lg border border-border bg-card pe-3 ps-8 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                      className="min-w-0 flex-1 bg-transparent py-2 text-base font-bold tabular-nums text-foreground outline-none disabled:cursor-not-allowed"
                     />
                   </div>
                   <input
                     type="text"
                     value={discountReason}
-                    disabled={processing || attemptLocked || justPaid}
+                    disabled={controlsDisabled}
                     onChange={(e) => setDiscountReason(e.target.value)}
                     placeholder={t('discountReasonPlaceholder')}
-                    className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    className="min-h-11 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
                   />
                   {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 rounded-xl border border-amber-500/35 bg-amber-500/8 p-2.5 dark:border-amber-400/30 dark:bg-amber-500/10">
                       <ApproverSelect
                         id="paymentDiscountApprover"
                         approvers={managerApprovers.approvers}
@@ -2420,26 +2935,24 @@ export default function PaymentModal({
                         }}
                         loading={managerApprovers.loading}
                         loadFailed={managerApprovers.loadFailed}
-                        disabled={processing || attemptLocked || applyingDiscount || justPaid}
+                        disabled={controlsDisabled || applyingDiscount}
                       />
                       <input
                         type="password"
                         value={discountPin}
-                        disabled={processing || attemptLocked || applyingDiscount || justPaid}
+                        disabled={controlsDisabled || applyingDiscount}
                         onChange={(e) => setDiscountPin(e.target.value)}
                         placeholder={t('managerPin')}
                         maxLength={6}
-                        className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                        className="min-h-11 w-full rounded-lg border border-amber-500/40 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                       />
                     </div>
                   )}
                   <Button
                     onClick={() => handleApplyDiscount()}
                     disabled={
-                      justPaid ||
-                      processing ||
+                      controlsDisabled ||
                       applyingDiscount ||
-                      attemptLocked ||
                       openingSplitCheck ||
                       Boolean(updatingChargeId) ||
                       discountValue === '' ||
@@ -2452,7 +2965,7 @@ export default function PaymentModal({
                           managerApprovers.approvers.length === 0 ||
                           !(discountApproverId ?? managerApprovers.selectedApproverId)))
                     }
-                    className="w-full bg-brand text-white hover:bg-brand/90"
+                    className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   >
                     {applyingDiscount
                       ? t('applyingDiscount')
@@ -2463,12 +2976,10 @@ export default function PaymentModal({
                   {Number(bill.discount_amount) > 0 && (
                     <Button
                       variant="outline"
-                      className="w-full"
+                      className="min-h-10 w-full rounded-xl"
                       disabled={
-                        justPaid ||
-                        processing ||
+                        controlsDisabled ||
                         applyingDiscount ||
-                        attemptLocked ||
                         openingSplitCheck ||
                         Boolean(updatingChargeId)
                       }
@@ -2486,14 +2997,14 @@ export default function PaymentModal({
                     </Button>
                   )}
                 </div>
-              ) : activeCol1Panel === 'tax' ? (
-                <div className="space-y-2">
+              ) : effectiveCol1Panel === 'tax' ? (
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
                     <span>{t('tax')}</span>
                     <span className="tabular-nums">{currencyFmt(Number(bill.tax_amount))}</span>
                   </div>
                   {taxComponents.length > 0 && (
-                    <div className="space-y-1.5 border-t border-border pt-2 text-xs">
+                    <div className="space-y-1.5 border-t border-border pt-2 text-xs tabular-nums dark:border-white/10">
                       {taxComponents.map((component, idx) => (
                         <div
                           key={`${component.title}-${idx}`}
@@ -2502,7 +3013,7 @@ export default function PaymentModal({
                           <span className="text-muted-foreground">
                             {component.title} ({component.rate ?? 0}%)
                           </span>
-                          <span className="font-medium tabular-nums">
+                          <span className="font-medium text-foreground">
                             {currencyFmt(component.amount)}
                           </span>
                         </div>
@@ -2515,54 +3026,60 @@ export default function PaymentModal({
                   {billDetails?.id === bill.id && billDetails.failed && (
                     <p className="text-sm text-muted-foreground">{t('loadOrderFailed')}</p>
                   )}
-                  {(detailOrder?.items || [])
-                    .filter(
-                      (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
-                    )
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        data-testid="payment-order-item"
-                        className="border-b border-border pb-2 text-sm last:border-b-0 last:pb-0"
-                      >
-                        <div className="flex justify-between gap-3 font-medium">
-                          <span>
-                            {item.quantity} × {item.product_name}
+                  {visibleOrderItems.map((item) => (
+                    <div
+                      key={item.id}
+                      data-testid="payment-order-item"
+                      className="border-b border-border/75 pb-2 text-sm last:border-b-0 last:pb-0 dark:border-white/8"
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <CheckoutQtyBadge>{fmtNum(Number(item.quantity))}</CheckoutQtyBadge>
+                          <span className="min-w-0 font-semibold leading-snug text-foreground">
+                            {item.product_name}
                             {item.variant_selection ? ` (${item.variant_selection.name})` : ''}
                           </span>
-                          <span className="shrink-0 tabular-nums">
-                            {currencyFmt(Number(item.total))}
-                          </span>
                         </div>
-                        {Number(item.quantity) > 1 && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.quantity} × {currencyFmt(Number(item.unit_price))}
-                          </p>
-                        )}
-                        {(item.addons || []).map((addon, index) => (
-                          <p key={addon.id ?? index} className="text-xs text-muted-foreground">
-                            + {addon.name}
-                            {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
-                          </p>
-                        ))}
-                        {item.special_instructions && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.special_instructions}
-                          </p>
-                        )}
-                        {Boolean(item.price_overridden) && item.original_unit_price != null && (
-                          <p className="text-xs text-muted-foreground">
-                            {tOrders('priceOverriddenMenu', {
-                              price: currencyFmt(Number(item.original_unit_price)),
-                            })}
-                          </p>
-                        )}
+                        <span className="shrink-0 font-semibold tabular-nums text-foreground">
+                          {currencyFmt(Number(item.total))}
+                        </span>
                       </div>
-                    ))}
+                      {(Number(item.quantity) > 1 ||
+                        (item.addons || []).length > 0 ||
+                        Boolean(item.special_instructions) ||
+                        (Boolean(item.price_overridden) && item.original_unit_price != null)) && (
+                        <div className="space-y-0.5 ps-7 pt-0.5">
+                          {Number(item.quantity) > 1 && (
+                            <p className="text-xs tabular-nums text-muted-foreground">
+                              {item.quantity} × {currencyFmt(Number(item.unit_price))}
+                            </p>
+                          )}
+                          {(item.addons || []).map((addon, index) => (
+                            <p key={addon.id ?? index} className="text-xs text-muted-foreground">
+                              + {addon.name}
+                              {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
+                            </p>
+                          ))}
+                          {item.special_instructions && (
+                            <p className="text-xs italic text-muted-foreground">
+                              {item.special_instructions}
+                            </p>
+                          )}
+                          {Boolean(item.price_overridden) && item.original_unit_price != null && (
+                            <p className="text-xs text-muted-foreground">
+                              {tOrders('priceOverriddenMenu', {
+                                price: currencyFmt(Number(item.original_unit_price)),
+                              })}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
 
                   {(appliedCharges.length > 0 || (canEditCharges && addableCharges.length > 0)) && (
                     <div
-                      className="space-y-1.5 border-t border-border pt-2 text-xs"
+                      className="space-y-1.5 border-t border-border pt-2 text-xs tabular-nums dark:border-white/10"
                       data-testid="payment-charges"
                     >
                       {appliedCharges.map((charge) => {
@@ -2573,11 +3090,13 @@ export default function PaymentModal({
                             data-testid={`payment-charge-${charge.id}`}
                             className="flex items-center justify-between gap-2 text-muted-foreground"
                           >
-                            <span className={charge.waived ? 'line-through' : undefined}>
+                            <span className={charge.waived ? 'line-through opacity-70' : undefined}>
                               {charge.name}
                             </span>
                             <span className="flex items-center gap-1.5">
-                              <span className={charge.waived ? 'line-through' : undefined}>
+                              <span
+                                className={`font-medium text-foreground ${charge.waived ? 'line-through opacity-60' : ''}`}
+                              >
                                 {currencyFmt(charge.amount)}
                               </span>
                               {canEditCharges && definition?.is_optional && (
@@ -2597,7 +3116,7 @@ export default function PaymentModal({
                                     }
                                   }}
                                   aria-pressed={charge.waived}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-light/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-indigo-300"
                                 >
                                   {charge.waived ? t('applyCharge') : t('waiveCharge')}
                                 </button>
@@ -2607,7 +3126,7 @@ export default function PaymentModal({
                                   type="button"
                                   disabled={Boolean(updatingChargeId)}
                                   onClick={() => void updateCharge(charge.id, { applied: false })}
-                                  className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10"
                                 >
                                   {t('removeCharge')}
                                 </button>
@@ -2628,7 +3147,7 @@ export default function PaymentModal({
                               type="button"
                               disabled={Boolean(updatingChargeId)}
                               onClick={() => void updateCharge(charge.id, { applied: true })}
-                              className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-light/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-indigo-300"
                             >
                               {t('addCharge')}
                             </button>
@@ -2641,16 +3160,18 @@ export default function PaymentModal({
             </div>
 
             {/* Pinned Totals Footer */}
-            <div className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/20 p-2.5 text-xs tabular-nums">
+            <div className="shrink-0 space-y-1 rounded-xl border border-border bg-muted/35 p-3 text-xs tabular-nums dark:border-white/10 dark:bg-muted/20">
               <div className="flex justify-between text-muted-foreground">
                 <span>{t('subtotal')}</span>
-                <span>{currencyFmt(Number(bill.subtotal))}</span>
+                <span className="font-medium text-foreground">
+                  {currencyFmt(Number(bill.subtotal))}
+                </span>
               </div>
               {Number(bill.discount_amount) > 0 && (
-                <div className="flex justify-between font-medium text-emerald-600 dark:text-emerald-400">
+                <div className="flex justify-between font-semibold text-emerald-600 dark:text-emerald-400">
                   <span className="truncate">
                     {t('discount')}
-                    {bill.discount_reason ? ` · ${bill.discount_reason}` : ''}
+                    {bill.discount_reason ? ` - ${bill.discount_reason}` : ''}
                   </span>
                   <span className="shrink-0">− {currencyFmt(Number(bill.discount_amount))}</span>
                 </div>
@@ -2658,59 +3179,69 @@ export default function PaymentModal({
               <button
                 type="button"
                 onClick={() => setCol1Panel((panel) => (panel === 'tax' ? 'items' : 'tax'))}
-                aria-expanded={activeCol1Panel === 'tax'}
-                className="flex w-full items-center justify-between text-muted-foreground hover:text-foreground"
+                aria-expanded={effectiveCol1Panel === 'tax'}
+                className="flex w-full items-center justify-between text-muted-foreground transition-colors hover:text-foreground"
               >
                 <span className="inline-flex items-center gap-1">
                   <span>{t('tax')}</span>
                   {taxComponents.length > 0 && (
                     <ChevronDown
                       size={12}
-                      className={`transition-transform ${activeCol1Panel === 'tax' ? 'rotate-180' : ''}`}
+                      className={`transition-transform ${effectiveCol1Panel === 'tax' ? 'rotate-180' : ''}`}
                     />
                   )}
                 </span>
-                <span>{currencyFmt(Number(bill.tax_amount))}</span>
+                <span className="font-medium text-foreground">
+                  {currencyFmt(Number(bill.tax_amount))}
+                </span>
               </button>
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('delivery')}</span>
-                  <span>{currencyFmt(Number(bill.delivery_charge))}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(Number(bill.delivery_charge))}
+                  </span>
                 </div>
               )}
               {Number(bill.packaging_charge) > 0 &&
                 !appliedCharges.some((charge) => charge.id === 'packaging_charge') && (
                   <div className="flex justify-between text-muted-foreground">
                     <span>{t('packaging')}</span>
-                    <span>{currencyFmt(Number(bill.packaging_charge))}</span>
+                    <span className="font-medium text-foreground">
+                      {currencyFmt(Number(bill.packaging_charge))}
+                    </span>
                   </div>
                 )}
               {Number(bill.service_charge) > 0 &&
                 !appliedCharges.some((charge) => charge.id === 'service_charge') && (
                   <div className="flex justify-between text-muted-foreground">
                     <span>{tReceipt('serviceCharge')}</span>
-                    <span>{currencyFmt(Number(bill.service_charge))}</span>
+                    <span className="font-medium text-foreground">
+                      {currencyFmt(Number(bill.service_charge))}
+                    </span>
                   </div>
                 )}
               {Number(bill.round_off) !== 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('roundOff')}</span>
-                  <span>
+                  <span className="font-medium text-foreground">
                     {Number(bill.round_off) > 0 ? '+' : ''}
                     {currencyFmt(Number(bill.round_off))}
                   </span>
                 </div>
               )}
-              <div className="flex items-end justify-between border-t border-border pt-1.5 font-bold text-foreground">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {t('total')}
+              <div className="flex items-baseline justify-between border-t border-border/80 pt-2 font-bold text-foreground dark:border-white/10">
+                <span className="text-sm font-bold text-foreground">{t('total')}</span>
+                <span className="text-lg font-bold leading-none tabular-nums">
+                  {currencyFmt(Number(bill.total))}
                 </span>
-                <span className="text-lg leading-none">{currencyFmt(Number(bill.total))}</span>
               </div>
               {Number(bill.paid_amount) > 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('paid')}</span>
-                  <span>{currencyFmt(Number(bill.paid_amount))}</span>
+                  <span className="font-medium text-foreground">
+                    {currencyFmt(Number(bill.paid_amount))}
+                  </span>
                 </div>
               )}
             </div>
@@ -2718,20 +3249,20 @@ export default function PaymentModal({
 
           {/* Column 2: Hero Balance, Core Tenders + Fixed Card Ref, Custom Tenders, Loyalty Wallet, Contained Split Card */}
           <div
-            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[220px] min-w-0 flex-col gap-2.5 border-b border-border p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e`}
+            className={`${showDetails ? 'hidden lg:flex' : 'flex'} max-lg:min-h-[168px] min-w-0 flex-col gap-2.5 border-b border-border bg-muted/20 p-3 max-lg:flex-1 max-lg:overflow-y-auto sm:p-4 [@media(max-height:660px)]:p-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-e dark:bg-background/45`}
           >
             {/* [2A] Hero Balance Header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2">
+            <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-2xs dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <div className="min-w-0">
-                <span className="text-xs font-medium text-muted-foreground">{t('totalDue')}</span>
+                <span className="text-xs font-semibold text-muted-foreground">{t('totalDue')}</span>
                 {cartCustomer && (
-                  <p className="flex items-center gap-1 truncate text-xs font-medium text-foreground">
-                    <User size={12} className="shrink-0 text-muted-foreground" />
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-medium text-foreground">
+                    <User size={12} className="shrink-0 text-brand dark:text-indigo-300" />
                     <span className="truncate">{cartCustomer.name}</span>
                   </p>
                 )}
               </div>
-              <span className="text-xl font-bold tabular-nums text-foreground sm:text-2xl">
+              <span className="text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
                 {currencyFmt(remaining)}
               </span>
             </div>
@@ -2743,46 +3274,52 @@ export default function PaymentModal({
                 const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method);
                 const label = tenderLabel(payment);
                 const Icon = builtIn?.icon;
-                const active = (parseFloat(payment.amount) || 0) > 0;
+                const isFocused = amountTarget?.kind === 'payment' && amountTarget.index === idx;
                 const isAppliedShare = appliedEqualShare?.index === idx;
+                const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
+                const rowDisabled = controlsDisabled;
+                const rowClasses = getTenderRowClasses({
+                  isFocused,
+                  isAllocated,
+                  disabled: rowDisabled,
+                });
                 return (
                   <div key={payment.method} className="space-y-0.5">
                     <div className="flex min-h-12">
                       <button
                         type="button"
                         title={label}
-                        disabled={processing || attemptLocked || justPaid}
-                        onClick={() => {
-                          if (attemptLocked || justPaid) return;
-                          setAmountTarget({ kind: 'payment', index: idx });
-                          if (!payment.amount) allocateRemainingTo(idx);
-                        }}
-                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                        disabled={rowDisabled}
+                        onClick={() => handleTenderButtonClick(idx)}
+                        className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                       >
                         {Icon && <Icon size={15} />}
                         <span className="truncate">{label}</span>
                       </button>
-                      <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
-                        <span className="ps-3 text-xs text-muted-foreground">
+                      <div
+                        className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${rowClasses.inputBoxClass}`}
+                      >
+                        <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                           {inputCurrencyLabel}
                         </span>
                         <input
                           type="number"
                           aria-label={`${label} amount`}
                           value={payment.amount}
-                          disabled={processing || attemptLocked || justPaid}
+                          disabled={rowDisabled}
                           onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                           onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                          onKeyDown={handleTenderInputKeyDown}
                           placeholder="0.00"
                           inputMode="decimal"
-                          className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                          className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
                           step={inputCurrencyStep}
                           min="0"
                         />
                       </div>
                     </div>
                     {isAppliedShare && (
-                      <p className="px-1 text-[11px] font-medium text-brand">
+                      <p className="px-1 text-[11px] font-semibold text-brand dark:text-indigo-300">
                         {t('equalShareBadge')}
                       </p>
                     )}
@@ -2797,20 +3334,34 @@ export default function PaymentModal({
                     id="payment-card-transaction-id"
                     type="text"
                     value={cardPayment.transaction_id ?? ''}
-                    disabled={processing || attemptLocked || justPaid}
+                    disabled={controlsDisabled}
                     onChange={(e) => updatePaymentTransactionId(cardTenderIndex, e.target.value)}
+                    onKeyDown={handleTenderInputKeyDown}
                     placeholder={t('cardTransactionIdLabel')}
                     aria-label={t('cardTransactionIdLabel')}
                     maxLength={256}
                     autoComplete="off"
-                    className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-colors ${getCardReferenceSlotClasses(
+                      {
+                        isActive: true,
+                        isMissingRequired: Boolean(
+                          (parseFloat(cardPayment.amount) || 0) > 0 &&
+                          !cardPayment.transaction_id?.trim(),
+                        ),
+                      },
+                    )}`}
                   />
                 ) : (
                   <div
                     aria-hidden="true"
-                    className="flex h-11 w-full items-center rounded-xl border border-dashed border-border/50 bg-muted/10 px-3 text-xs text-muted-foreground"
+                    className={`flex h-11 w-full items-center rounded-xl border px-3 text-xs transition-colors ${getCardReferenceSlotClasses(
+                      {
+                        isActive: false,
+                        isMissingRequired: false,
+                      },
+                    )}`}
                   >
-                    <span className="truncate opacity-60">{t('cardTransactionIdLabel')}</span>
+                    <span className="truncate">{t('cardTransactionIdLabel')}</span>
                   </div>
                 )}
               </div>
@@ -2823,45 +3374,52 @@ export default function PaymentModal({
                   {payments.map((payment, idx) => {
                     if (payment.payment_method_id === undefined) return null;
                     const label = tenderLabel(payment);
-                    const active = (parseFloat(payment.amount) || 0) > 0;
+                    const isFocused =
+                      amountTarget?.kind === 'payment' && amountTarget.index === idx;
                     const isAppliedShare = appliedEqualShare?.index === idx;
+                    const isAllocated = (parseFloat(payment.amount) || 0) > 0 || isAppliedShare;
+                    const rowDisabled = controlsDisabled;
+                    const rowClasses = getTenderRowClasses({
+                      isFocused,
+                      isAllocated,
+                      disabled: rowDisabled,
+                    });
                     return (
                       <div key={`custom:${payment.payment_method_id}`} className="space-y-0.5">
                         <div className="flex min-h-12">
                           <button
                             type="button"
                             title={label}
-                            disabled={processing || attemptLocked || justPaid}
-                            onClick={() => {
-                              if (attemptLocked || justPaid) return;
-                              setAmountTarget({ kind: 'payment', index: idx });
-                              if (!payment.amount) allocateRemainingTo(idx);
-                            }}
-                            className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${active ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground hover:border-brand hover:text-brand'}`}
+                            disabled={rowDisabled}
+                            onClick={() => handleTenderButtonClick(idx)}
+                            className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${rowClasses.buttonClass}`}
                           >
                             <span className="truncate">{label}</span>
                           </button>
-                          <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:border-transparent focus-within:ring-2 focus-within:ring-brand">
-                            <span className="ps-3 text-xs text-muted-foreground">
+                          <div
+                            className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${rowClasses.inputBoxClass}`}
+                          >
+                            <span className={`ps-3 text-xs ${rowClasses.currencyClass}`}>
                               {inputCurrencyLabel}
                             </span>
                             <input
                               type="number"
                               aria-label={`${label} amount`}
                               value={payment.amount}
-                              disabled={processing || attemptLocked || justPaid}
+                              disabled={rowDisabled}
                               onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                               onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                              onKeyDown={handleTenderInputKeyDown}
                               placeholder="0.00"
                               inputMode="decimal"
-                              className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none"
+                              className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${rowClasses.inputClass}`}
                               step={inputCurrencyStep}
                               min="0"
                             />
                           </div>
                         </div>
                         {isAppliedShare && (
-                          <p className="px-1 text-[11px] font-medium text-brand">
+                          <p className="px-1 text-[11px] font-semibold text-brand dark:text-indigo-300">
                             {t('equalShareBadge')}
                           </p>
                         )}
@@ -2871,91 +3429,94 @@ export default function PaymentModal({
                 </div>
               )}
 
-              {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (
-                <div className="flex h-[74px] shrink-0 flex-col justify-between">
-                  <div className="flex min-h-12">
-                    <button
-                      type="button"
-                      disabled={
-                        processing ||
-                        attemptLocked ||
-                        justPaid ||
-                        !walletBalance ||
-                        walletBalance <= 0
-                      }
-                      onClick={() => {
-                        if (attemptLocked || justPaid || !walletBalance) return;
-                        const dueMinor = remainingWalletMinor();
-                        const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
-                        setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
-                        setAutoFilledSingleIndex(null);
-                        setAmountTarget({ kind: 'wallet' });
-                      }}
-                      className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold sm:w-36 ${walletAmt > 0 ? 'border-brand bg-brand text-white' : 'border-border bg-muted text-foreground disabled:border-border disabled:bg-muted disabled:text-muted-foreground'}`}
-                    >
-                      <Wallet size={15} />
-                      <span className="truncate">{t('loyaltyWallet')}</span>
-                    </button>
-                    <div className="flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 border-border bg-card focus-within:ring-2 focus-within:ring-brand">
-                      <span className="ps-3 text-xs text-muted-foreground">
-                        {inputCurrencyLabel}
-                      </span>
-                      <input
-                        type="number"
-                        value={walletAmount}
-                        disabled={
-                          processing ||
-                          attemptLocked ||
-                          justPaid ||
-                          !walletBalance ||
-                          walletBalance <= 0
-                        }
-                        onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                        onChange={(e) => {
-                          if (attemptLocked || justPaid) return;
-                          const v = e.target.value;
-                          const maxWalletCurrencyStored = Math.floor(
-                            (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
-                          );
-                          const maxDisplay = toDisplayUnit(
-                            Math.min(maxWalletCurrencyStored, remaining),
-                          );
-                          const clamped = parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
-                          setWalletAmount(clamped);
-                          setAutoFilledSingleIndex(null);
-                          setPaymentsTouched(true);
-                        }}
-                        placeholder="0.00"
-                        inputMode="decimal"
-                        className="min-w-0 flex-1 rounded-e-xl px-2 py-2 text-end text-base font-semibold outline-none disabled:bg-muted"
-                        step={inputCurrencyStep}
-                        min="0"
-                        max={toDisplayUnit(
-                          Math.min(
-                            Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
-                            remaining,
-                          ),
-                        )}
-                      />
+              {loyaltySettings?.loyalty_enabled &&
+                effectiveCustomerId &&
+                (() => {
+                  const walletDisabled = controlsDisabled || !walletBalance || walletBalance <= 0;
+                  const walletClasses = getTenderRowClasses({
+                    isFocused: amountTarget?.kind === 'wallet',
+                    isAllocated: walletAmt > 0,
+                    disabled: walletDisabled,
+                  });
+                  return (
+                    <div className="flex h-[74px] shrink-0 flex-col justify-between">
+                      <div className="flex min-h-12">
+                        <button
+                          type="button"
+                          disabled={walletDisabled}
+                          onClick={() => {
+                            if (attemptLocked || justPaid || billReadOnly || !walletBalance) return;
+                            const dueMinor = remainingWalletMinor();
+                            const dueDisplay = toDisplayUnit(dueMinor / minorFactor);
+                            setWalletAmount(dueMinor > 0 ? formatInput(dueDisplay) : '');
+                            setAutoFilledSingleIndex(null);
+                            setAmountTarget({ kind: 'wallet' });
+                          }}
+                          className={`touch-target w-32 shrink-0 justify-start gap-2 rounded-s-xl border px-3 text-sm font-semibold transition-colors sm:w-36 ${walletClasses.buttonClass}`}
+                        >
+                          <Wallet size={15} />
+                          <span className="truncate">{t('loyaltyWallet')}</span>
+                        </button>
+                        <div
+                          className={`flex min-w-0 flex-1 items-center rounded-e-xl border border-s-0 transition-colors ${walletClasses.inputBoxClass}`}
+                        >
+                          <span className={`ps-3 text-xs ${walletClasses.currencyClass}`}>
+                            {inputCurrencyLabel}
+                          </span>
+                          <input
+                            type="number"
+                            value={walletAmount}
+                            disabled={walletDisabled}
+                            onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                            onChange={(e) => {
+                              if (attemptLocked || justPaid || billReadOnly) return;
+                              const v = e.target.value;
+                              const maxWalletCurrencyStored = Math.floor(
+                                (walletBalance || 0) / LOYALTY_REDEMPTION_RATE,
+                              );
+                              const maxDisplay = toDisplayUnit(
+                                Math.min(maxWalletCurrencyStored, remaining),
+                              );
+                              const clamped =
+                                parseFloat(v) > maxDisplay ? formatInput(maxDisplay) : v;
+                              setWalletAmount(clamped);
+                              setAutoFilledSingleIndex(null);
+                              setPaymentsTouched(true);
+                            }}
+                            placeholder="0.00"
+                            inputMode="decimal"
+                            className={`min-w-0 flex-1 rounded-e-xl bg-transparent px-2.5 py-2 text-end text-base tabular-nums outline-none ${walletClasses.inputClass}`}
+                            step={inputCurrencyStep}
+                            min="0"
+                            max={toDisplayUnit(
+                              Math.min(
+                                Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE),
+                                remaining,
+                              ),
+                            )}
+                          />
+                        </div>
+                      </div>
+                      <p className="min-h-4 truncate px-1 text-end text-[11px] font-medium text-muted-foreground">
+                        {walletBalance === null
+                          ? '…'
+                          : walletBalance > 0
+                            ? t('pointsApproxValue', {
+                                count: fmtNum(walletBalance),
+                                value: currencyFmt(
+                                  Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE),
+                                ),
+                              })
+                            : t('noBalance')}
+                      </p>
                     </div>
-                  </div>
-                  <p className="min-h-4 truncate px-1 text-end text-[11px] text-muted-foreground">
-                    {walletBalance === null
-                      ? '…'
-                      : walletBalance > 0
-                        ? t('pointsApproxValue', {
-                            count: fmtNum(walletBalance),
-                            value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)),
-                          })
-                        : t('noBalance')}
-                  </p>
-                </div>
-              )}
+                  );
+                })()}
 
               {/* Unified Split section (contained internally so even 20 Equal Share rows never grow Column 2) */}
               {!justPaid && (remainingMinor > 0 || hasSplitChecksPanel) && (
                 <div
-                  className={`flex flex-col rounded-xl border border-border max-lg:shrink-0 lg:flex-1 lg:overflow-hidden ${
+                  className={`flex flex-col rounded-xl border border-border bg-card shadow-2xs max-lg:shrink-0 lg:flex-1 lg:overflow-hidden dark:border-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
                     (
                       hasSplitChecksPanel
                         ? !splitSectionCollapsed
@@ -2971,10 +3532,10 @@ export default function PaymentModal({
                       type="button"
                       onClick={() => setSplitSectionCollapsed((collapsed) => !collapsed)}
                       aria-expanded={!splitSectionCollapsed}
-                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted px-3 text-start"
+                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted/45 px-3 text-start transition-colors hover:bg-muted/70 dark:bg-muted/25"
                     >
-                      <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <Users size={15} className="text-muted-foreground" />
+                      <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Users size={15} className="text-brand dark:text-indigo-300" />
                         {t('splitPayment')}
                       </span>
                       <ChevronDown
@@ -2990,9 +3551,9 @@ export default function PaymentModal({
                         setEqualShareNotice(null);
                       }}
                       aria-expanded={showEqualShare}
-                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted px-3 text-start"
+                      className="touch-target w-full shrink-0 justify-between gap-3 bg-muted/45 px-3 text-start transition-colors hover:bg-muted/70 dark:bg-muted/25"
                     >
-                      <span className="text-sm font-medium text-foreground">
+                      <span className="text-sm font-semibold text-foreground">
                         {t('splitPaymentEqually')}
                       </span>
                       <ChevronDown
@@ -3005,7 +3566,7 @@ export default function PaymentModal({
                   {(!hasSplitChecksPanel || !splitSectionCollapsed) && (
                     <div className="min-h-0 flex-1 overflow-y-auto">
                       {hasSplitChecksPanel && remainingMinor > 0 && (
-                        <div className="grid grid-cols-2 gap-1 border-t border-border bg-muted/60 p-1">
+                        <div className="grid grid-cols-2 gap-1 border-t border-border bg-muted/55 p-1 dark:border-white/10 dark:bg-muted/30">
                           <button
                             type="button"
                             aria-pressed={!showEqualShare}
@@ -3013,7 +3574,7 @@ export default function PaymentModal({
                             onClick={() => setShowEqualShare(false)}
                             className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                               !showEqualShare
-                                ? 'bg-card text-foreground shadow-sm'
+                                ? 'bg-brand text-white shadow-xs'
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
@@ -3029,7 +3590,7 @@ export default function PaymentModal({
                             }}
                             className={`min-h-11 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                               showEqualShare
-                                ? 'bg-card text-foreground shadow-sm'
+                                ? 'bg-brand text-white shadow-xs'
                                 : 'text-muted-foreground hover:text-foreground'
                             }`}
                           >
@@ -3041,7 +3602,7 @@ export default function PaymentModal({
                       {equalShareNotice && (
                         <p
                           role="status"
-                          className="border-t border-border bg-muted px-3 py-2 text-[11px] text-muted-foreground"
+                          className="border-t border-border bg-amber-500/8 px-3 py-2 text-[11px] font-medium text-amber-800 dark:border-white/10 dark:text-amber-300"
                         >
                           {t(
                             equalShareNotice === 'lastPayer'
@@ -3052,79 +3613,81 @@ export default function PaymentModal({
                       )}
 
                       {showEqualShare && remainingMinor > 0 ? (
-                        <div className="space-y-2 border-t border-border bg-muted p-2.5">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="space-y-2 border-t border-border bg-card p-2.5 dark:border-white/10">
+                          <div className="space-y-1">
                             <label
                               htmlFor="equal-share-payers"
-                              className="text-xs font-medium text-foreground sm:text-sm"
+                              className="block text-xs font-semibold text-foreground"
                             >
                               {t('equalSharePayers')}
                             </label>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                aria-label={t('decreasePax')}
-                                data-testid="equal-share-decrement"
-                                disabled={!canDecrementEqualShare}
-                                onClick={() => stepEqualSharePayers(-1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40"
-                              >
-                                <Minus size={15} />
-                              </button>
-                              <input
-                                id="equal-share-payers"
-                                type="number"
-                                min={MIN_EQUAL_SHARE_PAYERS}
-                                max={MAX_EQUAL_SHARE_PAYERS}
-                                step={1}
-                                inputMode="numeric"
-                                value={equalSharePayers}
-                                disabled={processing || attemptLocked}
-                                onChange={(event) => {
-                                  if (attemptLocked) return;
-                                  setEqualSharePayers(event.target.value);
-                                }}
-                                className="min-h-11 w-14 rounded-lg border border-border bg-card px-2 py-1 text-center text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-brand"
-                              />
-                              <button
-                                type="button"
-                                aria-label={t('increasePax')}
-                                data-testid="equal-share-increment"
-                                disabled={!canIncrementEqualShare}
-                                onClick={() => stepEqualSharePayers(1)}
-                                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40"
-                              >
-                                <Plus size={15} />
-                              </button>
+                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1">
+                                {[2, 3, 4].map((preset) => {
+                                  const activePreset = equalShareCount === preset;
+                                  return (
+                                    <button
+                                      key={preset}
+                                      type="button"
+                                      aria-pressed={activePreset}
+                                      data-testid={`equal-share-preset-${preset}`}
+                                      disabled={controlsDisabled}
+                                      onClick={() => {
+                                        if (attemptLocked || justPaid || billReadOnly) return;
+                                        setEqualSharePayers(String(preset));
+                                      }}
+                                      className={`min-h-11 min-w-11 rounded-lg border px-2.5 py-1.5 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
+                                        activePreset
+                                          ? 'border-brand bg-brand text-white shadow-xs'
+                                          : 'border-border bg-card text-foreground shadow-2xs hover:border-brand/45 hover:text-brand dark:border-white/10 dark:hover:text-indigo-300'
+                                      }`}
+                                    >
+                                      {preset}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  aria-label={t('decreasePax')}
+                                  data-testid="equal-share-decrement"
+                                  disabled={!canDecrementEqualShare}
+                                  onClick={() => stepEqualSharePayers(-1)}
+                                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
+                                >
+                                  <Minus size={15} />
+                                </button>
+                                <input
+                                  id="equal-share-payers"
+                                  type="number"
+                                  min={MIN_EQUAL_SHARE_PAYERS}
+                                  max={MAX_EQUAL_SHARE_PAYERS}
+                                  step={1}
+                                  inputMode="numeric"
+                                  value={equalSharePayers}
+                                  disabled={controlsDisabled}
+                                  onChange={(event) => {
+                                    if (attemptLocked || justPaid || billReadOnly) return;
+                                    setEqualSharePayers(event.target.value);
+                                  }}
+                                  className="min-h-11 w-12 rounded-lg border border-border bg-card px-1.5 py-1.5 text-center text-sm font-bold tabular-nums text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10"
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={t('increasePax')}
+                                  data-testid="equal-share-increment"
+                                  disabled={!canIncrementEqualShare}
+                                  onClick={() => stepEqualSharePayers(1)}
+                                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-2xs transition-[color,background-color,border-color,box-shadow,transform] hover:border-brand/40 hover:bg-brand-light/25 active:scale-[0.98] disabled:opacity-40 dark:border-white/10"
+                                >
+                                  <Plus size={15} />
+                                </button>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            {[2, 3, 4].map((preset) => {
-                              const activePreset = equalShareCount === preset;
-                              return (
-                                <button
-                                  key={preset}
-                                  type="button"
-                                  aria-pressed={activePreset}
-                                  data-testid={`equal-share-preset-${preset}`}
-                                  disabled={processing || attemptLocked}
-                                  onClick={() => {
-                                    if (attemptLocked) return;
-                                    setEqualSharePayers(String(preset));
-                                  }}
-                                  className={`min-h-9 min-w-10 rounded-lg border px-2.5 py-1 text-xs font-semibold tabular-nums transition-colors disabled:opacity-40 ${
-                                    activePreset
-                                      ? 'border-brand bg-brand text-white'
-                                      : 'border-border bg-card text-foreground hover:border-brand hover:text-brand'
-                                  }`}
-                                >
-                                  {preset}
-                                </button>
-                              );
-                            })}
-                          </div>
                           {equalShareError ? (
-                            <p role="alert" className="text-[11px] text-red-700 dark:text-red-300">
+                            <p role="alert" className="text-[11px] font-medium text-destructive">
                               {t(
                                 equalShareError === 'tooManyPayers'
                                   ? 'equalShareTooManyPayers'
@@ -3135,17 +3698,27 @@ export default function PaymentModal({
                             <>
                               <ul
                                 data-testid="equal-share-shares"
-                                className="max-h-[104px] space-y-1 overflow-y-auto pe-0.5 text-sm"
+                                className="max-h-[76px] space-y-0.5 overflow-y-auto rounded-lg border border-border/75 bg-muted/25 p-1.5 text-xs dark:border-white/10 dark:bg-muted/15"
                               >
                                 {equalShareShares.map((shareMinor, index) => (
                                   <li
                                     key={index}
-                                    className="flex items-center justify-between gap-2"
+                                    className={`flex items-center justify-between gap-2 rounded-md px-1.5 py-0.5 ${
+                                      index === 0
+                                        ? 'bg-brand-light/55 font-medium text-brand dark:bg-[var(--color-brand-light)] dark:text-indigo-300'
+                                        : ''
+                                    }`}
                                   >
-                                    <span className="text-muted-foreground">
+                                    <span
+                                      className={
+                                        index === 0
+                                          ? 'text-brand dark:text-indigo-300'
+                                          : 'text-muted-foreground'
+                                      }
+                                    >
                                       {index + 1}
                                       {index === 0 && (
-                                        <span className="ms-2 text-[11px] font-medium text-brand">
+                                        <span className="ms-2 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-semibold text-white">
                                           {t('equalShareNextShare')}
                                         </span>
                                       )}
@@ -3158,7 +3731,7 @@ export default function PaymentModal({
                                     </span>
                                   </li>
                                 ))}
-                                <li className="flex items-center justify-between gap-2 border-t border-border pt-1 font-semibold">
+                                <li className="flex items-center justify-between gap-2 border-t border-border/80 px-1.5 pt-1 font-semibold text-foreground dark:border-white/10">
                                   <span>{t('total')}</span>
                                   <span data-testid="equal-share-total" className="tabular-nums">
                                     {currencyFmt(remaining)}
@@ -3171,7 +3744,7 @@ export default function PaymentModal({
                                 </p>
                               )}
                               {equalShareConflict && (
-                                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                                <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
                                   {t('equalShareConflicts')}
                                 </p>
                               )}
@@ -3183,10 +3756,11 @@ export default function PaymentModal({
                                         ? payment.method
                                         : `custom:${payment.payment_method_id}`
                                     }
+                                    data-testid={`equal-share-apply-${idx}`}
                                     variant="outline"
                                     size="sm"
-                                    className="min-h-10"
-                                    disabled={processing || attemptLocked}
+                                    className="min-h-10 border-brand/35 bg-brand-light/40 font-semibold text-brand hover:border-brand hover:bg-brand-light/80 dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300 dark:hover:bg-indigo-500/25"
+                                    disabled={controlsDisabled}
                                     onClick={() => void applyEqualShare(idx)}
                                   >
                                     {t('equalShareApplyTo', { method: tenderLabel(payment) })}
@@ -3198,10 +3772,10 @@ export default function PaymentModal({
                         </div>
                       ) : (
                         hasSplitChecksPanel && (
-                          <div className="border-t border-border bg-card p-3">
+                          <div className="border-t border-border bg-card p-3 dark:border-white/10">
                             {splitSettingState === 'error' ? (
                               <div className="w-full space-y-2" data-testid="split-check-section">
-                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
                                   {splitSettingDenied
                                     ? t('splitCheckSettingDenied')
                                     : t('splitCheckAvailabilityFailed')}
@@ -3209,6 +3783,7 @@ export default function PaymentModal({
                                 <Button
                                   type="button"
                                   variant="outline"
+                                  disabled={billReadOnly || justPaid}
                                   onClick={loadSplitCheckSetting}
                                   className="w-full"
                                   size="lg"
@@ -3231,6 +3806,8 @@ export default function PaymentModal({
                                     variant="outline"
                                     onClick={handleOpenSplitCheck}
                                     disabled={
+                                      billReadOnly ||
+                                      justPaid ||
                                       openingSplitCheck ||
                                       processing ||
                                       attemptLocked ||
@@ -3238,7 +3815,7 @@ export default function PaymentModal({
                                       Boolean(updatingChargeId) ||
                                       chargeStateUncertain
                                     }
-                                    className="w-full"
+                                    className="w-full border-brand/35 bg-brand-light/40 font-semibold text-brand hover:border-brand hover:bg-brand-light/75 dark:border-indigo-400/40 dark:bg-[var(--color-brand-light)] dark:text-indigo-300 dark:hover:bg-indigo-500/25"
                                     size="lg"
                                   >
                                     <Users size={16} className="me-2" />
@@ -3249,6 +3826,8 @@ export default function PaymentModal({
                                     variant="outline"
                                     onClick={handleOpenSplitCheck}
                                     disabled={
+                                      billReadOnly ||
+                                      justPaid ||
                                       openingSplitCheck ||
                                       processing ||
                                       attemptLocked ||
@@ -3268,13 +3847,15 @@ export default function PaymentModal({
                                       <Users size={16} className="me-2" />
                                       {t('splitCheck')}
                                     </Button>
-                                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                                      {t(splitEligibility.reason)}
+                                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                      {'cancelled' in splitEligibility
+                                        ? tOrders('noFurtherActions')
+                                        : t(splitEligibility.reason)}
                                     </p>
                                   </div>
                                 )}
                                 {splitOpenReason && (
-                                  <p className="text-xs text-red-600 dark:text-red-400">
+                                  <p className="text-xs font-medium text-destructive">
                                     {t(splitOpenReason)}
                                   </p>
                                 )}
@@ -3291,26 +3872,57 @@ export default function PaymentModal({
           </div>
 
           {/* Column 3: Full-Height 4-Zone Checkout Payment Station (or Receipt Share when settled) */}
-          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto">
+          <div className="flex min-h-0 min-w-0 flex-col bg-muted/30 p-3 max-lg:shrink-0 sm:p-4 [@media(max-height:660px)]:p-2 lg:overflow-y-auto dark:bg-card/25">
             {justPaid ? (
-              <div className="flex h-full flex-col justify-center space-y-3">
+              <div className="flex h-full flex-col justify-center space-y-2.5">
                 <div
                   role="status"
-                  className="space-y-1 rounded-xl border border-border bg-card p-5 text-center"
+                  className="space-y-2.5 rounded-2xl border border-emerald-500/35 bg-card p-5 text-center shadow-xs dark:border-emerald-400/30 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                 >
-                  <CheckCircle2 className="mx-auto text-emerald-600" size={36} />
-                  <p className="font-semibold text-foreground">{t('paymentRecorded')}</p>
-                  <p className="text-2xl font-bold tabular-nums text-foreground">
+                  <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/12 text-emerald-600 ring-4 ring-emerald-500/10 dark:text-emerald-400">
+                    <CheckCircle2 size={30} />
+                  </div>
+                  <p className="text-base font-semibold text-foreground">{t('paymentRecorded')}</p>
+                  <p className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
                     {currencyFmt(paidAmount ?? Math.min(totalPayment, remaining))}
                   </p>
-                  <p className="text-sm text-muted-foreground">{t('paid')}</p>
+                  <div>
+                    <span className="inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                      {t('paid')}
+                    </span>
+                  </div>
+                  {paidChangeAmount > 0 && (
+                    <div
+                      data-testid="settled-change-banner"
+                      className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/12 px-3.5 py-2.5 text-start dark:border-emerald-400/35 dark:bg-emerald-500/15"
+                    >
+                      <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                        {t('changeReturned')}
+                      </span>
+                      <span className="text-xl font-bold tracking-tight tabular-nums text-emerald-700 sm:text-2xl dark:text-emerald-300">
+                        {currencyFmt(paidChangeAmount)}
+                      </span>
+                    </div>
+                  )}
                 </div>
+                <Button
+                  type="button"
+                  data-testid="completion-print-receipt-btn"
+                  variant="outline"
+                  disabled={printingReceipt}
+                  onClick={() => void handlePrintCompletionReceipt()}
+                  className="min-h-11 w-full rounded-xl bg-card font-semibold dark:border-white/10"
+                  size="lg"
+                >
+                  <Printer size={16} className="me-2" />
+                  {tOrders('printReceiptTitle')}
+                </Button>
                 {cartCustomer?.phone &&
                   (isWhatsAppReady ? (
                     <Button
                       onClick={handleSendWhatsApp}
                       disabled={sendingWa}
-                      className="min-h-11 w-full bg-emerald-600 hover:bg-emerald-700"
+                      className="min-h-11 w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
                       size="lg"
                     >
                       <Send size={16} className="me-2" />
@@ -3320,14 +3932,19 @@ export default function PaymentModal({
                     <Button
                       onClick={handleShareWhatsApp}
                       variant="outline"
-                      className="min-h-11 w-full"
+                      className="min-h-11 w-full rounded-xl border-emerald-500/35 bg-emerald-500/8 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
                       size="lg"
                     >
                       <Send size={16} className="me-2" />
                       {tCommon('shareViaWhatsApp')}
                     </Button>
                   ))}
-                <Button onClick={onPaid} variant="outline" className="min-h-11 w-full" size="lg">
+                <Button
+                  ref={doneButtonRef}
+                  onClick={onPaid}
+                  className={`min-h-11 w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                  size="lg"
+                >
                   {tCommon('done')}
                 </Button>
               </div>
@@ -3336,17 +3953,17 @@ export default function PaymentModal({
                 readout={{
                   activeLabel: activeAmountLabel,
                   amountText: readoutFormattedAmount,
-                  paidSummaryText: `${t('paid')}: ${currencyFmt(totalPayment)}`,
+                  paidSummaryText: isBillPaid
+                    ? `${t('paid')}: ${currencyFmt(Number(bill.paid_amount) || 0)}`
+                    : `${t('payment')}: ${currencyFmt(totalPayment)}`,
                   dueSummaryText: `${t('total')}: ${currencyFmt(remaining)}`,
-                  statusPillText:
-                    totalPaymentMinor >= remainingMinor && remainingMinor > 0
-                      ? t('paid')
-                      : undefined,
+                  statusPillText: readoutStatusPillText,
                   statusTone: readoutStatusTone,
+                  isDiscountTarget: amountTarget?.kind === 'discount',
                 }}
                 quickTenders={quickTenderOptions}
                 keypad={
-                  <fieldset disabled={processing || attemptLocked || justPaid} className="h-full">
+                  <fieldset disabled={controlsDisabled} className="h-full">
                     {amountTarget && (
                       <CurrencyTouchNumberPad
                         value={activeAmountValue}
@@ -3375,7 +3992,7 @@ export default function PaymentModal({
                 <Button
                   onClick={handlePay}
                   disabled={payCtaDisabled}
-                  className="h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11"
+                  className={`h-11 w-full shrink-0 rounded-xl text-base font-semibold transition-colors sm:h-12 [@media(max-height:660px)]:h-11 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   size="lg"
                 >
                   {payCtaLabel}
@@ -3397,35 +4014,37 @@ export default function PaymentModal({
         >
           <DialogContent showCloseButton={false} aria-describedby={undefined}>
             <DialogTitle>{t('managerPin')}</DialogTitle>
-            <ApproverSelect
-              id="chargeApproverSelect"
-              approvers={managerApprovers.approvers}
-              selectedApproverId={chargeApproverId ?? managerApprovers.selectedApproverId}
-              onSelectApprover={(id) => {
-                setChargeApproverId(id);
-                setChargeApprovalPin('');
-              }}
-              loading={managerApprovers.loading}
-              loadFailed={managerApprovers.loadFailed}
-              disabled={processing || attemptLocked}
-            />
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={chargeApprovalPin}
-              onChange={(event) =>
-                setChargeApprovalPin(event.target.value.replace(/\D/g, '').slice(0, 6))
-              }
-              placeholder={t('managerPin')}
-              aria-label={t('managerPin')}
-              className="min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2"
-            />
+            <div className="space-y-2.5 rounded-xl border border-amber-500/35 bg-amber-500/8 p-3 dark:border-amber-400/30 dark:bg-amber-500/10">
+              <ApproverSelect
+                id="chargeApproverSelect"
+                approvers={managerApprovers.approvers}
+                selectedApproverId={chargeApproverId ?? managerApprovers.selectedApproverId}
+                onSelectApprover={(id) => {
+                  setChargeApproverId(id);
+                  setChargeApprovalPin('');
+                }}
+                loading={managerApprovers.loading}
+                loadFailed={managerApprovers.loadFailed}
+                disabled={processing || attemptLocked}
+              />
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={chargeApprovalPin}
+                onChange={(event) =>
+                  setChargeApprovalPin(event.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                placeholder={t('managerPin')}
+                aria-label={t('managerPin')}
+                className="min-h-11 w-full rounded-lg border border-amber-500/40 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+            </div>
             <div className="flex gap-2">
               <Button
                 data-testid="charge-approval-cancel"
                 variant="outline"
-                className="min-h-11 flex-1"
+                className="min-h-11 flex-1 rounded-xl"
                 onClick={() => {
                   setChargeApprovalId(null);
                   setChargeApprovalPin('');
@@ -3435,7 +4054,7 @@ export default function PaymentModal({
               </Button>
               <Button
                 data-testid="charge-approval-submit"
-                className="min-h-11 flex-1"
+                className={`min-h-11 flex-1 rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 disabled={
                   processing ||
                   attemptLocked ||

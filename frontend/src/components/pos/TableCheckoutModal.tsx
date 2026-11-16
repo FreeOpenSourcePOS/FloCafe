@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, ShoppingCart, Users, Printer, Loader2, ArrowRightLeft, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
@@ -15,6 +15,12 @@ import { tenantCan } from '@/lib/permissions';
 import MoveTableModal from '@/components/tables/MoveTableModal';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import {
+  CHECKOUT_PRIMARY_CTA_CLASS,
+  CheckoutHeaderChips,
+  CheckoutQtyBadge,
+  type CheckoutHeaderChipItem,
+} from './checkout-ui';
 
 interface Props {
   table: Table;
@@ -29,6 +35,7 @@ interface Props {
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
   onOrderMoved?: (result: { sourceTable: Table; targetTable: Table; order: Order }) => void;
+  onRegisterDismissHandler?: (handler?: () => boolean) => void;
   tables?: Table[];
 }
 
@@ -45,6 +52,7 @@ export default function TableCheckoutModal({
   onPayment,
   onAddCartToOrder,
   onOrderMoved,
+  onRegisterDismissHandler,
   tables,
 }: Props) {
   const t = useTranslations('pos');
@@ -68,8 +76,54 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
+  const [splitCheckSaving, setSplitCheckSaving] = useState(false);
   const [printingBill, setPrintingBill] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
+
+  const dismissHandlerRef = useRef<() => boolean>(() => true);
+  useEffect(() => {
+    dismissHandlerRef.current = () => {
+      if (generating || addingItems || printingBill || splitCheckSaving) return true;
+      if (splitBill) {
+        setSplitBill(null);
+        return true;
+      }
+      if (showMoveModal) {
+        setShowMoveModal(false);
+        return true;
+      }
+      if (editingItem) {
+        setEditingItem(null);
+        return true;
+      }
+      onClose();
+      return true;
+    };
+  });
+
+  useEffect(() => {
+    if (!onRegisterDismissHandler) return;
+    onRegisterDismissHandler(() => dismissHandlerRef.current());
+    return () => onRegisterDismissHandler(undefined);
+  }, [onRegisterDismissHandler]);
+
+  useEffect(() => {
+    if (
+      onRegisterDismissHandler ||
+      typeof window === 'undefined' ||
+      typeof window.addEventListener !== 'function'
+    ) {
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.key !== 'Escape') return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      e.preventDefault();
+      dismissHandlerRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onRegisterDismissHandler]);
 
   const handleMoveTable = () => {
     setShowMoveModal(true);
@@ -245,6 +299,19 @@ export default function TableCheckoutModal({
     (item: OrderItem) => !isTerminalItemStatus(item.status),
   );
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
+  const headerChips: CheckoutHeaderChipItem[] = [
+    { key: 'order', label: t('orderNumber', { number: order.order_number }) },
+    ...(order.bill?.bill_number
+      ? [{ key: 'bill', label: t('billNumber', { number: order.bill.bill_number }) }]
+      : []),
+  ];
+  const formatBillStatusLabel = (status: string | undefined) => {
+    if (status === 'paid') return t('paid');
+    if (status === 'partial' || status === 'partially_paid') return tOrders('partiallyPaid');
+    if (status === 'refunded') return tOrders('refunded');
+    if (status === 'partially_refunded') return tOrders('partiallyRefunded');
+    return t('unpaid');
+  };
 
   return (
     <>
@@ -263,40 +330,39 @@ export default function TableCheckoutModal({
         />
       )}
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-card rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
-          <div className="flex justify-between items-center p-5 border-b border-border">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-foreground">{table.name}</h2>
+        <div className="bg-card border border-border/80 shadow-xl rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden dark:border-white/10">
+          <div className="flex justify-between items-start gap-3 px-5 py-4 border-b border-border/80 dark:border-white/10">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-bold tracking-tight text-foreground">{table.name}</h2>
                 <span
-                  className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                  className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${
                     order.bill?.payment_status === 'paid'
-                      ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800/40'
-                      : 'bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/40'
+                      ? 'border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                      : 'border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300'
                   }`}
                 >
-                  {order.bill?.payment_status === 'paid' ? t('paid') : t('unpaid')}
+                  {formatBillStatusLabel(order.bill?.payment_status)}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {t('orderNumber', { number: order.order_number })}
-              </p>
+              <CheckoutHeaderChips chips={headerChips} className="mt-1.5" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {canMoveTable && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleMoveTable}
-                  className="text-xs h-8 gap-1.5"
+                  className="text-xs h-8 gap-1.5 rounded-lg bg-card dark:border-white/10"
                 >
                   <ArrowRightLeft size={13} />
                   {tTables('moveTable')}
                 </Button>
               )}
               <button
+                type="button"
                 onClick={onClose}
-                className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted"
+                className="touch-target rounded-xl border border-border/75 bg-muted/40 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:border-white/10"
                 aria-label={t('close')}
               >
                 <X size={20} />
@@ -307,26 +373,32 @@ export default function TableCheckoutModal({
           <div className="flex-1 overflow-y-auto p-5">
             {/* Existing order items - shown as disabled/reference */}
             <div className="mb-3">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                {t('previousItems')}
-              </p>
-              <div className="space-y-1">
+              <div className="mb-2.5 flex items-center justify-between">
+                <span className="text-xs font-semibold text-foreground">{t('previousItems')}</span>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border/80 bg-muted/65 px-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground dark:border-white/10">
+                  {activeItems.length}
+                </span>
+              </div>
+              <div className="space-y-1.5">
                 {activeItems.map((item) => (
                   <div
                     key={item.id}
-                    className="flex justify-between items-start py-1.5 px-2 bg-muted rounded-lg"
+                    className="flex justify-between items-start gap-2 rounded-xl border border-border/75 bg-muted/35 px-3 py-2 dark:border-white/10 dark:bg-muted/20"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-foreground font-medium">
-                        {item.quantity}x {item.product_name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <CheckoutQtyBadge>{item.quantity}</CheckoutQtyBadge>
+                        <p className="text-xs text-foreground font-semibold truncate">
+                          {item.product_name}
+                        </p>
+                      </div>
                       {item.special_instructions && (
-                        <p className="text-xs text-muted-foreground italic">
+                        <p className="mt-0.5 ps-7 text-xs text-muted-foreground italic">
                           {item.special_instructions}
                         </p>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground ms-2 font-medium">
+                    <span className="text-xs font-semibold tabular-nums text-foreground ms-2 pt-0.5">
                       {formatItemTotal(item.total, item.subtotal)}
                     </span>
                     {canEditItems && order.bill?.payment_status !== 'paid' && (
@@ -345,43 +417,58 @@ export default function TableCheckoutModal({
             </div>
           </div>
 
-          <div className="p-5 border-t border-border space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">{t('subtotal')}</span>
-              <span>{fmt(Number(order.subtotal))}</span>
+          <div className="p-5 border-t border-border/80 bg-muted/20 space-y-3 dark:border-white/10 dark:bg-muted/10">
+            <div className="rounded-xl border border-border bg-card p-3.5 space-y-2 tabular-nums shadow-2xs dark:border-white/10">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">{t('subtotal')}</span>
+                <span className="font-medium text-foreground">{fmt(Number(order.subtotal))}</span>
+              </div>
+              <TaxBreakdown
+                taxAmount={Number(order.tax_amount)}
+                taxBreakdown={order.tax_breakdown}
+                theme="light"
+              />
+              <div className="flex justify-between border-t border-border/80 pt-2 text-lg font-bold dark:border-white/10">
+                <span>{t('total')}</span>
+                <span className="text-brand dark:text-indigo-300">{fmt(Number(order.total))}</span>
+              </div>
+              {order.bill &&
+                order.bill.payment_status !== 'paid' &&
+                Number(order.bill.balance) > 0 && (
+                  <div className="flex justify-between text-sm font-semibold text-amber-700 dark:text-amber-300">
+                    <span>{t('balanceDue')}</span>
+                    <span>{fmt(Number(order.bill.balance))}</span>
+                  </div>
+                )}
             </div>
-            <TaxBreakdown
-              taxAmount={Number(order.tax_amount)}
-              taxBreakdown={order.tax_breakdown}
-              theme="light"
-            />
-            <div className="flex justify-between text-lg font-bold">
-              <span>{t('total')}</span>
-              <span className="text-brand">{fmt(Number(order.total))}</span>
-            </div>
-            {order.bill &&
-              order.bill.payment_status !== 'paid' &&
-              Number(order.bill.balance) > 0 && (
-                <div className="flex justify-between text-sm font-medium">
-                  <span className="text-orange-600">{t('balanceDue')}</span>
-                  <span className="text-orange-600">{fmt(Number(order.bill.balance))}</span>
-                </div>
-              )}
 
             {splitBills.length > 0 && (
               <div className="space-y-2">
                 {splitBills.map((bill) => (
                   <div
                     key={bill.id}
-                    className="flex items-center justify-between rounded-lg border p-2"
+                    className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card p-2.5 shadow-2xs dark:border-white/10"
                   >
-                    <div>
-                      <p className="text-sm font-medium">{bill.split_label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {fmt(Number(bill.total))} · {bill.payment_status}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {bill.split_label}
                       </p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                        <span className="font-semibold tabular-nums text-foreground">
+                          {fmt(Number(bill.total))}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                            bill.payment_status === 'paid'
+                              ? 'border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                              : 'border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300'
+                          }`}
+                        >
+                          {formatBillStatusLabel(bill.payment_status)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex shrink-0 gap-2">
                       {splitChecksEnabled &&
                         canReadBills &&
                         order.type === 'dine_in' &&
@@ -391,6 +478,7 @@ export default function TableCheckoutModal({
                           <Button
                             size="sm"
                             variant="outline"
+                            className="rounded-lg bg-card dark:border-white/10"
                             onClick={() => handleSplitCheck(bill)}
                             disabled={generating}
                           >
@@ -399,7 +487,11 @@ export default function TableCheckoutModal({
                           </Button>
                         )}
                       {bill.payment_status !== 'paid' && (
-                        <Button size="sm" onClick={() => handlePayment(bill)}>
+                        <Button
+                          size="sm"
+                          className={`rounded-lg font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                          onClick={() => handlePayment(bill)}
+                        >
                           {t('pay')}
                         </Button>
                       )}
@@ -422,7 +514,7 @@ export default function TableCheckoutModal({
                   variant="outline"
                   onClick={() => handleSplitCheck()}
                   disabled={generating}
-                  className="w-full"
+                  className="w-full rounded-xl bg-card dark:border-white/10"
                 >
                   <Users size={15} className="me-2" />
                   {t('splitCheck')}
@@ -434,7 +526,7 @@ export default function TableCheckoutModal({
                 <Button
                   onClick={handleAddCartToOrder}
                   disabled={addingItems}
-                  className="w-full"
+                  className={`w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                   size="lg"
                 >
                   <ShoppingCart size={16} className="me-2" />
@@ -443,7 +535,7 @@ export default function TableCheckoutModal({
                 <Button
                   onClick={handleCheckout}
                   variant="outline"
-                  className="w-full"
+                  className="w-full rounded-xl bg-card dark:border-white/10"
                   disabled={generating}
                 >
                   {generating ? t('generating') : t('checkoutInstead')}
@@ -456,6 +548,7 @@ export default function TableCheckoutModal({
               >
                 <Button
                   variant="outline"
+                  className="rounded-xl bg-card dark:border-white/10"
                   onClick={() => onAddItems(table, order)}
                   disabled={generating || printingBill}
                 >
@@ -466,7 +559,7 @@ export default function TableCheckoutModal({
                     variant="outline"
                     onClick={handlePrintBill}
                     disabled={generating || printingBill}
-                    className="font-medium"
+                    className="rounded-xl bg-card font-medium dark:border-white/10"
                   >
                     {printingBill ? (
                       <Loader2 size={15} className="animate-spin me-1.5" />
@@ -476,7 +569,11 @@ export default function TableCheckoutModal({
                     {tReceipt('printBill')}
                   </Button>
                 )}
-                <Button onClick={handleCheckout} disabled={generating || printingBill}>
+                <Button
+                  onClick={handleCheckout}
+                  disabled={generating || printingBill}
+                  className={`rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                >
                   {generating ? t('generating') : t('checkout')}
                 </Button>
               </div>
@@ -488,7 +585,10 @@ export default function TableCheckoutModal({
         <SplitCheckModal
           bill={splitBill}
           order={splitBill.order || order}
-          onClose={() => setSplitBill(null)}
+          onSubmittingChange={setSplitCheckSaving}
+          onClose={() => {
+            if (!splitCheckSaving) setSplitBill(null);
+          }}
           onSplit={(bills) => {
             setOrder((current) => {
               if (!current) return current;

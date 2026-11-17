@@ -215,7 +215,7 @@ the callout banner.
 
 | Transport | Mechanism |
 | --- | --- |
-| Network | Raw socket. Data is sent in 4096-byte chunks (`NETWORK_PRINT_CHUNK_SIZE`) with a 10 ms delay between chunks (`NETWORK_PRINT_CHUNK_DELAY_MS`), so a large receipt does not overrun the printer's buffer. `validateNetworkPrinterTarget()` (enforced on `/api/printers` configuration and `printViaNetwork()` dispatch) rejects cloud metadata endpoints, unspecified/broadcast addresses, and FloCafe's own local listening ports across canonical and non-canonical (shorthand, octal, hexadecimal, and integer) IPv4 forms while preserving hostnames, custom ports, LAN/Tailscale/IPv6 addresses, and link-local printers. |
+| Network | Raw socket. Data is sent in 4096-byte chunks (`NETWORK_PRINT_CHUNK_SIZE`) with a 10 ms delay between chunks (`NETWORK_PRINT_CHUNK_DELAY_MS`), so a large receipt does not overrun the printer's buffer. `validateNetworkPrinterTarget()` (enforced on `/api/printers` configuration, `/:id/status` probes, LAN discovery in `main/printers/lan-discovery.ts`, and `printViaNetwork()` dispatch) rejects cloud metadata endpoints, unspecified/broadcast addresses, and FloCafe's own local listening ports across canonical and non-canonical (shorthand, octal, hexadecimal, and integer) IPv4 forms while preserving hostnames, custom ports, LAN/Tailscale/IPv6 addresses, and link-local printers. |
 | CUPS | `lp -d <printer> -o raw <tmpfile>`, using an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created. |
 | Windows | `OpenPrinterW` with `pDataType` set to `RAW`, reading an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created. Before `StartDocPrinter`, the helper refuses a queue that is set to Use Printer Offline, offline, or not available. For those three refusals only, when the queue's port is a Standard TCP/IP port in RAW mode, `main/printers/windows-queue-bypass.ts` sends the same bytes once to that port with `printViaNetwork()`. No job exists in the spool at that point, so the bypass cannot print a ticket twice. When the port has SNMP status enabled, the failure detail says so and the POS shows how to turn it off. |
 | macOS Mac App Store | IPP over the local CUPS UNIX domain socket `/private/var/run/cupsd` (with loopback HTTP fallback on `127.0.0.1:631`) using `main/printers/ipp-client.ts` and `document-format` `application/vnd.cups-raw`, because the macOS App Sandbox blocks shelling out to `lp` and blocks outbound TCP to `localhost:631` while permitting `/private/var/run/cupsd` under `com.apple.security.print`. |
@@ -243,7 +243,10 @@ or else the failure class and the operating system, into one fix step
 `main/printers/lan-discovery.ts` finds printers when the Printers page opens. It scans port 9100 on
 up to four private /24 networks of this machine, skipping virtual adapters and link-local
 addresses, and browses mDNS for `_pdl-datastream._tcp`, `_ipp._tcp`, and `_printer._tcp`, within a
-3 s budget. Both `probePort()` and `DLE EOT` status probes share the per-`host:port` FIFO mutex in
+3 s budget. `probePort()`, `scanPort9100()`, and `discoverLanPrinters()` validate each target's
+port (`1`-`65535`) and `validateNetworkPrinterTarget()` before acquiring the port lock, opening a
+probe socket, or returning merged entries, so disallowed mDNS or scan targets are never probed or
+listed. Both `probePort()` and `DLE EOT` status probes share the per-`host:port` FIFO mutex in
 `main/printers/network-port-lock.ts` (`withNetworkPortLock()`) with `printViaNetwork()`, so discovery
 and status checks serialize behind active print jobs on single-connection `:9100` printers. The macOS
 builds declare those services in `NSBonjourServices`.

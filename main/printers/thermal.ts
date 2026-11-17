@@ -40,6 +40,7 @@ import { capturePostHogPrintFailure, capturePostHogPrintRecovered } from '../ser
 import { printLabel } from '../print/print-labels.generated';
 import { findDbProfile, findDbProfileById } from './capability-db';
 import { withNetworkPortLock } from './network-port-lock';
+import { DLE_EOT } from './escpos-status';
 import { withWindowsQueueBypass } from './windows-queue-bypass';
 import {
   cupsQueuePort,
@@ -5076,6 +5077,7 @@ function decodeThermalPreviewBytes(bytes: number[], codePage: ThermalCodePage | 
 
 export const NETWORK_PRINT_CHUNK_SIZE = 4096;
 export const NETWORK_PRINT_CHUNK_DELAY_MS = 10;
+export const NETWORK_PRINT_DRAIN_TIMEOUT_MS = 600;
 
 function expandPrinterIpv6Groups(ip: string): number[] | null {
   let text = ip.toLowerCase();
@@ -5253,18 +5255,27 @@ export async function printViaNetwork(
           const client = new net.Socket();
           let settled = false;
           let connected = false;
+          let draining = false;
           let ending = false;
+          let peerEnded = false;
           let socketClosed = false;
           let timer: NodeJS.Timeout | null = null;
+          let drainTimer: NodeJS.Timeout | null = null;
           let closeTimer: NodeJS.Timeout | null = null;
+          let cleanupDrainListeners: (() => void) | null = null;
 
+          client.on('end', () => {
+            peerEnded = true;
+          });
           client.on('close', () => {
             socketClosed = true;
           });
 
           const onAbort = (): void => {
             if (timer) clearTimeout(timer);
+            if (drainTimer) clearTimeout(drainTimer);
             if (closeTimer) clearTimeout(closeTimer);
+            cleanupDrainListeners?.();
             client.destroy();
             finish({ ok: false, detail: 'Print cancelled during shutdown' });
           };
@@ -5272,7 +5283,9 @@ export async function printViaNetwork(
             if (settled) return;
             settled = true;
             if (timer) clearTimeout(timer);
+            if (drainTimer) clearTimeout(drainTimer);
             if (closeTimer) clearTimeout(closeTimer);
+            cleanupDrainListeners?.();
             signal?.removeEventListener('abort', onAbort);
             resolve(result);
           };
@@ -5294,12 +5307,70 @@ export async function printViaNetwork(
             closeTimer.unref?.();
             client.end();
           };
+          const drainAndClose = (): void => {
+            if (settled || draining || ending) return;
+            draining = true;
+
+            if (socketClosed || client.destroyed || client.writableEnded || peerEnded) {
+              endAndWaitForClose();
+              return;
+            }
+
+            let drainSettled = false;
+            const proceedToClose = (): void => {
+              if (drainSettled || settled || ending) return;
+              drainSettled = true;
+              if (drainTimer) {
+                clearTimeout(drainTimer);
+                drainTimer = null;
+              }
+              cleanupDrainListeners?.();
+              endAndWaitForClose();
+            };
+            const onDrainData = (chunk: Buffer): void => {
+              if (chunk.length > 0) proceedToClose();
+            };
+            const onDrainEnd = (): void => {
+              peerEnded = true;
+              proceedToClose();
+            };
+            const onDrainClose = (): void => {
+              socketClosed = true;
+              proceedToClose();
+            };
+            cleanupDrainListeners = () => {
+              client.removeListener('data', onDrainData);
+              client.removeListener('end', onDrainEnd);
+              client.removeListener('close', onDrainClose);
+              cleanupDrainListeners = null;
+            };
+
+            client.on('data', onDrainData);
+            client.once('end', onDrainEnd);
+            client.once('close', onDrainClose);
+
+            drainTimer = setTimeout(() => {
+              proceedToClose();
+            }, NETWORK_PRINT_DRAIN_TIMEOUT_MS);
+            drainTimer.unref?.();
+
+            // ESC/POS real-time status inquiry keeps slow printer MCUs draining trailing commands
+            // before FIN; silent printers fall through after NETWORK_PRINT_DRAIN_TIMEOUT_MS without failing.
+            client.write(DLE_EOT[1]);
+          };
 
           client.connect(port, connectHost, () => {
             connected = true;
             // For small payloads (typical text receipts <4KB), write directly in a single pass.
             if (data.length <= NETWORK_PRINT_CHUNK_SIZE) {
-              client.write(data, endAndWaitForClose);
+              client.write(data, (err) => {
+                if (err) {
+                  client.destroy();
+                  finish({ ok: false, detail: `Network error: ${err.message}` });
+                  return;
+                }
+                drainAndClose();
+              });
               return;
             }
 
@@ -5309,7 +5380,15 @@ export async function printViaNetwork(
             const sendNextChunk = (): void => {
               if (settled) return;
               if (offset >= data.length) {
-                endAndWaitForClose();
+                drainAndClose();
+                return;
+              }
+              if (socketClosed || client.destroyed || client.writableEnded || peerEnded) {
+                client.destroy();
+                finish({
+                  ok: false,
+                  detail: `Network error: Connection closed while writing to ${ip}:${port}`,
+                });
                 return;
               }
 
@@ -5321,11 +5400,16 @@ export async function printViaNetwork(
                 if (offset < data.length) {
                   timer = setTimeout(sendNextChunk, NETWORK_PRINT_CHUNK_DELAY_MS);
                 } else {
-                  endAndWaitForClose();
+                  drainAndClose();
                 }
               };
 
-              const canContinue = client.write(chunk, () => {
+              const canContinue = client.write(chunk, (err) => {
+                if (err) {
+                  client.destroy();
+                  finish({ ok: false, detail: `Network error: ${err.message}` });
+                  return;
+                }
                 if (canContinue) {
                   scheduleNext();
                 }
@@ -5340,6 +5424,11 @@ export async function printViaNetwork(
           });
 
           client.on('error', (err) => {
+            if (ending && peerEnded) {
+              client.destroy();
+              finish({ ok: true });
+              return;
+            }
             console.error(`[Printer] Network error: ${err.message}`);
             client.destroy();
             finish({ ok: false, detail: `Network error: ${err.message}` });

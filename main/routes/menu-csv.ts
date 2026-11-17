@@ -13,6 +13,8 @@ import {
   resolveRegionalSnapshot,
   type RegionalSnapshot,
 } from '../countries';
+import { CURRENCY_ASCII_MAP } from '../../shared/print/currency';
+import { listSupportedCurrencyCodes } from '../../shared/currencies';
 import {
   FLO_CSV_ENCODING_COLUMN,
   FLO_CSV_ENCODING_QUOTE_V1,
@@ -113,6 +115,98 @@ const MAX_CSV_ROWS = 10_000;
 const MAX_CSV_COLUMNS = 64;
 const MAX_CSV_CELL_LENGTH = 10_000;
 const NUMBER_TOKEN = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$/;
+const STANDARD_GROUPED_NUMBER_RE = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+const SPREADSHEET_EDGE_PADDING_RE =
+  /^[\s\u00A0\u202F\u200E\u200F\u200B]+|[\s\u00A0\u202F\u200E\u200F\u200B]+$/g;
+const LEADING_SPREADSHEET_PADDING_RE = /^[\s\u00A0\u202F\u200E\u200F\u200B]/;
+const ISO_PREFIX_RE = /^([A-Z]{3})[\s\u00A0\u202F\u200E\u200F\u200B]+/;
+const ISO_DOLLAR_PREFIX_RE = /^([A-Z]{3})[\s\u00A0\u202F\u200E\u200F\u200B]*\$/;
+const ISO_SUFFIX_RE = /[\s\u00A0\u202F\u200E\u200F\u200B]+([A-Z]{3})$/;
+
+// Dollar/peso ISO 4217 currencies where "<ISO>$" / "<ISO> $" is an unambiguous single marker.
+const DOLLAR_PESO_ISO_CODES: ReadonlySet<string> = new Set([
+  'USD',
+  'CAD',
+  'AUD',
+  'NZD',
+  'HKD',
+  'SGD',
+  'TWD',
+  'MXN',
+  'ARS',
+  'CLP',
+  'COP',
+  'UYU',
+  'DOP',
+  'BBD',
+  'BMD',
+  'BND',
+  'BSD',
+  'BZD',
+  'FJD',
+  'GYD',
+  'JMD',
+  'KYD',
+  'LRD',
+  'NAD',
+  'SBD',
+  'SRD',
+  'TTD',
+  'XCD',
+]);
+
+const VALID_ISO_CURRENCY_CODES: ReadonlySet<string> = new Set(listSupportedCurrencyCodes());
+
+// Curated multi-character currency tokens sorted longest-first so prefixes/suffixes
+// like "د.إ.", "ر.س.", "US$", and "Rs." strip cleanly as a single token.
+const MULTI_CHAR_CURRENCY_TOKENS: readonly string[] = Array.from(
+  new Set([
+    ...Object.keys(CURRENCY_ASCII_MAP).filter(
+      (token) => Array.from(token).length > 1 || !/^\p{Sc}$/u.test(token),
+    ),
+    'د.إ',
+    'ر.س',
+    'ل.س',
+    'ج.م',
+    'د.ب',
+    'د.ج',
+    'د.ع',
+    'د.أ',
+    'د.ك',
+    'ل.ل',
+    'د.ل',
+    'د.م',
+    'أ.م',
+    'ر.ع',
+    'ر.ق',
+    'ج.س',
+    'د.ت',
+    'ر.ي',
+    'US$',
+    'CA$',
+    'AU$',
+    'NZ$',
+    'HK$',
+    'SG$',
+    'NT$',
+    'MX$',
+    'Mex$',
+    'S$',
+    'A$',
+    'C$',
+    'R$',
+    'N$',
+    'Rs.',
+    'Rs',
+  ]),
+).sort((a, b) => b.length - a.length);
+
+const TRUTHY_TOKENS = new Set(['true', 'yes', '1']);
+const FALSY_TOKENS = new Set(['false', 'no', '0']);
+
+function trimSpreadsheetEdge(value: string): string {
+  return value.replace(SPREADSHEET_EDGE_PADDING_RE, '');
+}
 
 class CsvImportError extends Error {
   readonly statusCode = 400;
@@ -130,6 +224,8 @@ function parseCSV(text: string): string[][] {
   if (Buffer.byteLength(text, 'utf8') > MAX_CSV_BYTES) {
     throw new CsvImportError(`CSV exceeds the ${MAX_CSV_BYTES}-byte size limit`);
   }
+  // Strip a single leading UTF-8 BOM from Excel/Sheets exports after byte bounds check.
+  const source = text.startsWith('\uFEFF') ? text.slice(1) : text;
 
   const rows: string[][] = [];
   let fields: string[] = [];
@@ -167,11 +263,11 @@ function parseCSV(text: string): string[][] {
     field = '';
   };
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i];
 
     if (inQuotes) {
-      if (char === '"' && text[i + 1] === '"') {
+      if (char === '"' && source[i + 1] === '"') {
         append('"');
         i++;
       } else if (char === '"') {
@@ -181,7 +277,7 @@ function parseCSV(text: string): string[][] {
         append(char);
         if (char === '\n') lineNumber++;
         else if (char === '\r') {
-          if (text[i + 1] === '\n') {
+          if (source[i + 1] === '\n') {
             append('\n');
             i++;
           }
@@ -197,7 +293,7 @@ function parseCSV(text: string): string[][] {
         afterClosingQuote = false;
       } else if (char === '\n' || char === '\r') {
         pushRow();
-        if (char === '\r' && text[i + 1] === '\n') i++;
+        if (char === '\r' && source[i + 1] === '\n') i++;
         lineNumber++;
         afterClosingQuote = false;
       } else {
@@ -217,7 +313,7 @@ function parseCSV(text: string): string[][] {
       pushField();
     } else if (char === '\n' || char === '\r') {
       pushRow();
-      if (char === '\r' && text[i + 1] === '\n') i++;
+      if (char === '\r' && source[i + 1] === '\n') i++;
       lineNumber++;
     } else {
       append(char);
@@ -254,6 +350,116 @@ function toObjects(rows: string[][]): Record<string, string>[] {
 }
 
 type NumericParseResult = { ok: true; value: number } | { ok: false; error: string };
+type BooleanParseResult = { ok: true; value: boolean } | { ok: false; error: string };
+type LocalizedCsvAmountFormat = Pick<
+  RegionalSnapshot,
+  'decimalSeparator' | 'groupSeparator' | 'currencySymbol' | 'locale'
+> & { currency?: string };
+
+function isAllowedIsoCurrency(code: string, storeCurrency?: string): boolean {
+  return VALID_ISO_CURRENCY_CODES.has(code) || (Boolean(storeCurrency) && code === storeCurrency);
+}
+
+function finalizeStrippedCurrencyBody(remaining: string, sign: string): string | null {
+  const stripped = trimSpreadsheetEdge(remaining);
+  if (!stripped || (sign && (stripped[0] === '+' || stripped[0] === '-'))) {
+    return null;
+  }
+  return sign + stripped;
+}
+
+function stripCurrencyAffix(raw: string, format: LocalizedCsvAmountFormat): string | null {
+  const trimmed = trimSpreadsheetEdge(raw);
+  if (!trimmed) return null;
+
+  let sign = '';
+  let body = trimmed;
+  if (body[0] === '+' || body[0] === '-') {
+    sign = body[0];
+    body = body.slice(1);
+    if (!body || LEADING_SPREADSHEET_PADDING_RE.test(body)) {
+      return null;
+    }
+  }
+
+  const storeSym = format.currencySymbol ? trimSpreadsheetEdge(format.currencySymbol) : '';
+  const candidates =
+    storeSym && !MULTI_CHAR_CURRENCY_TOKENS.includes(storeSym)
+      ? [storeSym, ...MULTI_CHAR_CURRENCY_TOKENS].sort((a, b) => b.length - a.length)
+      : MULTI_CHAR_CURRENCY_TOKENS;
+
+  for (const token of candidates) {
+    if (body.startsWith(token)) {
+      const after = body.slice(token.length);
+      if (/\p{L}$/u.test(token) && /^\p{L}/u.test(after)) continue;
+      return finalizeStrippedCurrencyBody(after, sign);
+    }
+  }
+
+  if (/^\p{Sc}/u.test(body)) {
+    const firstChar = Array.from(body)[0];
+    return finalizeStrippedCurrencyBody(body.slice(firstChar.length), sign);
+  }
+
+  const isoDollarPrefix = body.match(ISO_DOLLAR_PREFIX_RE);
+  if (
+    isoDollarPrefix &&
+    DOLLAR_PESO_ISO_CODES.has(isoDollarPrefix[1]) &&
+    isAllowedIsoCurrency(isoDollarPrefix[1], format.currency)
+  ) {
+    return finalizeStrippedCurrencyBody(body.slice(isoDollarPrefix[0].length), sign);
+  }
+
+  const isoPrefix = body.match(ISO_PREFIX_RE);
+  if (isoPrefix && isAllowedIsoCurrency(isoPrefix[1], format.currency)) {
+    return finalizeStrippedCurrencyBody(body.slice(isoPrefix[0].length), sign);
+  }
+
+  for (const token of candidates) {
+    if (body.endsWith(token)) {
+      const before = body.slice(0, body.length - token.length);
+      if (/^\p{L}/u.test(token) && /\p{L}$/u.test(before)) continue;
+      return finalizeStrippedCurrencyBody(before, sign);
+    }
+  }
+
+  const chars = Array.from(body);
+  const lastChar = chars[chars.length - 1];
+  if (lastChar && /^\p{Sc}$/u.test(lastChar)) {
+    return finalizeStrippedCurrencyBody(body.slice(0, body.length - lastChar.length), sign);
+  }
+
+  const isoSuffix = body.match(ISO_SUFFIX_RE);
+  if (isoSuffix && isAllowedIsoCurrency(isoSuffix[1], format.currency)) {
+    return finalizeStrippedCurrencyBody(body.slice(0, body.length - isoSuffix[0].length), sign);
+  }
+
+  return sign + body;
+}
+
+function canonicalizeCsvLocalizedAmount(
+  raw: string,
+  format: LocalizedCsvAmountFormat,
+): string | null {
+  const withoutCurrency = stripCurrencyAffix(raw, format);
+  if (!withoutCurrency) return null;
+
+  const localized = canonicalizeLocalizedAmount(withoutCurrency, {
+    ...format,
+    currencySymbol: '',
+  });
+  if (localized !== null) return localized;
+
+  if (STANDARD_GROUPED_NUMBER_RE.test(withoutCurrency)) {
+    return withoutCurrency.replace(/,/g, '');
+  }
+
+  if (NUMBER_TOKEN.test(withoutCurrency)) {
+    return withoutCurrency;
+  }
+
+  return null;
+}
 
 function parseNumericField(
   raw: string | undefined | null,
@@ -264,20 +470,17 @@ function parseNumericField(
     integer?: boolean;
     min?: number;
     max?: number;
-    localized?: Pick<
-      RegionalSnapshot,
-      'decimalSeparator' | 'groupSeparator' | 'currencySymbol' | 'locale'
-    >;
+    localized?: LocalizedCsvAmountFormat;
   } = {},
 ): NumericParseResult {
   const rawValue = raw ?? '';
-  const trimmed = rawValue.trim();
+  const trimmed = trimSpreadsheetEdge(rawValue);
   if (trimmed === '') {
     if (options.optional) return { ok: true, value: options.defaultValue ?? 0 };
     return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
   }
   const value = options.localized
-    ? (canonicalizeLocalizedAmount(trimmed, options.localized) ?? '')
+    ? (canonicalizeCsvLocalizedAmount(trimmed, options.localized) ?? '')
     : trimmed;
   if (!value || !NUMBER_TOKEN.test(value))
     return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
@@ -318,8 +521,23 @@ function csvImportErrorResponse(res: Response, error: unknown): Response {
   return res.status(500).json({ error: 'Menu CSV import failed' });
 }
 
-function isTruthy(v: string) {
-  return ['yes', 'true', '1'].includes((v || '').toLowerCase());
+function parseBooleanField(
+  raw: string | undefined | null,
+  fieldName: string,
+  defaultValue: boolean,
+): BooleanParseResult {
+  const rawValue = raw ?? '';
+  const normalized = trimSpreadsheetEdge(rawValue).toLowerCase();
+  if (normalized === '') {
+    return { ok: true, value: defaultValue };
+  }
+  if (TRUTHY_TOKENS.has(normalized)) {
+    return { ok: true, value: true };
+  }
+  if (FALSY_TOKENS.has(normalized)) {
+    return { ok: true, value: false };
+  }
+  return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
 }
 
 // An imported stock figure is a catalog write, so it moves through the ledger
@@ -1270,7 +1488,13 @@ router.post(
             if (arr.length) tagsJson = JSON.stringify(arr);
           }
 
-          const isActive = !r.is_active || isTruthy(r.is_active) ? 1 : 0;
+          const isActiveResult = parseBooleanField(r.is_active, 'is_active', true);
+          if (!isActiveResult.ok) {
+            failed++;
+            errors.push(`Row ${i + 2} (${r.name}): ${isActiveResult.error}`);
+            continue;
+          }
+          const isActive = isActiveResult.value ? 1 : 0;
           let cbPercent: number | null = null;
           if (
             r.cashback_percent !== undefined &&
@@ -1545,12 +1769,20 @@ router.post(
           defaultValue: 0,
           min: 0,
         });
+        const trackInventoryResult = parseBooleanField(
+          row.track_inventory,
+          'track_inventory',
+          false,
+        );
+        const groupRequiredResult = parseBooleanField(row.group_required, 'group_required', false);
         if (
           !priceResult.ok ||
           !minResult.ok ||
           !maxResult.ok ||
           !stockResult.ok ||
-          !thresholdResult.ok
+          !thresholdResult.ok ||
+          !trackInventoryResult.ok ||
+          !groupRequiredResult.ok
         )
           continue;
 
@@ -1673,7 +1905,28 @@ router.post(
             continue;
           }
           const lowStockThreshold = thresholdResult.value;
-          const trackInventory = isTruthy(r.track_inventory) ? 1 : 0;
+          const trackInventoryResult = parseBooleanField(
+            r.track_inventory,
+            'track_inventory',
+            false,
+          );
+          if (!trackInventoryResult.ok) {
+            failed++;
+            errors.push(
+              `Row ${i + 2} (${r.group_name}/${r.addon_name}): ${trackInventoryResult.error}`,
+            );
+            continue;
+          }
+          const trackInventory = trackInventoryResult.value ? 1 : 0;
+
+          const groupRequiredResult = parseBooleanField(r.group_required, 'group_required', false);
+          if (!groupRequiredResult.ok) {
+            failed++;
+            errors.push(
+              `Row ${i + 2} (${r.group_name}/${r.addon_name}): ${groupRequiredResult.error}`,
+            );
+            continue;
+          }
 
           const key = r.group_name.toLowerCase();
           const groupPlan = groupPlans.get(key);
@@ -1714,7 +1967,7 @@ router.post(
             if (existing) {
               groupId = existing.id;
               const isRequired = hasGroupRequiredColumn
-                ? isTruthy(r.group_required)
+                ? groupRequiredResult.value
                   ? 1
                   : 0
                 : existing.is_required;
@@ -1745,7 +1998,7 @@ router.post(
               ).run(
                 groupId,
                 r.group_name,
-                hasGroupRequiredColumn && isTruthy(r.group_required) ? 1 : 0,
+                hasGroupRequiredColumn && groupRequiredResult.value ? 1 : 0,
                 hasGroupMinColumn ? minResult.value : 0,
                 hasGroupMaxColumn ? maxResult.value : 1,
                 now(),

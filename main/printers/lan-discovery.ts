@@ -11,7 +11,7 @@ import { Bonjour } from 'bonjour-service';
 
 import { openSocket } from './escpos-status';
 import { withNetworkPortLock } from './network-port-lock';
-import { isKnownDriverOnlyPrinter } from './thermal';
+import { isKnownDriverOnlyPrinter, validateNetworkPrinterTarget } from './thermal';
 
 const SOCKET_PORT = 9100;
 const MDNS_TYPES = ['pdl-datastream', 'ipp', 'printer'] as const;
@@ -175,6 +175,15 @@ export function localScanTargets(
   return targets;
 }
 
+function isAllowedTarget(host: string, port: number): boolean {
+  return (
+    Number.isInteger(port) &&
+    port >= 1 &&
+    port <= 65535 &&
+    validateNetworkPrinterTarget(host, port) === null
+  );
+}
+
 /** True when a TCP connection opens. Sends nothing and closes the socket at once. */
 export async function probePort(
   host: string,
@@ -182,6 +191,7 @@ export async function probePort(
   timeoutMs = 400,
   signal?: AbortSignal,
 ): Promise<boolean> {
+  if (!isAllowedTarget(host, port)) return false;
   try {
     return await withNetworkPortLock(
       host,
@@ -231,7 +241,9 @@ export async function scanPort9100(hosts: string[], options: ScanOptions = {}): 
       const index = next++;
       if (index >= hosts.length) return;
       const host = hosts[index];
-      if (await probe(host, port, timeoutMs, signal)) found.push(host);
+      if (isAllowedTarget(host, port) && (await probe(host, port, timeoutMs, signal))) {
+        found.push(host);
+      }
     }
   };
   const workers = Math.min(Math.max(concurrency, 1), hosts.length);
@@ -363,7 +375,9 @@ async function mergePrinters(
 
   await Promise.all(
     [...byAddress.entries()].map(async ([address, records]) => {
-      const pdlRecord = records.find(isPdlRecord);
+      const pdlRecords = records.filter(isPdlRecord);
+      const pdlRecord =
+        pdlRecords.find((record) => isAllowedTarget(address, record.port || port)) ?? pdlRecords[0];
       const primary = pdlRecord ?? records[0];
       const name = primary.name;
       const model =
@@ -376,6 +390,10 @@ async function mergePrinters(
       }
 
       if (openHostSet.has(address)) {
+        if (!isAllowedTarget(address, port)) {
+          excludedHosts.add(address);
+          return;
+        }
         merged.set(address, {
           address,
           port,
@@ -388,6 +406,7 @@ async function mergePrinters(
 
       if (pdlRecord) {
         const pdlPort = pdlRecord.port || port;
+        if (!isAllowedTarget(address, pdlPort)) return;
         // Skip re-probing port 9100 if the host scan already tested it and found it closed.
         const alreadyProbedClosed =
           pdlPort === port && scannedHosts.has(address) && !signal.aborted;
@@ -409,6 +428,7 @@ async function mergePrinters(
 
       // IPP/LPD-only mDNS entries are only included when raw port 9100 is confirmed open.
       if (
+        isAllowedTarget(address, port) &&
         !scannedHosts.has(address) &&
         !signal.aborted &&
         (await probe(address, port, timeoutMs, signal))
@@ -425,7 +445,7 @@ async function mergePrinters(
   );
 
   for (const host of openHosts) {
-    if (merged.has(host) || excludedHosts.has(host)) continue;
+    if (merged.has(host) || excludedHosts.has(host) || !isAllowedTarget(host, port)) continue;
     merged.set(host, {
       address: host,
       port,

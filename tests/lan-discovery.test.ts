@@ -16,6 +16,7 @@ import {
 } from '../main/printers/lan-discovery';
 import * as networkPortLock from '../main/printers/network-port-lock';
 import { printViaNetwork } from '../main/printers/thermal';
+import { getServerPort, setServerPort } from '../main/server-state';
 import { start } from './helpers/fake-escpos-printer';
 
 const { assertEqualOrThrow, assertOrThrow } = require('./helpers/test-setup');
@@ -509,12 +510,227 @@ async function singleConnectionPrintProbeAndDiscoveryTest() {
   }
 }
 
+async function targetValidationTest() {
+  const connectCalls: string[] = [];
+  const origConnect = net.Socket.prototype.connect;
+  net.Socket.prototype.connect = function (this: net.Socket, ...args: any[]) {
+    const first = args[0];
+    if (first && typeof first === 'object') {
+      connectCalls.push(`${first.host ?? ''}:${first.port ?? ''}`);
+    } else {
+      connectCalls.push(`${args[1] ?? ''}:${args[0] ?? ''}`);
+    }
+    return origConnect.apply(this, args as any);
+  } as typeof net.Socket.prototype.connect;
+
+  let releaseHeldLock!: () => void;
+  const heldLockPromise = new Promise<void>((resolve) => {
+    releaseHeldLock = resolve;
+  });
+  let lockStarted = false;
+  const heldLock = networkPortLock.withNetworkPortLock('169.254.169.254', 80, async () => {
+    lockStarted = true;
+    await heldLockPromise;
+  });
+
+  const apiMockServer = net.createServer((socket) => socket.destroy());
+  await new Promise<void>((resolve) => apiMockServer.listen(0, '127.0.0.1', resolve));
+  const apiMockPort = (apiMockServer.address() as net.AddressInfo).port;
+  let apiMockConnections = 0;
+  apiMockServer.on('connection', () => {
+    apiMockConnections++;
+  });
+  const previousServerPort = getServerPort();
+
+  try {
+    await waitFor(() => lockStarted, 500);
+    // Rejecting before withNetworkPortLock avoids waiting on a held lock for a disallowed target.
+    assertEqualOrThrow(
+      await probePort('169.254.169.254', 80, 500),
+      false,
+      'probePort rejects 169.254.169.254:80 without acquiring lock or opening a socket',
+    );
+    assertEqualOrThrow(
+      await probePort('127.0.0.1', 3001, 500),
+      false,
+      'probePort rejects local FloCafe API port 127.0.0.1:3001',
+    );
+    assertEqualOrThrow(
+      await probePort('0.0.0.0', 9100, 500),
+      false,
+      'probePort rejects unspecified address 0.0.0.0:9100',
+    );
+    assertEqualOrThrow(await probePort('192.168.1.50', 0, 500), false, 'probePort rejects port 0');
+    assertEqualOrThrow(
+      await probePort('192.168.1.50', 70000, 500),
+      false,
+      'probePort rejects out-of-range port 70000',
+    );
+
+    setServerPort(apiMockPort);
+    assertEqualOrThrow(
+      await probePort('127.0.0.1', apiMockPort, 500),
+      false,
+      'probePort rejects active FloCafe server port even when listening on 127.0.0.1',
+    );
+    assertEqualOrThrow(
+      apiMockConnections,
+      0,
+      'listening server on active FloCafe port receives zero probe connections',
+    );
+    assertEqualOrThrow(
+      connectCalls.length,
+      0,
+      'production probePort never opens a socket for disallowed targets',
+    );
+  } finally {
+    setServerPort(previousServerPort);
+    releaseHeldLock();
+    await heldLock;
+    net.Socket.prototype.connect = origConnect;
+    await new Promise<void>((resolve) => apiMockServer.close(() => resolve()));
+  }
+
+  const probedTargets: string[] = [];
+  const discovered = await discoverLanPrinters({
+    hosts: ['169.254.169.254', '0.0.0.0', '192.168.1.50', '192.168.1.51'],
+    probe: async (host, port) => {
+      probedTargets.push(`${host}:${port}`);
+      return true;
+    },
+    browse: async () => [
+      {
+        type: 'pdl-datastream',
+        name: 'Cloud Metadata SSRF',
+        host: 'metadata.local',
+        address: '169.254.169.254',
+        port: 80,
+      },
+      {
+        type: 'ipp',
+        name: 'Cloud Metadata IPP',
+        host: 'metadata-ipp.local',
+        address: '169.254.169.254',
+        port: 631,
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'FloCafe API Port',
+        host: 'localhost',
+        address: '127.0.0.1',
+        port: 3001,
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'Unspecified Address',
+        host: 'unspec.local',
+        address: '0.0.0.0',
+        port: 9100,
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'Invalid Port Printer',
+        host: 'badport.local',
+        address: '192.168.1.55',
+        port: 70000,
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'Loopback Simulator',
+        host: 'sim.local',
+        address: '127.0.0.1',
+        port: 9100,
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'Front Counter',
+        host: 'counter.local',
+        address: '192.168.1.50',
+        port: 9100,
+      },
+      {
+        type: 'pdl-datastream',
+        name: 'Kitchen Printer',
+        host: 'kitchen.local',
+        address: '192.168.1.52',
+        port: 9101,
+      },
+    ],
+  });
+
+  for (const disallowed of [
+    '169.254.169.254:80',
+    '169.254.169.254:9100',
+    '127.0.0.1:3001',
+    '0.0.0.0:9100',
+    '192.168.1.55:70000',
+  ]) {
+    assertOrThrow(
+      !probedTargets.includes(disallowed),
+      `discoverLanPrinters never invokes probe for disallowed target ${disallowed}`,
+    );
+  }
+
+  assertEqualOrThrow(
+    discovered.map((p) => `${p.address}:${p.port}:${p.source}`).join(','),
+    '127.0.0.1:9100:mdns,192.168.1.50:9100:both,192.168.1.51:9100:port-scan,192.168.1.52:9101:mdns',
+    'discoverLanPrinters filters disallowed targets while preserving valid LAN and non-FloCafe 127.0.0.1:9100 printers',
+  );
+
+  const blockedLocalApiScan = await discoverLanPrinters({
+    hosts: ['127.0.0.1'],
+    port: 3001,
+    probe: async () => true,
+    browse: async () => [
+      {
+        type: 'ipp',
+        name: 'Local API IPP',
+        host: 'localhost',
+        address: '127.0.0.1',
+        port: 631,
+      },
+    ],
+  });
+  assertEqualOrThrow(
+    blockedLocalApiScan.length,
+    0,
+    'discoverLanPrinters blocks 127.0.0.1:3001 across port-scan, both, and IPP fallback even when custom probe returns true',
+  );
+
+  const blockedLocalApiPdl = await discoverLanPrinters({
+    hosts: [],
+    probe: async () => true,
+    browse: async () => [
+      {
+        type: 'pdl-datastream',
+        name: 'FloCafe API Port Only',
+        host: 'localhost',
+        address: '127.0.0.1',
+        port: 3001,
+      },
+      {
+        type: 'ipp',
+        name: 'FloCafe API Port IPP',
+        host: 'localhost',
+        address: '127.0.0.1',
+        port: 631,
+      },
+    ],
+  });
+  assertEqualOrThrow(
+    blockedLocalApiPdl.length,
+    0,
+    'discoverLanPrinters blocks standalone 127.0.0.1:3001 pdl-datastream without falling back to IPP',
+  );
+}
+
 async function main() {
   scanTargetsTest();
   await probePortTest();
   await scanPort9100Test();
   await networkPortLockWaiterAbortTest();
   await singleConnectionPrintProbeAndDiscoveryTest();
+  await targetValidationTest();
   await browseMdnsTest();
   await discoverLanPrintersTest();
   console.log('\nAll assertions passed');

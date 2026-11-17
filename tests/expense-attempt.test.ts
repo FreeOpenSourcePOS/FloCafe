@@ -1,7 +1,7 @@
 /**
  * Expense attempt durable storage contract.
  *
- * Usage: npx ts-node --transpile-only -P tests/tsconfig.json tests/expense-attempt.test.ts
+ * Usage: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/expense-attempt.test.ts
  */
 
 import * as assert from 'node:assert/strict';

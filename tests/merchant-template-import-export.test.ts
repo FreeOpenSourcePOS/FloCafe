@@ -19,7 +19,7 @@
  *      renders byte-identically through the document pipeline; the
  *      draft -> active -> archive lifecycle stays intact after import.
  *
- * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/merchant-template-import-export.test.ts
+ * Run: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/merchant-template-import-export.test.ts
  */
 
 import assert from 'node:assert/strict';

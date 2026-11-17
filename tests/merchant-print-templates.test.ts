@@ -19,7 +19,7 @@
  *      nonfinancial text (parity harness merchant-template mode lives in
  *      print-parity.test.ts).
  *
- * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/merchant-print-templates.test.ts
+ * Run: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/merchant-print-templates.test.ts
  */
 
 import assert from 'node:assert/strict';

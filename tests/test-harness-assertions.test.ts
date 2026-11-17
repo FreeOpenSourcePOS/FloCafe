@@ -9,7 +9,7 @@
  *   2. the `*OrThrow` variants abort a suite, proven end to end by spawning a
  *      deliberately failing fixture and requiring a non-zero exit.
  *
- * Usage: ts-node --transpile-only -P tests/tsconfig.json tests/test-harness-assertions.test.ts
+ * Usage: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/test-harness-assertions.test.ts
  */
 
 import * as assert from 'node:assert/strict';

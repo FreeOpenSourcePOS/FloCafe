@@ -14,6 +14,7 @@ import {
   type RegionalSnapshot,
 } from '../countries';
 import { CURRENCY_ASCII_MAP } from '../../shared/print/currency';
+import { listSupportedCurrencyCodes } from '../../shared/currencies';
 import {
   FLO_CSV_ENCODING_COLUMN,
   FLO_CSV_ENCODING_QUOTE_V1,
@@ -154,15 +155,7 @@ const DOLLAR_PESO_ISO_CODES: ReadonlySet<string> = new Set([
   'XCD',
 ]);
 
-const VALID_ISO_CURRENCY_CODES: ReadonlySet<string> = new Set(
-  (() => {
-    try {
-      return Intl.supportedValuesOf('currency');
-    } catch {
-      return [];
-    }
-  })(),
-);
+const VALID_ISO_CURRENCY_CODES: ReadonlySet<string> = new Set(listSupportedCurrencyCodes());
 
 // Curated multi-character currency tokens sorted longest-first so prefixes/suffixes
 // like "د.إ.", "ر.س.", "US$", and "Rs." strip cleanly as a single token.

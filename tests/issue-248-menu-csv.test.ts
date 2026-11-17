@@ -2404,13 +2404,15 @@ async function main() {
           ',,Dollar ISO Symbol Price,BOM Category,USD$12.50,desc,,,,,,TRUE',
           ',,Peso ISO Spaced Symbol Price,BOM Category,MXN $12.50,desc,,,,,,TRUE',
           ',,Dirham Prefix Price,BOM Category,"د.إ\u00a045.00",desc,,,,,,TRUE',
+          ',,Supplemental Leone ISO Price,BOM Category,SLE 12.50,desc,,,,,,TRUE',
+          ',,Supplemental Caribbean Guilder ISO Price,BOM Category,XCG 12.50,desc,,,,,,TRUE',
         ),
       },
       headers: authHeader,
     });
     assertEqualOrThrow(formattedPrices.status, 200, 'formatted prices import returns 200');
     assertEqualOrThrow(formattedPrices.data.failed, 0, 'all valid formatted prices succeed');
-    assertEqualOrThrow(formattedPrices.data.created, 12, 'all 12 formatted price products created');
+    assertEqualOrThrow(formattedPrices.data.created, 14, 'all 14 formatted price products created');
     const checkPrice = (name: string, expectedPrice: number, expectedCost?: number) => {
       const row = db.prepare('SELECT price, cost FROM products WHERE name = ?').get(name) as
         | { price: number; cost: number }
@@ -2432,6 +2434,8 @@ async function main() {
     checkPrice('Dollar ISO Symbol Price', 12.5);
     checkPrice('Peso ISO Spaced Symbol Price', 12.5);
     checkPrice('Dirham Prefix Price', 45);
+    checkPrice('Supplemental Leone ISO Price', 12.5);
+    checkPrice('Supplemental Caribbean Guilder ISO Price', 12.5);
 
     const formattedAddonPrices = await api(baseUrl, '/api/menu/csv/import/addons', {
       method: 'POST',
@@ -2466,6 +2470,8 @@ async function main() {
           ',,Ambiguous Comma Decimal,BOM Category,"12,50",desc,,,,,,TRUE',
           ',,Garbage Currency,BOM Category,$abc,desc,,,,,,TRUE',
           ',,Invalid ISO Code,BOM Category,ABC 12.50,desc,,,,,,TRUE',
+          ',,Reserved XXX ISO Code,BOM Category,XXX 12.50,desc,,,,,,TRUE',
+          ',,Reserved XTS ISO Code,BOM Category,XTS 12.50,desc,,,,,,TRUE',
           ',,Double Currency Symbol,BOM Category,$$12.50,desc,,,,,,TRUE',
           ',,Conflicting Currency Symbols,BOM Category,$12.50 €,desc,,,,,,TRUE',
           ',,Conflicting Euro Dollar Prefix,BOM Category,EUR $12.50,desc,,,,,,TRUE',
@@ -2480,7 +2486,7 @@ async function main() {
     });
     assertEqualOrThrow(rejectedPrices.status, 200, 'rejected prices return row validation results');
     assertEqualOrThrow(rejectedPrices.data.created, 0, 'no invalid price row is persisted');
-    assertEqualOrThrow(rejectedPrices.data.failed, 11, 'all 11 invalid/ambiguous price rows fail');
+    assertEqualOrThrow(rejectedPrices.data.failed, 13, 'all 13 invalid/ambiguous price rows fail');
     assertEqualOrThrow(
       db.prepare('SELECT id FROM products WHERE name = ?').get('Ambiguous Comma Decimal'),
       undefined,

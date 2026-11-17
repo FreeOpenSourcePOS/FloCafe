@@ -859,7 +859,10 @@ async function testStartupEntrypoint(
   startupRace = false,
   startupFailureRace = false,
 ): Promise<void> {
-  const childEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+  const childEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+  };
   if (startupRace) childEnv.FLO_STARTUP_RACE = '1';
   else delete childEnv.FLO_STARTUP_RACE;
   if (startupFailureRace) childEnv.FLO_STARTUP_FAILURE_RACE = '1';
@@ -867,10 +870,8 @@ async function testStartupEntrypoint(
   const child = spawn(
     process.execPath,
     [
-      require.resolve('ts-node/dist/bin.js'),
-      '--transpile-only',
-      '-P',
-      path.join(__dirname, 'tsconfig.json'),
+      '-r',
+      path.join(__dirname, 'register-tsx.cjs'),
       path.join(__dirname, 'startup-failure-child.cjs'),
     ],
     {

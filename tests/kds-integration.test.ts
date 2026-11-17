@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { WebSocket } from 'ws';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -15,9 +16,10 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
   return originalLoad.apply(this, arguments as any);
 };
 
-import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
-import { initDatabase, closeDatabase, getDatabase, now } from '../main/db';
-import { WebSocket } from 'ws';
+const { startKdsServer, stopKdsServer, getKdsPort } =
+  require('../main/kds-server') as typeof import('../main/kds-server');
+const { initDatabase, closeDatabase, getDatabase, now } =
+  require('../main/db') as typeof import('../main/db');
 
 function createMessageQueue(ws: WebSocket) {
   const messages: any[] = [];

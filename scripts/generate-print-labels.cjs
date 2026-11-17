@@ -27,7 +27,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const ts = require('typescript');
+const vm = require('node:vm');
+const esbuild = require('esbuild');
 
 const ROOT = path.join(__dirname, '..');
 const MESSAGES_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
@@ -35,49 +36,36 @@ const LANGUAGE_REGISTRY_FILE = path.join(ROOT, 'frontend/src/lib/i18n/languages.
 const SHARED_CONCEPTS_FILE = path.join(ROOT, 'shared/print/concepts.ts');
 const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 
-/** Find a top-level const initializer without depending on source formatting. */
-function readConstInitializer(filePath, name) {
+/** Strip TypeScript syntax with esbuild and evaluate pure catalog constants in an isolated VM. */
+function loadTsModuleExports(filePath) {
   const source = fs.readFileSync(filePath, 'utf8');
-  const file = ts.createSourceFile(
-    filePath,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
+  const { code } = esbuild.transformSync(source, {
+    loader: 'ts',
+    format: 'cjs',
+    target: 'es2022',
+    sourcefile: filePath,
+  });
+  const mod = { exports: {} };
+  vm.runInNewContext(
+    code,
+    {
+      module: mod,
+      exports: mod.exports,
+      require: (specifier) => {
+        throw new Error(`Unexpected runtime import '${specifier}' while reading ${filePath}`);
+      },
+    },
+    { filename: filePath },
   );
-  for (const statement of file.statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (
-        ts.isIdentifier(declaration.name) &&
-        declaration.name.text === name &&
-        declaration.initializer
-      ) {
-        let initializer = declaration.initializer;
-        while (
-          ts.isAsExpression(initializer) ||
-          ts.isSatisfiesExpression(initializer) ||
-          ts.isParenthesizedExpression(initializer)
-        ) {
-          initializer = initializer.expression;
-        }
-        return initializer;
-      }
-    }
-  }
-  throw new Error(`Could not locate ${name} in ${filePath}`);
+  return mod.exports;
 }
 
 /** Derive print locales in canonical registry order; translations stay JSON-backed. */
 function readCanonicalLanguages() {
-  const initializer = readConstInitializer(LANGUAGE_REGISTRY_FILE, 'LANGUAGES');
-  if (!ts.isObjectLiteralExpression(initializer))
+  const { LANGUAGES: registry } = loadTsModuleExports(LANGUAGE_REGISTRY_FILE);
+  if (!registry || typeof registry !== 'object' || Array.isArray(registry))
     throw new Error('Canonical LANGUAGES registry must be an object');
-  const languages = initializer.properties
-    .filter((property) => ts.isPropertyAssignment(property))
-    .map((property) => property.name)
-    .filter((name) => name && (ts.isIdentifier(name) || ts.isStringLiteral(name)))
-    .map((name) => name.text);
+  const languages = Object.keys(registry);
   if (languages.length === 0) throw new Error('Canonical LANGUAGES registry is empty');
   return languages;
 }
@@ -248,14 +236,11 @@ const BORROWED_KEYS = [
 ];
 
 function readSharedConcepts() {
-  const initializer = readConstInitializer(SHARED_CONCEPTS_FILE, 'PRINT_CONCEPT_IDS');
-  if (!ts.isArrayLiteralExpression(initializer))
+  const { PRINT_CONCEPT_IDS: concepts } = loadTsModuleExports(SHARED_CONCEPTS_FILE);
+  if (!Array.isArray(concepts) || !concepts.every((element) => typeof element === 'string'))
     throw new Error('Shared print-concept catalog must be an array');
-  const concepts = initializer.elements
-    .filter((element) => ts.isStringLiteral(element))
-    .map((element) => element.text);
   if (concepts.length === 0) throw new Error('Shared print-concept catalog is empty');
-  return concepts;
+  return [...concepts];
 }
 
 const ALL_CONCEPTS = [...PRINT_NAMESPACE_KEYS, ...BORROWED_KEYS];

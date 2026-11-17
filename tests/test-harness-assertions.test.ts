@@ -118,13 +118,7 @@ async function run() {
   // ── A failing suite exits non-zero ─────────────────────────────────────────
   const result = spawnSync(
     process.execPath,
-    [
-      require.resolve('ts-node/dist/bin.js'),
-      '--transpile-only',
-      '-P',
-      'tests/tsconfig.json',
-      'tests/fixtures/failing-assertion-suite.ts',
-    ],
+    ['-r', path.join(__dirname, 'register-tsx.cjs'), 'tests/fixtures/failing-assertion-suite.ts'],
     { cwd: path.join(__dirname, '..'), encoding: 'utf8' },
   );
   const stdout = result.stdout || '';

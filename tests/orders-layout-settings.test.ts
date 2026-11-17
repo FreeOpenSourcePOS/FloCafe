@@ -21,7 +21,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { strict as assert } from 'node:assert';
 import * as vm from 'node:vm';
-import * as ts from 'typescript';
+import * as esbuild from 'esbuild';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -157,9 +157,12 @@ async function testPreferenceRecovery() {
     path.join(__dirname, '../frontend/src/hooks/useOrdersLayout.ts'),
     'utf8',
   );
-  const code = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
+  const code = esbuild.transformSync(source, {
+    loader: 'tsx',
+    format: 'cjs',
+    jsx: 'automatic',
+    target: 'es2022',
+  }).code;
   const state = {
     layout: 'split',
     userSelected: false,
@@ -204,6 +207,7 @@ async function testPreferenceRecovery() {
     exports: {} as { useOrdersLayoutPreference: () => { save: (value: string) => Promise<void> } },
   };
   vm.runInNewContext(code, {
+    module,
     exports: module.exports,
     require: (name: string) => {
       if (name === 'react')
@@ -212,9 +216,9 @@ async function testPreferenceRecovery() {
           useCallback: (callback: unknown) => callback,
         };
       if (name === 'react-hot-toast')
-        return { default: { error: (value: string) => errors.push(value) } };
+        return { __esModule: true, default: { error: (value: string) => errors.push(value) } };
       if (name === 'use-intl') return { useTranslations: () => (key: string) => key };
-      if (name === '@/lib/api') return { default: api };
+      if (name === '@/lib/api') return { __esModule: true, default: api };
       if (name === '@/store/orders-layout')
         return {
           useOrdersLayoutStore: store,

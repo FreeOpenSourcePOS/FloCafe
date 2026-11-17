@@ -163,7 +163,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import { registerIpcHandlers } from '../main/ipc';
+const { registerIpcHandlers } = require('../main/ipc') as typeof import('../main/ipc');
 
 async function run(): Promise<void> {
   const evidenceLogs: string[] = [];

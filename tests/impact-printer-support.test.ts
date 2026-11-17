@@ -12,6 +12,14 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  LATIN_THERMAL_CAPABILITIES,
+  normalizeThermalText,
+  isThermalTextRepresentable,
+} from '../shared/print/thermal-capabilities';
+import { pack1BitPixels, type ReceiptLogoData } from '../shared/print/image-raster';
+import { buildBillDocument } from '../shared/print/document';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -28,21 +36,14 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import {
-  GENERIC_THERMAL_CAPABILITIES,
-  LATIN_THERMAL_CAPABILITIES,
-  normalizeThermalText,
-  isThermalTextRepresentable,
-} from '../shared/print/thermal-capabilities';
-import { pack1BitPixels, type ReceiptLogoData } from '../shared/print/image-raster';
-import {
+const {
   getSupportedPrinterProfiles,
   matchSupportedPrinterProfile,
   resolvePrinterProfile,
   capabilitiesForPrinter,
   isValidPrinterProfileId,
-} from '../main/printers/profiles';
-import {
+} = require('../main/printers/profiles') as typeof import('../main/printers/profiles');
+const {
   formatReceipt,
   prepareReceipt,
   rasterizePrintDocumentForWebUsb,
@@ -53,10 +54,11 @@ import {
   annotateProfile,
   guessPaperWidth,
   escPosToText,
-} from '../main/printers/thermal';
-import { buildBillPrintContext, buildBillPrintData } from '../main/printers/document-classic';
-import { buildBillDocument } from '../shared/print/document';
-import { loadFrontendPrintModules } from './helpers/receipt-column-measure';
+} = require('../main/printers/thermal') as typeof import('../main/printers/thermal');
+const { buildBillPrintContext, buildBillPrintData } =
+  require('../main/printers/document-classic') as typeof import('../main/printers/document-classic');
+const { loadFrontendPrintModules } =
+  require('./helpers/receipt-column-measure') as typeof import('./helpers/receipt-column-measure');
 
 const {
   initTestDb,

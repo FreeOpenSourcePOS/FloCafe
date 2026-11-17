@@ -10,6 +10,8 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { WebSocket } from 'ws';
+import * as jwt from 'jsonwebtoken';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -22,23 +24,19 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
   return originalLoad.apply(this, arguments as any);
 };
 
-import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
-import { initDatabase, closeDatabase, getDatabase, now } from '../main/db';
-import {
-  revokeToken,
-  clearRevokedTokens,
-  invalidateUserAuthCache,
-  isAllowedOrigin,
-} from '../main/middleware/security';
-import {
+const { startKdsServer, stopKdsServer, getKdsPort } =
+  require('../main/kds-server') as typeof import('../main/kds-server');
+const { initDatabase, closeDatabase, getDatabase, now } =
+  require('../main/db') as typeof import('../main/db');
+const { revokeToken, clearRevokedTokens, invalidateUserAuthCache, isAllowedOrigin } =
+  require('../main/middleware/security') as typeof import('../main/middleware/security');
+const {
   notifyKdsUpdate,
   KDS_AUTH_TIMEOUT_MS,
   MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP,
   getKdsClientCount,
-} from '../main/services/kds';
-import { getJWTSecret } from '../main/routes/auth';
-import { WebSocket } from 'ws';
-import * as jwt from 'jsonwebtoken';
+} = require('../main/services/kds') as typeof import('../main/services/kds');
+const { getJWTSecret } = require('../main/routes/auth') as typeof import('../main/routes/auth');
 const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
 function createMessageQueue(ws: WebSocket) {

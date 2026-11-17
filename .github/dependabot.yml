@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Root and frontend dependencies (lockstep so shared tools like oxfmt/oxlint update together)
+  # Root and frontend dependencies (lockstep so shared tools like oxfmt/oxlint/typescript update together)
   - package-ecosystem: "npm"
     directories:
       - "/"
@@ -14,17 +14,19 @@ updates:
     commit-message:
       prefix: "chore(deps):"
     groups:
-      oxc-tooling:
+      shared-tooling:
         group-by: "dependency-name"
         patterns:
           - "oxfmt"
           - "oxlint"
+          - "typescript"
       minor-and-patch:
         patterns:
           - "*"
         exclude-patterns:
           - "oxfmt"
           - "oxlint"
+          - "typescript"
         update-types:
           - "minor"
           - "patch"

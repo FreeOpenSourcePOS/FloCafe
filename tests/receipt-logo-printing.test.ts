@@ -13,6 +13,21 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  pack1BitPixels,
+  unpack1BitPixels,
+  ditherGrayscalePixels,
+  centerPixels,
+  getLogoRasterBands,
+  parseReceiptLogoData,
+  findLogoContentBounds,
+  normalizeGrayscaleContrast,
+  shouldAutoEnableBillShowLogo,
+  type ReceiptLogoData,
+} from '../shared/print/image-raster';
+import { encodeGsV0Band, concatBytes, type RasterRenderRequest } from '../shared/print/raster';
+import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
+import { buildBillDocument, getBlock, type BusinessHeaderBlock } from '../shared/print/document';
 
 // Mock electron before importing db / app modules
 const Module = require('module');
@@ -29,22 +44,6 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: mockApp };
   return originalLoad.apply(this, arguments as any);
 };
-
-import {
-  pack1BitPixels,
-  unpack1BitPixels,
-  ditherGrayscalePixels,
-  centerPixels,
-  getLogoRasterBands,
-  parseReceiptLogoData,
-  findLogoContentBounds,
-  normalizeGrayscaleContrast,
-  shouldAutoEnableBillShowLogo,
-  type ReceiptLogoData,
-} from '../shared/print/image-raster';
-import { encodeGsV0Band, concatBytes, type RasterRenderRequest } from '../shared/print/raster';
-import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
-import { buildBillDocument, getBlock, type BusinessHeaderBlock } from '../shared/print/document';
 
 const { buildBillPrintData } = require('../main/printers/document-classic');
 const {

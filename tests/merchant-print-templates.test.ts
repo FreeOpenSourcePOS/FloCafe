@@ -22,9 +22,21 @@
  * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/merchant-print-templates.test.ts
  */
 
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
+  MERCHANT_TEMPLATE_FORMAT,
+  MERCHANT_TEMPLATE_SCHEMA_VERSION,
+  applyMerchantTemplate,
+  buildBillDocument,
+  getBlock,
+  validateMerchantTemplate,
+  validateMerchantTemplateText,
+} from '../shared/print';
 
 // Mock electron before importing any app modules.
 const Module = require('module');
@@ -39,31 +51,16 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 process.env.JWT_SECRET = 'test-secret-for-merchant-print-templates';
 
-import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-
-import {
-  MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
-  MERCHANT_TEMPLATE_FORMAT,
-  MERCHANT_TEMPLATE_SCHEMA_VERSION,
-  applyMerchantTemplate,
-  buildBillDocument,
-  getBlock,
-  validateMerchantTemplate,
-  validateMerchantTemplateText,
-} from '../shared/print';
-import {
-  renderClassicReceiptViaDocument,
-  renderBillDocumentToClassicLines,
-} from '../main/printers/document-classic';
-import { formatClassicReceiptLegacy } from './helpers/legacy-thermal-oracle';
-import { escPosToText, formatReceipt } from '../main/printers/thermal';
-import {
-  parseBillTemplateSelection,
-  serializeBillTemplateSelection,
-  upgradeBillTemplateValue,
-} from '../main/services/print-templates';
-import { buildParityFixtures } from './print-parity.test';
+const { renderClassicReceiptViaDocument, renderBillDocumentToClassicLines } =
+  require('../main/printers/document-classic') as typeof import('../main/printers/document-classic');
+const { formatClassicReceiptLegacy } =
+  require('./helpers/legacy-thermal-oracle') as typeof import('./helpers/legacy-thermal-oracle');
+const { escPosToText, formatReceipt } =
+  require('../main/printers/thermal') as typeof import('../main/printers/thermal');
+const { parseBillTemplateSelection, serializeBillTemplateSelection, upgradeBillTemplateValue } =
+  require('../main/services/print-templates') as typeof import('../main/services/print-templates');
+const { buildParityFixtures } =
+  require('./print-parity.test') as typeof import('./print-parity.test');
 
 let passed = 0;
 function ok(message: string): void {

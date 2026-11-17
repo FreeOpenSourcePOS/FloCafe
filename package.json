@@ -435,7 +435,7 @@
     "oxlint": "1.93.0",
     "supertest": "^7.3.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@googleapis/drive": "^27.1.0",

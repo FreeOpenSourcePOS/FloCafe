@@ -105,7 +105,7 @@ assertOrThrow(!canBypassWindowsQueue('printer is offline', undefined), 'no bypas
 async function settle(): Promise<void> {
   for (let i = 0; i < 50; i++) {
     await new Promise((resolve) => setTimeout(resolve, 20));
-    if (fake?.received.length) return;
+    if (fake?.printed.length) return;
   }
 }
 
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     assertEqualOrThrow(result.ok, true, 'the bypass reports success');
     assertEqualOrThrow(result.transport, 'direct_tcp_fallback', 'the bypass names its transport');
     assertEqualOrThrow(
-      Buffer.from(fake.received).equals(PAYLOAD) ? 'sent once' : `sent ${fake.received.length}`,
+      Buffer.from(fake.printed).equals(PAYLOAD) ? 'sent once' : `sent ${fake.printed.length}`,
       'sent once',
       'the printer received the payload exactly once',
     );

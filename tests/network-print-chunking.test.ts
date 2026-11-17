@@ -25,6 +25,9 @@ class MockSocket extends EventEmitter {
 
   write(chunk: Buffer, cb?: () => void): boolean {
     this.writtenChunks.push(Buffer.from(chunk));
+    if (chunk.equals(DLE_EOT[1])) {
+      process.nextTick(() => this.emit('data', Buffer.from([0x12])));
+    }
     if (this.simulateBackpressure) {
       // Simulate socket buffer full: return false and drain later
       process.nextTick(() => {
@@ -41,6 +44,7 @@ class MockSocket extends EventEmitter {
 
   end(): this {
     this.ended = true;
+    process.nextTick(() => this.emit('close'));
     return this;
   }
 

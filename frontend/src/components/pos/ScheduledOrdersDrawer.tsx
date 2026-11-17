@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   CalendarClock,
@@ -59,7 +59,6 @@ interface Props {
   loadingMore?: boolean;
   onLoadMore?: () => Promise<void> | void;
   totalScheduledCount?: number;
-  onRegisterDismissHandler?: (handler?: () => boolean) => void;
 }
 
 function getCurrentTime(): number {
@@ -80,7 +79,6 @@ export default function ScheduledOrdersDrawer({
   loadingMore = false,
   onLoadMore,
   totalScheduledCount,
-  onRegisterDismissHandler,
 }: Props) {
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
@@ -121,32 +119,6 @@ export default function ScheduledOrdersDrawer({
     order: Order;
     item: OrderItem;
   } | null>(null);
-  const [editItemBusy, setEditItemBusy] = useState(false);
-  const editItemBusyRef = useRef(false);
-  const handleEditItemBusyChange = useCallback((busy: boolean) => {
-    editItemBusyRef.current = busy;
-    setEditItemBusy(busy);
-  }, []);
-
-  const dismissHandlerRef = useRef<() => boolean>(() => false);
-  useEffect(() => {
-    dismissHandlerRef.current = () => {
-      if (!open) return false;
-      if (editItemBusy || editItemBusyRef.current) return true;
-      if (editingItemTarget) {
-        setEditingItemTarget(null);
-        return true;
-      }
-      onClose();
-      return true;
-    };
-  });
-
-  useEffect(() => {
-    if (!onRegisterDismissHandler) return;
-    onRegisterDismissHandler(() => dismissHandlerRef.current());
-    return () => onRegisterDismissHandler(undefined);
-  }, [onRegisterDismissHandler]);
 
   if (!open) return null;
 
@@ -786,7 +758,6 @@ export default function ScheduledOrdersDrawer({
           item={editingItemTarget.item}
           onlinePlatformSelected={false}
           onClose={() => setEditingItemTarget(null)}
-          onBusyChange={handleEditItemBusyChange}
           onSaved={() => {
             setEditingItemTarget(null);
             void onRefresh();

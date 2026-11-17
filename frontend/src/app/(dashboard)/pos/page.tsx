@@ -569,10 +569,6 @@ export default function POSPage() {
   const registerTableCheckoutDismiss = useCallback((handler: (() => boolean) | undefined) => {
     tableCheckoutDismissRef.current = handler;
   }, []);
-  const scheduledDrawerDismissRef = useRef<(() => boolean) | undefined>(undefined);
-  const registerScheduledDrawerDismiss = useCallback((handler: (() => boolean) | undefined) => {
-    scheduledDrawerDismissRef.current = handler;
-  }, []);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -4025,9 +4021,6 @@ export default function POSPage() {
           return true;
         }
         if (showScheduledOrders) {
-          if (scheduledDrawerDismissRef.current) {
-            return scheduledDrawerDismissRef.current();
-          }
           setShowScheduledOrders(false);
           return true;
         }
@@ -4604,7 +4597,6 @@ export default function POSPage() {
 
       <ScheduledOrdersDrawer
         open={showScheduledOrders}
-        onRegisterDismissHandler={registerScheduledDrawerDismiss}
         orders={scheduledOrders}
         storeTimezone={storeTimezone}
         onClose={() => setShowScheduledOrders(false)}

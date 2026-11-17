@@ -5612,8 +5612,8 @@ function createTreeStatefulHarness() {
   };
 }
 
-async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
-  console.log('\n--- 14. TableCheckoutModal & ScheduledOrdersDrawer Child Escape Busy Guards ---');
+async function testTableCheckoutChildEscapeBusyGuards() {
+  console.log('\n--- 14. TableCheckoutModal Child Escape Busy Guards ---');
 
   const createMockStorage = () => {
     const store = new Map<string, string>();
@@ -5709,7 +5709,6 @@ async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
       'frontend/src/components/pos/TableCheckoutModal.tsx',
       'frontend/src/components/orders/EditOrderItemModal.tsx',
       'frontend/src/components/tables/MoveTableModal.tsx',
-      'frontend/src/components/pos/ScheduledOrdersDrawer.tsx',
       'frontend/src/lib/order-item-edit-attempt.ts',
     ]) {
       delete require.cache[path.resolve(ROOT, rel)];
@@ -5723,9 +5722,6 @@ async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
       ).default,
       MoveTableModal: require(path.resolve(ROOT, 'frontend/src/components/tables/MoveTableModal.tsx'))
         .default,
-      ScheduledOrdersDrawer: require(
-        path.resolve(ROOT, 'frontend/src/components/pos/ScheduledOrdersDrawer.tsx'),
-      ).default,
       attemptLib: require(path.resolve(ROOT, 'frontend/src/lib/order-item-edit-attempt.ts')),
     };
   };
@@ -6028,128 +6024,7 @@ async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
     });
   }
 
-  // 14c: Unmounting busy EditOrderItemModal resets parent busy state; ScheduledOrdersDrawer sibling guard
-  await withAliases(async () => {
-    const win = installWindowEnv();
-    const harness = createTreeStatefulHarness();
-    let rejectPatch!: (e: any) => void;
-    let closeCount = 0;
-    let registeredDismiss: (() => boolean) | undefined;
-
-    try {
-      installCheckoutComponentMocks(harness as any, {
-        role: 'owner',
-        apiPatch: async (url: string) => {
-          if (String(url).includes('/edit')) {
-            return new Promise((_, reject) => {
-              rejectPatch = reject;
-            });
-          }
-          return { data: {} };
-        },
-      });
-
-      const baseLoad = Module._load;
-      Module._load = function (request: string, parent: any, isMain: boolean) {
-        if (request === '@/components/ui/date-picker-input') {
-          return { DatePickerInput: () => null };
-        }
-        return baseLoad.call(this, request, parent, isMain);
-      };
-
-      const { ScheduledOrdersDrawer } = loadCheckoutAndChildren();
-      const scheduledOrder = {
-        ...sampleOrder,
-        id: 88,
-        order_number: 808,
-        type: 'takeaway',
-        release_status: 'scheduled',
-        scheduled_for: new Date(Date.now() + 3600_000).toISOString(),
-      };
-      const props = {
-        open: true,
-        orders: [scheduledOrder],
-        storeTimezone: 'UTC',
-        onClose: () => {
-          closeCount++;
-        },
-        onRefresh: () => {},
-        onOrderReleased: async () => {},
-        onAddItemsToOrder: () => {},
-        onPayOrder: async () => {},
-        onRefundOrder: () => {},
-        onRegisterDismissHandler: (fn?: () => boolean) => {
-          registeredDismiss = fn;
-        },
-      };
-
-      const renderDrawer = () => harness.renderAndSettle(ScheduledOrdersDrawer, props);
-      let tree = renderDrawer();
-
-      const editBtn = harness.findExpanded(
-        tree,
-        (el) => el.type === 'button' && el.props?.['data-testid'] === 'scheduled-edit-item-btn-101',
-      )[0];
-      assert.ok(editBtn, 'ScheduledOrdersDrawer renders scheduled-edit-item button');
-      editBtn.props.onClick();
-      tree = renderDrawer();
-
-      const qtyInput = harness.findExpanded(
-        tree,
-        (el) => el.type === 'input' && el.props?.type === 'number',
-      )[0];
-      assert.ok(qtyInput, 'EditOrderItemModal opens inside ScheduledOrdersDrawer');
-      qtyInput.props.onChange({ target: { value: '3' } });
-      tree = renderDrawer();
-
-      const saveBtn = harness.findExpanded(
-        tree,
-        (el) =>
-          el.type === 'button' && !el.props?.disabled && renderToStaticMarkup(el).includes('save'),
-      )[0];
-      const savePromise = saveBtn.props.onClick();
-      await new Promise((r) => setTimeout(r, 5));
-
-      assert.equal(
-        registeredDismiss?.(),
-        true,
-        'ScheduledOrdersDrawer dismiss handler consumes Escape while EditOrderItemModal is saving',
-      );
-      tree = renderDrawer();
-      assert.equal(closeCount, 0, 'ScheduledOrdersDrawer stays open while child save is in flight');
-      assert.equal(
-        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
-          .length,
-        1,
-        'EditOrderItemModal stays mounted inside ScheduledOrdersDrawer while saving',
-      );
-
-      rejectPatch({ response: { status: 500, data: { error: 'Server error' } } });
-      await savePromise;
-      tree = renderDrawer();
-
-      assert.equal(registeredDismiss?.(), true);
-      tree = renderDrawer();
-      assert.equal(
-        closeCount,
-        0,
-        'First Escape closes idle EditOrderItemModal without closing ScheduledOrdersDrawer',
-      );
-      assert.equal(
-        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
-          .length,
-        0,
-      );
-
-      assert.equal(registeredDismiss?.(), true);
-      assert.equal(closeCount, 1, 'Second Escape closes ScheduledOrdersDrawer');
-    } finally {
-      harness.cleanupAll();
-      win.restore();
-    }
-  });
-
-  // 14d: Pre-existing lockedAttempt when idle allows Escape (matching handleClose), and unmounting busy child resets parent busy state
+  // 14c: Pre-existing lockedAttempt when idle allows Escape (matching handleClose), and unmounting busy child resets parent busy state
   await withAliases(async () => {
     const win = installWindowEnv();
     const harness = createTreeStatefulHarness();
@@ -6279,7 +6154,7 @@ async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
     }
   });
 
-  // 14e: Direct child unmount while busy clears parent busy callback
+  // 14d: Direct child unmount while busy clears parent busy callback
   await withAliases(async () => {
     const win = installWindowEnv();
     const harness = createTreeStatefulHarness();
@@ -6347,9 +6222,7 @@ async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
     }
   });
 
-  console.log(
-    '  ✓ TableCheckoutModal & ScheduledOrdersDrawer child modal Escape busy guards verified',
-  );
+  console.log('  ✓ TableCheckoutModal child modal Escape busy guards verified');
 }
 
 async function run() {
@@ -6369,7 +6242,7 @@ async function run() {
   await testTenderInputAndZeroBalanceEnterGuards();
   await testCol1PanelHeaderBodyConsistency();
   await testDiscountPinErrorAndStatusStripRecovery();
-  await testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards();
+  await testTableCheckoutChildEscapeBusyGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

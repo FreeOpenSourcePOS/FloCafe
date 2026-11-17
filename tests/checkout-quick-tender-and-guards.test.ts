@@ -5720,8 +5720,9 @@ async function testTableCheckoutChildEscapeBusyGuards() {
       EditOrderItemModal: require(
         path.resolve(ROOT, 'frontend/src/components/orders/EditOrderItemModal.tsx'),
       ).default,
-      MoveTableModal: require(path.resolve(ROOT, 'frontend/src/components/tables/MoveTableModal.tsx'))
-        .default,
+      MoveTableModal: require(
+        path.resolve(ROOT, 'frontend/src/components/tables/MoveTableModal.tsx'),
+      ).default,
       attemptLib: require(path.resolve(ROOT, 'frontend/src/lib/order-item-edit-attempt.ts')),
     };
   };
@@ -5834,7 +5835,11 @@ async function testTableCheckoutChildEscapeBusyGuards() {
         const handledBusy = triggerEscape();
         assert.equal(handledBusy, true, 'Escape is consumed while EditOrderItemModal is saving');
         tree = renderTcm();
-        assert.equal(closeCount, 0, 'TableCheckoutModal stays open while item edit save is in flight');
+        assert.equal(
+          closeCount,
+          0,
+          'TableCheckoutModal stays open while item edit save is in flight',
+        );
         assert.equal(
           harness.findExpanded(tree, (el) => renderToStaticMarkup(el).includes('editItemTitle'))
             .length > 0,
@@ -5850,7 +5855,11 @@ async function testTableCheckoutChildEscapeBusyGuards() {
         // Notice lockedAttempt is now persisted in localStorage, yet saving === false!
         // Clicking Cancel/X or pressing Escape when idle must dismiss EditOrderItemModal without closing TableCheckoutModal
         const handledIdleChild = triggerEscape();
-        assert.equal(handledIdleChild, true, 'Escape is consumed dismissing idle EditOrderItemModal');
+        assert.equal(
+          handledIdleChild,
+          true,
+          'Escape is consumed dismissing idle EditOrderItemModal',
+        );
         tree = renderTcm();
         assert.equal(
           closeCount,
@@ -5988,7 +5997,11 @@ async function testTableCheckoutChildEscapeBusyGuards() {
         const handledBusy = triggerEscape();
         assert.equal(handledBusy, true, 'Escape is consumed while MoveTableModal is moving');
         tree = renderTcm();
-        assert.equal(closeCount, 0, 'TableCheckoutModal stays open while move request is in flight');
+        assert.equal(
+          closeCount,
+          0,
+          'TableCheckoutModal stays open while move request is in flight',
+        );
         assert.equal(
           harness.findExpanded(tree, (el) => el.props?.['data-testid'] === 'move-table-modal')
             .length,
@@ -6091,9 +6104,11 @@ async function testTableCheckoutChildEscapeBusyGuards() {
       let tree = renderTcm();
 
       // Open EditOrderItemModal with pre-existing lockedAttempt -> idle (saving === false)
-      harness
-        .findExpanded(tree, (el) => el.type === 'button' && el.props?.title === 'editItem')[0]
-        .props.onClick();
+      const openEditBtn = harness.findExpanded(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'editItem',
+      )[0];
+      openEditBtn.props.onClick();
       tree = renderTcm();
       assert.equal(
         harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')[0]
@@ -6114,9 +6129,11 @@ async function testTableCheckoutChildEscapeBusyGuards() {
       assert.equal(closeCount, 0, 'TableCheckoutModal stays open');
 
       // Re-open, click Save to retry persisted attempt -> Escape blocked while in flight, then unmount resets busy state
-      harness
-        .findExpanded(tree, (el) => el.type === 'button' && el.props?.title === 'editItem')[0]
-        .props.onClick();
+      const retryEditBtn = harness.findExpanded(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'editItem',
+      )[0];
+      retryEditBtn.props.onClick();
       tree = renderTcm();
       const saveBtn = harness.findExpanded(
         tree,
@@ -6190,19 +6207,20 @@ async function testTableCheckoutChildEscapeBusyGuards() {
           : null;
 
       let tree = harness.renderAndSettle(Wrapper, { show: true });
-      harness
-        .findExpanded(tree, (el) => el.type === 'button' && renderToStaticMarkup(el).includes('T2'))[0]
-        .props.onClick();
+      const targetTableBtn = harness.findExpanded(
+        tree,
+        (el) => el.type === 'button' && renderToStaticMarkup(el).includes('T2'),
+      )[0];
+      targetTableBtn.props.onClick();
       tree = harness.renderAndSettle(Wrapper, { show: true });
-      const movePromise = harness
-        .findExpanded(
-          tree,
-          (el) =>
-            el.type === 'button' &&
-            !el.props?.disabled &&
-            renderToStaticMarkup(el).includes('confirmMoveOrder'),
-        )[0]
-        .props.onClick();
+      const confirmMoveBtn = harness.findExpanded(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          !el.props?.disabled &&
+          renderToStaticMarkup(el).includes('confirmMoveOrder'),
+      )[0];
+      const movePromise = confirmMoveBtn.props.onClick();
       await new Promise((r) => setTimeout(r, 5));
       tree = harness.renderAndSettle(Wrapper, { show: true });
       assert.equal(busyEvents.at(-1), true, 'MoveTableModal reports busy=true while moving');

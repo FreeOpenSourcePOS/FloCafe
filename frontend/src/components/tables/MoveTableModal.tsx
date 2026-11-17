@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { AxiosInstance } from 'axios';
 import { X, ArrowRightLeft, Loader2, Users, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ interface MoveTableModalProps {
   formatPrice?: (price: number) => string;
   onClose: () => void;
   onSuccess: (movedData: { sourceTable: Table; targetTable: Table; order: Order }) => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 export default function MoveTableModal({
@@ -28,6 +29,7 @@ export default function MoveTableModal({
   formatPrice,
   onClose,
   onSuccess,
+  onBusyChange,
 }: MoveTableModalProps) {
   const t = useTranslations('tables');
   const tCommon = useTranslations('common');
@@ -42,7 +44,24 @@ export default function MoveTableModal({
   );
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const movingRef = useRef(false);
+  const onBusyChangeRef = useRef(onBusyChange);
   const [selectedFloor, setSelectedFloor] = useState<string>('all');
+
+  useEffect(() => {
+    onBusyChangeRef.current = onBusyChange;
+  }, [onBusyChange]);
+
+  useEffect(() => {
+    onBusyChangeRef.current?.(moving);
+  }, [moving]);
+
+  useEffect(() => {
+    return () => {
+      movingRef.current = false;
+      onBusyChangeRef.current?.(false);
+    };
+  }, []);
 
   useEffect(() => {
     if (initialTables && initialTables.length > 0) return;
@@ -90,7 +109,9 @@ export default function MoveTableModal({
   const selectedTarget = candidateTables.find((tb) => tb.id === selectedTargetId);
 
   const handleMove = async () => {
-    if (!selectedTargetId || moving) return;
+    if (!selectedTargetId || movingRef.current || moving) return;
+    movingRef.current = true;
+    onBusyChangeRef.current?.(true);
     setMoving(true);
     try {
       const payload: { target_table_id: string; order_id?: string } = {
@@ -120,6 +141,8 @@ export default function MoveTableModal({
           : serverError || t('tableMoveFailed');
       toast.error(errorMsg);
     } finally {
+      movingRef.current = false;
+      onBusyChangeRef.current?.(false);
       setMoving(false);
     }
   };
@@ -151,7 +174,7 @@ export default function MoveTableModal({
             type="button"
             disabled={moving}
             onClick={() => {
-              if (!moving) onClose();
+              if (!movingRef.current && !moving) onClose();
             }}
             className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted disabled:opacity-50"
             aria-label={t('cancel')}
@@ -304,7 +327,9 @@ export default function MoveTableModal({
           <Button
             type="button"
             variant="outline"
-            onClick={onClose}
+            onClick={() => {
+              if (!movingRef.current && !moving) onClose();
+            }}
             disabled={moving}
             className="flex-1"
           >

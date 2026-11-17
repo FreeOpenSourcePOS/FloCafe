@@ -118,9 +118,41 @@ const STANDARD_GROUPED_NUMBER_RE = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
 const SPREADSHEET_EDGE_PADDING_RE =
   /^[\s\u00A0\u202F\u200E\u200F\u200B]+|[\s\u00A0\u202F\u200E\u200F\u200B]+$/g;
 const LEADING_SPREADSHEET_PADDING_RE = /^[\s\u00A0\u202F\u200E\u200F\u200B]/;
-const ISO_PREFIX_RE =
-  /^([A-Z]{3})(?:[\s\u00A0\u202F\u200E\u200F\u200B]*\$|[\s\u00A0\u202F\u200E\u200F\u200B]+)/;
+const ISO_PREFIX_RE = /^([A-Z]{3})[\s\u00A0\u202F\u200E\u200F\u200B]+/;
+const ISO_DOLLAR_PREFIX_RE = /^([A-Z]{3})[\s\u00A0\u202F\u200E\u200F\u200B]*\$/;
 const ISO_SUFFIX_RE = /[\s\u00A0\u202F\u200E\u200F\u200B]+([A-Z]{3})$/;
+
+// Dollar/peso ISO 4217 currencies where "<ISO>$" / "<ISO> $" is an unambiguous single marker.
+const DOLLAR_PESO_ISO_CODES: ReadonlySet<string> = new Set([
+  'USD',
+  'CAD',
+  'AUD',
+  'NZD',
+  'HKD',
+  'SGD',
+  'TWD',
+  'MXN',
+  'ARS',
+  'CLP',
+  'COP',
+  'UYU',
+  'DOP',
+  'BBD',
+  'BMD',
+  'BND',
+  'BSD',
+  'BZD',
+  'FJD',
+  'GYD',
+  'JMD',
+  'KYD',
+  'LRD',
+  'NAD',
+  'SBD',
+  'SRD',
+  'TTD',
+  'XCD',
+]);
 
 const VALID_ISO_CURRENCY_CODES: ReadonlySet<string> = new Set(
   (() => {
@@ -374,6 +406,15 @@ function stripCurrencyAffix(raw: string, format: LocalizedCsvAmountFormat): stri
   if (/^\p{Sc}/u.test(body)) {
     const firstChar = Array.from(body)[0];
     return finalizeStrippedCurrencyBody(body.slice(firstChar.length), sign);
+  }
+
+  const isoDollarPrefix = body.match(ISO_DOLLAR_PREFIX_RE);
+  if (
+    isoDollarPrefix &&
+    DOLLAR_PESO_ISO_CODES.has(isoDollarPrefix[1]) &&
+    isAllowedIsoCurrency(isoDollarPrefix[1], format.currency)
+  ) {
+    return finalizeStrippedCurrencyBody(body.slice(isoDollarPrefix[0].length), sign);
   }
 
   const isoPrefix = body.match(ISO_PREFIX_RE);

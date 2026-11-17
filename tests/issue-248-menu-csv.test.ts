@@ -2401,6 +2401,8 @@ async function main() {
           ',,Euro NBSP Suffix Price,BOM Category,"12.50\u00a0€",desc,,,,,,TRUE',
           ',,Bidi NBSP Rupee Price,BOM Category,"\u200e₹\u00a01,499.50\u200f",desc,,,,,,TRUE',
           ',,ISO Suffix Price,BOM Category,12.50 USD,desc,,,,,,TRUE',
+          ',,Dollar ISO Symbol Price,BOM Category,USD$12.50,desc,,,,,,TRUE',
+          ',,Peso ISO Spaced Symbol Price,BOM Category,MXN $12.50,desc,,,,,,TRUE',
           ',,Dirham Prefix Price,BOM Category,"د.إ\u00a045.00",desc,,,,,,TRUE',
         ),
       },
@@ -2408,7 +2410,7 @@ async function main() {
     });
     assertEqualOrThrow(formattedPrices.status, 200, 'formatted prices import returns 200');
     assertEqualOrThrow(formattedPrices.data.failed, 0, 'all valid formatted prices succeed');
-    assertEqualOrThrow(formattedPrices.data.created, 10, 'all 10 formatted price products created');
+    assertEqualOrThrow(formattedPrices.data.created, 12, 'all 12 formatted price products created');
     const checkPrice = (name: string, expectedPrice: number, expectedCost?: number) => {
       const row = db.prepare('SELECT price, cost FROM products WHERE name = ?').get(name) as
         | { price: number; cost: number }
@@ -2427,6 +2429,8 @@ async function main() {
     checkPrice('Euro NBSP Suffix Price', 12.5);
     checkPrice('Bidi NBSP Rupee Price', 1499.5);
     checkPrice('ISO Suffix Price', 12.5);
+    checkPrice('Dollar ISO Symbol Price', 12.5);
+    checkPrice('Peso ISO Spaced Symbol Price', 12.5);
     checkPrice('Dirham Prefix Price', 45);
 
     const formattedAddonPrices = await api(baseUrl, '/api/menu/csv/import/addons', {
@@ -2464,6 +2468,8 @@ async function main() {
           ',,Invalid ISO Code,BOM Category,ABC 12.50,desc,,,,,,TRUE',
           ',,Double Currency Symbol,BOM Category,$$12.50,desc,,,,,,TRUE',
           ',,Conflicting Currency Symbols,BOM Category,$12.50 €,desc,,,,,,TRUE',
+          ',,Conflicting Euro Dollar Prefix,BOM Category,EUR $12.50,desc,,,,,,TRUE',
+          ',,Conflicting Pound Dollar Prefix,BOM Category,GBP $12.50,desc,,,,,,TRUE',
           ',,Negative Dollar,BOM Category,-$12.50,desc,,,,,,TRUE',
           ',,Dollar Negative,BOM Category,$-12.50,desc,,,,,,TRUE',
           ',,Negative Euro NBSP,BOM Category,"-12.50\u00a0€",desc,,,,,,TRUE',
@@ -2474,7 +2480,7 @@ async function main() {
     });
     assertEqualOrThrow(rejectedPrices.status, 200, 'rejected prices return row validation results');
     assertEqualOrThrow(rejectedPrices.data.created, 0, 'no invalid price row is persisted');
-    assertEqualOrThrow(rejectedPrices.data.failed, 9, 'all 9 invalid/ambiguous price rows fail');
+    assertEqualOrThrow(rejectedPrices.data.failed, 11, 'all 11 invalid/ambiguous price rows fail');
     assertEqualOrThrow(
       db.prepare('SELECT id FROM products WHERE name = ?').get('Ambiguous Comma Decimal'),
       undefined,

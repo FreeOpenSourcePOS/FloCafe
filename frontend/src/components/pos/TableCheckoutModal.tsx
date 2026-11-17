@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, ShoppingCart, Users, Printer, Loader2, ArrowRightLeft, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
@@ -79,11 +79,34 @@ export default function TableCheckoutModal({
   const [splitCheckSaving, setSplitCheckSaving] = useState(false);
   const [printingBill, setPrintingBill] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveTableBusy, setMoveTableBusy] = useState(false);
+  const moveTableBusyRef = useRef(false);
+  const handleMoveTableBusyChange = useCallback((busy: boolean) => {
+    moveTableBusyRef.current = busy;
+    setMoveTableBusy(busy);
+  }, []);
+  const [editItemBusy, setEditItemBusy] = useState(false);
+  const editItemBusyRef = useRef(false);
+  const handleEditItemBusyChange = useCallback((busy: boolean) => {
+    editItemBusyRef.current = busy;
+    setEditItemBusy(busy);
+  }, []);
 
   const dismissHandlerRef = useRef<() => boolean>(() => true);
   useEffect(() => {
     dismissHandlerRef.current = () => {
-      if (generating || addingItems || printingBill || splitCheckSaving) return true;
+      if (
+        generating ||
+        addingItems ||
+        printingBill ||
+        splitCheckSaving ||
+        moveTableBusy ||
+        moveTableBusyRef.current ||
+        editItemBusy ||
+        editItemBusyRef.current
+      ) {
+        return true;
+      }
       if (splitBill) {
         setSplitBill(null);
         return true;
@@ -321,6 +344,7 @@ export default function TableCheckoutModal({
           item={editingItem}
           onClose={() => setEditingItem(null)}
           onIdentityChanged={onClose}
+          onBusyChange={handleEditItemBusyChange}
           onSaved={() => {
             api
               .get(`/orders/${order.id}`)
@@ -610,6 +634,7 @@ export default function TableCheckoutModal({
         <MoveTableModal
           sourceTable={table}
           tables={tables}
+          onBusyChange={handleMoveTableBusyChange}
           onClose={() => setShowMoveModal(false)}
           onSuccess={(data) => {
             setShowMoveModal(false);

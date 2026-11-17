@@ -446,13 +446,15 @@ function installCheckoutComponentMocks(
       loading?: boolean;
       loadFailed?: boolean;
     };
+    role?: string;
   } = {},
 ) {
   const Icon = () => null;
+  const role = overrides.role ?? 'cashier';
   const authState = {
-    user: { id: 'u-1', name: 'Cashier', role: 'cashier' },
+    user: { id: 'u-1', name: 'Cashier', role },
     token: 'token-1',
-    currentTenant: { id: 1, name: 'Test Cafe', country: 'US', currency: 'USD', role: 'cashier' },
+    currentTenant: { id: 1, name: 'Test Cafe', country: 'US', currency: 'USD', role },
     activeServerId: null,
   };
   const chargesState = { charges: overrides.charges || [], load: async () => {} };
@@ -5422,6 +5424,934 @@ async function testDiscountPinErrorAndStatusStripRecovery() {
   console.log('  ✓ Discount PIN error, stale banner clear & status strip alignment verified');
 }
 
+function createTreeStatefulHarness() {
+  interface HookSlot {
+    states: any[];
+    refs: Array<{ current: any }>;
+    effects: Array<{ fn: () => void | (() => void); deps: unknown[] | undefined }>;
+    prevDeps: Array<unknown[] | undefined>;
+    cleanups: Array<(() => void) | void>;
+    stateCursor: number;
+    refCursor: number;
+    effectCursor: number;
+  }
+
+  const slots = new Map<string, HookSlot>();
+  let activeSlot: HookSlot | null = null;
+  let mountedKeys = new Set<string>();
+  let pendingSlotOrder: string[] = [];
+
+  const getSlot = (key: string): HookSlot => {
+    let slot = slots.get(key);
+    if (!slot) {
+      slot = {
+        states: [],
+        refs: [],
+        effects: [],
+        prevDeps: [],
+        cleanups: [],
+        stateCursor: 0,
+        refCursor: 0,
+        effectCursor: 0,
+      };
+      slots.set(key, slot);
+    }
+    return slot;
+  };
+
+  const hooksReact = {
+    ...RealReact,
+    createElement: RealReact.createElement,
+    Fragment: RealReact.Fragment,
+    useState: <T>(initial: T | (() => T)) => {
+      const slot = activeSlot!;
+      const idx = slot.stateCursor++;
+      if (!(idx in slot.states)) {
+        slot.states[idx] = typeof initial === 'function' ? (initial as () => T)() : initial;
+      }
+      const setter = (next: T | ((prev: T) => T)) => {
+        slot.states[idx] =
+          typeof next === 'function' ? (next as (prev: T) => T)(slot.states[idx]) : next;
+      };
+      return [slot.states[idx], setter] as const;
+    },
+    useRef: <T>(initial: T) => {
+      const slot = activeSlot!;
+      const idx = slot.refCursor++;
+      if (!(idx in slot.refs)) slot.refs[idx] = { current: initial };
+      return slot.refs[idx];
+    },
+    useEffect: (fn: () => void | (() => void), deps?: unknown[]) => {
+      const slot = activeSlot!;
+      const idx = slot.effectCursor++;
+      slot.effects[idx] = { fn, deps };
+    },
+    useMemo: <T>(factory: () => T) => factory(),
+    useCallback: <T>(cb: T) => cb,
+  };
+
+  function expandNode(node: any, instancePath: string): any {
+    if (Array.isArray(node)) {
+      return node.map((child, idx) => expandNode(child, `${instancePath}[${idx}]`));
+    }
+    if (!node || typeof node !== 'object') return node;
+
+    if (typeof node.type === 'function') {
+      const compName = node.type.name || 'Comp';
+      const slotKey = `${instancePath}:${compName}`;
+      const slot = getSlot(slotKey);
+      slot.stateCursor = 0;
+      slot.refCursor = 0;
+      slot.effectCursor = 0;
+      slot.effects.length = 0;
+
+      const prevActive = activeSlot;
+      activeSlot = slot;
+      let rendered: any;
+      try {
+        rendered = node.type(node.props || {});
+      } finally {
+        activeSlot = prevActive;
+      }
+
+      const expanded = expandNode(rendered, `${slotKey}.c`);
+      mountedKeys.add(slotKey);
+      pendingSlotOrder.push(slotKey);
+      return expanded;
+    }
+
+    if (node.props && node.props.children !== undefined) {
+      return {
+        ...node,
+        props: {
+          ...node.props,
+          children: expandNode(node.props.children, `${instancePath}.ch`),
+        },
+      };
+    }
+
+    return node;
+  }
+
+  function flush(prevMounted: Set<string>) {
+    for (const oldKey of prevMounted) {
+      if (!mountedKeys.has(oldKey)) {
+        const oldSlot = slots.get(oldKey);
+        if (oldSlot) {
+          for (const cleanup of oldSlot.cleanups) {
+            if (typeof cleanup === 'function') cleanup();
+          }
+          slots.delete(oldKey);
+        }
+      }
+    }
+
+    for (const key of pendingSlotOrder) {
+      const slot = slots.get(key);
+      if (!slot) continue;
+      for (let i = 0; i < slot.effects.length; i++) {
+        const entry = slot.effects[i];
+        if (!entry) continue;
+        const old = slot.prevDeps[i];
+        const changed =
+          !old ||
+          !entry.deps ||
+          entry.deps.length !== old.length ||
+          entry.deps.some((d, j) => !Object.is(d, old[j]));
+        if (changed) {
+          if (typeof slot.cleanups[i] === 'function') slot.cleanups[i]!();
+          slot.cleanups[i] = entry.fn();
+          slot.prevDeps[i] = entry.deps;
+        }
+      }
+    }
+  }
+
+  function findExpanded(node: unknown, predicate: (el: any) => boolean, out: any[] = []): any[] {
+    if (Array.isArray(node)) {
+      for (const child of node) findExpanded(child, predicate, out);
+      return out;
+    }
+    if (!node || typeof node !== 'object') return out;
+    const el = node as { props?: Record<string, any> };
+    if (predicate(el)) out.push(el);
+    if (el.props && el.props.children !== undefined) {
+      findExpanded(el.props.children, predicate, out);
+    }
+    return out;
+  }
+
+  return {
+    hooksReact,
+    jsxRuntime: RealJsxRuntime,
+    findExpanded,
+    render<P>(Component: (props: P) => any, props: P) {
+      const prevMounted = mountedKeys;
+      mountedKeys = new Set<string>();
+      pendingSlotOrder = [];
+      const tree = expandNode(RealReact.createElement(Component as any, props as any), 'root');
+      flush(prevMounted);
+      return tree;
+    },
+    renderAndSettle<P>(Component: (props: P) => any, props: P, passes = 4) {
+      let tree: any = null;
+      for (let i = 0; i < passes; i++) {
+        tree = this.render(Component, props);
+      }
+      return tree;
+    },
+    cleanupAll() {
+      for (const slot of slots.values()) {
+        for (const fn of slot.cleanups) {
+          if (typeof fn === 'function') fn();
+        }
+      }
+      slots.clear();
+      mountedKeys.clear();
+    },
+  };
+}
+
+async function testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards() {
+  console.log('\n--- 14. TableCheckoutModal & ScheduledOrdersDrawer Child Escape Busy Guards ---');
+
+  const createMockStorage = () => {
+    const store = new Map<string, string>();
+    return {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => store.clear(),
+      key: (i: number) => Array.from(store.keys())[i] ?? null,
+      get length() {
+        return store.size;
+      },
+    };
+  };
+
+  const installWindowEnv = () => {
+    const hadWin = 'window' in globalThis;
+    const prevWin = (globalThis as any).window;
+    const listeners = new Set<(e: any) => void>();
+    const localStorage = createMockStorage();
+    (globalThis as any).window = {
+      localStorage,
+      addEventListener: (type: string, fn: (e: any) => void) => {
+        if (type === 'keydown') listeners.add(fn);
+      },
+      removeEventListener: (type: string, fn: (e: any) => void) => {
+        if (type === 'keydown') listeners.delete(fn);
+      },
+    };
+    const dispatchEscape = () => {
+      const event = {
+        key: 'Escape',
+        code: 'Escape',
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        defaultPrevented: false,
+        preventDefault() {
+          this.defaultPrevented = true;
+        },
+      };
+      for (const fn of [...listeners]) fn(event);
+      return event;
+    };
+    return {
+      localStorage,
+      dispatchEscape,
+      restore: () => {
+        if (!hadWin) delete (globalThis as any).window;
+        else (globalThis as any).window = prevWin;
+      },
+    };
+  };
+
+  const sampleOrder = {
+    id: 77,
+    order_number: 707,
+    type: 'dine_in',
+    status: 'pending',
+    subtotal: 20,
+    tax_amount: 0,
+    total: 20,
+    items: [
+      {
+        id: 101,
+        product_id: 'p-1',
+        product_name: 'Latte',
+        quantity: 2,
+        unit_price: 10,
+        subtotal: 20,
+        total: 20,
+        status: 'pending',
+        edit_version: 0,
+      },
+    ],
+    bill: {
+      id: 701,
+      bill_number: 'B-701',
+      total: 20,
+      balance: 20,
+      payment_status: 'unpaid',
+    },
+    bills: [],
+  };
+
+  const loadCheckoutAndChildren = () => {
+    for (const rel of [
+      'frontend/src/components/pos/TableCheckoutModal.tsx',
+      'frontend/src/components/orders/EditOrderItemModal.tsx',
+      'frontend/src/components/tables/MoveTableModal.tsx',
+      'frontend/src/components/pos/ScheduledOrdersDrawer.tsx',
+      'frontend/src/lib/order-item-edit-attempt.ts',
+    ]) {
+      delete require.cache[path.resolve(ROOT, rel)];
+    }
+    return {
+      TableCheckoutModal: require(
+        path.resolve(ROOT, 'frontend/src/components/pos/TableCheckoutModal.tsx'),
+      ).default,
+      EditOrderItemModal: require(
+        path.resolve(ROOT, 'frontend/src/components/orders/EditOrderItemModal.tsx'),
+      ).default,
+      MoveTableModal: require(path.resolve(ROOT, 'frontend/src/components/tables/MoveTableModal.tsx'))
+        .default,
+      ScheduledOrdersDrawer: require(
+        path.resolve(ROOT, 'frontend/src/components/pos/ScheduledOrdersDrawer.tsx'),
+      ).default,
+      attemptLib: require(path.resolve(ROOT, 'frontend/src/lib/order-item-edit-attempt.ts')),
+    };
+  };
+
+  // 14a: TableCheckoutModal + EditOrderItemModal (registered Escape + standalone Escape + lockedAttempt idle vs retry)
+  for (const useRegisteredDismiss of [true, false]) {
+    await withAliases(async () => {
+      const win = installWindowEnv();
+      const harness = createTreeStatefulHarness();
+      let resolvePatch!: (v: any) => void;
+      let rejectPatch!: (e: any) => void;
+      let patchCalls = 0;
+      let closeCount = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+
+      try {
+        installCheckoutComponentMocks(harness as any, {
+          role: 'owner',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return { data: { table: { id: 't-1', name: 'T1', activeOrder: { id: 77 } } } };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order: sampleOrder } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'false' } } };
+            }
+            return { data: {} };
+          },
+          apiPatch: async (url: string) => {
+            if (String(url).includes('/edit')) {
+              patchCalls++;
+              return new Promise((resolve, reject) => {
+                resolvePatch = resolve;
+                rejectPatch = reject;
+              });
+            }
+            return { data: {} };
+          },
+        });
+
+        const { TableCheckoutModal } = loadCheckoutAndChildren();
+        const props = {
+          table: { id: 't-1', name: 'T1', status: 'occupied', capacity: 4 },
+          tables: [
+            { id: 't-1', name: 'T1', status: 'occupied', capacity: 4, is_active: true },
+            { id: 't-2', name: 'T2', status: 'available', capacity: 4, is_active: true },
+          ],
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {
+            closeCount++;
+          },
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+          ...(useRegisteredDismiss
+            ? {
+                onRegisterDismissHandler: (fn?: () => boolean) => {
+                  registeredDismiss = fn;
+                },
+              }
+            : {}),
+        };
+
+        const renderTcm = () => harness.renderAndSettle(TableCheckoutModal, props);
+        const triggerEscape = () => {
+          if (useRegisteredDismiss) {
+            return registeredDismiss!();
+          }
+          const ev = win.dispatchEscape();
+          return ev.defaultPrevented;
+        };
+
+        renderTcm();
+        await new Promise((r) => setTimeout(r, 10));
+        let tree = renderTcm();
+
+        const editBtn = harness.findExpanded(
+          tree,
+          (el) => el.type === 'button' && el.props?.title === 'editItem',
+        )[0];
+        assert.ok(editBtn, 'TableCheckoutModal renders item edit button');
+        editBtn.props.onClick();
+        tree = renderTcm();
+
+        const qtyInput = harness.findExpanded(
+          tree,
+          (el) => el.type === 'input' && el.props?.type === 'number',
+        )[0];
+        assert.ok(qtyInput, 'EditOrderItemModal opens inside TableCheckoutModal');
+        qtyInput.props.onChange({ target: { value: '3' } });
+        tree = renderTcm();
+
+        const saveBtn = harness.findExpanded(
+          tree,
+          (el) =>
+            el.type === 'button' &&
+            !el.props?.disabled &&
+            renderToStaticMarkup(el).includes('save'),
+        )[0];
+        assert.ok(saveBtn, 'EditOrderItemModal save button is enabled');
+
+        const savePromise = saveBtn.props.onClick();
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(patchCalls, 1, 'Item edit PATCH request is in flight');
+
+        // Pressing Escape while EditOrderItemModal save is in flight must NOT unmount EditOrderItemModal or close TableCheckoutModal
+        const handledBusy = triggerEscape();
+        assert.equal(handledBusy, true, 'Escape is consumed while EditOrderItemModal is saving');
+        tree = renderTcm();
+        assert.equal(closeCount, 0, 'TableCheckoutModal stays open while item edit save is in flight');
+        assert.equal(
+          harness.findExpanded(tree, (el) => renderToStaticMarkup(el).includes('editItemTitle'))
+            .length > 0,
+          true,
+          'EditOrderItemModal remains mounted while save is in flight',
+        );
+
+        // Settle with non-409 error so EditOrderItemModal stays open and returns to idle
+        rejectPatch({ response: { status: 500, data: { error: 'Temporary failure' } } });
+        await savePromise;
+        tree = renderTcm();
+
+        // Notice lockedAttempt is now persisted in localStorage, yet saving === false!
+        // Clicking Cancel/X or pressing Escape when idle must dismiss EditOrderItemModal without closing TableCheckoutModal
+        const handledIdleChild = triggerEscape();
+        assert.equal(handledIdleChild, true, 'Escape is consumed dismissing idle EditOrderItemModal');
+        tree = renderTcm();
+        assert.equal(
+          closeCount,
+          0,
+          'Dismissing settled EditOrderItemModal does not close TableCheckoutModal',
+        );
+        assert.equal(
+          harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+            .length,
+          0,
+          'EditOrderItemModal unmounts cleanly on Escape once idle (even with lockedAttempt persisted)',
+        );
+
+        // Next Escape dismisses TableCheckoutModal itself
+        const handledOuter = triggerEscape();
+        assert.equal(handledOuter, true);
+        assert.equal(closeCount, 1, 'Subsequent Escape closes TableCheckoutModal');
+        void resolvePatch;
+      } finally {
+        harness.cleanupAll();
+        win.restore();
+      }
+    });
+  }
+
+  // 14b: TableCheckoutModal + MoveTableModal (registered Escape + standalone Escape)
+  for (const useRegisteredDismiss of [true, false]) {
+    await withAliases(async () => {
+      const win = installWindowEnv();
+      const harness = createTreeStatefulHarness();
+      let rejectMove!: (e: any) => void;
+      let movePostCalls = 0;
+      let closeCount = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+
+      try {
+        installCheckoutComponentMocks(harness as any, {
+          role: 'owner',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return { data: { table: { id: 't-1', name: 'T1', activeOrder: { id: 77 } } } };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order: sampleOrder } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'false' } } };
+            }
+            return { data: {} };
+          },
+          apiPost: async (url: string) => {
+            if (String(url).includes('/move-order')) {
+              movePostCalls++;
+              return new Promise((_, reject) => {
+                rejectMove = reject;
+              });
+            }
+            return { data: {} };
+          },
+        });
+
+        const { TableCheckoutModal } = loadCheckoutAndChildren();
+        const props = {
+          table: { id: 't-1', name: 'T1', status: 'occupied', capacity: 4 },
+          tables: [
+            { id: 't-1', name: 'T1', status: 'occupied', capacity: 4, is_active: true },
+            { id: 't-2', name: 'T2', status: 'available', capacity: 4, is_active: true },
+          ],
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {
+            closeCount++;
+          },
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+          ...(useRegisteredDismiss
+            ? {
+                onRegisterDismissHandler: (fn?: () => boolean) => {
+                  registeredDismiss = fn;
+                },
+              }
+            : {}),
+        };
+
+        const renderTcm = () => harness.renderAndSettle(TableCheckoutModal, props);
+        const triggerEscape = () => {
+          if (useRegisteredDismiss) {
+            return registeredDismiss!();
+          }
+          return win.dispatchEscape().defaultPrevented;
+        };
+
+        renderTcm();
+        await new Promise((r) => setTimeout(r, 10));
+        let tree = renderTcm();
+
+        const moveTableBtn = harness.findExpanded(
+          tree,
+          (el) => el.type === 'button' && renderToStaticMarkup(el).includes('moveTable'),
+        )[0];
+        assert.ok(moveTableBtn, 'TableCheckoutModal renders Move Table button');
+        moveTableBtn.props.onClick();
+        tree = renderTcm();
+
+        assert.equal(
+          harness.findExpanded(tree, (el) => el.props?.['data-testid'] === 'move-table-modal')
+            .length,
+          1,
+          'MoveTableModal opens inside TableCheckoutModal',
+        );
+
+        const targetTableBtn = harness.findExpanded(
+          tree,
+          (el) => el.type === 'button' && renderToStaticMarkup(el).includes('T2'),
+        )[0];
+        assert.ok(targetTableBtn, 'Candidate table T2 renders in MoveTableModal');
+        targetTableBtn.props.onClick();
+        tree = renderTcm();
+
+        const confirmMoveBtn = harness.findExpanded(
+          tree,
+          (el) =>
+            el.type === 'button' &&
+            !el.props?.disabled &&
+            renderToStaticMarkup(el).includes('confirmMoveOrder'),
+        )[0];
+        assert.ok(confirmMoveBtn, 'Confirm Move button is enabled after selecting T2');
+
+        const movePromise = confirmMoveBtn.props.onClick();
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(movePostCalls, 1, 'MoveTableModal POST request is in flight');
+
+        // Escape while MoveTableModal move request is in flight must keep MoveTableModal mounted
+        const handledBusy = triggerEscape();
+        assert.equal(handledBusy, true, 'Escape is consumed while MoveTableModal is moving');
+        tree = renderTcm();
+        assert.equal(closeCount, 0, 'TableCheckoutModal stays open while move request is in flight');
+        assert.equal(
+          harness.findExpanded(tree, (el) => el.props?.['data-testid'] === 'move-table-modal')
+            .length,
+          1,
+          'MoveTableModal remains mounted while move request is in flight',
+        );
+
+        // Settle move request with 409 error so MoveTableModal stays open and returns to idle
+        rejectMove({ response: { status: 409, data: { error: 'Table occupied' } } });
+        await movePromise;
+        tree = renderTcm();
+
+        // Next Escape dismisses MoveTableModal cleanly without closing TableCheckoutModal
+        const handledIdleChild = triggerEscape();
+        assert.equal(handledIdleChild, true);
+        tree = renderTcm();
+        assert.equal(closeCount, 0, 'Dismissing idle MoveTableModal keeps TableCheckoutModal open');
+        assert.equal(
+          harness.findExpanded(tree, (el) => el.props?.['data-testid'] === 'move-table-modal')
+            .length,
+          0,
+          'MoveTableModal unmounts cleanly on Escape after settling to idle',
+        );
+
+        // Subsequent Escape closes TableCheckoutModal
+        const handledOuter = triggerEscape();
+        assert.equal(handledOuter, true);
+        assert.equal(closeCount, 1, 'Subsequent Escape closes TableCheckoutModal');
+      } finally {
+        harness.cleanupAll();
+        win.restore();
+      }
+    });
+  }
+
+  // 14c: Unmounting busy EditOrderItemModal resets parent busy state; ScheduledOrdersDrawer sibling guard
+  await withAliases(async () => {
+    const win = installWindowEnv();
+    const harness = createTreeStatefulHarness();
+    let rejectPatch!: (e: any) => void;
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+
+    try {
+      installCheckoutComponentMocks(harness as any, {
+        role: 'owner',
+        apiPatch: async (url: string) => {
+          if (String(url).includes('/edit')) {
+            return new Promise((_, reject) => {
+              rejectPatch = reject;
+            });
+          }
+          return { data: {} };
+        },
+      });
+
+      const baseLoad = Module._load;
+      Module._load = function (request: string, parent: any, isMain: boolean) {
+        if (request === '@/components/ui/date-picker-input') {
+          return { DatePickerInput: () => null };
+        }
+        return baseLoad.call(this, request, parent, isMain);
+      };
+
+      const { ScheduledOrdersDrawer } = loadCheckoutAndChildren();
+      const scheduledOrder = {
+        ...sampleOrder,
+        id: 88,
+        order_number: 808,
+        type: 'takeaway',
+        release_status: 'scheduled',
+        scheduled_for: new Date(Date.now() + 3600_000).toISOString(),
+      };
+      const props = {
+        open: true,
+        orders: [scheduledOrder],
+        storeTimezone: 'UTC',
+        onClose: () => {
+          closeCount++;
+        },
+        onRefresh: () => {},
+        onOrderReleased: async () => {},
+        onAddItemsToOrder: () => {},
+        onPayOrder: async () => {},
+        onRefundOrder: () => {},
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      const renderDrawer = () => harness.renderAndSettle(ScheduledOrdersDrawer, props);
+      let tree = renderDrawer();
+
+      const editBtn = harness.findExpanded(
+        tree,
+        (el) => el.type === 'button' && el.props?.['data-testid'] === 'scheduled-edit-item-btn-101',
+      )[0];
+      assert.ok(editBtn, 'ScheduledOrdersDrawer renders scheduled-edit-item button');
+      editBtn.props.onClick();
+      tree = renderDrawer();
+
+      const qtyInput = harness.findExpanded(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number',
+      )[0];
+      assert.ok(qtyInput, 'EditOrderItemModal opens inside ScheduledOrdersDrawer');
+      qtyInput.props.onChange({ target: { value: '3' } });
+      tree = renderDrawer();
+
+      const saveBtn = harness.findExpanded(
+        tree,
+        (el) =>
+          el.type === 'button' && !el.props?.disabled && renderToStaticMarkup(el).includes('save'),
+      )[0];
+      const savePromise = saveBtn.props.onClick();
+      await new Promise((r) => setTimeout(r, 5));
+
+      assert.equal(
+        registeredDismiss?.(),
+        true,
+        'ScheduledOrdersDrawer dismiss handler consumes Escape while EditOrderItemModal is saving',
+      );
+      tree = renderDrawer();
+      assert.equal(closeCount, 0, 'ScheduledOrdersDrawer stays open while child save is in flight');
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        1,
+        'EditOrderItemModal stays mounted inside ScheduledOrdersDrawer while saving',
+      );
+
+      rejectPatch({ response: { status: 500, data: { error: 'Server error' } } });
+      await savePromise;
+      tree = renderDrawer();
+
+      assert.equal(registeredDismiss?.(), true);
+      tree = renderDrawer();
+      assert.equal(
+        closeCount,
+        0,
+        'First Escape closes idle EditOrderItemModal without closing ScheduledOrdersDrawer',
+      );
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        0,
+      );
+
+      assert.equal(registeredDismiss?.(), true);
+      assert.equal(closeCount, 1, 'Second Escape closes ScheduledOrdersDrawer');
+    } finally {
+      harness.cleanupAll();
+      win.restore();
+    }
+  });
+
+  // 14d: Pre-existing lockedAttempt when idle allows Escape (matching handleClose), and unmounting busy child resets parent busy state
+  await withAliases(async () => {
+    const win = installWindowEnv();
+    const harness = createTreeStatefulHarness();
+    let rejectPatch!: (e: any) => void;
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+
+    try {
+      installCheckoutComponentMocks(harness as any, {
+        role: 'owner',
+        apiGet: async (url: string) => {
+          if (String(url).includes('/tables/')) {
+            return { data: { table: { id: 't-1', name: 'T1', activeOrder: { id: 77 } } } };
+          }
+          if (String(url).includes('/orders/')) {
+            return { data: { order: sampleOrder } };
+          }
+          if (String(url).includes('settings/split_checks_enabled')) {
+            return { data: { setting: { value: 'false' } } };
+          }
+          return { data: {} };
+        },
+        apiPatch: async (url: string) => {
+          if (String(url).includes('/edit')) {
+            return new Promise((_, reject) => {
+              rejectPatch = reject;
+            });
+          }
+          return { data: {} };
+        },
+      });
+
+      const { TableCheckoutModal, attemptLib } = loadCheckoutAndChildren();
+      const snapshot = attemptLib.newOrderItemEditAttempt({
+        mode: 'quantity',
+        path: '/orders/77/items/101/edit',
+        orderId: 77,
+        itemId: 101,
+        body: { expected_edit_version: 0, quantity: 3 },
+        actorId: 'u-1',
+        tenantId: 1,
+      });
+      attemptLib.persistOrderItemEditAttempt(snapshot);
+
+      const props = {
+        table: { id: 't-1', name: 'T1', status: 'occupied', capacity: 4 },
+        tables: [{ id: 't-1', name: 'T1', status: 'occupied', capacity: 4, is_active: true }],
+        currency: 'USD',
+        cartItemCount: 0,
+        onClose: () => {
+          closeCount++;
+        },
+        onAddItems: () => {},
+        canGenerateBill: true,
+        onPayment: () => {},
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      const renderTcm = () => harness.renderAndSettle(TableCheckoutModal, props);
+      renderTcm();
+      await new Promise((r) => setTimeout(r, 10));
+      let tree = renderTcm();
+
+      // Open EditOrderItemModal with pre-existing lockedAttempt -> idle (saving === false)
+      harness
+        .findExpanded(tree, (el) => el.type === 'button' && el.props?.title === 'editItem')[0]
+        .props.onClick();
+      tree = renderTcm();
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')[0]
+          .props.disabled,
+        true,
+        'EditOrderItemModal inputs are locked when persisted attempt exists',
+      );
+
+      // Escape while idle with lockedAttempt !== null closes EditOrderItemModal (same as Cancel/X)
+      assert.equal(registeredDismiss?.(), true);
+      tree = renderTcm();
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        0,
+        'Idle EditOrderItemModal with lockedAttempt closes on Escape',
+      );
+      assert.equal(closeCount, 0, 'TableCheckoutModal stays open');
+
+      // Re-open, click Save to retry persisted attempt -> Escape blocked while in flight, then unmount resets busy state
+      harness
+        .findExpanded(tree, (el) => el.type === 'button' && el.props?.title === 'editItem')[0]
+        .props.onClick();
+      tree = renderTcm();
+      const saveBtn = harness.findExpanded(
+        tree,
+        (el) =>
+          el.type === 'button' && !el.props?.disabled && renderToStaticMarkup(el).includes('save'),
+      )[0];
+      const retryPromise = saveBtn.props.onClick();
+      await new Promise((r) => setTimeout(r, 5));
+
+      assert.equal(registeredDismiss?.(), true);
+      tree = renderTcm();
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        1,
+        'EditOrderItemModal stays mounted while retrying lockedAttempt',
+      );
+
+      // Simulate external unmount of EditOrderItemModal (e.g., onIdentityChanged) while busy -> parent busy resets
+      rejectPatch({ response: { status: 500, data: { error: 'Network error' } } });
+      await retryPromise;
+      tree = renderTcm();
+      assert.equal(registeredDismiss?.(), true);
+      tree = renderTcm();
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        0,
+      );
+      assert.equal(registeredDismiss?.(), true);
+      assert.equal(closeCount, 1);
+    } finally {
+      harness.cleanupAll();
+      win.restore();
+    }
+  });
+
+  // 14e: Direct child unmount while busy clears parent busy callback
+  await withAliases(async () => {
+    const win = installWindowEnv();
+    const harness = createTreeStatefulHarness();
+    const busyEvents: boolean[] = [];
+    let rejectMove!: (e: any) => void;
+
+    try {
+      installCheckoutComponentMocks(harness as any, {
+        role: 'owner',
+        apiPost: async (url: string) => {
+          if (String(url).includes('/move-order')) {
+            return new Promise((_, reject) => {
+              rejectMove = reject;
+            });
+          }
+          return { data: {} };
+        },
+      });
+      const { MoveTableModal } = loadCheckoutAndChildren();
+
+      const Wrapper = ({ show }: { show: boolean }) =>
+        show
+          ? harness.hooksReact.createElement(MoveTableModal, {
+              sourceTable: { id: 't-1', name: 'T1', status: 'occupied', capacity: 4 },
+              tables: [
+                { id: 't-1', name: 'T1', status: 'occupied', capacity: 4, is_active: true },
+                { id: 't-2', name: 'T2', status: 'available', capacity: 4, is_active: true },
+              ],
+              onClose: () => {},
+              onSuccess: () => {},
+              onBusyChange: (busy: boolean) => busyEvents.push(busy),
+            })
+          : null;
+
+      let tree = harness.renderAndSettle(Wrapper, { show: true });
+      harness
+        .findExpanded(tree, (el) => el.type === 'button' && renderToStaticMarkup(el).includes('T2'))[0]
+        .props.onClick();
+      tree = harness.renderAndSettle(Wrapper, { show: true });
+      const movePromise = harness
+        .findExpanded(
+          tree,
+          (el) =>
+            el.type === 'button' &&
+            !el.props?.disabled &&
+            renderToStaticMarkup(el).includes('confirmMoveOrder'),
+        )[0]
+        .props.onClick();
+      await new Promise((r) => setTimeout(r, 5));
+      tree = harness.renderAndSettle(Wrapper, { show: true });
+      assert.equal(busyEvents.at(-1), true, 'MoveTableModal reports busy=true while moving');
+
+      // Force unmount while move is still in flight
+      harness.renderAndSettle(Wrapper, { show: false });
+      assert.equal(
+        busyEvents.at(-1),
+        false,
+        'Unmounting MoveTableModal while busy resets parent busy state to false',
+      );
+      rejectMove({ response: { status: 500 } });
+      await movePromise;
+    } finally {
+      harness.cleanupAll();
+      win.restore();
+    }
+  });
+
+  console.log(
+    '  ✓ TableCheckoutModal & ScheduledOrdersDrawer child modal Escape busy guards verified',
+  );
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -5439,6 +6369,7 @@ async function run() {
   await testTenderInputAndZeroBalanceEnterGuards();
   await testCol1PanelHeaderBodyConsistency();
   await testDiscountPinErrorAndStatusStripRecovery();
+  await testTableCheckoutAndScheduledDrawerChildEscapeBusyGuards();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

@@ -340,7 +340,7 @@ async function testFailureAndAbortPreserved(): Promise<void> {
     await resetServer.close();
   }
 
-  // Abort during drain wait must cancel promptly without waiting for drainTimeoutMs.
+  // Abort during drain wait must cancel promptly without waiting for NETWORK_PRINT_DRAIN_TIMEOUT_MS.
   const silentPayload = Buffer.from('ABORT_DURING_DRAIN\n');
   const silentServer = await startDrainTestServer({
     expectedPayloadBytes: silentPayload.length,
@@ -355,7 +355,6 @@ async function testFailureAndAbortPreserved(): Promise<void> {
       silentServer.port,
       silentPayload,
       controller.signal,
-      { drainTimeoutMs: 2000 },
     );
     const elapsed = Date.now() - startedAt;
     assertEqualOrThrow(abortResult.ok, false, 'abort during drain wait returns ok: false');

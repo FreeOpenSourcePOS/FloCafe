@@ -2,15 +2,21 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",
-    "moduleResolution": "node",
     "lib": ["ES2022"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "strict": false,
+    "alwaysStrict": true,
     "rootDir": "..",
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["../frontend/src/*"],
+      "@countries": ["../main/countries.ts"],
+      "@print/*": ["../shared/print/*"],
+      "@shared/*": ["../shared/*"]
+    }
   },
-  "include": ["../tests/**/*", "../main/**/*", "../shared/**/*"]
+  "include": ["../tests/**/*", "../main/**/*", "../shared/**/*", "../frontend/src/**/*"]
 }

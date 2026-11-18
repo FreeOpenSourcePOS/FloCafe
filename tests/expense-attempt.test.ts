@@ -1,10 +1,11 @@
 /**
  * Expense attempt durable storage contract.
  *
- * Usage: npx ts-node --transpile-only -P tests/tsconfig.json tests/expense-attempt.test.ts
+ * Usage: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/expense-attempt.test.ts
  */
 
 import * as assert from 'node:assert/strict';
+import type { ExpenseAttemptSnapshot } from '../frontend/src/lib/expense-attempt';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -27,7 +28,7 @@ const {
   resetCounters,
 } = require('./helpers/test-setup');
 
-import {
+const {
   EXPENSE_ATTEMPT_STORAGE_KEY,
   ExpenseAttemptStorageError,
   clearExpenseAttempt,
@@ -36,8 +37,8 @@ import {
   newExpenseAttempt,
   persistExpenseAttempt,
   readExpenseAttempt,
-  type ExpenseAttemptSnapshot,
-} from '../frontend/src/lib/expense-attempt';
+} =
+  require('../frontend/src/lib/expense-attempt') as typeof import('../frontend/src/lib/expense-attempt');
 
 class FakeStorage implements Storage {
   private readonly store = new Map<string, string>();

@@ -254,7 +254,7 @@ export function parseGoldenBlocks(text: string): GoldenBlock[] {
 
 /**
  * Load the frontend print modules. The production `@/` and `@print/` path
- * aliases cannot be applied by plain ts-node, so requests are remapped for the
+ * aliases cannot be applied without tests/tsconfig.json, so requests are remapped for the
  * duration of each require.
  */
 export function loadFrontendPrintModules(): {

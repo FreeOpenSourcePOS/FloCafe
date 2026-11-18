@@ -25,7 +25,9 @@ const Module = require('node:module');
 
 const [testDir, mode, coordinationDir, id] = process.argv.slice(2);
 if (!testDir || !mode) {
-  console.error('usage: node jwt-secret-first-launch-child.cjs <testDir> <mode> [coordinationDir] [id]');
+  console.error(
+    'usage: node jwt-secret-first-launch-child.cjs <testDir> <mode> [coordinationDir] [id]',
+  );
   process.exit(2);
 }
 
@@ -37,7 +39,7 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
-require('ts-node').register({ transpileOnly: true, project: path.join(__dirname, 'tsconfig.json') });
+require('./register-tsx.cjs');
 
 const Database = require('better-sqlite3');
 const dbModule = require('../main/db');
@@ -61,9 +63,12 @@ function holdAtBarrier(participants) {
   fs.writeFileSync(path.join(coordinationDir, `sel-${id}`), String(Date.now()));
   const deadline = Date.now() + 30_000;
   for (;;) {
-    const arrived = fs.readdirSync(coordinationDir).filter((name) => name.startsWith('sel-')).length;
+    const arrived = fs
+      .readdirSync(coordinationDir)
+      .filter((name) => name.startsWith('sel-')).length;
     if (arrived >= participants) return arrived;
-    if (Date.now() > deadline) throw new Error(`read barrier timed out after ${arrived} of ${participants} processes`);
+    if (Date.now() > deadline)
+      throw new Error(`read barrier timed out after ${arrived} of ${participants} processes`);
     sleepSync(10);
   }
 }
@@ -80,7 +85,9 @@ function onInsertIssued(inserted) {
   // would see on disk rather than of the writing connection's own view.
   const reader = new Database(dbModule.getDbPath(), { readonly: true, fileMustExist: true });
   try {
-    const row = reader.prepare("SELECT value, updated_at FROM settings WHERE key = 'jwt_secret'").get();
+    const row = reader
+      .prepare("SELECT value, updated_at FROM settings WHERE key = 'jwt_secret'")
+      .get();
     evidence.row = row ? row.value : null;
     evidence.rowUpdatedAt = row ? row.updated_at : null;
   } finally {
@@ -146,7 +153,8 @@ function emit(payload) {
 }
 
 function readRow() {
-  const row = dbModule.getDatabase()
+  const row = dbModule
+    .getDatabase()
     .prepare("SELECT value, updated_at FROM settings WHERE key = 'jwt_secret'")
     .get();
   return row ? { value: row.value, updatedAt: row.updated_at } : null;

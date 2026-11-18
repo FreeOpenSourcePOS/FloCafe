@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import Database from 'better-sqlite3';
 
 const nativeFs = require('node:fs') as typeof import('node:fs');
 
@@ -34,8 +35,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import Database from 'better-sqlite3';
-import {
+const {
   autoRepairSchemaDrift,
   getSchemaVersionFromBackup,
   closeDatabase,
@@ -50,13 +50,11 @@ import {
   restoreBackup,
   validateInventoryLedgerDatabase,
   buildIdealSchemaDb,
-} from '../main/db';
-import { adjustProductStock } from '../main/services/inventory';
-import {
-  clearJWTSecretCache,
-  getJWTSecret,
-  JWT_SECRET_SAFE_STORAGE_MARKER,
-} from '../main/security/jwt-secret';
+} = require('../main/db') as typeof import('../main/db');
+const { adjustProductStock } =
+  require('../main/services/inventory') as typeof import('../main/services/inventory');
+const { clearJWTSecretCache, getJWTSecret, JWT_SECRET_SAFE_STORAGE_MARKER } =
+  require('../main/security/jwt-secret') as typeof import('../main/security/jwt-secret');
 
 function assertNoRestoreAttachment(): void {
   const attached = getDatabase().prepare('PRAGMA database_list').all() as { name: string }[];

@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import Database from 'better-sqlite3';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -47,16 +48,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import Database from 'better-sqlite3';
-import {
-  closeDatabase,
-  createBackup,
-  getCurrentSchemaVersion,
-  initDatabase,
-  isManagedBackupFile,
-} from '../main/db';
-import { registerIpcHandlers } from '../main/ipc';
-import { setMasterPin } from '../main/services/master-pin';
+const { closeDatabase, createBackup, getCurrentSchemaVersion, initDatabase, isManagedBackupFile } =
+  require('../main/db') as typeof import('../main/db');
+const { registerIpcHandlers } = require('../main/ipc') as typeof import('../main/ipc');
+const { setMasterPin } =
+  require('../main/services/master-pin') as typeof import('../main/services/master-pin');
 
 async function run(): Promise<void> {
   setMasterPin('1234');

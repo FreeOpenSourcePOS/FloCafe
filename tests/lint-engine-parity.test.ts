@@ -547,6 +547,16 @@ assert.strictEqual(
   rootPackage.devDependencies.oxlint,
   'both packages must pin the same exact Oxlint version',
 );
+assert.match(
+  rootPackage.devDependencies.typescript,
+  /^\d+\.\d+\.\d+$/,
+  'the root package must pin an exact TypeScript version',
+);
+assert.strictEqual(
+  frontendPackage.devDependencies.typescript,
+  rootPackage.devDependencies.typescript,
+  'both packages must pin the same exact TypeScript version',
+);
 
 type DependabotGroup = {
   patterns?: string[];
@@ -602,7 +612,7 @@ const groupCoversPackage = (group: DependabotGroup, pkgName: string) =>
   Boolean(group.patterns?.some((pattern) => matchesPattern(pattern, pkgName))) &&
   !group['exclude-patterns']?.some((pattern) => matchesPattern(pattern, pkgName));
 
-for (const sharedTool of ['oxfmt', 'oxlint']) {
+for (const sharedTool of ['oxfmt', 'oxlint', 'typescript']) {
   assert.ok(
     minorAndPatchGroup?.['exclude-patterns']?.some((pattern) =>
       matchesPattern(pattern, sharedTool),
@@ -647,6 +657,42 @@ assert.strictEqual(
   parseVersion(frontendOxfmtVersion.stdout),
   frontendPackage.devDependencies.oxfmt,
   'the standalone frontend format command must resolve its own pinned install',
+);
+
+const backendTsc = path.join(
+  rootDir,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
+);
+const frontendTsc = path.join(
+  frontendDir,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
+);
+const parseTscVersion = (stdout: string) => (stdout.match(/Version\s+(\S+)/) || [])[1];
+const rootTscVersion = spawnSync(backendTsc, ['--version'], {
+  cwd: rootDir,
+  encoding: 'utf8',
+  shell: process.platform === 'win32',
+});
+const frontendTscVersion = spawnSync(frontendTsc, ['--version'], {
+  cwd: frontendDir,
+  encoding: 'utf8',
+  shell: process.platform === 'win32',
+});
+assert.strictEqual(rootTscVersion.status, 0, 'the root tsc binary must run');
+assert.strictEqual(frontendTscVersion.status, 0, 'the frontend tsc binary must run');
+assert.strictEqual(
+  parseTscVersion(rootTscVersion.stdout),
+  rootPackage.devDependencies.typescript,
+  'root tsc must resolve the pinned root TypeScript install',
+);
+assert.strictEqual(
+  parseTscVersion(frontendTscVersion.stdout),
+  frontendPackage.devDependencies.typescript,
+  'frontend tsc must resolve the pinned frontend TypeScript install',
 );
 
 for (const [scope, configPath, config] of [

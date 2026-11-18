@@ -27,10 +27,7 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
-require('ts-node').register({
-  transpileOnly: true,
-  project: path.join(__dirname, 'tsconfig.json'),
-});
+require('./register-tsx.cjs');
 
 const express = require('express');
 const request = require('supertest');
@@ -52,7 +49,7 @@ async function run() {
   // keyed by req.user.userId — the claim alone is not authoritative.
   db.prepare(
     `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-     VALUES ('owner', 'Owner', 'owner@test.local', 'unused', 'owner', 1, ?, ?)`
+     VALUES ('owner', 'Owner', 'owner@test.local', 'unused', 'owner', 1, ?, ?)`,
   ).run(dbModule.now(), dbModule.now());
   const { databaseRoutes } = require('../main/routes/database');
   const app = express();
@@ -110,38 +107,55 @@ async function run() {
   try {
     let response;
     if (mode === 'import') {
-      response = await request(server).post('/api/db/import').send({
-        overwrite: false,
-        data: {
-          schema_version: String(dbModule.getCurrentSchemaVersion()),
+      response = await request(server)
+        .post('/api/db/import')
+        .send({
+          overwrite: false,
           data: {
-            settings: [],
-            categories: [{ id: 'shutdown-import-category', name: 'Shutdown import' }],
-            products: [],
-            users: [],
+            schema_version: String(dbModule.getCurrentSchemaVersion()),
+            data: {
+              settings: [],
+              categories: [{ id: 'shutdown-import-category', name: 'Shutdown import' }],
+              products: [],
+              users: [],
+            },
           },
-        },
-      });
+        });
     } else {
       setMasterPin('1234');
-      db.prepare("INSERT INTO categories (id, name) VALUES ('reset-survivor', 'Reset survivor')").run();
+      db.prepare(
+        "INSERT INTO categories (id, name) VALUES ('reset-survivor', 'Reset survivor')",
+      ).run();
       response = await request(server).post('/api/db-tools/initialize').send({
         master_pin: '1234',
         confirmation_phrase: 'INITIALIZE',
       });
     }
-    if (response.status !== 500) throw new Error(`expected ${mode} cancellation response, got ${response.status}`);
-    if (mode === 'import' && commitSeen) throw new Error('database import committed after shutdown cancellation');
-    if (mode === 'reset' && !resetShutdownTriggered) throw new Error('reset cancellation did not reach the database replacement boundary');
+    if (response.status !== 500)
+      throw new Error(`expected ${mode} cancellation response, got ${response.status}`);
+    if (mode === 'import' && commitSeen)
+      throw new Error('database import committed after shutdown cancellation');
+    if (mode === 'reset' && !resetShutdownTriggered)
+      throw new Error('reset cancellation did not reach the database replacement boundary');
     const survivorId = mode === 'import' ? 'shutdown-import-category' : 'reset-survivor';
-    const recoveredDatabase = new Database(dbModule.getDbPath(), { readonly: true, fileMustExist: true });
-    const count = recoveredDatabase.prepare('SELECT COUNT(*) AS count FROM categories WHERE id = ?').get(survivorId).count;
+    const recoveredDatabase = new Database(dbModule.getDbPath(), {
+      readonly: true,
+      fileMustExist: true,
+    });
+    const count = recoveredDatabase
+      .prepare('SELECT COUNT(*) AS count FROM categories WHERE id = ?')
+      .get(survivorId).count;
     recoveredDatabase.close();
-    if (mode === 'import' && count !== 0) throw new Error('cancelled database import left committed rows');
-    if (mode === 'reset' && count !== 1) throw new Error('cancelled reset removed live database data');
+    if (mode === 'import' && count !== 0)
+      throw new Error('cancelled database import left committed rows');
+    if (mode === 'reset' && count !== 1)
+      throw new Error('cancelled reset removed live database data');
     await shutdownEntrypoints.runCleanup();
-    const backupFiles = fs.readdirSync(path.join(testDir, 'backups')).filter((file) => file.endsWith('.db'));
-    if (backupFiles.length === 0) throw new Error('database import did not execute its safety backup');
+    const backupFiles = fs
+      .readdirSync(path.join(testDir, 'backups'))
+      .filter((file) => file.endsWith('.db'));
+    if (backupFiles.length === 0)
+      throw new Error('database import did not execute its safety backup');
     if (mode === 'reset' && backupFiles.some((file) => file.includes('flo-reset-recovery-'))) {
       throw new Error('cancelled reset left replacement artifacts');
     }

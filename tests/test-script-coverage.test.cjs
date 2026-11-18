@@ -29,7 +29,7 @@ assert.deepEqual(
 
 assert.deepEqual(
   extractReferencedTestFiles(
-    'node tests/run-electron-node-test.cjs tests/held-orders.test.ts && ts-node -P tests/tsconfig.json tests/db.test.cjs && node tests/helper.cjs',
+    'node tests/run-electron-node-test.cjs tests/held-orders.test.ts && tsx --tsconfig tests/tsconfig.json tests/db.test.cjs && node tests/helper.cjs',
   ),
   ['tests/held-orders.test.ts', 'tests/db.test.cjs'],
   'only suite files a command actually executes are extracted',
@@ -42,7 +42,7 @@ assert.deepEqual(
   'a file named twice is reported once',
 );
 assert.deepEqual(
-  extractReferencedTestFiles('node tests/tables-string-ids.test.ts && ts-node tests/db.test.cjs'),
+  extractReferencedTestFiles('node tests/tables-string-ids.test.ts && tsx tests/db.test.cjs'),
   ['tests/tables-string-ids.test.ts', 'tests/db.test.cjs'],
   'paths stay intact across runner-prefixed commands and segments',
 );

@@ -4,8 +4,8 @@
  * POS drawers, side sheets, CartPanel, PosTopbar, CustomerSearch, and KDS (#1453).
  */
 import { strict as assert } from 'node:assert';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
@@ -346,6 +346,47 @@ try {
     );
   }
 
+  let themeBrandColor: string | undefined;
+  let themeBrandLight: string | undefined;
+  let themeDefinesBrandForeground = false;
+  let themeDefinesBrandMuted = false;
+  cssAst.walkAtRules('theme', (atRule: any) => {
+    atRule.walkDecls((decl: any) => {
+      if (decl.prop === '--color-brand') themeBrandColor = decl.value;
+      if (decl.prop === '--color-brand-light') themeBrandLight = decl.value;
+      if (decl.prop === '--color-brand-foreground') themeDefinesBrandForeground = true;
+      if (decl.prop === '--color-brand-muted') themeDefinesBrandMuted = true;
+    });
+  });
+  let darkBrandLight: string | undefined;
+  cssAst.walkRules((rule: any) => {
+    if (!rule.selectors?.includes('.dark')) return;
+    rule.walkDecls('--color-brand-light', (decl: any) => {
+      darkBrandLight = decl.value;
+    });
+  });
+  assert.equal(themeBrandColor, '#3248FF', 'parsed globals.css @theme defines --color-brand');
+  assert.equal(
+    themeBrandLight,
+    '#e8ebff',
+    'parsed globals.css @theme defines --color-brand-light',
+  );
+  assert.equal(
+    darkBrandLight,
+    'oklch(0.20 0.03 270)',
+    'parsed globals.css .dark overrides --color-brand-light for dark:bg-[var(--color-brand-light)]',
+  );
+  assert.equal(
+    themeDefinesBrandForeground,
+    false,
+    'parsed globals.css @theme does not define --color-brand-foreground',
+  );
+  assert.equal(
+    themeDefinesBrandMuted,
+    false,
+    'parsed globals.css @theme does not define --color-brand-muted',
+  );
+
   // 4. CartPanel rendered output: inline-start red trash button and wrapping footer buttons
   useAuthStore.setState({
     user: { id: 'u1', name: 'Owner', email: 'owner@test.com', role: 'owner' } as any,
@@ -444,24 +485,152 @@ try {
     'rendered CartPanel footer keeps Hold compact (shrink-0 px-3) and gives Place Order the remaining width (flex-1 min-w-0 px-3) with brand CTA styling',
   );
 
-  // Guard against undefined brand-* Tailwind utility classes across frontend/src
-  const brandScanFiles: string[] = [];
-  const walkSrc = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) walkSrc(fullPath);
-      else if (/\.(ts|tsx|css)$/.test(entry.name)) brandScanFiles.push(fullPath);
+  // Rendered brand token & dark-mode surface checks for CashCloseModal and KdsLoginForm
+  const { CashCloseModal } = require('../frontend/src/components/dashboard/CashCloseModal');
+  const cashCloseBrandMarkup = renderWithIntl(
+    React.createElement(CashCloseModal, {
+      model: {
+        closeOpen: true,
+        setCloseOpen: () => {},
+        closeAnotherDay: false,
+        businessDate: '2026-11-14',
+        setBusinessDate: () => {},
+        selectedSessionId: null,
+        setSelectedSessionId: () => {},
+        xReport: null,
+        xLoading: false,
+        xError: null,
+        closeStep: 1,
+        setCloseStep: () => {},
+        openingFloatInput: '',
+        setOpeningFloatInput: () => {},
+        countedInput: '',
+        setCountedInput: () => {},
+        submittingClose: false,
+        submitError: null,
+        alreadyClosedOverride: false,
+        setAlreadyClosedOverride: () => {},
+        amountsValid: true,
+        expectedCashTotalCents: 0,
+        varianceCents: 0,
+        closedZ: null,
+        printingZ: false,
+        exportingReport: false,
+        exportReport: async () => {},
+        hasPrintedFresh: false,
+        setHasPrintedFresh: () => {},
+        hydratedZ: null,
+        minorFactor: 100,
+        fmt: (v: number) => String(v),
+        unitAdapter: {
+          toDisplay: (v: number) => String(v),
+          toMinor: (v: string) => Number(v),
+          step: '0.01',
+          min: '0',
+          placeholder: '0.00',
+        },
+        t: (k: string) => k,
+        tCommon: (k: string) => k,
+        shiftDate: (d: string) => d,
+        todayLocal: '2026-11-14',
+        submitClose: async () => {},
+        printZ: async () => {},
+        canSendWhatsApp: false,
+        canViewSettings: false,
+        openWhatsAppReport: () => {},
+        whatsAppOpen: false,
+        setWhatsAppOpen: () => {},
+        sendWhatsAppReport: async () => {},
+        whatsappCountry: 'US',
+      },
+    }),
+  );
+  assert.match(
+    cashCloseBrandMarkup,
+    /<span class="[^"]*bg-brand text-white border-brand[^"]*" aria-current="step">1<\/span>/,
+    'rendered CashCloseModal active step badge uses bg-brand text-white border-brand',
+  );
+  assert.doesNotMatch(
+    cashCloseBrandMarkup,
+    /text-brand-foreground/,
+    'rendered CashCloseModal never emits undefined text-brand-foreground',
+  );
+
+  const { KdsLoginForm } = require('../frontend/src/components/kds/KdsLoginForm');
+  const kdsStates: unknown[] = [];
+  const origKdsUseState = React.useState;
+  const renderKdsLoginForm = () => {
+    let tree: any;
+    function Runner() {
+      let stateIdx = 0;
+      React.useState = ((initial: unknown) => {
+        const idx = stateIdx++;
+        if (!(idx in kdsStates)) {
+          kdsStates[idx] =
+            typeof initial === 'function' ? (initial as () => unknown)() : initial;
+        }
+        const setState = (next: unknown) => {
+          kdsStates[idx] =
+            typeof next === 'function'
+              ? (next as (prev: unknown) => unknown)(kdsStates[idx])
+              : next;
+        };
+        return [kdsStates[idx], setState];
+      }) as typeof React.useState;
+      try {
+        tree = KdsLoginForm({
+          conn: {
+            loginEmail: '',
+            loginPassword: '',
+            loginError: '',
+            loginLoading: false,
+            rememberMe: false,
+            pinUsers: [{ id: 'u1', name: 'Chef Alex', role: 'chef' }],
+            setLoginEmail: () => {},
+            setLoginPassword: () => {},
+            setLoginError: () => {},
+            setRememberMe: () => {},
+            handleLogin: async () => {},
+            handlePinLogin: async () => {},
+          },
+        });
+      } finally {
+        React.useState = origKdsUseState;
+      }
+      return tree;
     }
+    const html = renderWithIntl(React.createElement(Runner));
+    return { tree, html };
   };
-  walkSrc(resolve(process.cwd(), 'frontend/src'));
-  const undefinedBrandHits = brandScanFiles.filter((filePath) => {
-    const content = readFileSync(filePath, 'utf8');
-    return /\b(text-brand-foreground|bg-brand-muted)\b/.test(content);
-  });
-  assert.deepEqual(
-    undefinedBrandHits,
-    [],
-    'frontend/src contains zero references to undefined text-brand-foreground or bg-brand-muted tokens',
+  const findTreeElement = (node: any, predicate: (el: any) => boolean): any => {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const hit = findTreeElement(child, predicate);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (predicate(node)) return node;
+    return node.props?.children ? findTreeElement(node.props.children, predicate) : null;
+  };
+  const kdsInitial = renderKdsLoginForm();
+  const kdsTile = findTreeElement(
+    kdsInitial.tree,
+    (el) => el?.props?.['data-testid'] === 'pin-user-tile-u1',
+  );
+  assert.ok(kdsTile, 'rendered KdsLoginForm exposes PIN user tile u1');
+  kdsTile.props.onClick();
+  const kdsSelected = renderKdsLoginForm();
+  assert.match(
+    kdsSelected.html,
+    /data-testid="pin-user-tile-u1"[^>]*class="[^"]*border-brand bg-brand-light dark:bg-\[var\(--color-brand-light\)\][^"]*"/,
+    'rendered KdsLoginForm selected PIN user tile pairs bg-brand-light with dark:bg-[var(--color-brand-light)]',
+  );
+  assert.doesNotMatch(
+    kdsSelected.html,
+    /bg-brand-muted/,
+    'rendered KdsLoginForm never emits undefined bg-brand-muted',
   );
   assert.match(
     cartMarkup,
@@ -743,18 +912,6 @@ try {
     const html = renderWithIntl(React.createElement(Runner));
     return { tree, html };
   };
-  const findTreeElement = (node: any, predicate: (el: any) => boolean): any => {
-    if (!node || typeof node !== 'object') return null;
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        const hit = findTreeElement(child, predicate);
-        if (hit) return hit;
-      }
-      return null;
-    }
-    if (predicate(node)) return node;
-    return node.props?.children ? findTreeElement(node.props.children, predicate) : null;
-  };
   const prevAuthForDashboard = useAuthStore.getState();
   const prevAuthInitialForDashboard = { ...useAuthStore.getInitialState() };
   try {
@@ -962,6 +1119,183 @@ try {
   }
 
   useCartStore.getState().clearCart();
+
+  const ServerStandalonePage = require('../frontend/src/app/server-standalone/page').default;
+  const axiosMod = require(frontendRequire.resolve('axios'));
+  const axiosInstance = axiosMod?.default ?? axiosMod;
+  const verifyServerStandaloneBrandSurface = async () => {
+    const serverStates: unknown[] = [];
+    const serverRefs: Array<{ current: unknown }> = [];
+    const serverEffectEntries: Array<{
+      deps: unknown[] | undefined;
+      initialized: boolean;
+      cleanup?: (() => void) | void;
+    }> = [];
+    const serverPendingEffects: Array<() => void> = [];
+    const origUseState = React.useState;
+    const origUseRef = React.useRef;
+    const origUseEffect = React.useEffect;
+    const origUseCallback = React.useCallback;
+    const origUseMemo = React.useMemo;
+    const origAxiosCreate = axiosInstance.create;
+    const prevWindow = (globalThis as any).window;
+    const prevLocalStorage = (globalThis as any).localStorage;
+    const prevFetch = (globalThis as any).fetch;
+    const prevDoc = (globalThis as any).document;
+    const storageStub = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    try {
+      (globalThis as any).localStorage = storageStub;
+      (globalThis as any).window = {
+        location: { origin: 'http://localhost:3003' },
+        localStorage: storageStub,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      };
+      (globalThis as any).document = {
+        body: { style: {} },
+        documentElement: { classList: { toggle: () => {}, add: () => {}, remove: () => {} } },
+        querySelector: () => null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      };
+      (globalThis as any).fetch = async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+      axiosInstance.create = () => ({
+        interceptors: { request: { use: () => {} }, response: { use: () => {} } },
+        get: async (url: string) => {
+          if (url === '/api/server-app/info') {
+            return { data: { country: 'US', currency: 'USD' } };
+          }
+          if (url === '/api/auth/pin-users') {
+            return { data: { users: [{ id: 'u1', name: 'Alex', role: 'server' }] } };
+          }
+          const err: any = new Error('Unauthorized');
+          err.response = { status: 401 };
+          throw err;
+        },
+        post: async () => ({ data: {} }),
+      });
+
+      const renderServerStandalone = () => {
+        let tree: any;
+        function Runner() {
+          let stateIdx = 0;
+          let refIdx = 0;
+          let effectIdx = 0;
+          React.useState = ((initial: unknown) => {
+            const idx = stateIdx++;
+            if (!(idx in serverStates)) {
+              serverStates[idx] =
+                typeof initial === 'function' ? (initial as () => unknown)() : initial;
+            }
+            const setState = (next: unknown) => {
+              serverStates[idx] =
+                typeof next === 'function'
+                  ? (next as (prev: unknown) => unknown)(serverStates[idx])
+                  : next;
+            };
+            return [serverStates[idx], setState];
+          }) as typeof React.useState;
+          React.useRef = ((initial: unknown) => {
+            const idx = refIdx++;
+            if (!serverRefs[idx]) serverRefs[idx] = { current: initial };
+            return serverRefs[idx];
+          }) as typeof React.useRef;
+          React.useEffect = ((effect: () => void | (() => void), deps?: unknown[]) => {
+            const idx = effectIdx++;
+            const prev = serverEffectEntries[idx];
+            const changed =
+              !prev ||
+              !prev.initialized ||
+              deps === undefined ||
+              prev.deps === undefined ||
+              deps.length !== prev.deps.length ||
+              deps.some((d, i) => !Object.is(d, prev.deps![i]));
+            if (!prev) serverEffectEntries[idx] = { deps, initialized: false };
+            else prev.deps = deps;
+            if (changed) {
+              serverPendingEffects.push(() => {
+                if (typeof serverEffectEntries[idx].cleanup === 'function') {
+                  serverEffectEntries[idx].cleanup!();
+                }
+                serverEffectEntries[idx].cleanup = effect();
+                serverEffectEntries[idx].initialized = true;
+              });
+            }
+          }) as typeof React.useEffect;
+          React.useCallback = ((fn: any) => fn) as typeof React.useCallback;
+          React.useMemo = ((fn: () => unknown) => fn()) as typeof React.useMemo;
+          try {
+            tree = ServerStandalonePage({});
+          } finally {
+            React.useState = origUseState;
+            React.useRef = origUseRef;
+            React.useEffect = origUseEffect;
+            React.useCallback = origUseCallback;
+            React.useMemo = origUseMemo;
+          }
+          return tree;
+        }
+        const html = renderWithIntl(React.createElement(Runner));
+        while (serverPendingEffects.length > 0) {
+          serverPendingEffects.shift()!();
+        }
+        return { tree, html };
+      };
+
+      renderServerStandalone();
+      await new Promise((r) => setTimeout(r, 0));
+      renderServerStandalone();
+      await new Promise((r) => setTimeout(r, 0));
+      const serverLogin = renderServerStandalone();
+      const serverTile = findTreeElement(
+        serverLogin.tree,
+        (el) => el?.props?.['data-testid'] === 'pin-user-tile-u1',
+      );
+      assert.ok(serverTile, 'rendered ServerStandalonePage exposes PIN user tile u1');
+      serverTile.props.onClick();
+      const serverSelected = renderServerStandalone();
+      assert.match(
+        serverSelected.html,
+        /data-testid="pin-user-tile-u1"[^>]*class="[^"]*border-brand bg-brand-light dark:bg-\[var\(--color-brand-light\)\][^"]*"/,
+        'rendered ServerStandalonePage selected PIN user tile pairs bg-brand-light with dark:bg-[var(--color-brand-light)]',
+      );
+      assert.doesNotMatch(
+        serverSelected.html,
+        /bg-brand-muted/,
+        'rendered ServerStandalonePage never emits undefined bg-brand-muted',
+      );
+    } finally {
+      for (const entry of serverEffectEntries) {
+        if (typeof entry.cleanup === 'function') entry.cleanup();
+      }
+      React.useState = origUseState;
+      React.useRef = origUseRef;
+      React.useEffect = origUseEffect;
+      React.useCallback = origUseCallback;
+      React.useMemo = origUseMemo;
+      axiosInstance.create = origAxiosCreate;
+      if (prevWindow === undefined) delete (globalThis as any).window;
+      else (globalThis as any).window = prevWindow;
+      if (prevLocalStorage === undefined) delete (globalThis as any).localStorage;
+      else (globalThis as any).localStorage = prevLocalStorage;
+      if (prevFetch === undefined) delete (globalThis as any).fetch;
+      else (globalThis as any).fetch = prevFetch;
+      if (prevDoc === undefined) delete (globalThis as any).document;
+      else (globalThis as any).document = prevDoc;
+    }
+  };
+  verifyServerStandaloneBrandSurface()
+    .then(() => {
+      console.log('✓ UI regression guards for issues #621, #623, #625, #626, and #1453 passed');
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
 } finally {
   if (origDocument === undefined) {
     delete (globalThis as any).document;
@@ -971,5 +1305,3 @@ try {
   Module._resolveFilename = originalResolveFilename;
   Module._load = originalLoad;
 }
-
-console.log('✓ UI regression guards for issues #621, #623, #625, #626, and #1453 passed');

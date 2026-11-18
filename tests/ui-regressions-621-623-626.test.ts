@@ -567,8 +567,7 @@ async function run() {
         React.useState = ((initial: unknown) => {
           const idx = stateIdx++;
           if (!(idx in kdsStates)) {
-            kdsStates[idx] =
-              typeof initial === 'function' ? (initial as () => unknown)() : initial;
+            kdsStates[idx] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
           }
           const setState = (next: unknown) => {
             kdsStates[idx] =

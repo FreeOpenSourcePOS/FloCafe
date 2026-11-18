@@ -18,5 +18,5 @@
       "@shared/*": ["../shared/*"]
     }
   },
-  "include": ["../tests/**/*", "../main/**/*", "../shared/**/*"]
+  "include": ["../tests/**/*", "../main/**/*", "../shared/**/*", "../frontend/src/**/*"]
 }

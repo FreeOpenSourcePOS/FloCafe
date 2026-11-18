@@ -42,7 +42,7 @@ assert.deepEqual(
   'a file named twice is reported once',
 );
 assert.deepEqual(
-  extractReferencedTestFiles('node tests/tables-string-ids.test.ts && ts-node tests/db.test.cjs'),
+  extractReferencedTestFiles('node tests/tables-string-ids.test.ts && tsx tests/db.test.cjs'),
   ['tests/tables-string-ids.test.ts', 'tests/db.test.cjs'],
   'paths stay intact across runner-prefixed commands and segments',
 );

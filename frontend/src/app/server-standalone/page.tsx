@@ -1395,7 +1395,7 @@ export default function ServerStandalonePage() {
                       }}
                       className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-start transition-all ${
                         isSelected
-                          ? 'border-brand bg-brand-muted ring-2 ring-brand/30'
+                          ? 'border-brand bg-brand-light ring-2 ring-brand/30'
                           : 'border-border hover:border-brand/50 hover:bg-muted/60'
                       }`}
                     >

@@ -755,12 +755,37 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await page.getByRole('button', { name: 'Remove', exact: true }).first().click();
   });
 
-  test('Escape closes the payment queue drawer', async ({ page }) => {
+  test('Escape closes the payment queue drawer in one press and FLOCAFE-TICKET Enter looks up ticket', async ({
+    page,
+  }) => {
     await page.route('**/api/settings/multi_counter_enabled', async (route) => {
       await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
     });
     await page.route('**/api/counters*', async (route) => {
       await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/by-ticket/*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          order: { id: 9991, order_number: 'ORD-9991', type: 'takeaway' },
+          bill: {
+            id: 9992,
+            bill_number: 'BILL-9992',
+            order_id: 9991,
+            subtotal: 10,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: 10,
+            paid_amount: 0,
+            balance: 10,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
     });
     await page.reload();
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
@@ -769,12 +794,55 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const drawer = page.getByTestId('payment-queue-drawer');
     await expect(drawer).toBeVisible();
 
-    await page.getByTestId('payment-queue-search').focus();
+    const queueSearch = page.getByTestId('payment-queue-search');
+    await expect(queueSearch).toBeFocused();
+
+    // Typing FLOCAFE-TICKET: payload + Enter looks up the ticket immediately and opens PaymentModal
+    await queueSearch.fill('FLOCAFE-TICKET:ORD-9991');
+    await queueSearch.press('Enter');
+    await expect(queueSearch).toHaveValue('');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    // Single Escape closes PaymentModal on top
     await page.keyboard.press('Escape');
-    await expect(drawer).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+
+    // Single Escape closes the drawer even while payment-queue-search has focus
+    await queueSearch.focus();
+    await expect(queueSearch).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
     await expect(page.getByTestId('pos-payment-queue-btn')).toBeFocused();
+  });
+
+  test('ProductGrid search clear button and Escape clear non-empty filter before blurring', async ({
+    page,
+  }) => {
+    const searchInput = page.getByTestId('pos-product-search');
+    const clearBtn = page.getByTestId('pos-product-search-clear');
+
+    await expect(clearBtn).toHaveCount(0);
+    await searchInput.focus();
+    await searchInput.fill('Coffee');
+    await expect(clearBtn).toBeVisible();
+
+    // Clicking [X] clears search and keeps focus in the search input
+    await clearBtn.click();
+    await expect(searchInput).toHaveValue('');
+    await expect(clearBtn).toHaveCount(0);
+    await expect(searchInput).toBeFocused();
+
+    // First Escape clears non-empty search without blurring; second Escape blurs
+    await searchInput.fill('Coffee');
+    await expect(clearBtn).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(searchInput).toHaveValue('');
+    await expect(clearBtn).toHaveCount(0);
+    await expect(searchInput).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(searchInput).not.toBeFocused();
   });
 
   test('PrepaidCheckoutModal focused buttons are not hijacked by global Space/Enter quick-pay', async ({

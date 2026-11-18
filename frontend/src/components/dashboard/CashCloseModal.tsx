@@ -188,7 +188,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               return (
                 <li key={step} className="flex items-center gap-2 flex-1 last:flex-none">
                   <span
-                    className={`flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-semibold border ${active ? 'bg-brand text-brand-foreground border-brand' : completed ? 'bg-brand/15 text-brand border-brand/30' : 'bg-muted text-muted-foreground border-border'}`}
+                    className={`flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-semibold border ${active ? 'bg-brand text-white border-brand' : completed ? 'bg-brand/15 text-brand border-brand/30' : 'bg-muted text-muted-foreground border-border'}`}
                     aria-current={active ? 'step' : undefined}
                   >
                     {completed ? <Check size={12} /> : step}

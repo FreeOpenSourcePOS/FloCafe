@@ -1972,7 +1972,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyOtherModalOpen =
+  const anyOtherModalOpenExcludingPaymentQueue =
     !!addonProduct ||
     !!editingCartItem ||
     !!checkoutTable ||
@@ -1987,16 +1987,21 @@ export default function POSPage() {
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
     showScheduledOrders ||
-    showPaymentQueue ||
     showTicketModal ||
     !!refundModalTarget ||
     actionsMenuOpen ||
     isConfirmOpen;
+  const anyOtherModalOpen = anyOtherModalOpenExcludingPaymentQueue || showPaymentQueue;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
+  const anyModalOpenExcludingPaymentQueue =
+    showTablePicker || anyOtherModalOpenExcludingPaymentQueue;
 
   useBarcodeScanner((code) => {
     if (code.startsWith('FLOCAFE-TICKET:')) {
       void handleLookupAndPayTicket(code);
+      return;
+    }
+    if (showPaymentQueue) {
       return;
     }
     const scan = resolveScannedProduct(code, products);
@@ -2007,7 +2012,7 @@ export default function POSPage() {
     } else {
       toast.error(t('barcodeNotFound', { code }));
     }
-  }, !anyModalOpen);
+  }, !anyModalOpenExcludingPaymentQueue);
 
   const tablesLoaded = tables.length > 0;
   useEffect(() => {
@@ -3971,11 +3976,6 @@ export default function POSPage() {
         if (customerModalOpen || cartPanelModalOpen) {
           return false;
         }
-        const activeEl = document.activeElement as HTMLElement | null;
-        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-          activeEl.blur();
-          return true;
-        }
         if (showTablePicker) {
           setShowTablePicker(false);
           return true;
@@ -4041,6 +4041,11 @@ export default function POSPage() {
         }
         if (mobileCartOpen) {
           setMobileCartOpen(false);
+          return true;
+        }
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+          activeEl.blur();
           return true;
         }
         return false;
@@ -4615,6 +4620,7 @@ export default function POSPage() {
         open={showPaymentQueue}
         onClose={() => setShowPaymentQueue(false)}
         onPayOrder={handlePayScheduledOrder}
+        onScanTicket={handleLookupAndPayTicket}
         refreshKey={paymentQueueRefreshKey}
         onRefundOrder={(order, bills) => {
           setShowPaymentQueue(false);

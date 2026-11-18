@@ -416,6 +416,7 @@ try {
     'lucide-react': {
       Search: () => null,
       SlidersHorizontal: () => null,
+      X: () => null,
     },
     'react-hot-toast': {
       __esModule: true,
@@ -543,6 +544,62 @@ try {
     'non-composing Enter adds matched product to cart',
   );
   assert.deepStrictEqual(searchUpdates, [''], 'non-composing Enter clears search input');
+
+  // 4b. ProductGrid [X] clear button & Escape-to-clear behavior
+  const clearBtn = findByTestId(tree, 'pos-product-search-clear');
+  assert.ok(clearBtn, 'renders pos-product-search-clear button when search is non-empty');
+  searchUpdates.length = 0;
+  (clearBtn.props.onClick as () => void)();
+  assert.deepStrictEqual(searchUpdates, [''], 'clicking pos-product-search-clear clears search');
+
+  searchUpdates.length = 0;
+  addedProducts.length = 0;
+  let escapeStopped = false;
+  onKeyDown({
+    key: 'Escape',
+    keyCode: 27,
+    nativeEvent: { isComposing: false },
+    stopPropagation: () => {
+      escapeStopped = true;
+    },
+  });
+  assert.strictEqual(escapeStopped, true, 'Escape on non-empty search calls stopPropagation');
+  assert.deepStrictEqual(searchUpdates, [''], 'Escape on non-empty search clears search');
+  assert.strictEqual(addedProducts.length, 0, 'Escape does not add product to cart');
+
+  const emptyTree = ProductGrid({
+    categories: [],
+    products: [coffeeProduct],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: '',
+    setSearch: (s: string) => searchUpdates.push(s),
+    currency: 'USD',
+    onProductClick: (product: unknown, quantity: number) =>
+      addedProducts.push({ product, quantity }),
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  assert.strictEqual(
+    findByTestId(emptyTree, 'pos-product-search-clear'),
+    null,
+    'omits pos-product-search-clear when search is empty',
+  );
+  const emptyInput = findByTestId(emptyTree, 'pos-product-search');
+  assert.ok(emptyInput, 'renders pos-product-search when search is empty');
+  searchUpdates.length = 0;
+  let emptyEscapeStopped = false;
+  (emptyInput.props.onKeyDown as (e: Record<string, unknown>) => void)({
+    key: 'Escape',
+    keyCode: 27,
+    nativeEvent: { isComposing: false },
+    stopPropagation: () => {
+      emptyEscapeStopped = true;
+    },
+  });
+  assert.strictEqual(emptyEscapeStopped, false, 'Escape on empty search bubbles to window');
+  assert.strictEqual(searchUpdates.length, 0, 'Escape on empty search does not call setSearch');
+
   // 5. Trailing asterisk "3*" keeps product card visible and does not add on premature Enter
   addedProducts.length = 0;
   searchUpdates.length = 0;

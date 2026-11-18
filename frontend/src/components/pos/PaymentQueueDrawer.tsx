@@ -58,6 +58,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onPayOrder: (order: Order) => Promise<void> | void;
+  onScanTicket?: (ticket: string) => void;
   onRefundOrder?: (order: Order, bills: Bill[]) => void;
   onCountsChanged?: (awaiting: number, blocked: number) => void;
   onQueueChanged?: () => void;
@@ -68,6 +69,7 @@ export function PaymentQueueDrawer({
   open,
   onClose,
   onPayOrder,
+  onScanTicket,
   onRefundOrder,
   onCountsChanged,
   onQueueChanged,
@@ -366,6 +368,33 @@ export function PaymentQueueDrawer({
     }
   };
 
+  const triggerPayOrder = (order: AwaitingPaymentOrder) => {
+    const billForOrder = order.bill_id
+      ? ({
+          id: Number(order.bill_id),
+          bill_number: order.bill_number || '',
+          order_id: Number(order.id),
+          subtotal: Number(order.total_amount ?? order.total ?? 0),
+          tax_amount: 0,
+          discount_amount: 0,
+          service_charge: 0,
+          delivery_charge: 0,
+          total: Number(order.total_amount ?? order.total ?? 0),
+          paid_amount: Number(order.paid_amount || 0),
+          balance: Number(order.balance || 0),
+          payment_status: (order.bill_payment_status as Bill['payment_status']) || 'unpaid',
+          payment_details: [],
+        } as unknown as Bill)
+      : null;
+    const orderToPay = {
+      ...order,
+      total: Number(order.total_amount ?? order.total ?? 0),
+      bill: order.bill ?? billForOrder,
+      bills: order.bills ?? (billForOrder ? [billForOrder] : []),
+    };
+    void onPayOrder(orderToPay as unknown as Order);
+  };
+
   if (!open) return null;
 
   const blockedOrders = orders.filter((o) => o.release_status === 'blocked');
@@ -570,33 +599,7 @@ export function PaymentQueueDrawer({
                 type="button"
                 size="sm"
                 data-testid="queue-pay-btn"
-                onClick={() => {
-                  const billForOrder = order.bill_id
-                    ? ({
-                        id: Number(order.bill_id),
-                        bill_number: order.bill_number || '',
-                        order_id: Number(order.id),
-                        subtotal: Number(order.total_amount ?? order.total ?? 0),
-                        tax_amount: 0,
-                        discount_amount: 0,
-                        service_charge: 0,
-                        delivery_charge: 0,
-                        total: Number(order.total_amount ?? order.total ?? 0),
-                        paid_amount: Number(order.paid_amount || 0),
-                        balance: Number(order.balance || 0),
-                        payment_status:
-                          (order.bill_payment_status as Bill['payment_status']) || 'unpaid',
-                        payment_details: [],
-                      } as unknown as Bill)
-                    : null;
-                  const orderToPay = {
-                    ...order,
-                    total: Number(order.total_amount ?? order.total ?? 0),
-                    bill: order.bill ?? billForOrder,
-                    bills: order.bills ?? (billForOrder ? [billForOrder] : []),
-                  };
-                  void onPayOrder(orderToPay as unknown as Order);
-                }}
+                onClick={() => triggerPayOrder(order)}
                 className="gap-1 bg-brand text-white hover:bg-brand/90"
               >
                 <CreditCard size={13} />
@@ -660,9 +663,56 @@ export function PaymentQueueDrawer({
             <Search className="absolute start-3 top-2.5 size-4 text-muted-foreground" />
             <input
               type="text"
+              autoFocus
               data-testid="payment-queue-search"
               value={searchInput}
               onChange={(e) => handleSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.nativeEvent?.isComposing ||
+                  (e as { isComposing?: boolean }).isComposing ||
+                  e.keyCode === 229
+                ) {
+                  return;
+                }
+                if (e.key !== 'Enter') return;
+                const trimmed = searchInput.trim();
+                if (trimmed.startsWith('FLOCAFE-TICKET:')) {
+                  e.preventDefault?.();
+                  if (searchDebounceRef.current) {
+                    clearTimeout(searchDebounceRef.current);
+                    searchDebounceRef.current = null;
+                  }
+                  searchPendingRef.current = false;
+                  setSearchInput('');
+                  if (search !== '') {
+                    setSearch('');
+                  } else {
+                    setLoading(false);
+                  }
+                  onScanTicket?.(trimmed);
+                  return;
+                }
+                if (searchPendingRef.current) {
+                  e.preventDefault?.();
+                  if (searchDebounceRef.current) {
+                    clearTimeout(searchDebounceRef.current);
+                    searchDebounceRef.current = null;
+                  }
+                  searchPendingRef.current = false;
+                  setLoading(true);
+                  if (searchInput === search) void fetchQueue(null, searchInput);
+                  else setSearch(searchInput);
+                  return;
+                }
+                if (!loading) {
+                  const payableOrders = orders.filter((o) => o.checkout_stage !== 'paid' && canPay);
+                  if (payableOrders.length === 1) {
+                    e.preventDefault?.();
+                    triggerPayOrder(payableOrders[0]);
+                  }
+                }
+              }}
               placeholder={t('scanOrEnterTicket')}
               className="w-full ps-9 pe-9 py-2 text-sm bg-card border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
             />

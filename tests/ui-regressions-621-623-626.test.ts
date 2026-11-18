@@ -4,8 +4,8 @@
  * POS drawers, side sheets, CartPanel, PosTopbar, CustomerSearch, and KDS (#1453).
  */
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
@@ -440,8 +440,28 @@ try {
   );
   assert.match(
     cartMarkup,
-    /<div class="flex flex-wrap gap-2"><button[^>]*class="[^"]*shrink-0 px-3"[^>]*>[\s\S]*?<span class="truncate">Hold<\/span>[\s\S]*?<button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*><span class="truncate">Place Order<\/span>/,
-    'rendered CartPanel footer keeps Hold compact (shrink-0 px-3) and gives Place Order the remaining width (flex-1 min-w-0 px-3)',
+    /<div class="flex flex-wrap gap-2"><button[^>]*class="[^"]*shrink-0 px-3"[^>]*>[\s\S]*?<span class="truncate">Hold<\/span>[\s\S]*?<button[^>]*class="[^"]*flex-1 min-w-0 px-3[^"]*bg-brand text-white[^"]*"[^>]*><span class="truncate">Place Order<\/span>/,
+    'rendered CartPanel footer keeps Hold compact (shrink-0 px-3) and gives Place Order the remaining width (flex-1 min-w-0 px-3) with brand CTA styling',
+  );
+
+  // Guard against undefined brand-* Tailwind utility classes across frontend/src
+  const brandScanFiles: string[] = [];
+  const walkSrc = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) walkSrc(fullPath);
+      else if (/\.(ts|tsx|css)$/.test(entry.name)) brandScanFiles.push(fullPath);
+    }
+  };
+  walkSrc(resolve(process.cwd(), 'frontend/src'));
+  const undefinedBrandHits = brandScanFiles.filter((filePath) => {
+    const content = readFileSync(filePath, 'utf8');
+    return /\b(text-brand-foreground|bg-brand-muted)\b/.test(content);
+  });
+  assert.deepEqual(
+    undefinedBrandHits,
+    [],
+    'frontend/src contains zero references to undefined text-brand-foreground or bg-brand-muted tokens',
   );
   assert.match(
     cartMarkup,

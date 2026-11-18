@@ -755,14 +755,70 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await page.getByRole('button', { name: 'Remove', exact: true }).first().click();
   });
 
-  test('Escape closes the payment queue drawer in one press and FLOCAFE-TICKET Enter looks up ticket', async ({
+  test('Escape closes the payment queue drawer in one press and FLOCAFE-TICKET Enter looks up ticket without focus leak', async ({
     page,
   }) => {
+    const fetchedBillIds: string[] = [];
     await page.route('**/api/settings/multi_counter_enabled', async (route) => {
       await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
     });
     await page.route('**/api/counters*', async (route) => {
       await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 7777,
+              order_number: 'ORD-7777',
+              type: 'takeaway',
+              total: 42,
+              total_amount: 42,
+              paid_amount: 0,
+              ticket_balance: 42,
+              ticket_paid_amount: 0,
+              balance: 42,
+              checkout_stage: 'awaiting_payment',
+              release_status: 'scheduled',
+              created_at: '2026-11-18 12:00:00',
+              bill_id: 7778,
+              bill_number: 'BILL-7778',
+              bill_payment_status: 'unpaid',
+            },
+          ],
+          awaiting_count: 1,
+          blocked_count: 0,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.route('**/api/bills/*', async (route) => {
+      const url = route.request().url();
+      const id = url.split('/').pop() || '';
+      fetchedBillIds.push(id);
+      await route.fulfill({
+        status: 200,
+        json: {
+          bill: {
+            id: Number(id),
+            bill_number: `BILL-${id}`,
+            order_id: id === '7778' ? 7777 : 9991,
+            subtotal: id === '7778' ? 42 : 10,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: id === '7778' ? 42 : 10,
+            paid_amount: 0,
+            balance: id === '7778' ? 42 : 10,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
     });
     await page.route('**/api/orders/by-ticket/*', async (route) => {
       await route.fulfill({
@@ -797,13 +853,21 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const queueSearch = page.getByTestId('payment-queue-search');
     await expect(queueSearch).toBeFocused();
 
-    // Typing FLOCAFE-TICKET: payload + Enter looks up the ticket immediately and opens PaymentModal
+    // Typing FLOCAFE-TICKET: payload + Enter looks up the ticket immediately, blurs queue search, and opens PaymentModal
     await queueSearch.fill('FLOCAFE-TICKET:ORD-9991');
     await queueSearch.press('Enter');
     await expect(queueSearch).toHaveValue('');
     await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
       timeout: 5_000,
     });
+    await expect(queueSearch).not.toBeFocused();
+
+    // Pressing Enter or typing digits inside PaymentModal must NOT leak into payment-queue-search or open ORD-7777
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('25');
+    await expect(queueSearch).toHaveValue('');
+    expect(fetchedBillIds).not.toContain('7778');
+
     // Single Escape closes PaymentModal on top
     await page.keyboard.press('Escape');
     await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
@@ -814,6 +878,139 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
     await expect(page.getByTestId('pos-payment-queue-btn')).toBeFocused();
+  });
+
+  test('Enter in payment queue drawer does not auto-open blocked unpaid orders', async ({
+    page,
+  }) => {
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 503,
+              order_number: 'BLK-UNPAID-503',
+              type: 'takeaway',
+              total: 20,
+              total_amount: 20,
+              paid_amount: 0,
+              ticket_balance: 20,
+              ticket_paid_amount: 0,
+              balance: 20,
+              checkout_stage: 'awaiting_payment',
+              release_status: 'blocked',
+              release_blocked_reason: 'Insufficient stock',
+              created_at: '2026-11-18 12:00:00',
+              bill_id: 603,
+              bill_number: 'BILL-603',
+              bill_payment_status: 'unpaid',
+            },
+          ],
+          awaiting_count: 0,
+          blocked_count: 1,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTestId('queue-ticket-BLK-UNPAID-503')).toBeVisible();
+
+    const queueSearch = page.getByTestId('payment-queue-search');
+    await expect(queueSearch).toBeFocused();
+    await queueSearch.press('Enter');
+
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    await expect(drawer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+  });
+
+  test('Escape inside ScheduledOrdersDrawer EditOrderItemModal closes child modal before drawer', async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/auth/login`);
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 20_000 });
+    await setLanguage(page, 'en');
+
+    await page.route('**/api/settings/scheduled_orders_enabled', async (route) => {
+      await route.fulfill({
+        json: { setting: { key: 'scheduled_orders_enabled', value: 'true' } },
+      });
+    });
+    await page.route('**/api/orders/scheduled*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 8801,
+              order_number: 'ORD-8801',
+              type: 'takeaway',
+              status: 'pending',
+              release_status: 'scheduled',
+              scheduled_for: '2035-01-15T10:30:00.000Z',
+              total: 10,
+              created_at: '2026-11-18 12:00:00',
+              items: [
+                {
+                  id: 8802,
+                  order_id: 8801,
+                  product_id: 'prod-1',
+                  product_name: 'E2E Coffee',
+                  quantity: 1,
+                  unit_price: 10,
+                  total: 10,
+                  status: 'pending',
+                },
+              ],
+            },
+          ],
+          total_active: 1,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-scheduled-orders-btn').click();
+    const drawer = page.getByTestId('scheduled-orders-drawer');
+    await expect(drawer).toBeVisible();
+
+    await page.getByTestId('scheduled-edit-item-btn-8802').click();
+    const editQtyInput = page.locator('div.fixed.inset-0 input[type="number"]').last();
+    await expect(editQtyInput).toBeVisible();
+    await editQtyInput.focus();
+    await expect(editQtyInput).toBeFocused();
+
+    // 1st Escape closes EditOrderItemModal only; ScheduledOrdersDrawer stays open
+    await page.keyboard.press('Escape');
+    await expect(editQtyInput).toHaveCount(0);
+    await expect(drawer).toBeVisible();
+
+    // 2nd Escape closes ScheduledOrdersDrawer
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
   });
 
   test('ProductGrid search clear button and Escape clear non-empty filter before blurring', async ({

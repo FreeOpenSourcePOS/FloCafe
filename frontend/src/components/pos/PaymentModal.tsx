@@ -2558,6 +2558,18 @@ export default function PaymentModal({
             : `${t('pay')} ${currencyFmt(totalPayment)}`;
 
   useEffect(() => {
+    if (
+      typeof document !== 'undefined' &&
+      modalRef.current &&
+      document.activeElement &&
+      !modalRef.current.contains(document.activeElement) &&
+      typeof (document.activeElement as HTMLElement).blur === 'function'
+    ) {
+      (document.activeElement as HTMLElement).blur();
+    }
+  }, []);
+
+  useEffect(() => {
     if (justPaid) {
       doneButtonRef.current?.focus?.();
     }

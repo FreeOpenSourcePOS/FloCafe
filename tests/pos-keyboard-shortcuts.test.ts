@@ -218,6 +218,7 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
         usePosKeyboardShortcuts: typeof usePosKeyboardShortcuts;
       };
 
+    let dismissCalls = 0;
     let tenderCalls = 0;
     let incrementCalls = 0;
     let decrementCalls = 0;
@@ -230,7 +231,10 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
       onTender: () => {
         tenderCalls += 1;
       },
-      onDismissModalOrBlur: () => false,
+      onDismissModalOrBlur: () => {
+        dismissCalls += 1;
+        return false;
+      },
       onIncrementLastItem: () => {
         incrementCalls += 1;
       },
@@ -365,6 +369,69 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
       focusSearchCalls,
       1,
       'Ctrl+K / Meta+K in modal INPUT must not focus background product search when anyModalOpen is true',
+    );
+
+    // 7. defaultPrevented Escape (e.g. handled by Radix Dialog) must not trigger onDismissModalOrBlur
+    const defaultPreventedEscape = {
+      key: 'Escape',
+      code: 'Escape',
+      defaultPrevented: true,
+      repeat: false,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      target: new FakeHTMLElement('DIV'),
+      preventDefault: () => undefined,
+    } as unknown as KeyboardEvent;
+    keydownListener!(defaultPreventedEscape);
+    assert.strictEqual(
+      dismissCalls,
+      0,
+      'already-prevented Escape event must not cascade into onDismissModalOrBlur',
+    );
+
+    // 8. useBarcodeScanner preserves buffer across Shift keydown (e.g. ':' in FLOCAFE-TICKET:)
+    delete require.cache[require.resolve('../frontend/src/hooks/useBarcodeScanner')];
+    const { useBarcodeScanner } = require('../frontend/src/hooks/useBarcodeScanner') as {
+      useBarcodeScanner: (onScan: (code: string) => void, enabled?: boolean) => void;
+    };
+    const scannedCodes: string[] = [];
+    useBarcodeScanner((code) => scannedCodes.push(code), true);
+    assert.ok(keydownListener, 'useBarcodeScanner registers keydown listener');
+    for (const key of [
+      'F',
+      'L',
+      'O',
+      'C',
+      'A',
+      'F',
+      'E',
+      '-',
+      'T',
+      'I',
+      'C',
+      'K',
+      'E',
+      'T',
+      'Shift',
+      ':',
+      '9',
+      '9',
+      'Enter',
+    ]) {
+      keydownListener!({
+        key,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        target: new FakeHTMLElement('DIV'),
+      } as unknown as KeyboardEvent);
+    }
+    assert.deepStrictEqual(
+      scannedCodes,
+      ['FLOCAFE-TICKET:99'],
+      'useBarcodeScanner preserves rapid Shift+: inside FLOCAFE-TICKET scan payload',
     );
   } finally {
     while (cleanups.length > 0) {

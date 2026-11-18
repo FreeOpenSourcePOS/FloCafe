@@ -2332,7 +2332,9 @@ async function run() {
 
   const scannedTickets: string[] = [];
   const paidOrdersOnEnter: any[] = [];
-  const singleOrderFixture: any[] = [
+  let hasMoreFixture = false;
+  let suspendedFixture = false;
+  let singleOrderFixture: any[] = [
     {
       id: 701,
       order_number: 'ORD-701',
@@ -2357,10 +2359,10 @@ async function run() {
         return {
           data: {
             orders: singleOrderFixture,
-            awaiting_count: singleOrderFixture.length,
-            blocked_count: 0,
-            has_more: false,
-            next_cursor: null,
+            awaiting_count: singleOrderFixture.filter((o) => o.release_status !== 'blocked').length,
+            blocked_count: singleOrderFixture.filter((o) => o.release_status === 'blocked').length,
+            has_more: hasMoreFixture,
+            next_cursor: hasMoreFixture ? 'cursor-2' : null,
           },
         };
       }
@@ -2371,6 +2373,7 @@ async function run() {
     renderPOSPage(() =>
       RealPaymentQueueDrawer({
         open: true,
+        suspended: suspendedFixture,
         onClose: () => {},
         onPayOrder: (ord: any) => {
           paidOrdersOnEnter.push(ord);
@@ -2400,23 +2403,134 @@ async function run() {
     'IME composing Enter in payment-queue-search does not trigger onPayOrder',
   );
 
-  // Non-composing Enter with single payable order triggers onPayOrder
+  // Non-composing Enter with single payable order triggers onPayOrder and blurs input
   let enterDefaultPrevented = false;
+  let searchBlurredOnPay = false;
   payableSearchInput.props.onKeyDown({
     key: 'Enter',
     keyCode: 13,
     nativeEvent: { isComposing: false },
+    currentTarget: {
+      blur: () => {
+        searchBlurredOnPay = true;
+      },
+    },
     preventDefault: () => {
       enterDefaultPrevented = true;
     },
   });
   assertEqualOrThrow(enterDefaultPrevented, true, 'Enter on single payable order prevents default');
+  assertEqualOrThrow(searchBlurredOnPay, true, 'Enter on single payable order blurs search input');
   assertEqualOrThrow(
     paidOrdersOnEnter.length,
     1,
     'Enter triggers onPayOrder for single payable order',
   );
   assertEqualOrThrow(paidOrdersOnEnter[0].id, 701, 'Enter pays the single visible payable order');
+
+  // Suspended drawer ignores Enter (both single-order pay and FLOCAFE-TICKET scan)
+  suspendedFixture = true;
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    1,
+    'Suspended PaymentQueueDrawer ignores Enter for single payable order',
+  );
+  suspendedFixture = false;
+
+  // When hasMore is true, single visible unpaid order does NOT auto-pay on Enter
+  hasMoreFixture = true;
+  resetPOSHooks();
+  renderPayableQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(paidOrdersOnEnter.length, 1, 'Enter does not auto-pay when hasMore is true');
+  hasMoreFixture = false;
+
+  // Blocked unpaid order does NOT auto-pay on Enter, nor does 1 waiting + 1 blocked unpaid
+  singleOrderFixture = [
+    {
+      id: 702,
+      order_number: 'BLK-UNPAID-702',
+      type: 'takeaway',
+      total: 20,
+      total_amount: 20,
+      paid_amount: 0,
+      ticket_balance: 20,
+      ticket_paid_amount: 0,
+      balance: 20,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'blocked',
+      release_blocked_reason: 'Insufficient stock',
+      created_at: '2026-11-03 12:06:00',
+      bill_id: 802,
+      bill_number: 'BILL-802',
+      bill_payment_status: 'unpaid',
+    },
+  ];
+  resetPOSHooks();
+  renderPayableQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(paidOrdersOnEnter.length, 1, 'Enter does not auto-pay a blocked unpaid order');
+
+  singleOrderFixture = [
+    {
+      id: 701,
+      order_number: 'ORD-701',
+      type: 'takeaway',
+      total: 15,
+      total_amount: 15,
+      paid_amount: 0,
+      ticket_balance: 15,
+      ticket_paid_amount: 0,
+      balance: 15,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-03 12:05:00',
+      bill_id: 801,
+      bill_number: 'BILL-801',
+      bill_payment_status: 'unpaid',
+    },
+    ...singleOrderFixture,
+  ];
+  resetPOSHooks();
+  renderPayableQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    1,
+    'Enter does not auto-pay when queue has both waiting and blocked unpaid orders',
+  );
 
   // Typing FLOCAFE-TICKET:ORD-901 and pressing Enter invokes onScanTicket immediately and clears searchInput
   payableSearchInput.props.onChange({ target: { value: 'FLOCAFE-TICKET:ORD-901' } });
@@ -2428,10 +2542,16 @@ async function run() {
     'payment-queue-search reflects typed ticket payload before Enter',
   );
   let scanEnterPrevented = false;
+  let scanBlurred = false;
   payableSearchInput.props.onKeyDown({
     key: 'Enter',
     keyCode: 13,
     nativeEvent: { isComposing: false },
+    currentTarget: {
+      blur: () => {
+        scanBlurred = true;
+      },
+    },
     preventDefault: () => {
       scanEnterPrevented = true;
     },
@@ -2439,6 +2559,7 @@ async function run() {
   payableDrawerTree = renderPayableQueueDrawer();
   payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
   assertEqualOrThrow(scanEnterPrevented, true, 'FLOCAFE-TICKET Enter prevents default');
+  assertEqualOrThrow(scanBlurred, true, 'FLOCAFE-TICKET Enter blurs search input');
   assertEqualOrThrow(
     scannedTickets[0],
     'FLOCAFE-TICKET:ORD-901',
@@ -2512,6 +2633,11 @@ async function run() {
     'POSPage passes onScanTicket to PaymentQueueDrawer',
   );
   assertEqualOrThrow(
+    openQueueDrawerEl.props.suspended,
+    false,
+    'PaymentQueueDrawer is not suspended when no modal is stacked on top',
+  );
+  assertEqualOrThrow(
     capturedBarcodeScanner?.enabled,
     true,
     'useBarcodeScanner remains enabled when PaymentQueueDrawer is the only open overlay',
@@ -2536,8 +2662,18 @@ async function run() {
 
   // Close paymentBill opened by ticket scan so only PaymentQueueDrawer remains open
   tree = renderPOSPage(POSPage);
+  assertEqualOrThrow(
+    findElement(tree, PaymentQueueDrawerStub).props.suspended,
+    true,
+    'PaymentQueueDrawer becomes suspended while PaymentModal is stacked on top',
+  );
   capturedShortcutHandlers.onDismissModalOrBlur();
   tree = renderPOSPage(POSPage);
+  assertEqualOrThrow(
+    findElement(tree, PaymentQueueDrawerStub).props.suspended,
+    false,
+    'PaymentQueueDrawer is unsuspended after PaymentModal closes',
+  );
   let inputBlurCount = 0;
   const prevDoc = (globalThis as any).document;
   (globalThis as any).document = {

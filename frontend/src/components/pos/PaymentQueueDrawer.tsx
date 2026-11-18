@@ -56,6 +56,7 @@ export interface AwaitingPaymentOrder {
 
 interface Props {
   open: boolean;
+  suspended?: boolean;
   onClose: () => void;
   onPayOrder: (order: Order) => Promise<void> | void;
   onScanTicket?: (ticket: string) => void;
@@ -67,6 +68,7 @@ interface Props {
 
 export function PaymentQueueDrawer({
   open,
+  suspended = false,
   onClose,
   onPayOrder,
   onScanTicket,
@@ -668,6 +670,7 @@ export function PaymentQueueDrawer({
               value={searchInput}
               onChange={(e) => handleSearchChange(e.target.value)}
               onKeyDown={(e) => {
+                if (suspended) return;
                 if (
                   e.nativeEvent?.isComposing ||
                   (e as { isComposing?: boolean }).isComposing ||
@@ -690,6 +693,7 @@ export function PaymentQueueDrawer({
                   } else {
                     setLoading(false);
                   }
+                  e.currentTarget?.blur?.();
                   onScanTicket?.(trimmed);
                   return;
                 }
@@ -705,11 +709,12 @@ export function PaymentQueueDrawer({
                   else setSearch(searchInput);
                   return;
                 }
-                if (!loading) {
-                  const payableOrders = orders.filter((o) => o.checkout_stage !== 'paid' && canPay);
-                  if (payableOrders.length === 1) {
+                if (!loading && !hasMore && canPay) {
+                  const unpaidOrders = orders.filter((o) => o.checkout_stage !== 'paid');
+                  if (unpaidOrders.length === 1 && unpaidOrders[0].release_status !== 'blocked') {
                     e.preventDefault?.();
-                    triggerPayOrder(payableOrders[0]);
+                    e.currentTarget?.blur?.();
+                    triggerPayOrder(unpaidOrders[0]);
                   }
                 }
               }}

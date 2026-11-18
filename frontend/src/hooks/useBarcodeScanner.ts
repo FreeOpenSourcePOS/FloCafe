@@ -27,7 +27,10 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled: boole
         // Defer Enter handling when a text input is focused to avoid
         // firing duplicate scans.
         const target = e.target as HTMLElement | null;
-        const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+        const isTextInput =
+          target?.tagName === 'INPUT' ||
+          target?.tagName === 'TEXTAREA' ||
+          target?.isContentEditable;
         if (!isTextInput && code.length >= MIN_CODE_LENGTH) {
           try {
             onScanRef.current(code);
@@ -40,6 +43,7 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled: boole
 
       // Single printable character keys only — ignore Shift/Tab/Escape/etc,
       // and reject anything with modifiers (real shortcuts, not a scan).
+      if (e.key === 'Shift') return;
       if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) {
         bufferRef.current = '';
         return;

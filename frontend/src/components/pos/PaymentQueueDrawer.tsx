@@ -114,6 +114,12 @@ export function PaymentQueueDrawer({
   const appendInFlightRef = useRef(false);
   const searchPendingRef = useRef(false);
   const requestInFlightRef = useRef<number | null>(null);
+  const loadedSearchRef = useRef<string | null>(null);
+  const searchInputRef = useRef(searchInput);
+  useEffect(() => {
+    searchInputRef.current = searchInput;
+  }, [searchInput]);
+  const skipFetchForSearchRef = useRef<string | null>(null);
   const lastRefreshKeyRef = useRef(refreshKey);
   const onCountsChangedRef = useRef(onCountsChanged);
   useEffect(() => {
@@ -125,6 +131,9 @@ export function PaymentQueueDrawer({
       if (poll && requestInFlightRef.current !== null) return Promise.resolve();
       const sequence = ++requestSequenceRef.current;
       requestInFlightRef.current = sequence;
+      if (!append && !poll) {
+        loadedSearchRef.current = null;
+      }
       const params: Record<string, string> = { limit: '50' };
       if (cursor) params.cursor = cursor;
       if (searchQuery.trim()) {
@@ -151,7 +160,12 @@ export function PaymentQueueDrawer({
               return [...previous, ...unique];
             });
           } else {
+            loadedSearchRef.current = searchQuery.trim();
             setOrders(fetchedOrders);
+            if (!poll && searchQuery !== search) {
+              skipFetchForSearchRef.current = searchQuery;
+              setSearch(searchQuery);
+            }
           }
           setNextCursor(data.next_cursor || null);
           setHasMore(Boolean(data.has_more));
@@ -164,6 +178,9 @@ export function PaymentQueueDrawer({
         .catch((err: unknown) => {
           if (sequence === requestSequenceRef.current) {
             console.error('Failed to fetch awaiting payment queue:', err);
+            if (!append) {
+              loadedSearchRef.current = null;
+            }
             if (append) {
               pausedRef.current = false;
               setPollingPaused(false);
@@ -185,12 +202,19 @@ export function PaymentQueueDrawer({
 
   useEffect(() => {
     if (!open) return;
+    if (skipFetchForSearchRef.current === search) {
+      skipFetchForSearchRef.current = null;
+      loadedSearchRef.current = search.trim();
+      return;
+    }
+    skipFetchForSearchRef.current = null;
     pausedRef.current = false;
-    void fetchQueue(null, search);
+    void fetchQueue(null, searchInputRef.current);
     return () => {
       requestSequenceRef.current += 1;
       appendInFlightRef.current = false;
       requestInFlightRef.current = null;
+      loadedSearchRef.current = null;
       searchPendingRef.current = false;
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
@@ -216,9 +240,11 @@ export function PaymentQueueDrawer({
   }, [open, search, fetchQueue]);
 
   const handleSearchChange = (value: string) => {
+    searchInputRef.current = value;
     setSearchInput(value);
     requestSequenceRef.current += 1;
     requestInFlightRef.current = null;
+    loadedSearchRef.current = null;
     appendInFlightRef.current = false;
     searchPendingRef.current = true;
     pausedRef.current = false;
@@ -263,8 +289,11 @@ export function PaymentQueueDrawer({
     requestSequenceRef.current += 1;
     appendInFlightRef.current = false;
     requestInFlightRef.current = null;
+    loadedSearchRef.current = null;
     searchPendingRef.current = false;
+    setLoading(true);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (searchInput !== search) setSearch(searchInput);
     onClose();
   };
 
@@ -687,6 +716,7 @@ export function PaymentQueueDrawer({
                     searchDebounceRef.current = null;
                   }
                   searchPendingRef.current = false;
+                  searchInputRef.current = '';
                   setSearchInput('');
                   if (search !== '') {
                     setSearch('');
@@ -709,12 +739,35 @@ export function PaymentQueueDrawer({
                   else setSearch(searchInput);
                   return;
                 }
-                if (!loading && !hasMore && canPay) {
+                if (
+                  !loading &&
+                  canPay &&
+                  requestInFlightRef.current === null &&
+                  loadedSearchRef.current === trimmed
+                ) {
+                  const normalizedQuery = trimmed.toLowerCase();
+                  const exactMatches = normalizedQuery
+                    ? orders.filter((o) => o.order_number.trim().toLowerCase() === normalizedQuery)
+                    : [];
+                  const exactPayable =
+                    exactMatches.length === 1 &&
+                    exactMatches[0].checkout_stage !== 'paid' &&
+                    exactMatches[0].release_status !== 'blocked'
+                      ? exactMatches[0]
+                      : null;
                   const unpaidOrders = orders.filter((o) => o.checkout_stage !== 'paid');
-                  if (unpaidOrders.length === 1 && unpaidOrders[0].release_status !== 'blocked') {
+                  const targetOrder =
+                    exactMatches.length > 0
+                      ? exactPayable
+                      : !hasMore &&
+                          unpaidOrders.length === 1 &&
+                          unpaidOrders[0].release_status !== 'blocked'
+                        ? unpaidOrders[0]
+                        : null;
+                  if (targetOrder) {
                     e.preventDefault?.();
                     e.currentTarget?.blur?.();
-                    triggerPayOrder(unpaidOrders[0]);
+                    triggerPayOrder(targetOrder);
                   }
                 }
               }}

@@ -57,11 +57,13 @@ const hookStates: any[] = [];
 const hookSetters: any[] = [];
 const hookRefs: any[] = [];
 const hookEffectEntries: any[] = [];
+const hookCallbacks: Array<{ fn: any; deps: any[] | undefined }> = [];
 const hookPendingEffects: Array<() => void> = [];
 
 let hookStateIndex = 0;
 let hookRefIndex = 0;
 let hookEffectIndex = 0;
+let hookCallbackIndex = 0;
 
 const reactHooks: Record<string, any> = {
   ...realReact,
@@ -104,7 +106,19 @@ const reactHooks: Record<string, any> = {
       });
     }
   },
-  useCallback: (fn: any) => fn,
+  useCallback: (fn: any, deps?: any[]) => {
+    const idx = hookCallbackIndex++;
+    const prev = hookCallbacks[idx];
+    const unchanged =
+      prev &&
+      deps !== undefined &&
+      prev.deps !== undefined &&
+      deps.length === prev.deps.length &&
+      deps.every((d: any, i: number) => Object.is(d, prev.deps![i]));
+    if (unchanged) return prev.fn;
+    hookCallbacks[idx] = { fn, deps };
+    return fn;
+  },
   useMemo: (fn: any) => fn(),
 };
 
@@ -149,6 +163,7 @@ function renderPOSPage(POSPage: any) {
   hookStateIndex = 0;
   hookRefIndex = 0;
   hookEffectIndex = 0;
+  hookCallbackIndex = 0;
   const res = POSPage({});
   while (hookPendingEffects.length > 0) {
     const fn = hookPendingEffects.shift()!;
@@ -165,10 +180,12 @@ function resetPOSHooks() {
   hookSetters.length = 0;
   hookRefs.length = 0;
   hookEffectEntries.length = 0;
+  hookCallbacks.length = 0;
   hookPendingEffects.length = 0;
   hookStateIndex = 0;
   hookRefIndex = 0;
   hookEffectIndex = 0;
+  hookCallbackIndex = 0;
   capturedTopbarProps = null;
   capturedScheduledDrawerProps = null;
 }
@@ -2334,6 +2351,8 @@ async function run() {
   const paidOrdersOnEnter: any[] = [];
   let hasMoreFixture = false;
   let suspendedFixture = false;
+  let failQueueFetchFixture = false;
+  let deferredQueueGateFixture: Promise<void> | null = null;
   let singleOrderFixture: any[] = [
     {
       id: 701,
@@ -2356,6 +2375,8 @@ async function run() {
   mockApiHandler = {
     get: async (url: string) => {
       if (url === '/orders/awaiting-payment') {
+        if (deferredQueueGateFixture) await deferredQueueGateFixture;
+        if (failQueueFetchFixture) throw new Error('Simulated awaiting-payment 500');
         return {
           data: {
             orders: singleOrderFixture,
@@ -2369,10 +2390,10 @@ async function run() {
       return { data: {} };
     },
   };
-  const renderPayableQueueDrawer = () =>
+  const renderPayableQueueDrawer = (openFlag = true) =>
     renderPOSPage(() =>
       RealPaymentQueueDrawer({
-        open: true,
+        open: openFlag,
         suspended: suspendedFixture,
         onClose: () => {},
         onPayOrder: (ord: any) => {
@@ -2569,6 +2590,299 @@ async function run() {
     payableSearchInput.props.value,
     '',
     'FLOCAFE-TICKET Enter clears searchInput immediately',
+  );
+
+  // Stale orders after failed search must NOT auto-pay on Enter, then recover once a new search succeeds
+  const countBeforeStaleSearch = paidOrdersOnEnter.length;
+  singleOrderFixture = [
+    {
+      id: 701,
+      order_number: 'ORD-701',
+      type: 'takeaway',
+      total: 15,
+      total_amount: 15,
+      paid_amount: 0,
+      ticket_balance: 15,
+      ticket_paid_amount: 0,
+      balance: 15,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-03 12:05:00',
+      bill_id: 801,
+      bill_number: 'BILL-801',
+      bill_payment_status: 'unpaid',
+    },
+  ];
+  resetPOSHooks();
+  renderPayableQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  failQueueFetchFixture = true;
+  payableSearchInput.props.onChange({ target: { value: '701' } });
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  // First Enter flushes debounced search '701', which rejects
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  renderPayableQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  // Second Enter while loadedSearchRef is null (failed search left stale [ORD-701] in state) must not pay
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    countBeforeStaleSearch,
+    'Enter after failed search does not auto-pay stale single-order results',
+  );
+  // Subsequent successful search recovers and allows Enter to pay
+  failQueueFetchFixture = false;
+  payableSearchInput.props.onChange({ target: { value: 'ORD-701' } });
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  renderPayableQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer();
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    countBeforeStaleSearch + 1,
+    'Enter recovers after a subsequent successful search',
+  );
+
+  // Reopening while initial fetchQueue is still in flight must NOT auto-pay stale pre-close orders
+  let resolveReopenQueue!: () => void;
+  deferredQueueGateFixture = new Promise<void>((resolve) => {
+    resolveReopenQueue = resolve;
+  });
+  renderPayableQueueDrawer(false);
+  singleOrderFixture = [
+    {
+      id: 703,
+      order_number: 'ORD-703',
+      type: 'takeaway',
+      total: 18,
+      total_amount: 18,
+      paid_amount: 0,
+      ticket_balance: 18,
+      ticket_paid_amount: 0,
+      balance: 18,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-03 12:07:00',
+      bill_id: 803,
+      bill_number: 'BILL-803',
+      bill_payment_status: 'unpaid',
+    },
+  ];
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    countBeforeStaleSearch + 1,
+    'Enter while reopen fetch is still in flight does not select stale pre-close orders',
+  );
+  deferredQueueGateFixture = null;
+  resolveReopenQueue();
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer(true);
+
+  // Exact order_number match selects target order even when substring match adds noise rows (even with hasMore=true)
+  singleOrderFixture = [
+    {
+      id: 704,
+      order_number: '0012',
+      type: 'takeaway',
+      total: 22,
+      total_amount: 22,
+      paid_amount: 0,
+      ticket_balance: 22,
+      ticket_paid_amount: 0,
+      balance: 22,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-03 12:08:00',
+      bill_id: 804,
+      bill_number: 'BILL-804',
+      bill_payment_status: 'unpaid',
+    },
+    {
+      id: 705,
+      order_number: '0045',
+      customer_phone: '+15550012',
+      type: 'takeaway',
+      total: 14,
+      total_amount: 14,
+      paid_amount: 0,
+      ticket_balance: 14,
+      ticket_paid_amount: 0,
+      balance: 14,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-03 12:09:00',
+      bill_id: 805,
+      bill_number: 'BILL-805',
+      bill_payment_status: 'unpaid',
+    },
+  ];
+  hasMoreFixture = true;
+  resetPOSHooks();
+  renderPayableQueueDrawer(true);
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onChange({ target: { value: '0012' } });
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  renderPayableQueueDrawer(true);
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    countBeforeStaleSearch + 2,
+    'Exact order_number match pays exact row even with substring noise row',
+  );
+  assertEqualOrThrow(
+    paidOrdersOnEnter[paidOrdersOnEnter.length - 1].id,
+    704,
+    'Exact order_number match selects order 0012 over phone-matched 0045',
+  );
+  hasMoreFixture = false;
+
+  // Non-exact multi-row query ('001') does NOT auto-pay
+  payableSearchInput.props.onChange({ target: { value: '001' } });
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  renderPayableQueueDrawer(true);
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    countBeforeStaleSearch + 2,
+    'Non-exact multi-row query does not auto-pay on Enter',
+  );
+
+  // Blocked exact order_number match alongside another unpaid row does NOT auto-pay
+  singleOrderFixture = [
+    {
+      id: 702,
+      order_number: 'BLK-UNPAID-503',
+      type: 'takeaway',
+      total: 20,
+      total_amount: 20,
+      paid_amount: 0,
+      ticket_balance: 20,
+      ticket_paid_amount: 0,
+      balance: 20,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'blocked',
+      release_blocked_reason: 'Insufficient stock',
+      created_at: '2026-11-03 12:06:00',
+      bill_id: 802,
+      bill_number: 'BILL-802',
+      bill_payment_status: 'unpaid',
+    },
+    {
+      id: 706,
+      order_number: '0099',
+      customer_phone: 'BLK-UNPAID-503',
+      type: 'takeaway',
+      total: 10,
+      total_amount: 10,
+      paid_amount: 0,
+      ticket_balance: 10,
+      ticket_paid_amount: 0,
+      balance: 10,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-03 12:10:00',
+      bill_id: 806,
+      bill_number: 'BILL-806',
+      bill_payment_status: 'unpaid',
+    },
+  ];
+  resetPOSHooks();
+  renderPayableQueueDrawer(true);
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onChange({ target: { value: 'BLK-UNPAID-503' } });
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  renderPayableQueueDrawer(true);
+  await new Promise((r) => setTimeout(r, 15));
+  payableDrawerTree = renderPayableQueueDrawer(true);
+  payableSearchInput = findElementByTestId(payableDrawerTree, 'payment-queue-search');
+  payableSearchInput.props.onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {},
+  });
+  assertEqualOrThrow(
+    paidOrdersOnEnter.length,
+    countBeforeStaleSearch + 2,
+    'Blocked exact match does not auto-pay itself or fall back to noise row',
   );
 
   // POSPage scanner & single-Escape dismissal when PaymentQueueDrawer is open

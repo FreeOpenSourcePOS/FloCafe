@@ -938,6 +938,333 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(drawer).toHaveCount(0);
   });
 
+  test('PaymentQueueDrawer Enter guards stale orders after failed search and during reopen fetch', async ({
+    page,
+  }) => {
+    const fetchedBillIds: string[] = [];
+    let queueMode: 'initial' | 'fail' | 'recover' | 'hold' = 'initial';
+    let releaseHold!: () => void;
+    const holdGate = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      if (queueMode === 'fail') {
+        await route.fulfill({ status: 500, json: { error: 'Temporary queue error' } });
+        return;
+      }
+      if (queueMode === 'hold') {
+        await holdGate;
+        await route.fulfill({
+          status: 200,
+          json: {
+            orders: [
+              {
+                id: 1002,
+                order_number: 'ORD-1002',
+                type: 'takeaway',
+                total: 25,
+                total_amount: 25,
+                paid_amount: 0,
+                ticket_balance: 25,
+                ticket_paid_amount: 0,
+                balance: 25,
+                checkout_stage: 'awaiting_payment',
+                release_status: 'scheduled',
+                created_at: '2026-11-18 12:05:00',
+                bill_id: 602,
+                bill_number: 'BILL-602',
+                bill_payment_status: 'unpaid',
+              },
+            ],
+            awaiting_count: 1,
+            blocked_count: 0,
+            has_more: false,
+            next_cursor: null,
+          },
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 1001,
+              order_number: 'ORD-1001',
+              type: 'takeaway',
+              total: 19,
+              total_amount: 19,
+              paid_amount: 0,
+              ticket_balance: 19,
+              ticket_paid_amount: 0,
+              balance: 19,
+              checkout_stage: 'awaiting_payment',
+              release_status: 'scheduled',
+              created_at: '2026-11-18 12:00:00',
+              bill_id: 601,
+              bill_number: 'BILL-601',
+              bill_payment_status: 'unpaid',
+            },
+          ],
+          awaiting_count: 1,
+          blocked_count: 0,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.route('**/api/bills/*', async (route) => {
+      const id = route.request().url().split('/').pop() || '';
+      fetchedBillIds.push(id);
+      const isSecond = id === '602';
+      await route.fulfill({
+        status: 200,
+        json: {
+          bill: {
+            id: Number(id),
+            bill_number: `BILL-${id}`,
+            order_id: isSecond ? 1002 : 1001,
+            subtotal: isSecond ? 25 : 19,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: isSecond ? 25 : 19,
+            paid_amount: 0,
+            balance: isSecond ? 25 : 19,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTestId('queue-ticket-ORD-1001')).toBeVisible();
+
+    const queueSearch = page.getByTestId('payment-queue-search');
+    queueMode = 'fail';
+    const failResp = page.waitForResponse(
+      (res) => res.url().includes('/api/orders/awaiting-payment') && res.status() === 500,
+    );
+    await queueSearch.fill('777');
+    await queueSearch.press('Enter');
+    await failResp;
+
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(fetchedBillIds).toEqual([]);
+
+    queueMode = 'recover';
+    const recoverResp = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/orders/awaiting-payment') &&
+        res.url().includes('ORD-1001') &&
+        res.status() === 200,
+    );
+    await queueSearch.fill('ORD-1001');
+    await queueSearch.press('Enter');
+    await recoverResp;
+
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['601']);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    await queueSearch.fill('');
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+
+    queueMode = 'hold';
+    await page.getByTestId('pos-payment-queue-btn').click();
+    await expect(drawer).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['601']);
+
+    const reopenResp = page.waitForResponse(
+      (res) => res.url().includes('/api/orders/awaiting-payment') && res.status() === 200,
+    );
+    releaseHold();
+    await reopenResp;
+    await expect(page.getByTestId('queue-ticket-ORD-1002')).toBeVisible();
+
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['601', '602']);
+  });
+
+  test('PaymentQueueDrawer Enter prefers exact order_number match over substring noise rows', async ({
+    page,
+  }) => {
+    const fetchedBillIds: string[] = [];
+    const buildOrder = (overrides: Record<string, unknown>) => ({
+      type: 'takeaway',
+      total: 15,
+      total_amount: 15,
+      paid_amount: 0,
+      ticket_balance: 15,
+      ticket_paid_amount: 0,
+      balance: 15,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-18 12:00:00',
+      bill_payment_status: 'unpaid',
+      ...overrides,
+    });
+
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      const search = new URL(route.request().url()).searchParams.get('search') || '';
+      if (search === '0012' || search === '001') {
+        await route.fulfill({
+          status: 200,
+          json: {
+            orders: [
+              buildOrder({ id: 1012, order_number: '0012', bill_id: 612, bill_number: 'BILL-612' }),
+              buildOrder({
+                id: 1045,
+                order_number: '0045',
+                customer_phone: '+15550012',
+                bill_id: 645,
+                bill_number: 'BILL-645',
+              }),
+            ],
+            awaiting_count: 2,
+            blocked_count: 0,
+            has_more: search === '0012',
+            next_cursor: null,
+          },
+        });
+        return;
+      }
+      if (search === 'BLK-UNPAID-503') {
+        await route.fulfill({
+          status: 200,
+          json: {
+            orders: [
+              buildOrder({
+                id: 1053,
+                order_number: 'BLK-UNPAID-503',
+                release_status: 'blocked',
+                release_blocked_reason: 'Insufficient stock',
+                bill_id: 653,
+                bill_number: 'BILL-653',
+              }),
+              buildOrder({
+                id: 1099,
+                order_number: '0099',
+                customer_phone: 'BLK-UNPAID-503',
+                bill_id: 699,
+                bill_number: 'BILL-699',
+              }),
+            ],
+            awaiting_count: 1,
+            blocked_count: 1,
+            has_more: false,
+            next_cursor: null,
+          },
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [],
+          awaiting_count: 0,
+          blocked_count: 0,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.route('**/api/bills/*', async (route) => {
+      const id = route.request().url().split('/').pop() || '';
+      fetchedBillIds.push(id);
+      await route.fulfill({
+        status: 200,
+        json: {
+          bill: {
+            id: Number(id),
+            bill_number: `BILL-${id}`,
+            order_id: 1012,
+            subtotal: 15,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: 15,
+            paid_amount: 0,
+            balance: 15,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+    const queueSearch = page.getByTestId('payment-queue-search');
+
+    const nonExactResp = page.waitForResponse(
+      (res) => res.url().includes('search=001') && !res.url().includes('search=0012'),
+    );
+    await queueSearch.fill('001');
+    await queueSearch.press('Enter');
+    await nonExactResp;
+    await expect(page.getByTestId('queue-ticket-0012')).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(fetchedBillIds).toEqual([]);
+
+    const blockedExactResp = page.waitForResponse((res) =>
+      res.url().includes('search=BLK-UNPAID-503'),
+    );
+    await queueSearch.fill('BLK-UNPAID-503');
+    await queueSearch.press('Enter');
+    await blockedExactResp;
+    await expect(page.getByTestId('queue-ticket-BLK-UNPAID-503')).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(fetchedBillIds).toEqual([]);
+
+    const exactResp = page.waitForResponse((res) => res.url().includes('search=0012'));
+    await queueSearch.fill('0012');
+    await queueSearch.press('Enter');
+    await exactResp;
+    await expect(page.getByTestId('queue-ticket-0012')).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['612']);
+  });
+
   test('Escape inside ScheduledOrdersDrawer EditOrderItemModal closes child modal before drawer', async ({
     page,
   }) => {

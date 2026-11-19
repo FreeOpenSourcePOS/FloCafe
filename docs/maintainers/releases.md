@@ -144,8 +144,10 @@ recovery case where a release is promoted after a gap, and there the operator is
 explicit, informed choice about a tag that was verified when it was built. It still refuses a
 non-stable channel, a draft, and a prerelease.
 
-Both jobs require `promote_stable=true`, which the release metadata step refuses for any channel
-other than stable.
+`promote-stable` runs automatically inside the tag/build run whenever `promotion_only != 'true'`
+and `channel == 'stable'`. Only manual historical promotion (`promote-release`) uses
+`workflow_dispatch` with `promote_stable=true` (`promotion_only == 'true'`), which the release
+metadata step refuses for any channel other than `stable`.
 
 ## Release evidence
 
@@ -197,15 +199,20 @@ pull request.
 
 ### Beta
 
-1. Pick the version as `X.Y.Z-beta.N`, counting `N` up within the same `X.Y.Z`. Bump
-   `package.json`. CI generates release notes with `git-cliff`, falling back to `CHANGELOG.md`.
-2. Commit the version bump to `main`, tag exactly `X.Y.Z-beta.N`, and push the tag.
-3. Run **Actions > Release > Run workflow** from that tag with `release_tag=X.Y.Z-beta.N`,
-   `channel=beta`, and `promote_stable=false`.
-4. The workflow builds every platform against the beta manifest prefix, verifies the draft against
-   the beta manifests and their referenced artifacts, creates the immutable
-   `candidate-manifest.json` and the sanitized `release-summary.json`, then publishes as a
-   prerelease with `make_latest=false`.
+1. Pick the version as `X.Y.Z-beta.N`, counting `N` up within the same `X.Y.Z`. Bump only the
+   root `package.json` and `package-lock.json` with `npm version X.Y.Z-beta.N --no-git-tag-version`
+   and land that change on protected `main` via a merged pull request
+   (`chore(release): prepare X.Y.Z-beta.N`), rather than pushing a commit directly to `main`.
+2. Optionally pre-create a draft GitHub Release (`gh release create X.Y.Z-beta.N --draft`) with
+   curated release notes before pushing the tag. `create-release` preserves an existing draft body
+   verbatim; otherwise it generates notes via `git-cliff`, falling back to `CHANGELOG.md`.
+3. From the merged `main` commit, create and push an annotated signed bare SemVer tag with no `v`
+   prefix: `git tag -s X.Y.Z-beta.N -m "X.Y.Z-beta.N"` and `git push origin X.Y.Z-beta.N`.
+4. Pushing the tag automatically triggers [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
+   (`on.push.tags: '[0-9]*'`). The workflow verifies tag and commit provenance against `main`,
+   builds every platform against the `beta` manifest prefix, verifies the draft assets against the
+   beta manifests, writes `candidate-manifest.json` and `release-summary.json`, and publishes as a
+   prerelease (`make_latest=false`) without moving stable GitHub Latest.
 
 A beta never becomes GitHub Latest, and the stable feed is unchanged by a beta publication. A
 propagation check confirms that the beta artifacts are reachable and that stable Latest did not
@@ -213,10 +220,23 @@ move.
 
 ### Stable
 
-1. Follow the same steps with an `X.Y.Z` version, `channel=stable`, and `promote_stable=false`.
-2. Verify the draft, the installed-artifact upgrade matrix, and the manual server app checklist.
-3. Run a second dispatch of the same workflow with `promote_stable=true` to move the verified
-   release to GitHub Latest.
+1. Complete the manual pre-release QA checklist above before tagging.
+2. Bump only the root `package.json` and `package-lock.json` with
+   `npm version X.Y.Z --no-git-tag-version`, land the change on protected `main` via a merged pull
+   request (`chore(release): prepare X.Y.Z`), and optionally pre-create a draft GitHub Release
+   (`gh release create X.Y.Z --draft`) with curated release notes.
+3. From that `main` commit, create and push an annotated signed bare SemVer tag with no `v` prefix:
+   `git tag -s X.Y.Z -m "X.Y.Z"` and `git push origin X.Y.Z`.
+4. Pushing the tag automatically triggers [`.github/workflows/release.yml`](../../.github/workflows/release.yml),
+   which verifies provenance against `main`, builds every platform against the `latest` manifest
+   prefix, verifies draft assets and Snap `x64` + `arm64` publication evidence, writes
+   `candidate-manifest.json` and `release-summary.json`, publishes the release, and automatically
+   runs `promote-stable` to move GitHub Latest forward.
+
+Use manual **Actions > Release > Run workflow** (`workflow_dispatch` from the release tag) only to
+re-run a build on an existing tag (`promote_stable=false`) or to promote an already-published
+historical stable release (`promote_stable=true` with `candidate_manifest_asset_id` and
+`candidate_manifest_sha256`, which runs `promote-release`).
 
 The candidate gate workflow consumes only a published beta, and only when given the exact
 candidate manifest asset ID and SHA-256. It verifies propagation and that stable Latest is
@@ -224,9 +244,11 @@ unchanged. It does not publish or promote.
 
 ## Tag and branch lifecycle
 
-Beta-prep branches are temporary working branches. Release tags and GitHub Releases are the
-authoritative history: commit the version bump to `main`, create an annotated signed tag from that
-`main` history, and push the exact `X.Y.Z-beta.N` or `X.Y.Z` tag.
+Beta-prep and release-prep branches are temporary working branches merged to protected `main` via
+pull request. Release tags and GitHub Releases are the authoritative history: land the version bump
+on `main` through a pull request (`chore(release): prepare <version>`), create an annotated signed
+bare SemVer tag (`git tag -s <version> -m "<version>"`, no `v` prefix) on that `main` commit, and
+push the tag (`git push origin <version>`).
 
 Repository administrators must additionally protect numeric release tags from arbitrary creation,
 deletion, and force-updates, and require signed commits and signed tags for the release actors. The

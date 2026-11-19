@@ -143,7 +143,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                     }}
                     className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-start transition-all ${
                       isSelected
-                        ? 'border-brand bg-brand-muted ring-2 ring-brand/30'
+                        ? 'border-brand bg-brand-light dark:bg-[var(--color-brand-light)] ring-2 ring-brand/30'
                         : 'border-border hover:border-brand/50 hover:bg-muted/60'
                     }`}
                   >

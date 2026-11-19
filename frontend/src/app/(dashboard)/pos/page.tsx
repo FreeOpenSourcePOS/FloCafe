@@ -569,6 +569,14 @@ export default function POSPage() {
   const registerTableCheckoutDismiss = useCallback((handler: (() => boolean) | undefined) => {
     tableCheckoutDismissRef.current = handler;
   }, []);
+  const scheduledOrdersDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerScheduledOrdersDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    scheduledOrdersDismissRef.current = handler;
+  }, []);
+  const refundModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerRefundModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    refundModalDismissRef.current = handler;
+  }, []);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -1972,7 +1980,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyOtherModalOpen =
+  const anyOtherModalOpenExcludingPaymentQueue =
     !!addonProduct ||
     !!editingCartItem ||
     !!checkoutTable ||
@@ -1987,16 +1995,22 @@ export default function POSPage() {
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
     showScheduledOrders ||
-    showPaymentQueue ||
     showTicketModal ||
     !!refundModalTarget ||
     actionsMenuOpen ||
-    isConfirmOpen;
+    Boolean(isConfirmOpen);
+  const anyOtherModalOpen = anyOtherModalOpenExcludingPaymentQueue || showPaymentQueue;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
+  const anyModalOpenExcludingPaymentQueue = Boolean(
+    showTablePicker || anyOtherModalOpenExcludingPaymentQueue,
+  );
 
   useBarcodeScanner((code) => {
     if (code.startsWith('FLOCAFE-TICKET:')) {
       void handleLookupAndPayTicket(code);
+      return;
+    }
+    if (showPaymentQueue) {
       return;
     }
     const scan = resolveScannedProduct(code, products);
@@ -2007,7 +2021,7 @@ export default function POSPage() {
     } else {
       toast.error(t('barcodeNotFound', { code }));
     }
-  }, !anyModalOpen);
+  }, !anyModalOpenExcludingPaymentQueue);
 
   const tablesLoaded = tables.length > 0;
   useEffect(() => {
@@ -3971,11 +3985,6 @@ export default function POSPage() {
         if (customerModalOpen || cartPanelModalOpen) {
           return false;
         }
-        const activeEl = document.activeElement as HTMLElement | null;
-        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-          activeEl.blur();
-          return true;
-        }
         if (showTablePicker) {
           setShowTablePicker(false);
           return true;
@@ -4017,10 +4026,16 @@ export default function POSPage() {
           return true;
         }
         if (refundModalTarget) {
+          if (refundModalDismissRef.current) {
+            return refundModalDismissRef.current();
+          }
           setRefundModalTarget(null);
           return true;
         }
         if (showScheduledOrders) {
+          if (scheduledOrdersDismissRef.current) {
+            return scheduledOrdersDismissRef.current();
+          }
           setShowScheduledOrders(false);
           return true;
         }
@@ -4032,7 +4047,9 @@ export default function POSPage() {
           return true;
         }
         if (cashDrawer.open) {
-          cashDrawer.setOpen(false);
+          if (!cashDrawer.submitting) {
+            cashDrawer.setOpen(false);
+          }
           return true;
         }
         if (showPrintMenuModal) {
@@ -4041,6 +4058,11 @@ export default function POSPage() {
         }
         if (mobileCartOpen) {
           setMobileCartOpen(false);
+          return true;
+        }
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+          activeEl.blur();
           return true;
         }
         return false;
@@ -4605,6 +4627,7 @@ export default function POSPage() {
         onAddItemsToOrder={handleAddItemsToScheduledOrder}
         onPayOrder={handlePayScheduledOrder}
         onRefundOrder={(order, bills) => setRefundModalTarget({ order, bills })}
+        onRegisterDismissHandler={registerScheduledOrdersDismiss}
         hasMore={Boolean(nextScheduledCursor)}
         loadingMore={loadingMoreScheduled}
         onLoadMore={handleLoadMoreScheduledOrders}
@@ -4613,8 +4636,10 @@ export default function POSPage() {
 
       <PaymentQueueDrawer
         open={showPaymentQueue}
+        suspended={anyModalOpenExcludingPaymentQueue}
         onClose={() => setShowPaymentQueue(false)}
         onPayOrder={handlePayScheduledOrder}
+        onScanTicket={handleLookupAndPayTicket}
         refreshKey={paymentQueueRefreshKey}
         onRefundOrder={(order, bills) => {
           setShowPaymentQueue(false);
@@ -4690,6 +4715,7 @@ export default function POSPage() {
         <RefundModal
           order={refundModalTarget.order}
           bills={refundModalTarget.bills}
+          onRegisterDismissHandler={registerRefundModalDismiss}
           onClose={() => setRefundModalTarget(null)}
           onRefunded={() => {
             setRefundModalTarget(null);

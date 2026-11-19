@@ -70,7 +70,7 @@ export function usePosKeyboardShortcuts(
         isAltChord && (e.code ? e.code === `Digit${digit}` : e.key === digit);
 
       // 1. Universal keys (Escape, Fullscreen, Help)
-      if (isPlainKey && e.key === 'Escape') {
+      if (!e.defaultPrevented && isPlainKey && e.key === 'Escape') {
         const handled = handlersRef.current.onDismissModalOrBlur();
         if (handled) {
           e.preventDefault();

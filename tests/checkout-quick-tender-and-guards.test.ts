@@ -6240,7 +6240,260 @@ async function testTableCheckoutChildEscapeBusyGuards() {
     }
   });
 
-  console.log('  ✓ TableCheckoutModal child modal Escape busy guards verified');
+  // 14d: ScheduledOrdersDrawer + nested EditOrderItemModal registered Escape & busy guard, and RefundModal Escape submitting guard
+  const scheduledOrder = {
+    id: 8801,
+    order_number: 'ORD-8801',
+    type: 'takeaway',
+    status: 'pending',
+    release_status: 'scheduled',
+    scheduled_for: '2035-01-15T10:30:00.000Z',
+    total: 20,
+    created_at: '2026-11-18 12:00:00',
+    items: [
+      {
+        id: 8802,
+        order_id: 8801,
+        product_id: 'prod-1',
+        product_name: 'Espresso',
+        quantity: 2,
+        unit_price: 10,
+        total: 20,
+        status: 'pending',
+        edit_version: 0,
+      },
+    ],
+  };
+
+  await withAliases(async () => {
+    const win = installWindowEnv();
+    const harness = createTreeStatefulHarness();
+    let rejectPatch!: (e: any) => void;
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+
+    try {
+      installCheckoutComponentMocks(harness as any, {
+        role: 'owner',
+        apiPatch: async (url: string) => {
+          if (String(url).includes('/edit')) {
+            return new Promise((_resolve, reject) => {
+              rejectPatch = reject;
+            });
+          }
+          return { data: {} };
+        },
+      });
+      delete require.cache[
+        path.resolve(ROOT, 'frontend/src/components/pos/ScheduledOrdersDrawer.tsx')
+      ];
+      delete require.cache[
+        path.resolve(ROOT, 'frontend/src/components/orders/EditOrderItemModal.tsx')
+      ];
+      const ScheduledOrdersDrawer = require(
+        path.resolve(ROOT, 'frontend/src/components/pos/ScheduledOrdersDrawer.tsx'),
+      ).default;
+
+      const props = {
+        open: true,
+        orders: [scheduledOrder],
+        storeTimezone: 'UTC',
+        onClose: () => {
+          closeCount++;
+        },
+        onRefresh: async () => {},
+        onOrderReleased: async () => {},
+        onAddItemsToOrder: () => {},
+        onPayOrder: async () => {},
+        onRefundOrder: () => {},
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      const renderDrawer = () => harness.renderAndSettle(ScheduledOrdersDrawer, props);
+      let tree = renderDrawer();
+      const editBtn = harness.findExpanded(
+        tree,
+        (el) =>
+          el.type === 'button' && el.props?.['data-testid'] === 'scheduled-edit-item-btn-8802',
+      )[0];
+      assert.ok(editBtn, 'ScheduledOrdersDrawer renders scheduled-edit-item-btn-8802');
+      editBtn.props.onClick();
+      tree = renderDrawer();
+
+      const qtyInput = harness.findExpanded(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'number',
+      )[0];
+      assert.ok(qtyInput, 'EditOrderItemModal opens inside ScheduledOrdersDrawer');
+      qtyInput.props.onChange({ target: { value: '3' } });
+      tree = renderDrawer();
+
+      const saveBtn = harness.findExpanded(
+        tree,
+        (el) =>
+          el.type === 'button' && !el.props?.disabled && renderToStaticMarkup(el).includes('save'),
+      )[0];
+      assert.ok(saveBtn, 'EditOrderItemModal save button is enabled inside ScheduledOrdersDrawer');
+
+      const savePromise = saveBtn.props.onClick();
+      await new Promise((r) => setTimeout(r, 5));
+
+      assert.equal(
+        registeredDismiss!(),
+        true,
+        'Escape is consumed while EditOrderItemModal is saving',
+      );
+      tree = renderDrawer();
+      assert.equal(
+        closeCount,
+        0,
+        'ScheduledOrdersDrawer stays open while EditOrderItemModal saves',
+      );
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        1,
+        'EditOrderItemModal remains mounted while saving',
+      );
+
+      rejectPatch({ response: { status: 500, data: { error: 'Temporary failure' } } });
+      await savePromise;
+      tree = renderDrawer();
+
+      assert.equal(registeredDismiss!(), true, 'Escape closes idle EditOrderItemModal');
+      tree = renderDrawer();
+      assert.equal(
+        closeCount,
+        0,
+        'Closing EditOrderItemModal does not close ScheduledOrdersDrawer',
+      );
+      assert.equal(
+        harness.findExpanded(tree, (el) => el.type === 'input' && el.props?.type === 'number')
+          .length,
+        0,
+        'EditOrderItemModal unmounts cleanly on Escape',
+      );
+
+      assert.equal(registeredDismiss!(), true);
+      assert.equal(closeCount, 1, 'Subsequent Escape closes ScheduledOrdersDrawer');
+    } finally {
+      harness.cleanupAll();
+      win.restore();
+    }
+  });
+
+  await withAliases(async () => {
+    const win = installWindowEnv();
+    const harness = createTreeStatefulHarness();
+    let rejectRefund!: (e: any) => void;
+    let closeCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+
+    try {
+      installCheckoutComponentMocks(harness as any, {
+        role: 'owner',
+        apiGet: async (url: string) => {
+          if (String(url).includes('/staff/approvers')) {
+            return {
+              data: {
+                approvers: [
+                  { id: 'owner-1', name: 'Owner', role: 'owner', is_active: 1, has_pin: true },
+                ],
+              },
+            };
+          }
+          if (String(url).includes('/settings/refunds')) {
+            return { data: { refund_manager_enabled: true, refund_manager_window: '2h' } };
+          }
+          if (String(url).includes('/bills/')) {
+            return { data: { bill: { id: 901, paid_amount: 20, order: { items: [] } } } };
+          }
+          if (String(url).includes('/payment-methods')) return { data: { payment_methods: [] } };
+          if (String(url).includes('/settings/loyalty'))
+            return { data: { loyalty_enabled: false } };
+          if (String(url).includes('/refunds')) return { data: { refunds: [] } };
+          return { data: {} };
+        },
+        apiPost: async (url: string) => {
+          if (String(url) === '/refunds') {
+            return new Promise((_resolve, reject) => {
+              rejectRefund = reject;
+            });
+          }
+          return { data: {} };
+        },
+      });
+      delete require.cache[path.resolve(ROOT, 'frontend/src/components/orders/RefundModal.tsx')];
+      const RefundModal = require(
+        path.resolve(ROOT, 'frontend/src/components/orders/RefundModal.tsx'),
+      ).default;
+
+      const props = {
+        order: {
+          id: 900,
+          order_number: 'ORD-900',
+          created_at: new Date().toISOString(),
+          release_status: 'released',
+          items: [],
+        },
+        bills: [{ id: 901, bill_number: 'B-901', paid_amount: 20, payment_status: 'paid' }],
+        onClose: () => {
+          closeCount++;
+        },
+        onRefunded: () => {},
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      const renderRefund = () => harness.renderAndSettle(RefundModal, props);
+      renderRefund();
+      await new Promise((r) => setTimeout(r, 15));
+      let tree = renderRefund();
+
+      const pinInput = harness.findExpanded(
+        tree,
+        (el) => el.type === 'input' && el.props?.type === 'password',
+      )[0];
+      assert.ok(pinInput, 'RefundModal renders approval PIN input');
+      pinInput.props.onChange({ target: { value: '1234' } });
+      tree = renderRefund();
+
+      const submitBtn = harness.findExpanded(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          !el.props?.disabled &&
+          renderToStaticMarkup(el).includes('refundSubmit'),
+      )[0];
+      assert.ok(submitBtn, 'RefundModal submit button is enabled for owner');
+      const refundPromise = submitBtn.props.onClick();
+      await new Promise((r) => setTimeout(r, 5));
+
+      assert.equal(
+        registeredDismiss!(),
+        true,
+        'Escape is consumed while RefundModal is submitting',
+      );
+      assert.equal(closeCount, 0, 'RefundModal does not close on Escape while submitting');
+
+      rejectRefund({ response: { status: 500, data: { error: 'Refund failed' } } });
+      await refundPromise;
+      renderRefund();
+
+      assert.equal(registeredDismiss!(), true, 'Escape closes idle RefundModal');
+      assert.equal(closeCount, 1, 'RefundModal closes on Escape once idle');
+    } finally {
+      harness.cleanupAll();
+      win.restore();
+    }
+  });
+
+  console.log(
+    '  ✓ TableCheckoutModal, ScheduledOrdersDrawer & RefundModal Escape busy guards verified',
+  );
 }
 
 async function run() {

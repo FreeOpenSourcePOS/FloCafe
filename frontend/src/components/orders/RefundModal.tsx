@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -124,9 +124,16 @@ interface Props {
   bills: Bill[];
   onClose: () => void;
   onRefunded: () => void;
+  onRegisterDismissHandler?: (handler?: () => boolean) => void;
 }
 
-export default function RefundModal({ order, bills, onClose, onRefunded }: Props) {
+export default function RefundModal({
+  order,
+  bills,
+  onClose,
+  onRefunded,
+  onRegisterDismissHandler,
+}: Props) {
   const t = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
@@ -175,6 +182,22 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const [approversUserId, setApproversUserId] = useState<string | null>(null);
   const [refundedSoFarCents, setRefundedSoFarCents] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+
+  const dismissHandlerRef = useRef<() => boolean>(() => true);
+  useEffect(() => {
+    dismissHandlerRef.current = () => {
+      if (submitting || submittingRef.current) return true;
+      onClose();
+      return true;
+    };
+  });
+
+  useEffect(() => {
+    if (!onRegisterDismissHandler) return;
+    onRegisterDismissHandler(() => dismissHandlerRef.current());
+    return () => onRegisterDismissHandler(undefined);
+  }, [onRegisterDismissHandler]);
 
   useEffect(() => {
     let cancelled = false;
@@ -390,7 +413,8 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     (scope === 'whole' || !!selectedItem);
 
   const submit = async () => {
-    if (!canSubmit || !effectiveBill) return;
+    if (submittingRef.current || !canSubmit || !effectiveBill) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const [staffResponse, policyResponse] = await Promise.all([
@@ -453,6 +477,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     } catch (error) {
       toast.error(extractRefundErrorMessage(error) || t('refundFailed'));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

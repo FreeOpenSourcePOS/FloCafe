@@ -38,6 +38,7 @@ import { cartLineUnitPrice, cartVariantUnitPrice } from '@/lib/cart-price';
 import { tenantCan } from '@/lib/permissions';
 import { CartPriceOverrideModal } from '@/components/pos/CartPriceOverrideModal';
 import { OrderDetailsDrawer } from '@/components/pos/OrderDetailsDrawer';
+import { CHECKOUT_PRIMARY_CTA_CLASS } from './checkout-ui';
 import { calculateAppliedCharges } from '@/lib/charges';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
@@ -1168,7 +1169,7 @@ export default function CartPanel({
             <Button
               onClick={onPlaceOrder}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-              className="flex-1 min-w-0 px-3"
+              className={`flex-1 min-w-0 px-3 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
               data-testid="pos-append-existing-order-btn"
             >
               <span className="truncate">{submitting ? t('placing') : t('placeOrderButton')}</span>
@@ -1186,7 +1187,7 @@ export default function CartPanel({
               <Button
                 type="button"
                 onClick={onOpenPaymentQueue}
-                className="flex-1 min-w-0 px-3"
+                className={`flex-1 min-w-0 px-3 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 data-testid="pos-open-payment-queue-btn"
               >
                 <CreditCard className="me-2 h-4 w-4 shrink-0" />
@@ -1209,7 +1210,7 @@ export default function CartPanel({
                 <Button
                   onClick={onPlaceOrder}
                   disabled={submitting || Boolean(scheduleErrorMessage)}
-                  className="flex-1 min-w-0 px-3"
+                  className={`flex-1 min-w-0 px-3 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 >
                   <span className="truncate">
                     {submitting ? t('placing') : t('placeOrderButton')}
@@ -1232,7 +1233,7 @@ export default function CartPanel({
             <Button
               onClick={onSendToPayment}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-              className="flex-1 min-w-0 px-3"
+              className={`flex-1 min-w-0 px-3 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
               data-testid="pos-send-to-payment-btn"
             >
               <span className="truncate">{submitting ? t('placing') : t('sendToPayment')}</span>
@@ -1262,7 +1263,7 @@ export default function CartPanel({
               <Button
                 onClick={onPlaceOrder}
                 disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-                className="flex-1 min-w-0 px-3"
+                className={`flex-1 min-w-0 px-3 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
               >
                 <span className="truncate">
                   {submitting ? t('placing') : t('placeOrderButton')}
@@ -1281,7 +1282,7 @@ export default function CartPanel({
             <Button
               onClick={onPlaceOrder}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-              className="flex-1 min-w-0 px-3"
+              className={`flex-1 min-w-0 px-3 ${CHECKOUT_PRIMARY_CTA_CLASS}`}
             >
               <span className="truncate">{submitting ? t('placing') : t('placeOrderButton')}</span>
               {!submitting && (

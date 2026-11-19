@@ -91,6 +91,10 @@ export default function TableCheckoutModal({
     editItemBusyRef.current = busy;
     setEditItemBusy(busy);
   }, []);
+  const editItemDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerEditItemDismiss = useCallback((handler?: () => boolean) => {
+    editItemDismissRef.current = handler;
+  }, []);
 
   const dismissHandlerRef = useRef<() => boolean>(() => true);
   useEffect(() => {
@@ -116,6 +120,9 @@ export default function TableCheckoutModal({
         return true;
       }
       if (editingItem) {
+        if (editItemDismissRef.current) {
+          return editItemDismissRef.current();
+        }
         setEditingItem(null);
         return true;
       }
@@ -345,6 +352,7 @@ export default function TableCheckoutModal({
           onClose={() => setEditingItem(null)}
           onIdentityChanged={onClose}
           onBusyChange={handleEditItemBusyChange}
+          onRegisterDismissHandler={registerEditItemDismiss}
           onSaved={() => {
             api
               .get(`/orders/${order.id}`)

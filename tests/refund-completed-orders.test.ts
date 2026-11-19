@@ -709,9 +709,11 @@ async function main() {
 
       const states: any[] = [];
       const setters: Array<(next: any) => void> = [];
+      const refs: Array<{ current: any }> = [];
       const effectEntries: Array<{ deps?: any[]; initialized: boolean; cleanup?: any }> = [];
       const pendingEffects: Array<() => void> = [];
       let stateIdx = 0;
+      let refIdx = 0;
       let effectIdx = 0;
 
       const jsx = (type: any, props: any, key?: any) => ({ type, props, key });
@@ -731,6 +733,11 @@ async function main() {
       const reactMock = {
         createElement,
         Fragment: 'Fragment',
+        useRef: (initial: any) => {
+          const idx = refIdx++;
+          if (idx >= refs.length) refs.push({ current: initial });
+          return refs[idx];
+        },
         useState: (initial: any) => {
           const idx = stateIdx++;
           if (idx >= states.length) {
@@ -875,6 +882,7 @@ async function main() {
         ) => {
           states.length = 0;
           setters.length = 0;
+          refs.length = 0;
           effectEntries.length = 0;
           pendingEffects.length = 0;
           postedRefunds.length = 0;
@@ -897,6 +905,7 @@ async function main() {
 
           const renderModal = () => {
             stateIdx = 0;
+            refIdx = 0;
             effectIdx = 0;
             const tree = RefundModal(modalProps);
             while (pendingEffects.length > 0) {

@@ -35,6 +35,7 @@ interface Props {
   onSaved: (order: Order) => void;
   onIdentityChanged: () => void;
   onBusyChange?: (busy: boolean) => void;
+  onRegisterDismissHandler?: (handler?: () => boolean) => void;
 }
 
 interface AttemptState {
@@ -78,6 +79,7 @@ export default function EditOrderItemModal({
   onSaved,
   onIdentityChanged,
   onBusyChange,
+  onRegisterDismissHandler,
 }: Props) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -123,6 +125,25 @@ export default function EditOrderItemModal({
       onBusyChangeRef.current?.(false);
     };
   }, []);
+
+  const dismissHandlerRef = useRef<() => boolean>(() => true);
+  useEffect(() => {
+    dismissHandlerRef.current = () => {
+      if (inFlightRef.current || saving) return true;
+      if (customizingProduct) {
+        setCustomizingProduct(null);
+        return true;
+      }
+      onClose();
+      return true;
+    };
+  });
+
+  useEffect(() => {
+    if (!onRegisterDismissHandler) return;
+    onRegisterDismissHandler(() => dismissHandlerRef.current());
+    return () => onRegisterDismissHandler(undefined);
+  }, [onRegisterDismissHandler]);
 
   useEffect(() => {
     if (mode !== 'replace' || products.length > 0) return;

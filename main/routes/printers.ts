@@ -575,7 +575,12 @@ router.post(
           break;
         case 'webusb':
           // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
-          return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
+          return res.json({
+            success: true,
+            webusb: true,
+            printerName: printer.name,
+            bytes: Array.from(testData),
+          });
       }
 
       if (result.ok) {

@@ -240,9 +240,27 @@ WebUSB printers are paired through the POS toolbar's **Connect** button, in the 
 supported browser. The saved printer entry retains formatting preferences, but browser permissions,
 or Electron permissions in the desktop app, control physical device access. If more than one matching
 USB device is connected at once, the desktop app connects to the first one it finds, so a single USB
-thermal printer per terminal is the supported configuration. The connection is re-established
-automatically on the next app start once granted. If the printer is not detected after a fresh
-install or a permissions reset, click **Connect** again to re-grant access.
+thermal printer per terminal is the supported configuration. In a browser, the last connected
+printer is re-attached on reload and when it is plugged back in; with no remembered printer it
+reconnects only if exactly one granted device exists. A WebUSB printer connected in this browser
+takes priority over the host's configured printer for receipts, kitchen tickets, and delivery slips.
+If the printer is not detected after a fresh install or a permissions reset, click **Connect** again
+to re-grant access.
+
+Browsers expose WebUSB only on secure origins (HTTPS or `localhost`). A terminal that opens
+`http://<host-ip>:3001` needs HTTPS on the host, or Chrome's
+`chrome://flags/#unsafely-treat-insecure-origin-as-secure` set for that address. Sessions, print
+settings, and USB permissions are stored per origin, so `localhost`, the host's IP address, and its
+`.local` name are separate sessions.
+
+On Windows, a printer whose vendor driver owns the USB interface cannot be claimed by the browser;
+switch it to the WinUSB driver.
+
+### Browser Print
+
+Browser Print shows the browser's print dialog for each job. Start Chrome with `--kiosk-printing`
+to print silently to the default printer. If the popup is blocked, bills fall back to a hidden
+in-page frame, and popup windows close after printing.
 
 ### Diagnostic logs
 

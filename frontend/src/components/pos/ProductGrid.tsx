@@ -30,18 +30,20 @@ function CategoryChip({
   categoryColor,
   isSelected,
   onSelect,
+  wrap = false,
 }: {
   categoryName: string;
   categoryColor: string | null;
   isSelected: boolean;
   onSelect: () => void;
+  wrap?: boolean;
 }) {
   const colorClasses = getCategoryColorClasses(categoryColor);
   return (
     <button
       onClick={onSelect}
       title={categoryName}
-      className={`max-w-56 truncate px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+      className={`${wrap ? `${isSelected ? 'max-w-80' : 'max-w-56'} shrink-0 line-clamp-2 break-words text-left leading-tight` : 'max-w-56 truncate whitespace-nowrap'} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
         isSelected
           ? colorClasses
             ? `${colorClasses.activeBg} ${colorClasses.activeText}`
@@ -101,6 +103,7 @@ function CategoryRow({
           categoryColor={cat.color}
           isSelected={selectedCategory != null && String(selectedCategory) === String(cat.id)}
           onSelect={() => setSelectedCategory(cat.id)}
+          wrap={!collapse}
         />
       ),
     }));
@@ -498,6 +501,7 @@ export default function ProductGrid({
                 categoryName={sub.name}
                 categoryColor={sub.color}
                 isSelected={activeSubcategoryId === String(sub.id)}
+                wrap
                 onSelect={() =>
                   setSelectedCategory(
                     activeSubcategoryId === String(sub.id) ? activeRootId : String(sub.id),

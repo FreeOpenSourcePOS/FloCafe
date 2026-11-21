@@ -319,10 +319,6 @@ class PrinterService {
     });
   }
 
-  get hasPendingReconnect(): boolean {
-    return this.reconnectPromise !== null;
-  }
-
   /** Waits for an in-flight silent reconnect to settle before caller checks connection. */
   async awaitPendingReconnect(): Promise<void> {
     if (this.reconnectPromise) await this.reconnectPromise;

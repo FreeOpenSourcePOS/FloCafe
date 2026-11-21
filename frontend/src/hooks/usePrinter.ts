@@ -409,7 +409,6 @@ export const usePrinterStore = create<PrinterState>()(
           };
 
           const hw = get().hardwarePrinter;
-          if (printerService.hasPendingReconnect) await printerService.awaitPendingReconnect();
           if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
@@ -817,7 +816,6 @@ export const usePrinterStore = create<PrinterState>()(
         }
         try {
           const hw = get().hardwarePrinter;
-          if (printerService.hasPendingReconnect) await printerService.awaitPendingReconnect();
           if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
@@ -1105,7 +1103,6 @@ export const usePrinterStore = create<PrinterState>()(
             delivery_note: orderForPrint.delivery_note ?? null,
           };
           const hw = initialPrinter;
-          if (printerService.hasPendingReconnect) await printerService.awaitPendingReconnect();
           if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(

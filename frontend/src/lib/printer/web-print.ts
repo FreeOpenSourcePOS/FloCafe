@@ -139,7 +139,7 @@ export async function printWebBill(
         ? window.open('', '_blank', 'width=800,height=600')
         : null
       : reservedWindow;
-  if (!printWindow && reservedWindow !== undefined) {
+  if (!printWindow && (reservedWindow !== undefined || typeof document === 'undefined')) {
     toast.error('Please allow popups to print bills');
     throw new Error('Popup window was blocked by browser');
   }

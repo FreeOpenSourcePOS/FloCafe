@@ -43,7 +43,7 @@ function CategoryChip({
     <button
       onClick={onSelect}
       title={categoryName}
-      className={`${wrap ? `${isSelected ? 'max-w-80' : 'max-w-56'} shrink-0 line-clamp-2 break-words text-left leading-tight` : 'max-w-56 truncate whitespace-nowrap'} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+      className={`${wrap ? `${isSelected ? 'max-w-80' : 'max-w-56'} shrink-0 line-clamp-2 break-words text-start leading-tight` : 'max-w-56 truncate whitespace-nowrap'} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
         isSelected
           ? colorClasses
             ? `${colorClasses.activeBg} ${colorClasses.activeText}`

@@ -319,6 +319,10 @@ class PrinterService {
     });
   }
 
+  get hasPendingReconnect(): boolean {
+    return this.reconnectPromise !== null;
+  }
+
   /** Waits for an in-flight silent reconnect to settle before caller checks connection. */
   async awaitPendingReconnect(): Promise<void> {
     if (this.reconnectPromise) await this.reconnectPromise;
@@ -441,7 +445,7 @@ class PrinterService {
     const closeWindow = () => {
       if (!printWindow.closed) printWindow.close();
     };
-    printWindow.addEventListener('afterprint', closeWindow);
+    printWindow.addEventListener?.('afterprint', closeWindow);
     printWindow.print();
     setTimeout(closeWindow, 60_000);
   }

@@ -202,7 +202,7 @@ export async function printWebBill(
           settle(new Error('Print window was closed before receipt could be printed'));
           return;
         }
-        printWindow.addEventListener('afterprint', () => {
+        printWindow.addEventListener?.('afterprint', () => {
           if (!printWindow.closed) printWindow.close();
         });
         printWindow.print();

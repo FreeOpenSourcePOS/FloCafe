@@ -114,10 +114,11 @@ skipped with a warning and an unsupported financial row refuses the receipt befo
 ## Receipt and kitchen-ticket languages
 
 Receipt labels (invoice title, bill number, date, totals, payment methods) and kitchen-ticket labels
-are resolved from the tenant's language configuration. During authenticated POS bootstrap, FloCafe
-loads the bundles selected by the receipt and kitchen-ticket policies before releasing the
-dashboard, so the first print does not depend on visiting Settings. If a bundle cannot load, the
-app surfaces an actionable error and the print warning reports any English fallback explicitly.
+are resolved from the tenant's language configuration. During authenticated POS and KDS bootstrap,
+FloCafe loads the receipt and kitchen-ticket policies and their selected locale bundles before any
+first print resolves labels, so the first print does not depend on visiting Settings or racing
+session startup. If a bundle cannot load, the app surfaces an actionable error and the print
+warning reports any English fallback explicitly.
 
 - **Receipts** on the document-driven thermal and browser paths follow the tenant **language**
   setting combined with the stored `bill_language_policy`.

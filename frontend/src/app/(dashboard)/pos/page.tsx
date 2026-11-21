@@ -4,6 +4,7 @@ import { classifyTransportFailure } from '@/lib/transport-failure';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
+import { getSessionBoundaryEpoch } from '@/store/session-events';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -175,6 +176,10 @@ type SupportOperationFailure = {
 const STRUCTURED_HELP_CAPTURE_POINTS: Record<string, string> = {
   'order.create:validation:order.quantity_invalid': 'fc.backend.order.create.quantity_validation',
   'order.create:validation:order.stock_insufficient': 'fc.backend.order.create.stock_validation',
+  'order.create:validation:order.addon_selection_required':
+    'fc.backend.order.create.addon_group_validation',
+  'order.create:validation:order.addon_unavailable':
+    'fc.backend.order.create.addon_item_validation',
   'order.create:validation:validation.rejected': 'fc.backend.order.create.other_validation',
   'order.create:persistence:persistence.failed': 'fc.backend.order.create.persistence',
   'order.create:persistence:server.internal_error': 'fc.backend.order.create.server_error',
@@ -295,6 +300,7 @@ export default function POSPage() {
   const tSettings = useTranslations('settings');
   const tExpenses = useTranslations('expenses');
   const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog, isConfirmOpen } = useConfirm();
@@ -332,6 +338,21 @@ export default function POSPage() {
   const customerModalOpen = topbarCustomerModalOpen || promptCustomerModalOpen;
   const [cartPanelModalOpen, setCartPanelModalOpen] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [prepaidRecovery, setPrepaidRecovery] = useState<{
+    message: string;
+    statusChecked: boolean;
+    terminal?: boolean;
+    nextStep?: string;
+    details: {
+      operation: string;
+      stage: string;
+      outcome: string;
+      reasonCode?: string | null;
+      correlationId?: string | null;
+      httpStatus: number | null;
+    };
+  } | null>(null);
+  const [prepaidFailure, setPrepaidFailure] = useState<typeof prepaidRecovery>(null);
   const [prepaidModalAttempt, setPrepaidModalAttempt] = useState<PrepaidAttempt | null>(null);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
   const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
@@ -406,11 +427,19 @@ export default function POSPage() {
     initialStoreIdRef.current = currentTenant.id;
   }
   const sessionEpochRef = useRef(0);
-  const lastActiveSessionRef = useRef<{ userId: string | null; token: string | null }>({
+  const lastActiveSessionRef = useRef<{
+    userId: string | null;
+    token: string | null;
+    boundaryEpoch: number;
+  }>({
     userId: activeUserId,
     token: activeToken,
+    boundaryEpoch: getSessionBoundaryEpoch(),
   });
   const activeSubmissionTokenRef = useRef<symbol | null>(null);
+  const prepaidSubmissionTokenRef = useRef<symbol | null>(null);
+  const prepaidRecoveryRef = useRef<typeof prepaidRecovery>(null);
+  const prepaidFailureRef = useRef<typeof prepaidFailure>(null);
 
   const readStoredAuthToken = (): string | null => {
     try {
@@ -435,7 +464,7 @@ export default function POSPage() {
       initialStoreId: initialStoreIdRef.current,
       userId: liveUserId,
       token: liveToken,
-      sessionEpoch: sessionEpochRef.current,
+      sessionEpoch: sessionEpochRef.current + getSessionBoundaryEpoch(),
     };
   };
   const clearSupportErrorState = () => {
@@ -447,15 +476,35 @@ export default function POSPage() {
   };
 
   useEffect(() => {
+    const currentBoundaryEpoch = getSessionBoundaryEpoch();
     if (
       lastActiveSessionRef.current.userId === activeUserId &&
-      lastActiveSessionRef.current.token === activeToken
+      lastActiveSessionRef.current.token === activeToken &&
+      lastActiveSessionRef.current.boundaryEpoch === currentBoundaryEpoch
     ) {
       return;
     }
-    lastActiveSessionRef.current = { userId: activeUserId, token: activeToken };
+    const sameAuthenticatedUser =
+      Boolean(activeUserId) &&
+      lastActiveSessionRef.current.userId === activeUserId &&
+      Boolean(lastActiveSessionRef.current.token) &&
+      Boolean(activeToken) &&
+      lastActiveSessionRef.current.boundaryEpoch === currentBoundaryEpoch;
+    lastActiveSessionRef.current = {
+      userId: activeUserId,
+      token: activeToken,
+      boundaryEpoch: currentBoundaryEpoch,
+    };
+    if (sameAuthenticatedUser) {
+      return;
+    }
     sessionEpochRef.current += 1;
     activeSubmissionTokenRef.current = null;
+    prepaidSubmissionTokenRef.current = null;
+    prepaidRecoveryRef.current = null;
+    prepaidFailureRef.current = null;
+    setPrepaidRecovery(null);
+    setPrepaidFailure(null);
     isSendingToPaymentRef.current = false;
     setSubmitting(false);
     supportSubmitTokenRef.current = null;
@@ -479,7 +528,7 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!supportError) return;
-    if (!isSupportErrorContextCurrent(supportError.context, readLiveSupportContext())) {
+    if (!checkSessionCurrent(supportError.context)) {
       clearSupportErrorState();
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -487,9 +536,47 @@ export default function POSPage() {
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
     authToken ? { Authorization: `Bearer ${authToken}` } : {};
-  const checkSessionCurrent = (originContext: SupportErrorContextSnapshot): boolean => {
-    return isSupportErrorContextCurrent(originContext, readLiveSupportContext());
+  const liveAuthHeadersFor = (
+    originContext: SupportErrorContextSnapshot,
+  ): Record<string, string> => {
+    const liveContext = readLiveSupportContext();
+    const tokenToUse =
+      checkSessionCurrent(originContext) && liveContext.token
+        ? liveContext.token
+        : originContext.token;
+    return pinnedAuthHeaders(tokenToUse);
   };
+  const checkSessionCurrent = (originContext: SupportErrorContextSnapshot): boolean => {
+    const liveContext = readLiveSupportContext();
+    const tokenMatchesOrRotated =
+      (originContext.token ?? null) === (liveContext.token ?? null) ||
+      (Boolean(originContext.token) && Boolean(liveContext.token));
+    if (!tokenMatchesOrRotated) return false;
+    return isSupportErrorContextCurrent(
+      { ...originContext, token: liveContext.token },
+      liveContext,
+    );
+  };
+  const paymentModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerPaymentModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    paymentModalDismissRef.current = handler;
+  }, []);
+  const prepaidModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerPrepaidModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    prepaidModalDismissRef.current = handler;
+  }, []);
+  const tableCheckoutDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerTableCheckoutDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    tableCheckoutDismissRef.current = handler;
+  }, []);
+  const scheduledOrdersDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerScheduledOrdersDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    scheduledOrdersDismissRef.current = handler;
+  }, []);
+  const refundModalDismissRef = useRef<(() => boolean) | undefined>(undefined);
+  const registerRefundModalDismiss = useCallback((handler: (() => boolean) | undefined) => {
+    refundModalDismissRef.current = handler;
+  }, []);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -725,6 +812,7 @@ export default function POSPage() {
     if (effectiveUserId === activeUserId) {
       prepaidAttemptRef.current = safeAttempt;
       prepaidAttemptKeyRef.current = storageKey;
+      setPrepaidModalAttempt(safeAttempt);
     }
     return true;
   };
@@ -745,6 +833,7 @@ export default function POSPage() {
       if (effectiveUserId === activeUserId) {
         prepaidAttemptRef.current = null;
         prepaidAttemptKeyRef.current = null;
+        setPrepaidModalAttempt(null);
       }
       return true;
     }
@@ -757,6 +846,7 @@ export default function POSPage() {
     if (effectiveUserId === activeUserId) {
       prepaidAttemptRef.current = null;
       prepaidAttemptKeyRef.current = null;
+      setPrepaidModalAttempt(null);
     }
     return true;
   };
@@ -785,8 +875,52 @@ export default function POSPage() {
   }) => {
     const liveContext = readLiveSupportContext();
     const originContext = entry.originContext || liveContext;
-    if (!isSupportErrorContextCurrent(originContext, liveContext)) {
+    if (!checkSessionCurrent(originContext)) {
       return;
+    }
+    if (
+      entry.outcome === 'unknown' &&
+      prepaidSubmissionTokenRef.current &&
+      prepaidSubmissionTokenRef.current === activeSubmissionTokenRef.current
+    ) {
+      const recovery = {
+        message: entry.message,
+        statusChecked: false,
+        details: {
+          operation: entry.operation,
+          stage: entry.stage,
+          outcome: entry.outcome,
+          reasonCode: entry.reasonCode,
+          correlationId: entry.correlationId,
+          httpStatus: entry.status,
+        },
+      };
+      prepaidRecoveryRef.current = recovery;
+      setPrepaidRecovery(recovery);
+    }
+    if (
+      entry.outcome === 'not_applied' &&
+      prepaidSubmissionTokenRef.current &&
+      prepaidSubmissionTokenRef.current === activeSubmissionTokenRef.current &&
+      !['bill_refunded', 'bill_already_paid', 'idempotency_conflict'].includes(
+        entry.displayCode || '',
+      )
+    ) {
+      const failure = {
+        message: entry.message,
+        statusChecked: false,
+        nextStep: entry.nextStep,
+        details: {
+          operation: entry.operation,
+          stage: entry.stage,
+          outcome: entry.outcome,
+          reasonCode: entry.reasonCode,
+          correlationId: entry.correlationId,
+          httpStatus: entry.status,
+        },
+      };
+      prepaidFailureRef.current = failure;
+      setPrepaidFailure(failure);
     }
     const correlationId = isOperationReference(entry.correlationId)
       ? entry.correlationId
@@ -831,10 +965,10 @@ export default function POSPage() {
       ticketCorrelationId,
       clientTicketId,
       context: {
-        storeId: originContext.storeId,
-        userId: originContext.userId,
-        token: originContext.token,
-        sessionEpoch: originContext.sessionEpoch,
+        storeId: liveContext.storeId,
+        userId: liveContext.userId,
+        token: liveContext.token,
+        sessionEpoch: liveContext.sessionEpoch,
       },
       presentation,
       payload: {
@@ -1046,7 +1180,7 @@ export default function POSPage() {
           ? paymentMessages[failure.displayCode] || t('paymentValidationRejected')
           : t('paymentValidationRejected')
         : expectedRejection && failure.reasonCode
-          ? failure.displayCode
+          ? failure.reasonCode === 'discount.rejected' && failure.displayCode
             ? discountMessages[failure.displayCode] || t('operationOutcomeUnknown')
             : rejectionMessage
           : confirmedNotSaved
@@ -1098,7 +1232,7 @@ export default function POSPage() {
   const printKotIfEnabled = async (order: Order, originContext?: SupportErrorContextSnapshot) => {
     const origin = originContext || readLiveSupportContext();
     if (order.release_status && order.release_status !== 'released') return;
-    if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) {
+    if (!checkSessionCurrent(origin)) {
       return;
     }
     // Master kot_printing_enabled check gates both manual and automatic prints.
@@ -1110,7 +1244,7 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
-      if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) return;
+      if (!checkSessionCurrent(origin)) return;
       console.error('[POS] KOT print failed:', err);
       const printFailure = buildPrinterOperationFailureSupportPayload(err, {
         kind: 'kot',
@@ -1118,7 +1252,10 @@ export default function POSPage() {
       });
       const fallbackKotLabel = t('kotPrintFailed');
       const userMessage = printFailure.hasSpecificDetail
-        ? formatKotErrorToast(printFailure.detail, t('saleCompletePrintFailed'))
+        ? formatKotErrorToast(printFailure.detail, t('saleCompletePrintFailed'), {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          })
         : t('saleCompletePrintFailed');
       reportOrderFailure({
         code: printFailure.code,
@@ -1146,6 +1283,10 @@ export default function POSPage() {
         formatKotErrorToast(
           printFailure.hasSpecificDetail ? printFailure.detail : fallbackKotLabel,
           t('saleCompletePrintFailed'),
+          {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          },
         ),
       );
     }
@@ -1214,11 +1355,7 @@ export default function POSPage() {
     originContext?: SupportErrorContextSnapshot,
   ) => {
     const origin = originContext || readLiveSupportContext();
-    if (
-      !currentTenant ||
-      !isSupportErrorContextCurrent(origin, readLiveSupportContext()) ||
-      (!force && !autoPrintBill)
-    ) {
+    if (!currentTenant || !checkSessionCurrent(origin) || (!force && !autoPrintBill)) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       return;
     }
@@ -1228,7 +1365,7 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
-      if (!isSupportErrorContextCurrent(origin, readLiveSupportContext())) return;
+      if (!checkSessionCurrent(origin)) return;
       // Non-fatal: print failure should not block the checkout flow.
       console.error('[POS] Receipt print failed:', err);
       const printFailure = buildPrinterOperationFailureSupportPayload(err, {
@@ -1237,7 +1374,10 @@ export default function POSPage() {
       });
       const fallbackReceiptLabel = t('receiptPrintFailed');
       const userMessage = printFailure.hasSpecificDetail
-        ? formatReceiptErrorToast(printFailure.detail, t('saleCompletePrintFailed'))
+        ? formatReceiptErrorToast(printFailure.detail, t('saleCompletePrintFailed'), {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          })
         : t('saleCompletePrintFailed');
       reportOrderFailure({
         code: printFailure.code,
@@ -1265,6 +1405,10 @@ export default function POSPage() {
         formatReceiptErrorToast(
           printFailure.hasSpecificDetail ? printFailure.detail : fallbackReceiptLabel,
           t('saleCompletePrintFailed'),
+          {
+            failureClass: printFailure.failure_class,
+            connectionType: printFailure.connection_type,
+          },
         ),
       );
     }
@@ -1836,7 +1980,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyOtherModalOpen =
+  const anyOtherModalOpenExcludingPaymentQueue =
     !!addonProduct ||
     !!editingCartItem ||
     !!checkoutTable ||
@@ -1851,16 +1995,22 @@ export default function POSPage() {
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
     showScheduledOrders ||
-    showPaymentQueue ||
     showTicketModal ||
     !!refundModalTarget ||
     actionsMenuOpen ||
-    isConfirmOpen;
+    Boolean(isConfirmOpen);
+  const anyOtherModalOpen = anyOtherModalOpenExcludingPaymentQueue || showPaymentQueue;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
+  const anyModalOpenExcludingPaymentQueue = Boolean(
+    showTablePicker || anyOtherModalOpenExcludingPaymentQueue,
+  );
 
   useBarcodeScanner((code) => {
     if (code.startsWith('FLOCAFE-TICKET:')) {
       void handleLookupAndPayTicket(code);
+      return;
+    }
+    if (showPaymentQueue) {
       return;
     }
     const scan = resolveScannedProduct(code, products);
@@ -1871,7 +2021,7 @@ export default function POSPage() {
     } else {
       toast.error(t('barcodeNotFound', { code }));
     }
-  }, !anyModalOpen);
+  }, !anyModalOpenExcludingPaymentQueue);
 
   const tablesLoaded = tables.length > 0;
   useEffect(() => {
@@ -1989,6 +2139,10 @@ export default function POSPage() {
       } catch {
         // Storage failures are reported when checkout is confirmed.
       }
+      prepaidRecoveryRef.current = null;
+      prepaidFailureRef.current = null;
+      setPrepaidRecovery(null);
+      setPrepaidFailure(null);
       setPrepaidModalAttempt(matchingAttempt);
       setShowPrepaidCheckout(true);
       return;
@@ -1999,7 +2153,6 @@ export default function POSPage() {
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
     const originStoreId = originContext.storeId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-place-order');
     activeSubmissionTokenRef.current = submissionToken;
 
@@ -2059,7 +2212,7 @@ export default function POSPage() {
           { items: newItems, special_instructions: specialInstructions },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               'Idempotency-Key': itemAttempt.idempotencyKey,
               ...operationHeaders(itemAttempt.operationId),
             },
@@ -2234,7 +2387,7 @@ export default function POSPage() {
           ? { data: { order: attemptWithOperationId.order } }
           : await api.post('/orders', orderPayload, {
               headers: {
-                ...pinnedAuthHeaders(originToken),
+                ...liveAuthHeadersFor(originContext),
                 'Idempotency-Key': attemptWithOperationId.idempotencyKey,
                 ...operationHeaders(operationId),
               },
@@ -2419,7 +2572,6 @@ export default function POSPage() {
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-send-to-payment');
     activeSubmissionTokenRef.current = submissionToken;
     const isOriginSessionCurrent = () => checkSessionCurrent(originContext);
@@ -2500,7 +2652,7 @@ export default function POSPage() {
 
       const { data } = await api.post('/orders', orderPayload, {
         headers: {
-          ...pinnedAuthHeaders(originToken),
+          ...liveAuthHeadersFor(originContext),
           'Idempotency-Key': attempt.idempotencyKey,
           ...operationHeaders(attempt.operationId),
         },
@@ -2632,6 +2784,48 @@ export default function POSPage() {
     }
   };
 
+  const closePrepaidCheckoutModal = () => {
+    prepaidRecoveryRef.current = null;
+    prepaidFailureRef.current = null;
+    setPrepaidRecovery(null);
+    setPrepaidFailure(null);
+    setPrepaidModalAttempt(null);
+    setShowPrepaidCheckout(false);
+  };
+
+  const resolveTerminalPrepaidBill = (
+    terminalBill: Pick<Bill, 'payment_status' | 'order'>,
+    userId: string | null,
+    correlationId: string | null | undefined,
+  ): boolean => {
+    const isRefunded =
+      terminalBill.payment_status === 'refunded' ||
+      terminalBill.payment_status === 'partially_refunded';
+    const isCancelled = terminalBill.order?.status === 'cancelled';
+    if (!isRefunded && !isCancelled) return false;
+    clearPrepaidAttempt(userId);
+    setPrepaidModalAttempt(null);
+    prepaidRecoveryRef.current = null;
+    setPrepaidRecovery(null);
+    const terminalFailure = {
+      message: isCancelled ? tOrders('noFurtherActions') : t('paymentBillRefunded'),
+      statusChecked: true,
+      terminal: true,
+      nextStep: undefined,
+      details: {
+        operation: 'payment.create',
+        stage: 'recovery',
+        outcome: 'not_applied',
+        reasonCode: isCancelled ? 'order_cancelled' : 'bill_refunded',
+        correlationId: correlationId ?? null,
+        httpStatus: null,
+      },
+    };
+    prepaidFailureRef.current = terminalFailure;
+    setPrepaidFailure(terminalFailure);
+    return true;
+  };
+
   // Handle prepaid checkout - place order and pay in one step
   const handlePrepaidCheckout = async (
     payments: PrepaidPayment[],
@@ -2639,13 +2833,12 @@ export default function POSPage() {
     discount: PrepaidDiscount | null,
   ) => {
     const isPrepaidCheckout = shouldTakePaymentNow;
-    setShowPrepaidCheckout(false);
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-prepaid-checkout');
     activeSubmissionTokenRef.current = submissionToken;
+    prepaidSubmissionTokenRef.current = submissionToken;
 
     const isSessionCurrent = () => checkSessionCurrent(originContext);
 
@@ -2660,6 +2853,9 @@ export default function POSPage() {
       }));
     if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
     const paymentCustomerId: string | number | null = cart.customerId ?? null;
+    const receiptCustomer = cart.customer
+      ? { phone: cart.customer.phone, country_code: cart.customer.country_code }
+      : null;
     let paymentFingerprint = JSON.stringify({
       payments: paymentLines,
       customer_id: paymentCustomerId,
@@ -2723,11 +2919,18 @@ export default function POSPage() {
       try {
         const { data } = await api.get(`/bills/${existingAttempt.bill.id}`, {
           headers: {
-            ...pinnedAuthHeaders(originToken),
+            ...liveAuthHeadersFor(originContext),
             ...operationHeaders(recoveryOperationId),
           },
         });
         if (!isSessionCurrent()) return;
+        if (
+          data?.bill &&
+          resolveTerminalPrepaidBill(data.bill, originUserId, recoveryOperationId)
+        ) {
+          setSubmitting(false);
+          return;
+        }
         if (!data?.bill || !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)) {
           throw new Error('Bill status unavailable');
         }
@@ -2861,7 +3064,7 @@ export default function POSPage() {
           },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               'Idempotency-Key': attempt.orderIdempotencyKey,
               ...operationHeaders(operationId),
             },
@@ -2904,7 +3107,7 @@ export default function POSPage() {
         try {
           const { data: currentOrderData } = await api.get(`/orders/${orderId}`, {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               ...operationHeaders(operationId),
             },
           });
@@ -2944,7 +3147,7 @@ export default function POSPage() {
           },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               ...operationHeaders(operationId),
             },
           },
@@ -2962,7 +3165,7 @@ export default function POSPage() {
           { order_id: orderId },
           {
             headers: {
-              ...pinnedAuthHeaders(originToken),
+              ...liveAuthHeadersFor(originContext),
               ...operationHeaders(operationId),
             },
           },
@@ -3002,7 +3205,7 @@ export default function POSPage() {
       failureStage = 'payment_submission';
       const paymentResponse = await api.post(`/bills/${bill.id}/payments`, paymentRequest, {
         headers: {
-          ...pinnedAuthHeaders(originToken),
+          ...liveAuthHeadersFor(originContext),
           'Idempotency-Key': attempt.paymentIdempotencyKey,
           ...operationHeaders(operationId),
         },
@@ -3179,6 +3382,16 @@ export default function POSPage() {
         undefined,
         originContext,
       );
+      if (!isSessionCurrent()) return;
+      return {
+        bill: { ...paidBill, order: paidBill.order ?? bill.order ?? order },
+        customer:
+          paymentCustomerId != null &&
+          String(paidBill.customer_id ?? order.customer_id) === String(paymentCustomerId)
+            ? receiptCustomer
+            : null,
+        pointsEarned,
+      };
     } catch (error) {
       if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError && committedOrder) {
@@ -3428,7 +3641,6 @@ export default function POSPage() {
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
-    const originToken = originContext.token;
     const submissionToken = Symbol('pos-add-cart-to-order');
     activeSubmissionTokenRef.current = submissionToken;
 
@@ -3462,7 +3674,7 @@ export default function POSPage() {
         },
         {
           headers: {
-            ...pinnedAuthHeaders(originToken),
+            ...liveAuthHeadersFor(originContext),
             'Idempotency-Key': itemAttempt.idempotencyKey,
             ...operationHeaders(itemAttempt.operationId),
           },
@@ -3773,11 +3985,6 @@ export default function POSPage() {
         if (customerModalOpen || cartPanelModalOpen) {
           return false;
         }
-        const activeEl = document.activeElement as HTMLElement | null;
-        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-          activeEl.blur();
-          return true;
-        }
         if (showTablePicker) {
           setShowTablePicker(false);
           return true;
@@ -3796,22 +4003,39 @@ export default function POSPage() {
           return true;
         }
         if (showPrepaidCheckout) {
-          setShowPrepaidCheckout(false);
-          return true;
-        }
-        if (checkoutTable) {
-          setCheckoutTable(null);
+          if (prepaidModalDismissRef.current) {
+            return prepaidModalDismissRef.current();
+          }
+          if (!submitting && !prepaidRecovery) {
+            closePrepaidCheckoutModal();
+          }
           return true;
         }
         if (paymentBill) {
+          if (paymentModalDismissRef.current) {
+            return paymentModalDismissRef.current();
+          }
           setPaymentBill(null);
           return true;
         }
+        if (checkoutTable) {
+          if (tableCheckoutDismissRef.current) {
+            return tableCheckoutDismissRef.current();
+          }
+          setCheckoutTable(null);
+          return true;
+        }
         if (refundModalTarget) {
+          if (refundModalDismissRef.current) {
+            return refundModalDismissRef.current();
+          }
           setRefundModalTarget(null);
           return true;
         }
         if (showScheduledOrders) {
+          if (scheduledOrdersDismissRef.current) {
+            return scheduledOrdersDismissRef.current();
+          }
           setShowScheduledOrders(false);
           return true;
         }
@@ -3823,7 +4047,9 @@ export default function POSPage() {
           return true;
         }
         if (cashDrawer.open) {
-          cashDrawer.setOpen(false);
+          if (!cashDrawer.submitting) {
+            cashDrawer.setOpen(false);
+          }
           return true;
         }
         if (showPrintMenuModal) {
@@ -3832,6 +4058,11 @@ export default function POSPage() {
         }
         if (mobileCartOpen) {
           setMobileCartOpen(false);
+          return true;
+        }
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+          activeEl.blur();
           return true;
         }
         return false;
@@ -3881,9 +4112,25 @@ export default function POSPage() {
     },
   );
 
+  const reserveModalPrintWindow = () => {
+    const printer = usePrinterStore.getState();
+    const expectedBrowserPrint =
+      printer.printMethod === 'browser' ||
+      (printer.printMethod === 'escpos' &&
+        !printer.hardwarePrinter &&
+        !printerService.isConnected &&
+        printer.status !== 'connecting');
+    return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
+  };
+
+  const handleModalPrintBill = async (bill: Bill, reservedWindow?: Window | null) => {
+    const originContext = readLiveSupportContext();
+    await printBillForTenant(bill, true, reservedWindow, originContext);
+  };
+
   return (
     <>
-      {supportError && (
+      {supportError && !(showPrepaidCheckout && (prepaidRecovery || prepaidFailure)) && (
         <div
           data-testid="pos-support-error-panel"
           data-classification={supportError.classification || 'unexpected_failure'}
@@ -4051,9 +4298,7 @@ export default function POSPage() {
                   onClick={async () => {
                     if (supportSubmitTokenRef.current !== null) return;
                     const targetError = supportError;
-                    if (
-                      !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
-                    ) {
+                    if (!checkSessionCurrent(targetError.context)) {
                       clearSupportErrorState();
                       return;
                     }
@@ -4076,8 +4321,7 @@ export default function POSPage() {
                               ? window.electronAPI?.getLogTail
                               : undefined,
                           );
-                          const liveAfterLog = readLiveSupportContext();
-                          if (!isSupportErrorContextCurrent(targetError.context, liveAfterLog)) {
+                          if (!checkSessionCurrent(targetError.context)) {
                             clearSupportErrorState();
                             return;
                           }
@@ -4090,12 +4334,7 @@ export default function POSPage() {
                             logTail: fetchedLogTail,
                           };
                         }
-                        if (
-                          !isSupportErrorContextCurrent(
-                            targetError.context,
-                            readLiveSupportContext(),
-                          )
-                        ) {
+                        if (!checkSessionCurrent(targetError.context)) {
                           clearSupportErrorState();
                           return;
                         }
@@ -4109,11 +4348,9 @@ export default function POSPage() {
                         logTail,
                       });
                       await api.post('/support-ticket', requestBody, {
-                        headers: pinnedAuthHeaders(targetError.context.token),
+                        headers: liveAuthHeadersFor(targetError.context),
                       });
-                      if (
-                        !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
-                      ) {
+                      if (!checkSessionCurrent(targetError.context)) {
                         clearSupportErrorState();
                         return;
                       }
@@ -4123,9 +4360,7 @@ export default function POSPage() {
                       toast.success(tSupport('queued'));
                       setSentTicketId(targetError.clientTicketId);
                     } catch {
-                      if (
-                        !isSupportErrorContextCurrent(targetError.context, readLiveSupportContext())
-                      ) {
+                      if (!checkSessionCurrent(targetError.context)) {
                         clearSupportErrorState();
                         return;
                       }
@@ -4354,25 +4589,14 @@ export default function POSPage() {
           tables={tables}
           currency={currency}
           cartItemCount={cart.itemCount()}
+          onRegisterDismissHandler={registerTableCheckoutDismiss}
           onClose={() => {
             setCheckoutTable(null);
             refreshTables();
           }}
           onAddItems={handleAddItemsToOrder}
-          onPrintBill={async (bill, reservedWindow) => {
-            const originContext = readLiveSupportContext();
-            await printBillForTenant(bill, true, reservedWindow, originContext);
-          }}
-          reservePrintWindow={() => {
-            const printer = usePrinterStore.getState();
-            const expectedBrowserPrint =
-              printer.printMethod === 'browser' ||
-              (printer.printMethod === 'escpos' &&
-                !printer.hardwarePrinter &&
-                !printerService.isConnected &&
-                printer.status !== 'connecting');
-            return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
-          }}
+          onPrintBill={handleModalPrintBill}
+          reservePrintWindow={reserveModalPrintWindow}
           canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
           canReadBills={tenantCan(currentTenant, 'bills.read')}
           onPayment={(bill, overridePin) => {
@@ -4403,6 +4627,7 @@ export default function POSPage() {
         onAddItemsToOrder={handleAddItemsToScheduledOrder}
         onPayOrder={handlePayScheduledOrder}
         onRefundOrder={(order, bills) => setRefundModalTarget({ order, bills })}
+        onRegisterDismissHandler={registerScheduledOrdersDismiss}
         hasMore={Boolean(nextScheduledCursor)}
         loadingMore={loadingMoreScheduled}
         onLoadMore={handleLoadMoreScheduledOrders}
@@ -4411,8 +4636,10 @@ export default function POSPage() {
 
       <PaymentQueueDrawer
         open={showPaymentQueue}
+        suspended={anyModalOpenExcludingPaymentQueue}
         onClose={() => setShowPaymentQueue(false)}
         onPayOrder={handlePayScheduledOrder}
+        onScanTicket={handleLookupAndPayTicket}
         refreshKey={paymentQueueRefreshKey}
         onRefundOrder={(order, bills) => {
           setShowPaymentQueue(false);
@@ -4447,6 +4674,9 @@ export default function POSPage() {
           bill={paymentBill}
           currency={currency}
           initialOverridePin={checkoutOverridePin}
+          onRegisterDismissHandler={registerPaymentModalDismiss}
+          onPrintBill={handleModalPrintBill}
+          reservePrintWindow={reserveModalPrintWindow}
           onClose={() => {
             setPaymentBill(null);
             setCheckoutOverridePin(undefined);
@@ -4459,16 +4689,16 @@ export default function POSPage() {
               // pay against the remainder source bill during the fetch window.
               setPaymentBill(null);
               setCheckoutOverridePin(undefined);
-              const originEpoch = sessionEpochRef.current;
+              const originEpoch = sessionEpochRef.current + getSessionBoundaryEpoch();
               void api
                 .get(`/bills/${departingBill.id}`)
                 .then(({ data }) => {
-                  if (sessionEpochRef.current === originEpoch) {
+                  if (sessionEpochRef.current + getSessionBoundaryEpoch() === originEpoch) {
                     setPaymentBill((data?.bill as Bill) ?? departingBill);
                   }
                 })
                 .catch(() => {
-                  if (sessionEpochRef.current === originEpoch) {
+                  if (sessionEpochRef.current + getSessionBoundaryEpoch() === originEpoch) {
                     setPaymentBill(departingBill);
                   }
                 });
@@ -4485,6 +4715,7 @@ export default function POSPage() {
         <RefundModal
           order={refundModalTarget.order}
           bills={refundModalTarget.bills}
+          onRegisterDismissHandler={registerRefundModalDismiss}
           onClose={() => setRefundModalTarget(null)}
           onRefunded={() => {
             setRefundModalTarget(null);
@@ -4528,8 +4759,107 @@ export default function POSPage() {
           initialCardTransactionIdRequired={cardTransactionIdRequired}
           initialDiscount={prepaidModalAttempt?.discount ?? null}
           discountCommitted={Boolean(prepaidModalAttempt?.bill)}
-          onClose={() => setShowPrepaidCheckout(false)}
-          onConfirm={handlePrepaidCheckout}
+          orderCommitted={Boolean(prepaidModalAttempt?.order || prepaidModalAttempt?.bill)}
+          recovery={prepaidRecovery}
+          failure={prepaidFailure}
+          onRegisterDismissHandler={registerPrepaidModalDismiss}
+          onPrintBill={handleModalPrintBill}
+          reservePrintWindow={reserveModalPrintWindow}
+          onCheckRecovery={async () => {
+            const originContext = readLiveSupportContext();
+            try {
+              const attempt = readPrepaidAttempt(originContext.userId);
+              if (!attempt?.orderIdempotencyKey || !attempt.paymentIdempotencyKey) {
+                throw new Error('Saved checkout attempt unavailable');
+              }
+              if (attempt.bill) {
+                const { data } = await api.get(`/bills/${attempt.bill.id}`, {
+                  headers: {
+                    ...liveAuthHeadersFor(originContext),
+                    ...operationHeaders(attempt.operationId),
+                  },
+                });
+                if (!checkSessionCurrent(originContext)) return;
+                if (
+                  data?.bill &&
+                  resolveTerminalPrepaidBill(
+                    data.bill,
+                    originContext.userId,
+                    attempt.operationId ?? null,
+                  )
+                ) {
+                  return;
+                }
+                if (
+                  !data?.bill ||
+                  !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)
+                ) {
+                  throw new Error('Bill status unavailable');
+                }
+              }
+              if (!checkSessionCurrent(originContext) || !prepaidRecoveryRef.current) return;
+              const recovery = {
+                ...prepaidRecoveryRef.current,
+                message: t('paymentStatusUnconfirmed'),
+                statusChecked: true,
+              };
+              prepaidRecoveryRef.current = recovery;
+              setPrepaidRecovery(recovery);
+            } catch {
+              if (!checkSessionCurrent(originContext) || !prepaidRecoveryRef.current) return;
+              const recovery = {
+                ...prepaidRecoveryRef.current,
+                message: t('operationOutcomeUnknown'),
+                statusChecked: false,
+              };
+              prepaidRecoveryRef.current = recovery;
+              setPrepaidRecovery(recovery);
+            }
+          }}
+          onClose={closePrepaidCheckoutModal}
+          onConfirm={(...args) => {
+            const originContext = readLiveSupportContext();
+            if (prepaidRecovery || prepaidFailure) clearSupportErrorState();
+            prepaidRecoveryRef.current = null;
+            prepaidFailureRef.current = null;
+            setPrepaidRecovery(null);
+            setPrepaidFailure(null);
+            const submission = handlePrepaidCheckout(...args);
+            const submissionToken = prepaidSubmissionTokenRef.current;
+            let completed = false;
+            return submission
+              .then((result) => {
+                completed = Boolean(result);
+                return result;
+              })
+              .catch(() => {
+                if (!checkSessionCurrent(originContext)) return;
+                const recovery = prepaidRecoveryRef.current || {
+                  message: t('operationOutcomeUnknown'),
+                  statusChecked: false,
+                  details: {
+                    operation: 'checkout',
+                    stage: 'unexpected',
+                    outcome: 'unknown',
+                    httpStatus: null,
+                  },
+                };
+                prepaidRecoveryRef.current = recovery;
+                setPrepaidRecovery(recovery);
+              })
+              .finally(() => {
+                if (prepaidSubmissionTokenRef.current === submissionToken) {
+                  prepaidSubmissionTokenRef.current = null;
+                }
+                if (!checkSessionCurrent(originContext)) return;
+                if (!prepaidRecoveryRef.current) {
+                  setPrepaidRecovery(null);
+                  if (!prepaidFailureRef.current && !completed) {
+                    setShowPrepaidCheckout(false);
+                  }
+                }
+              });
+          }}
         />
       )}
 

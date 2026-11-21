@@ -89,9 +89,11 @@ secret must go through it or pre-rotation tokens would keep validating.
 `POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login`, `POST /api/auth/pin-login`,
 `POST /api/auth/password/change`, and `POST /api/auth/pin/change`
 on `:3002` KDS and `:3003` Server App, and `PUT /api/staff/:id` when an administrator updates their own credentials) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
-`iat` claim, while `exp` is computed explicitly from wall-clock `Date.now()`
-(`Math.floor(Date.now() / 1000) + ttlSeconds`) so clock corrections do not extend session lifetime. A
-token without the remember option expires in 24 hours of wall-clock time; with it, in 10 days. Self-service password and PIN changes advance `tokens_valid_after` first and then mint a fresh replacement token preserving the caller's session claims, keeping the caller's current session authenticated while invalidating every token issued before the change.
+`iat` claim, while `tokenExpSeconds()` computes `exp` from
+`Math.min(Math.floor(iat), Math.floor(Date.now() / 1000)) + ttlSeconds` so second-boundary
+rollovers between sampling `iat` and `exp` never inflate the token TTL and ahead-of-wall monotonic
+`iat` values stay bounded by wall-clock time. A token without the remember option expires in 24
+hours; with it, in 10 days. Self-service password and PIN changes advance `tokens_valid_after` first and then mint a fresh replacement token preserving the caller's session claims, keeping the caller's current session authenticated while invalidating every token issued before the change.
 
 **Verification.** `requireAuth` in
 [`main/server.ts`](../../main/server.ts) guards paths under `/api`. It passes through `/api/health`,

@@ -2,6 +2,7 @@ import { test, expect, type APIRequestContext, type Locator, type Page } from '@
 import {
   E2E_PASSWORD,
   getE2eToken,
+  loginWithPassword,
   readOrdersLayout,
   setOrdersLayout,
   setLanguage,
@@ -87,11 +88,7 @@ async function readOrderBills(request: APIRequestContext, orderId: number): Prom
 }
 
 async function login(page: Page, email = 'manager@flo.local', syncLanguage = true): Promise<void> {
-  await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill(E2E_PASSWORD);
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL('**/pos/**', { timeout: 20000 });
+  await loginWithPassword(page, email, E2E_PASSWORD, BASE);
   if (syncLanguage) await setLanguage(page, 'en');
 }
 
@@ -1006,8 +1003,11 @@ test.describe('split-check availability and eligibility messaging', () => {
     await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toContainText(
       '1 remaining',
     );
+    await expect(page.getByTestId('split-unassigned-total')).toContainText('1 remaining');
+    await expect(page.getByTestId('split-create-checks')).toBeDisabled();
     await page.getByTestId('split-distribute-evenly').click();
     await expect(page.getByTestId(`split-row-unassigned-${singleItem.id}`)).toHaveCount(0);
+    await expect(page.getByTestId('split-unassigned-total')).toHaveCount(0);
 
     // Transfer singleItem to Guest 2 again and submit the split cleanly.
     await page.getByTestId(`split-cell-inc-${singleItem.id}-1`).click();

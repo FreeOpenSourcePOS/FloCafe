@@ -5,10 +5,16 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { THEME_REHYDRATION_EVENT } from './theme';
 import { notifySessionBoundary } from './session-events';
 // Keep registry import relative for auth tests running without alias resolver.
+import { defaultPrintLanguagePolicy } from '../../../shared/print/policy';
 import { isLanguage, type Language } from '../lib/i18n/languages';
-import { syncPrintPoliciesAtBootstrap } from '../lib/print-policy-bootstrap';
+import {
+  clearPrintPolicyBootstrap,
+  registerPrintPolicyBootstrap,
+  syncPrintPoliciesAtBootstrap,
+} from '../lib/print-policy-bootstrap';
 
 let authOperation = 0;
+let printPolicyOperation = 0;
 
 function syncTenantLanguage(t: Tenant | null | undefined) {
   const lang = t?.language;
@@ -21,6 +27,13 @@ function clearBillTemplateProvenance(): void {
   const settings = usePosSettingsStore.getState();
   settings.setBillTemplateSource?.(null);
   settings.setAutoLockMinutes?.(0);
+}
+
+function resetPrintPolicies(): void {
+  const settings = usePosSettingsStore.getState();
+  const fallback = defaultPrintLanguagePolicy();
+  settings.setBillLanguagePolicy?.(fallback);
+  settings.setKotLanguagePolicy?.(fallback);
 }
 
 function readStoredToken(): string | null {
@@ -108,6 +121,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email: string, password: string, rememberMe = false) => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const { data } = await api.post('/auth/login', { email, password, rememberMe });
     if (operation !== authOperation) return;
@@ -115,13 +129,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentTenant = tenants.length === 1 ? tenants[0] : null;
     persistSession(data.access_token, currentTenant);
     syncTenantLanguage(currentTenant);
-    const failedLanguages = currentTenant
-      ? await syncPrintPoliciesAtBootstrap(
+    let failedLanguages: Language[] = [];
+    if (currentTenant) {
+      failedLanguages = await registerPrintPolicyBootstrap(
+        syncPrintPoliciesAtBootstrap(
           currentTenant,
           usePosSettingsStore,
-          () => operation === authOperation,
-        )
-      : [];
+          () => policyOperation === printPolicyOperation,
+        ),
+      );
+    } else {
+      clearPrintPolicyBootstrap();
+      resetPrintPolicies();
+    }
     if (operation !== authOperation) return;
     notifySessionBoundary('login');
     set({
@@ -136,6 +156,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   pinLogin: async (userId: string, pin: string, rememberMe = false) => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const { data } = await api.post('/auth/pin-login', { user_id: userId, pin, rememberMe });
     if (operation !== authOperation) return;
@@ -143,13 +164,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentTenant = tenants.length === 1 ? tenants[0] : null;
     persistSession(data.access_token, currentTenant);
     syncTenantLanguage(currentTenant);
-    const failedLanguages = currentTenant
-      ? await syncPrintPoliciesAtBootstrap(
+    let failedLanguages: Language[] = [];
+    if (currentTenant) {
+      failedLanguages = await registerPrintPolicyBootstrap(
+        syncPrintPoliciesAtBootstrap(
           currentTenant,
           usePosSettingsStore,
-          () => operation === authOperation,
-        )
-      : [];
+          () => policyOperation === printPolicyOperation,
+        ),
+      );
+    } else {
+      clearPrintPolicyBootstrap();
+      resetPrintPolicies();
+    }
     if (operation !== authOperation) return;
     notifySessionBoundary('pin-login');
     set({
@@ -164,7 +191,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   lock: async () => {
     ++authOperation;
+    ++printPolicyOperation;
     clearBillTemplateProvenance();
+    clearPrintPolicyBootstrap();
+    resetPrintPolicies();
     notifySessionBoundary('lock');
     const tokenToRevoke = get().token ?? readStoredToken();
     const logoutPromise = api
@@ -193,15 +223,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   selectTenant: async (tenantId: number) => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const { data } = await api.post('/auth/tenants/select', { tenant_id: tenantId });
     if (operation !== authOperation) return;
     persistSession(data.access_token, data.tenant);
     syncTenantLanguage(data.tenant);
-    const failedLanguages = await syncPrintPoliciesAtBootstrap(
-      data.tenant,
-      usePosSettingsStore,
-      () => operation === authOperation,
+    const failedLanguages = await registerPrintPolicyBootstrap(
+      syncPrintPoliciesAtBootstrap(
+        data.tenant,
+        usePosSettingsStore,
+        () => policyOperation === printPolicyOperation,
+      ),
     );
     if (operation !== authOperation) return;
     set({
@@ -238,7 +271,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
     ++authOperation;
+    ++printPolicyOperation;
     clearBillTemplateProvenance();
+    clearPrintPolicyBootstrap();
+    resetPrintPolicies();
     notifySessionBoundary('logout');
     removeSessionStorageKeys();
     set({
@@ -277,7 +313,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   /** Syncs a KDS login into the shared dashboard store and warms print policies. */
   syncAuthenticatedSession: (payload) => {
-    const operation = ++authOperation;
+    ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     const tenants = payload.tenants ?? (payload.currentTenant ? [payload.currentTenant] : []);
     const currentTenant = payload.currentTenant ?? (tenants.length === 1 ? tenants[0] : null);
@@ -294,17 +331,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       printLanguageLoadErrors: [],
     });
     if (currentTenant) {
-      void syncPrintPoliciesAtBootstrap(
-        currentTenant,
-        usePosSettingsStore,
-        () => operation === authOperation,
+      void registerPrintPolicyBootstrap(
+        syncPrintPoliciesAtBootstrap(
+          currentTenant,
+          usePosSettingsStore,
+          () => policyOperation === printPolicyOperation,
+        ),
       )
         .then((failedLanguages) => {
-          if (operation === authOperation) {
+          if (policyOperation === printPolicyOperation) {
             set({ printLanguageLoadErrors: failedLanguages });
           }
         })
         .catch(() => {});
+    } else {
+      clearPrintPolicyBootstrap();
+      resetPrintPolicies();
     }
   },
 
@@ -329,6 +371,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   /** Hydrates session state from localStorage while keeping tokens on transient errors. */
   loadFromStorage: async () => {
     const operation = ++authOperation;
+    const policyOperation = ++printPolicyOperation;
     clearBillTemplateProvenance();
     if (typeof window === 'undefined') {
       set({ loading: false, printLanguageLoadErrors: [] });
@@ -369,16 +412,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             currentTenant: resolved,
           });
           syncTenantLanguage(resolved);
-          return resolved
-            ? syncPrintPoliciesAtBootstrap(
-                resolved,
-                usePosSettingsStore,
-                () => operation === authOperation,
-              )
-            : [];
+          if (!resolved) {
+            clearPrintPolicyBootstrap();
+            resetPrintPolicies();
+            return [];
+          }
+          return registerPrintPolicyBootstrap(
+            syncPrintPoliciesAtBootstrap(
+              resolved,
+              usePosSettingsStore,
+              () => policyOperation === printPolicyOperation,
+            ),
+          );
         })
         .then((failedLanguages) => {
-          if (operation !== authOperation || failedLanguages === null) return;
+          if (policyOperation !== printPolicyOperation || failedLanguages === null) return;
           set({ loading: false, printLanguageLoadErrors: failedLanguages });
         })
         .catch((error: unknown) => {

@@ -141,7 +141,8 @@ transient notices and ignores late-settling responses from another order.
 ### Split-check availability is a state, not a hidden button
 
 The POS payment modal consolidates equal-amount shares and item-based check splitting into a unified
-Split card above the payment action, rather than splitting controls across separate panels. It derives
+Split card inside the tender column of the three-column checkout workspace, rather than splitting
+controls across separate panels. It derives
 item-based split-check availability through explicit states rather than a boolean that silently hid the
 control. The feature setting (`split_checks_enabled`) lookup reports loading, ready, and error states:
 while loading the item-split panel stays hidden, on failure it displays an inline error with a retry
@@ -453,18 +454,22 @@ establishes only the calling window.
 
 ## State stores
 
-Zustand holds the renderer's client state. Five stores live in
-[`frontend/src/store/`](../../frontend/src/store), and the printer store lives with the printer
-hook because it carries the transport:
+Zustand holds the renderer's client state. Eight stores live in
+[`frontend/src/store/`](../../frontend/src/store) (alongside
+[`session-events.ts`](../../frontend/src/store/session-events.ts) for session-boundary reset
+notifications), and the printer store lives with the printer hook because it carries the transport:
 
-| Store                                                         | Holds                                                                                                                                                                                     | Persistence                                                                                                                                                  |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`auth.ts`](../../frontend/src/store/auth.ts)                 | `user`, `token`, `tenants`, `currentTenant`, `loading`, `isLocked`, and the locales that failed to warm at bootstrap                                                                      | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable                                                             |
-| [`cart.ts`](../../frontend/src/store/cart.ts)                 | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors            | none                                                                                                                                                         |
-| [`held-orders.ts`](../../frontend/src/store/held-orders.ts)   | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders`                                                                             | none                                                                                                                                                         |
-| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy, and idle `autoLockMinutes`                                    | `persist` under the `pos-settings` key, version 6; `partialize` excludes `whatsappEnabled`, `billLanguagePolicy`, `kotLanguagePolicy`, and `autoLockMinutes` |
-| [`theme.ts`](../../frontend/src/store/theme.ts)               | `mode`, whether this session made an explicit choice, and whether server theme info has synced                                                                                            | none in the store; `useThemeModeToggle` and Settings write `PUT /api/settings/theme_mode` (clearing `flo-kds-theme-override` after a successful save, while a failed save rolls back the mode and keeps the override; `useThemeModeToggle` also clears the override when the selected mode is already active), and the KDS header toggle persists a local override under `flo-kds-theme-override` |
-| [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts)   | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions: `printBill`, `printTaxBill`, `printKot`, `printDeliverySlip` | `persist`                                                                                                                                                    |
+| Store                                                           | Holds                                                                                                                                                                                                                                    | Persistence                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`auth.ts`](../../frontend/src/store/auth.ts)                   | `user`, `token`, `tenants`, `currentTenant`, `loading`, `isLocked`, and the locales that failed to warm at bootstrap                                                                                                                     | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable                                                                                                                                                  |
+| [`cart.ts`](../../frontend/src/store/cart.ts)                   | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors                                                           | none                                                                                                                                                                                                                                              |
+| [`charges.ts`](../../frontend/src/store/charges.ts)             | `charges`, `loading`, `error`, and the `load` and `save` actions over `/settings/charges`                                                                                                                                                | none in the store (persisted via `PUT /api/settings/charges`)                                                                                                                                                                                     |
+| [`cloud-attention.ts`](../../frontend/src/store/cloud-attention.ts) | per-tenant `emailNeedsAttention`, `deletionNeedsAttention`, and `anyNeedsAttention` indicators shared by the sidebar Settings badge and Settings sub-navigation (`Account`, `Privacy`), derived from `/settings/cloud/account` and `/settings/cloud` | none (reset on session boundaries via `session-events.ts`)                                                                                                                                                                                        |
+| [`held-orders.ts`](../../frontend/src/store/held-orders.ts)     | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders`                                                                                                                            | none                                                                                                                                                                                                                                              |
+| [`orders-layout.ts`](../../frontend/src/store/orders-layout.ts) | `layout` (`'split'` or `'cards'`) and the `userSelected` session guard                                                                                                                                                                   | none in the store (persisted via `PUT /api/settings/orders_layout`)                                                                                                                                                                               |
+| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts)   | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy, and idle `autoLockMinutes`                                                                                   | `persist` under the `pos-settings` key, version 6; `partialize` excludes `whatsappEnabled`, `billLanguagePolicy`, `kotLanguagePolicy`, and `autoLockMinutes`                                                                                      |
+| [`theme.ts`](../../frontend/src/store/theme.ts)                 | `mode`, whether this session made an explicit choice, and whether server theme info has synced                                                                                                                                           | none in the store; `useThemeModeToggle` and Settings write `PUT /api/settings/theme_mode` (clearing `flo-kds-theme-override` after a successful save, while a failed save rolls back the mode and keeps the override; `useThemeModeToggle` also clears the override when the selected mode is already active), and the KDS header toggle persists a local override under `flo-kds-theme-override` |
+| [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts)     | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions: `printBill`, `printTaxBill`, `printKot`, `printDeliverySlip`                                                | `persist`                                                                                                                                                                                                                                         |
 
 `held-orders.ts` exports `createHeldOrdersStore(apiClient)`, so a test can pass its own client
 instead of the shared one.
@@ -556,12 +561,12 @@ Warnings travel with every result. `hasFinancialPrintWarning` refuses the whole 
 print a total the printer cannot represent, which is why a capability failure is a thrown error and
 not a toast.
 
-Print locales are warmed at authentication, not lazily at render time. `syncPrintPoliciesAtBootstrap`
-applies the tenant's receipt and kitchen-ticket language policy and loads the bundles it selects,
-and the auth store keeps the languages that failed. Every print action calls
-`ensurePrintLanguagesLoaded` again before it encodes, and a locale that still will not load becomes
-a receipt warning saying English labels were used. A receipt that renders in the wrong language is
-a financial document, not a cosmetic bug.
+Print locales are warmed at authentication and gated behind the active tenant's bootstrap barrier
+before any print resolves or encodes labels; see
+[warming print locales at bootstrap](internationalization.md#warming-print-locales-at-bootstrap).
+The auth store keeps any languages that failed to warm, and a locale that still will not load
+becomes a receipt warning saying English labels were used. A receipt that renders in the wrong
+language is a financial document, not a cosmetic bug.
 
 ## Internationalization: 32 locales
 
@@ -704,7 +709,8 @@ frontend/src/
 │   ├── api.ts                  The shared axios client for the authenticated pages
 │   ├── api-error.ts            Localized text for a backend error
 │   └── permissions.ts          tenantCan
-├── store/                      auth, cart, held-orders, pos-settings, theme
+├── store/                      auth, cart, charges, cloud-attention, held-orders,
+│                               orders-layout, pos-settings, session-events, theme
 └── types/                      Electron bridge declarations and the type-level contract
 ```
 

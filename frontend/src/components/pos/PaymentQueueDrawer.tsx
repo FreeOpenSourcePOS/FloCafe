@@ -56,8 +56,10 @@ export interface AwaitingPaymentOrder {
 
 interface Props {
   open: boolean;
+  suspended?: boolean;
   onClose: () => void;
   onPayOrder: (order: Order) => Promise<void> | void;
+  onScanTicket?: (ticket: string) => void;
   onRefundOrder?: (order: Order, bills: Bill[]) => void;
   onCountsChanged?: (awaiting: number, blocked: number) => void;
   onQueueChanged?: () => void;
@@ -66,8 +68,10 @@ interface Props {
 
 export function PaymentQueueDrawer({
   open,
+  suspended = false,
   onClose,
   onPayOrder,
+  onScanTicket,
   onRefundOrder,
   onCountsChanged,
   onQueueChanged,
@@ -110,6 +114,12 @@ export function PaymentQueueDrawer({
   const appendInFlightRef = useRef(false);
   const searchPendingRef = useRef(false);
   const requestInFlightRef = useRef<number | null>(null);
+  const loadedSearchRef = useRef<string | null>(null);
+  const searchInputRef = useRef(searchInput);
+  useEffect(() => {
+    searchInputRef.current = searchInput;
+  }, [searchInput]);
+  const skipFetchForSearchRef = useRef<string | null>(null);
   const lastRefreshKeyRef = useRef(refreshKey);
   const onCountsChangedRef = useRef(onCountsChanged);
   useEffect(() => {
@@ -121,6 +131,9 @@ export function PaymentQueueDrawer({
       if (poll && requestInFlightRef.current !== null) return Promise.resolve();
       const sequence = ++requestSequenceRef.current;
       requestInFlightRef.current = sequence;
+      if (!append && !poll) {
+        loadedSearchRef.current = null;
+      }
       const params: Record<string, string> = { limit: '50' };
       if (cursor) params.cursor = cursor;
       if (searchQuery.trim()) {
@@ -147,7 +160,12 @@ export function PaymentQueueDrawer({
               return [...previous, ...unique];
             });
           } else {
+            loadedSearchRef.current = searchQuery.trim();
             setOrders(fetchedOrders);
+            if (!poll && searchQuery !== search) {
+              skipFetchForSearchRef.current = searchQuery;
+              setSearch(searchQuery);
+            }
           }
           setNextCursor(data.next_cursor || null);
           setHasMore(Boolean(data.has_more));
@@ -160,6 +178,9 @@ export function PaymentQueueDrawer({
         .catch((err: unknown) => {
           if (sequence === requestSequenceRef.current) {
             console.error('Failed to fetch awaiting payment queue:', err);
+            if (!append) {
+              loadedSearchRef.current = null;
+            }
             if (append) {
               pausedRef.current = false;
               setPollingPaused(false);
@@ -181,12 +202,19 @@ export function PaymentQueueDrawer({
 
   useEffect(() => {
     if (!open) return;
+    if (skipFetchForSearchRef.current === search) {
+      skipFetchForSearchRef.current = null;
+      loadedSearchRef.current = search.trim();
+      return;
+    }
+    skipFetchForSearchRef.current = null;
     pausedRef.current = false;
-    void fetchQueue(null, search);
+    void fetchQueue(null, searchInputRef.current);
     return () => {
       requestSequenceRef.current += 1;
       appendInFlightRef.current = false;
       requestInFlightRef.current = null;
+      loadedSearchRef.current = null;
       searchPendingRef.current = false;
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
@@ -212,9 +240,11 @@ export function PaymentQueueDrawer({
   }, [open, search, fetchQueue]);
 
   const handleSearchChange = (value: string) => {
+    searchInputRef.current = value;
     setSearchInput(value);
     requestSequenceRef.current += 1;
     requestInFlightRef.current = null;
+    loadedSearchRef.current = null;
     appendInFlightRef.current = false;
     searchPendingRef.current = true;
     pausedRef.current = false;
@@ -259,8 +289,11 @@ export function PaymentQueueDrawer({
     requestSequenceRef.current += 1;
     appendInFlightRef.current = false;
     requestInFlightRef.current = null;
+    loadedSearchRef.current = null;
     searchPendingRef.current = false;
+    setLoading(true);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (searchInput !== search) setSearch(searchInput);
     onClose();
   };
 
@@ -364,6 +397,33 @@ export function PaymentQueueDrawer({
     } finally {
       setPrintingId(null);
     }
+  };
+
+  const triggerPayOrder = (order: AwaitingPaymentOrder) => {
+    const billForOrder = order.bill_id
+      ? ({
+          id: Number(order.bill_id),
+          bill_number: order.bill_number || '',
+          order_id: Number(order.id),
+          subtotal: Number(order.total_amount ?? order.total ?? 0),
+          tax_amount: 0,
+          discount_amount: 0,
+          service_charge: 0,
+          delivery_charge: 0,
+          total: Number(order.total_amount ?? order.total ?? 0),
+          paid_amount: Number(order.paid_amount || 0),
+          balance: Number(order.balance || 0),
+          payment_status: (order.bill_payment_status as Bill['payment_status']) || 'unpaid',
+          payment_details: [],
+        } as unknown as Bill)
+      : null;
+    const orderToPay = {
+      ...order,
+      total: Number(order.total_amount ?? order.total ?? 0),
+      bill: order.bill ?? billForOrder,
+      bills: order.bills ?? (billForOrder ? [billForOrder] : []),
+    };
+    void onPayOrder(orderToPay as unknown as Order);
   };
 
   if (!open) return null;
@@ -570,33 +630,7 @@ export function PaymentQueueDrawer({
                 type="button"
                 size="sm"
                 data-testid="queue-pay-btn"
-                onClick={() => {
-                  const billForOrder = order.bill_id
-                    ? ({
-                        id: Number(order.bill_id),
-                        bill_number: order.bill_number || '',
-                        order_id: Number(order.id),
-                        subtotal: Number(order.total_amount ?? order.total ?? 0),
-                        tax_amount: 0,
-                        discount_amount: 0,
-                        service_charge: 0,
-                        delivery_charge: 0,
-                        total: Number(order.total_amount ?? order.total ?? 0),
-                        paid_amount: Number(order.paid_amount || 0),
-                        balance: Number(order.balance || 0),
-                        payment_status:
-                          (order.bill_payment_status as Bill['payment_status']) || 'unpaid',
-                        payment_details: [],
-                      } as unknown as Bill)
-                    : null;
-                  const orderToPay = {
-                    ...order,
-                    total: Number(order.total_amount ?? order.total ?? 0),
-                    bill: order.bill ?? billForOrder,
-                    bills: order.bills ?? (billForOrder ? [billForOrder] : []),
-                  };
-                  void onPayOrder(orderToPay as unknown as Order);
-                }}
+                onClick={() => triggerPayOrder(order)}
                 className="gap-1 bg-brand text-white hover:bg-brand/90"
               >
                 <CreditCard size={13} />
@@ -660,9 +694,83 @@ export function PaymentQueueDrawer({
             <Search className="absolute start-3 top-2.5 size-4 text-muted-foreground" />
             <input
               type="text"
+              autoFocus
               data-testid="payment-queue-search"
               value={searchInput}
               onChange={(e) => handleSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (suspended) return;
+                if (
+                  e.nativeEvent?.isComposing ||
+                  (e as { isComposing?: boolean }).isComposing ||
+                  e.keyCode === 229
+                ) {
+                  return;
+                }
+                if (e.key !== 'Enter') return;
+                const trimmed = searchInput.trim();
+                if (trimmed.startsWith('FLOCAFE-TICKET:')) {
+                  e.preventDefault?.();
+                  if (searchDebounceRef.current) {
+                    clearTimeout(searchDebounceRef.current);
+                    searchDebounceRef.current = null;
+                  }
+                  searchPendingRef.current = false;
+                  searchInputRef.current = '';
+                  setSearchInput('');
+                  if (search !== '') {
+                    setSearch('');
+                  } else {
+                    setLoading(false);
+                  }
+                  e.currentTarget?.blur?.();
+                  onScanTicket?.(trimmed);
+                  return;
+                }
+                if (searchPendingRef.current) {
+                  e.preventDefault?.();
+                  if (searchDebounceRef.current) {
+                    clearTimeout(searchDebounceRef.current);
+                    searchDebounceRef.current = null;
+                  }
+                  searchPendingRef.current = false;
+                  setLoading(true);
+                  if (searchInput === search) void fetchQueue(null, searchInput);
+                  else setSearch(searchInput);
+                  return;
+                }
+                if (
+                  !loading &&
+                  canPay &&
+                  requestInFlightRef.current === null &&
+                  loadedSearchRef.current === trimmed
+                ) {
+                  const normalizedQuery = trimmed.toLowerCase();
+                  const exactMatches = normalizedQuery
+                    ? orders.filter((o) => o.order_number.trim().toLowerCase() === normalizedQuery)
+                    : [];
+                  const exactPayable =
+                    exactMatches.length === 1 &&
+                    exactMatches[0].checkout_stage !== 'paid' &&
+                    exactMatches[0].release_status !== 'blocked'
+                      ? exactMatches[0]
+                      : null;
+                  const unpaidOrders = orders.filter((o) => o.checkout_stage !== 'paid');
+                  const targetOrder =
+                    exactMatches.length > 0
+                      ? exactPayable
+                      : !hasMore &&
+                          unpaidOrders.length === 1 &&
+                          unpaidOrders[0].release_status !== 'blocked'
+                        ? unpaidOrders[0]
+                        : null;
+                  if (targetOrder) {
+                    e.preventDefault?.();
+                    e.currentTarget?.blur?.();
+                    triggerPayOrder(targetOrder);
+                  }
+                }
+              }}
               placeholder={t('scanOrEnterTicket')}
               className="w-full ps-9 pe-9 py-2 text-sm bg-card border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
             />

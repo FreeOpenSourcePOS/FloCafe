@@ -29,10 +29,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const express = require('express');
 const request = require('supertest');
-import { closeDatabase, getDatabase, initDatabase } from '../main/db';
-import { authRoutes } from '../main/routes/auth';
-import { cloudSync } from '../main/services/cloud-sync';
-import { isMasterPinSet, verifyMasterPin } from '../main/services/master-pin';
+const { closeDatabase, getDatabase, initDatabase } =
+  require('../main/db') as typeof import('../main/db');
+const { authRoutes } = require('../main/routes/auth') as typeof import('../main/routes/auth');
+const { cloudSync } =
+  require('../main/services/cloud-sync') as typeof import('../main/services/cloud-sync');
+const { isMasterPinSet, verifyMasterPin } =
+  require('../main/services/master-pin') as typeof import('../main/services/master-pin');
 
 async function run() {
   initDatabase();
@@ -61,23 +64,47 @@ async function run() {
     encryptionShouldFail = true;
     const pinFailure = await request(app).post('/api/auth/setup/initialize').send(setupPayload);
     assert.equal(pinFailure.status, 500, 'setup reports Master PIN persistence failure');
-    assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count, 0, 'PIN failure rolls back the owner transaction');
+    assert.equal(
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number })
+        .count,
+      0,
+      'PIN failure rolls back the owner transaction',
+    );
     assert.equal(isMasterPinSet(), false, 'failed PIN persistence does not create a PIN file');
 
     encryptionShouldFail = false;
-    cloudSync.reload = (() => { throw new Error('simulated cloud reload failure'); }) as typeof cloudSync.reload;
-    cloudSync.refreshRegistrationProfile = (() => { throw new Error('simulated cloud profile failure'); }) as typeof cloudSync.refreshRegistrationProfile;
+    cloudSync.reload = (() => {
+      throw new Error('simulated cloud reload failure');
+    }) as typeof cloudSync.reload;
+    cloudSync.refreshRegistrationProfile = (() => {
+      throw new Error('simulated cloud profile failure');
+    }) as typeof cloudSync.refreshRegistrationProfile;
 
     const cloudFailure = await request(app).post('/api/auth/setup/initialize').send(setupPayload);
-    assert.equal(cloudFailure.status, 200, 'cloud initialization failure does not make local setup appear to fail');
-    assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count, 1, 'owner is committed exactly once');
-    assert.equal(isMasterPinSet(), true, 'Master PIN remains available after successful local setup');
+    assert.equal(
+      cloudFailure.status,
+      200,
+      'cloud initialization failure does not make local setup appear to fail',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number })
+        .count,
+      1,
+      'owner is committed exactly once',
+    );
+    assert.equal(
+      isMasterPinSet(),
+      true,
+      'Master PIN remains available after successful local setup',
+    );
     assert.equal(verifyMasterPin('1234'), true, 'persisted Master PIN verifies after setup');
 
-    const retry = await request(app).post('/api/auth/setup/initialize').send({
-      ...setupPayload,
-      email: 'second-owner@example.com',
-    });
+    const retry = await request(app)
+      .post('/api/auth/setup/initialize')
+      .send({
+        ...setupPayload,
+        email: 'second-owner@example.com',
+      });
     assert.equal(retry.status, 403, 'setup cannot be replayed after local success');
 
     console.log('✅ Setup post-commit failure tests passed');
@@ -91,7 +118,9 @@ async function run() {
 }
 
 run().catch((error) => {
-  try { closeDatabase(); } catch { }
+  try {
+    closeDatabase();
+  } catch {}
   Module._load = originalLoad;
   fs.rmSync(testDir, { recursive: true, force: true });
   console.error(error);

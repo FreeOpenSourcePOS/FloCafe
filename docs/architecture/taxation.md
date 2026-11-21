@@ -165,7 +165,8 @@ document-scope `largest_remainder` allocation across the combined discounted-ite
 unchanged-charge components, while non-document lines scale via `scaleTaxBreakdowns()` and
 `scaleTaxSnapshots()` before `combineItemAndChargeTaxes()` folds the item and charge snapshots into
 an order or bill level array with `aggregateTaxSnapshots()`. Bill item projection
-(`projectOrderItems()` in `main/routes/bills.ts`) reads each item's saved discounted document
+(`projectOrderItems()` in `main/services/bill-item-projection.ts`, re-exported by
+`main/routes/bills.ts`) reads each item's saved discounted document
 allocation from `order.tax_snapshot` (falling back to `allocateDocumentTaxRounding()` when no
 saved order-level item snapshots are present) so projected line taxes and component reports match
 both new and historical bill rollups.

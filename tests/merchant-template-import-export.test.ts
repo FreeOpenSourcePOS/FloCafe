@@ -19,12 +19,25 @@
  *      renders byte-identically through the document pipeline; the
  *      draft -> active -> archive lifecycle stays intact after import.
  *
- * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/merchant-template-import-export.test.ts
+ * Run: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/merchant-template-import-export.test.ts
  */
 
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES,
+  MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
+  MERCHANT_TEMPLATE_EXPORT_FORMAT,
+  MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
+  MERCHANT_TEMPLATE_FORMAT,
+  MERCHANT_TEMPLATE_SCHEMA_VERSION,
+  serializeMerchantTemplatePayload,
+  validateMerchantTemplate,
+  validateMerchantTemplateEnvelope,
+} from '../shared/print';
 
 // Mock electron before importing any app modules.
 const Module = require('module');
@@ -39,21 +52,8 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 process.env.JWT_SECRET = 'test-secret-for-merchant-template-transfer';
 
-import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-
-import {
-  MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES,
-  MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
-  MERCHANT_TEMPLATE_EXPORT_FORMAT,
-  MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
-  MERCHANT_TEMPLATE_FORMAT,
-  MERCHANT_TEMPLATE_SCHEMA_VERSION,
-  serializeMerchantTemplatePayload,
-  validateMerchantTemplate,
-  validateMerchantTemplateEnvelope,
-} from '../shared/print';
-import { buildParityFixtures } from './print-parity.test';
+const { buildParityFixtures } =
+  require('./print-parity.test') as typeof import('./print-parity.test');
 
 let passed = 0;
 function ok(message: string): void {
@@ -81,11 +81,16 @@ console.log('\n▶ Envelope validation: golden fixture');
   const goldenText = readFixture('golden-envelope-v1.json');
   const parsed = JSON.parse(goldenText);
   const envelopeResult = validateMerchantTemplateEnvelope(parsed);
-  assert(envelopeResult.ok, `golden envelope structurally valid (${envelopeResult.ok ? '' : envelopeResult.errors.join('; ')})`);
+  assert(
+    envelopeResult.ok,
+    `golden envelope structurally valid (${envelopeResult.ok ? '' : envelopeResult.errors.join('; ')})`,
+  );
   assert.equal(envelopeResult.ok && envelopeResult.envelope.claimedChecksum.length, 64);
   ok('golden-envelope-v1.json passes structural envelope validation');
 
-  const payloadResult = validateMerchantTemplate(envelopeResult.ok ? envelopeResult.envelope.payload : null);
+  const payloadResult = validateMerchantTemplate(
+    envelopeResult.ok ? envelopeResult.envelope.payload : null,
+  );
   assert(payloadResult.ok, 'embedded payload passes the shared #447 validator');
 
   // Checksum convention: sha256 of the shared kernel's canonical serialization.
@@ -103,17 +108,26 @@ console.log('\n▶ Envelope validation: golden fixture');
   const rekeyed = {
     schemaVersion: template.schemaVersion,
     blocks: (template.blocks as Array<Record<string, unknown>>).map((block) =>
-      Object.keys(block).sort().reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = block[key];
-        return acc;
-      }, {})),
+      Object.keys(block)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = block[key];
+          return acc;
+        }, {}),
+    ),
     format: template.format,
     documentType: template.documentType,
   };
-  assert.deepEqual(JSON.parse(serializeMerchantTemplatePayload(rekeyed as any)), template,
-    're-keyed copy stays semantically identical');
-  assert.equal(sha256(serializeMerchantTemplatePayload(rekeyed as any)), sha256(canonical),
-    'reordering keys does not change the canonical digest');
+  assert.deepEqual(
+    JSON.parse(serializeMerchantTemplatePayload(rekeyed as any)),
+    template,
+    're-keyed copy stays semantically identical',
+  );
+  assert.equal(
+    sha256(serializeMerchantTemplatePayload(rekeyed as any)),
+    sha256(canonical),
+    'reordering keys does not change the canonical digest',
+  );
   ok('canonical digest is insensitive to object key order');
 
   assert.equal(MERCHANT_TEMPLATE_EXPORT_FORMAT, 'flocafe-merchant-template');
@@ -155,9 +169,14 @@ console.log('\n▶ Envelope validation: negative fixtures');
   assert(validateMerchantTemplateEnvelope(validLeapDay).ok, 'valid leap day is accepted');
   ok('calendar-valid leap-year dates are enforced');
 
-  for (const [label, value] of [['printer token', '{CUT}'], ['control character', '\u001b']] as const) {
+  for (const [label, value] of [
+    ['printer token', '{CUT}'],
+    ['control character', '\u001b'],
+  ] as const) {
     const unsafePayload = JSON.parse(JSON.stringify(golden().template)) as Record<string, any>;
-    const totalsBlock = unsafePayload.blocks.find((block: Record<string, any>) => block.kind === 'totals');
+    const totalsBlock = unsafePayload.blocks.find(
+      (block: Record<string, any>) => block.kind === 'totals',
+    );
     totalsBlock.labels.grandTotal = value;
     const unsafeResult = validateMerchantTemplate(unsafePayload);
     assert(!unsafeResult.ok, `${label} in a label is rejected`);
@@ -170,7 +189,9 @@ console.log('\n▶ Envelope validation: negative fixtures');
   const disallowedParsed = JSON.parse(readFixture('negative/disallowed-block.json'));
   const disallowedEnvelope = validateMerchantTemplateEnvelope(disallowedParsed);
   assert(disallowedEnvelope.ok, 'disallowed-block envelope is structurally valid');
-  const disallowedPayload = validateMerchantTemplate(disallowedEnvelope.ok ? disallowedEnvelope.envelope.payload : null);
+  const disallowedPayload = validateMerchantTemplate(
+    disallowedEnvelope.ok ? disallowedEnvelope.envelope.payload : null,
+  );
   assert(!disallowedPayload.ok);
   assert(
     disallowedPayload.errors.some((message) => message.includes('unknown block kind')),
@@ -182,7 +203,9 @@ console.log('\n▶ Envelope validation: negative fixtures');
   const tamperedParsed = JSON.parse(readFixture('negative/tampered-checksum.json'));
   const tamperedEnvelope = validateMerchantTemplateEnvelope(tamperedParsed);
   assert(tamperedEnvelope.ok);
-  const tamperedPayload = validateMerchantTemplate(tamperedEnvelope.ok ? tamperedEnvelope.envelope.payload : null);
+  const tamperedPayload = validateMerchantTemplate(
+    tamperedEnvelope.ok ? tamperedEnvelope.envelope.payload : null,
+  );
   assert(tamperedPayload.ok);
   const tamperedCanonical = tamperedPayload.ok
     ? serializeMerchantTemplatePayload(tamperedPayload.payload)
@@ -227,7 +250,10 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 try {
   initDatabase();
 } catch (error: any) {
-  if (error?.code === 'ERR_DLOPEN_FAILED' && String(error?.message || '').includes('NODE_MODULE_VERSION')) {
+  if (
+    error?.code === 'ERR_DLOPEN_FAILED' &&
+    String(error?.message || '').includes('NODE_MODULE_VERSION')
+  ) {
     console.log('  ⚠ Skipping: better-sqlite3 ABI mismatch (run via Electron)');
     process.exit(77);
   }
@@ -237,10 +263,12 @@ try {
 // requirePermission() resolves effective permissions from a real users row
 // keyed by the JWT's userId — the token alone is not authoritative.
 for (const role of ['owner', 'cashier']) {
-  getDatabase().prepare(
-    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`
-  ).run(`actor-${role}`, `actor-${role}`, `actor-${role}@test.local`, role, now(), now());
+  getDatabase()
+    .prepare(
+      `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`,
+    )
+    .run(`actor-${role}`, `actor-${role}`, `actor-${role}@test.local`, role, now(), now());
 }
 
 const express = require('express');
@@ -254,14 +282,20 @@ const app = express();
 // Deliberately ABOVE the 256 KB envelope cap so the feature's own size gate
 // is what rejects oversized files (not the generic body parser limit).
 app.use(express.json({ limit: '2mb' }));
-app.use('/api', expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
+app.use(
+  '/api',
+  expressRateLimit({
+    windowMs: 60 * 1000,
+    limit: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
 app.use((req: any, res: any, next: any) => {
-  if (!req.path.startsWith('/api')) { next(); return; }
+  if (!req.path.startsWith('/api')) {
+    next();
+    return;
+  }
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Authentication required' });
@@ -282,7 +316,9 @@ function authHeaderFor(role: string): string {
 const OWNER = authHeaderFor('owner');
 const CASHIER = authHeaderFor('cashier');
 
-const PAYLOAD = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, 'golden-receipt-labeled-v1.json'), 'utf8'));
+const PAYLOAD = JSON.parse(
+  fs.readFileSync(path.join(FIXTURE_DIR, 'golden-receipt-labeled-v1.json'), 'utf8'),
+);
 
 async function runTransfer(): Promise<void> {
   let templateId = '';
@@ -290,35 +326,51 @@ async function runTransfer(): Promise<void> {
 
   console.log('\n▶ Export API');
   {
-    const created = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Front Counter Receipt', payload: PAYLOAD });
+    const created = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Front Counter Receipt', payload: PAYLOAD });
     assert.equal(created.status, 201);
     templateId = created.body.template.id;
 
-    const forbidden = await request(app).get(`/api/print-templates/${templateId}/export`)
+    const forbidden = await request(app)
+      .get(`/api/print-templates/${templateId}/export`)
       .set('Authorization', CASHIER);
     assert.equal(forbidden.status, 403, 'non-owner cannot export');
     ok('export is owner-role only');
 
-    const draftExport = await request(app).get(`/api/print-templates/${templateId}/export`)
+    const draftExport = await request(app)
+      .get(`/api/print-templates/${templateId}/export`)
       .set('Authorization', OWNER);
     assert.equal(draftExport.status, 409, 'drafts are not exportable');
     ok('draft templates are refused (only active/archived export)');
 
-    await request(app).post(`/api/print-templates/${templateId}/activate`).set('Authorization', OWNER);
+    await request(app)
+      .post(`/api/print-templates/${templateId}/activate`)
+      .set('Authorization', OWNER);
 
-    const exported = await request(app).get(`/api/print-templates/${templateId}/export`)
+    const exported = await request(app)
+      .get(`/api/print-templates/${templateId}/export`)
       .set('Authorization', OWNER);
     assert.equal(exported.status, 200);
-    assert.match(exported.headers['content-disposition'], /attachment;\s*filename="front-counter-receipt\.flocafe-template\.json"/);
+    assert.match(
+      exported.headers['content-disposition'],
+      /attachment;\s*filename="front-counter-receipt\.flocafe-template\.json"/,
+    );
     exportedText = exported.text;
     const envelope = JSON.parse(exportedText);
     assert.equal(envelope.format, MERCHANT_TEMPLATE_EXPORT_FORMAT);
     assert.equal(envelope.schemaVersion, MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION);
     assert.equal(typeof envelope.exportedAt, 'string');
     assert(!Number.isNaN(Date.parse(envelope.exportedAt)));
-    const row = getDatabase().prepare('SELECT checksum FROM merchant_print_templates WHERE id = ?').get(templateId) as any;
-    assert.equal(envelope.checksum, row.checksum, 'envelope checksum equals the persisted row checksum');
+    const row = getDatabase()
+      .prepare('SELECT checksum FROM merchant_print_templates WHERE id = ?')
+      .get(templateId) as any;
+    assert.equal(
+      envelope.checksum,
+      row.checksum,
+      'envelope checksum equals the persisted row checksum',
+    );
     assert.deepEqual(envelope.origin.sourceTemplateId, templateId);
     assert.deepEqual(envelope.template, PAYLOAD);
     ok('active template exports a self-describing envelope carrying origin metadata');
@@ -326,29 +378,45 @@ async function runTransfer(): Promise<void> {
 
   console.log('\n▶ Export hardening: tamper detection + filename sanitization');
   {
-    const row = getDatabase().prepare('SELECT payload_json, checksum FROM merchant_print_templates WHERE id = ?').get(templateId) as any;
-    getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
+    const row = getDatabase()
+      .prepare('SELECT payload_json, checksum FROM merchant_print_templates WHERE id = ?')
+      .get(templateId) as any;
+    getDatabase()
+      .prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
       .run('{"tampered":true}', templateId);
-    const tamperedExport = await request(app).get(`/api/print-templates/${templateId}/export`)
+    const tamperedExport = await request(app)
+      .get(`/api/print-templates/${templateId}/export`)
       .set('Authorization', OWNER);
     assert.equal(tamperedExport.status, 409, 'export fails closed on checksum mismatch');
-    getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ?, checksum = ? WHERE id = ?')
+    getDatabase()
+      .prepare('UPDATE merchant_print_templates SET payload_json = ?, checksum = ? WHERE id = ?')
       .run('{"tampered":true}', sha256('{"tampered":true}'), templateId);
-    const invalidPayloadExport = await request(app).get(`/api/print-templates/${templateId}/export`)
+    const invalidPayloadExport = await request(app)
+      .get(`/api/print-templates/${templateId}/export`)
       .set('Authorization', OWNER);
-    assert.equal(invalidPayloadExport.status, 409, 'export fails closed on invalid payload with matching checksum');
-    getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
+    assert.equal(
+      invalidPayloadExport.status,
+      409,
+      'export fails closed on invalid payload with matching checksum',
+    );
+    getDatabase()
+      .prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
       .run(row.payload_json, templateId);
-    getDatabase().prepare('UPDATE merchant_print_templates SET checksum = ? WHERE id = ?')
+    getDatabase()
+      .prepare('UPDATE merchant_print_templates SET checksum = ? WHERE id = ?')
       .run(row.checksum, templateId);
     ok('tampered or invalid rows can never be distributed as trusted-looking files');
 
-    const weird = await request(app).post('/api/print-templates')
+    const weird = await request(app)
+      .post('/api/print-templates')
       .set('Authorization', OWNER)
       .send({ name: '../../etc passwd <recept?>', payload: PAYLOAD });
     assert.equal(weird.status, 201);
-    await request(app).post(`/api/print-templates/${weird.body.template.id}/activate`).set('Authorization', OWNER);
-    const weirdExport = await request(app).get(`/api/print-templates/${weird.body.template.id}/export`)
+    await request(app)
+      .post(`/api/print-templates/${weird.body.template.id}/activate`)
+      .set('Authorization', OWNER);
+    const weirdExport = await request(app)
+      .get(`/api/print-templates/${weird.body.template.id}/export`)
       .set('Authorization', OWNER);
     assert.equal(weirdExport.status, 200);
     const filename = /filename="([^"]+)"/.exec(weirdExport.headers['content-disposition'])![1];
@@ -360,54 +428,105 @@ async function runTransfer(): Promise<void> {
     // A payload just inside the write cap can pretty-print past the transfer
     // cap once the envelope wrapper is added: export must refuse rather than
     // mint a file importers (including this install) would reject with 413.
-    const probe = (filler: number): string => serializeMerchantTemplatePayload({
-      format: MERCHANT_TEMPLATE_FORMAT,
-      documentType: 'receipt',
-      schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
-      blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(filler) } }],
-    });
+    const probe = (filler: number): string =>
+      serializeMerchantTemplatePayload({
+        format: MERCHANT_TEMPLATE_FORMAT,
+        documentType: 'receipt',
+        schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
+        blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(filler) } }],
+      });
     const nearCapPayload = {
       format: MERCHANT_TEMPLATE_FORMAT,
       documentType: 'receipt',
       schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
-      blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES - probe(0).length - 1) } }],
+      blocks: [
+        {
+          kind: 'totals',
+          labels: {
+            grandTotal: 'x'.repeat(MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES - probe(0).length - 1),
+          },
+        },
+      ],
     };
     const nearCapPayloadText = probe(nearCapPayload.blocks[0].labels.grandTotal.length);
     assert(
       Buffer.byteLength(nearCapPayloadText, 'utf8') <= MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
       'premise: the crafted payload still passes the write-time size cap',
     );
-    const nearCap = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Near Cap Receipt', payload: nearCapPayload });
+    const nearCap = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Near Cap Receipt', payload: nearCapPayload });
     assert.equal(nearCap.status, 201);
-    await request(app).post(`/api/print-templates/${nearCap.body.template.id}/activate`).set('Authorization', OWNER);
-    const nearCapExport = await request(app).get(`/api/print-templates/${nearCap.body.template.id}/export`)
+    await request(app)
+      .post(`/api/print-templates/${nearCap.body.template.id}/activate`)
       .set('Authorization', OWNER);
-    assert.equal(nearCapExport.status, 413, `oversized envelope export is refused (got ${nearCapExport.status})`);
+    const nearCapExport = await request(app)
+      .get(`/api/print-templates/${nearCap.body.template.id}/export`)
+      .set('Authorization', OWNER);
+    assert.equal(
+      nearCapExport.status,
+      413,
+      `oversized envelope export is refused (got ${nearCapExport.status})`,
+    );
     assert.match(nearCapExport.body.error, /maximum allowed size/);
     ok('export holds its output to the same byte cap import enforces');
   }
 
   console.log('\n▶ Import API: fail-closed pipeline');
   {
-    const forbidden = await request(app).post('/api/print-templates/import')
-      .set('Authorization', CASHIER).send({ file: exportedText });
+    const forbidden = await request(app)
+      .post('/api/print-templates/import')
+      .set('Authorization', CASHIER)
+      .send({ file: exportedText });
     assert.equal(forbidden.status, 403, 'non-owner cannot import');
     ok('import is owner-role only');
 
     const rejections: Array<[string, unknown, number, string]> = [
       ['missing file', {}, 400, 'required'],
       ['malformed JSON', { file: '{not json' }, 400, 'not valid JSON'],
-      ['wrong root format', { file: readFixture('negative/wrong-root-format.json') }, 400, 'root.format'],
-      ['unknown envelope major', { file: readFixture('negative/unknown-envelope-major.json') }, 400, 'unsupported transfer-file version'],
-      ['unknown envelope field', { file: readFixture('negative/unknown-envelope-field.json') }, 400, 'unknown field "renderer"'],
-      ['disallowed block', { file: readFixture('negative/disallowed-block.json') }, 400, 'unknown block kind'],
-      ['tampered checksum', { file: readFixture('negative/tampered-checksum.json') }, 409, 'Checksum mismatch'],
-      ['oversized envelope', { file: readFixture('negative/oversized-envelope.json') }, 413, 'maximum allowed size'],
+      [
+        'wrong root format',
+        { file: readFixture('negative/wrong-root-format.json') },
+        400,
+        'root.format',
+      ],
+      [
+        'unknown envelope major',
+        { file: readFixture('negative/unknown-envelope-major.json') },
+        400,
+        'unsupported transfer-file version',
+      ],
+      [
+        'unknown envelope field',
+        { file: readFixture('negative/unknown-envelope-field.json') },
+        400,
+        'unknown field "renderer"',
+      ],
+      [
+        'disallowed block',
+        { file: readFixture('negative/disallowed-block.json') },
+        400,
+        'unknown block kind',
+      ],
+      [
+        'tampered checksum',
+        { file: readFixture('negative/tampered-checksum.json') },
+        409,
+        'Checksum mismatch',
+      ],
+      [
+        'oversized envelope',
+        { file: readFixture('negative/oversized-envelope.json') },
+        413,
+        'maximum allowed size',
+      ],
     ];
     for (const [label, body, expectedStatus, expectedFragment] of rejections) {
-      const response = await request(app).post('/api/print-templates/import')
-        .set('Authorization', OWNER).send(body);
+      const response = await request(app)
+        .post('/api/print-templates/import')
+        .set('Authorization', OWNER)
+        .send(body);
       assert.equal(response.status, expectedStatus, `${label}: status (got ${response.status})`);
       const message = `${response.body.error ?? ''} ${(response.body.details ?? []).join(' ')}`;
       assert(
@@ -415,9 +534,15 @@ async function runTransfer(): Promise<void> {
         `${label}: error mentions "${expectedFragment}" — got: ${message}`,
       );
     }
-    ok('every rejection class tested: bad version, wrong format, unknown fields, disallowed block, tampered checksum, oversize, malformed JSON');
+    ok(
+      'every rejection class tested: bad version, wrong format, unknown fields, disallowed block, tampered checksum, oversize, malformed JSON',
+    );
 
-    const count = (getDatabase().prepare('SELECT COUNT(*) AS n FROM merchant_print_templates WHERE origin = \'imported\'').get() as any).n;
+    const count = (
+      getDatabase()
+        .prepare("SELECT COUNT(*) AS n FROM merchant_print_templates WHERE origin = 'imported'")
+        .get() as any
+    ).n;
     assert.equal(count, 0, 'no rejected import ever partially installed a row');
     ok('invalid templates never partially install');
   }
@@ -427,36 +552,66 @@ async function runTransfer(): Promise<void> {
     let importedId = '';
     let importedRow: any;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const imported = await request(app).post('/api/print-templates/import')
+      const imported = await request(app)
+        .post('/api/print-templates/import')
         .set('Authorization', OWNER)
-        .send(attempt === 0
-          ? { file: exportedText, fileName: '/home/someone/front-counter-receipt.flocafe-template.json' }
-          : { file: exportedText });
+        .send(
+          attempt === 0
+            ? {
+                file: exportedText,
+                fileName: '/home/someone/front-counter-receipt.flocafe-template.json',
+              }
+            : { file: exportedText },
+        );
       assert.equal(imported.status, 201, `import returns 201 (got ${imported.status})`);
       const template = imported.body.template;
       assert.equal(template.status, 'draft', 'imports land as drafts');
       assert.equal(template.origin, 'imported');
       assert.notEqual(template.id, templateId, 'imports always mint a fresh identity');
       assert.equal(template.derivedFrom.type, 'offline-import');
-      assert.equal(template.derivedFrom.fileName, attempt === 0 ? 'front-counter-receipt.flocafe-template.json' : undefined,
-        'client file paths reduce to a bare informational file name');
+      assert.equal(
+        template.derivedFrom.fileName,
+        attempt === 0 ? 'front-counter-receipt.flocafe-template.json' : undefined,
+        'client file paths reduce to a bare informational file name',
+      );
       importedId = template.id;
 
-      importedRow = getDatabase().prepare('SELECT payload_json, checksum, derived_from, schema_version FROM merchant_print_templates WHERE id = ?').get(importedId);
+      importedRow = getDatabase()
+        .prepare(
+          'SELECT payload_json, checksum, derived_from, schema_version FROM merchant_print_templates WHERE id = ?',
+        )
+        .get(importedId);
       const sourceDigest = sha256(exportedText);
-      assert.equal(JSON.parse(importedRow.derived_from).templateId, sourceDigest,
-        'provenance records the digest of the exact source artifact');
+      assert.equal(
+        JSON.parse(importedRow.derived_from).templateId,
+        sourceDigest,
+        'provenance records the digest of the exact source artifact',
+      );
     }
     ok('imported templates land as new drafts with offline-import provenance');
 
-    assert.deepEqual(JSON.parse(importedRow.payload_json), PAYLOAD,
-      'round-trip preserves the payload exactly');
-    assert.equal(importedRow.checksum, sha256(importedRow.payload_json),
-      'imported checksum follows the storage convention');
+    assert.deepEqual(
+      JSON.parse(importedRow.payload_json),
+      PAYLOAD,
+      'round-trip preserves the payload exactly',
+    );
+    assert.equal(
+      importedRow.checksum,
+      sha256(importedRow.payload_json),
+      'imported checksum follows the storage convention',
+    );
     ok('export -> import round-trip is lossless');
 
-    const duplicates = (getDatabase().prepare('SELECT COUNT(*) AS n FROM merchant_print_templates WHERE name = ?').get('Front Counter Receipt') as any).n;
-    assert.equal(duplicates, 3, 'duplicate names allowed under distinct uuid identities (source + 2 imports)');
+    const duplicates = (
+      getDatabase()
+        .prepare('SELECT COUNT(*) AS n FROM merchant_print_templates WHERE name = ?')
+        .get('Front Counter Receipt') as any
+    ).n;
+    assert.equal(
+      duplicates,
+      3,
+      'duplicate names allowed under distinct uuid identities (source + 2 imports)',
+    );
     ok('duplicate names are permitted (identity is the uuid, never the source id)');
   }
 
@@ -466,23 +621,31 @@ async function runTransfer(): Promise<void> {
     const source = reformatted.template;
     reformatted.template = {
       schemaVersion: source.schemaVersion,
-      blocks: source.blocks.map((block: Record<string, unknown>) => Object.keys(block)
-        .sort()
-        .reverse()
-        .reduce<Record<string, unknown>>((acc, key) => {
-          acc[key] = block[key];
-          return acc;
-        }, {})),
+      blocks: source.blocks.map((block: Record<string, unknown>) =>
+        Object.keys(block)
+          .sort()
+          .reverse()
+          .reduce<Record<string, unknown>>((acc, key) => {
+            acc[key] = block[key];
+            return acc;
+          }, {}),
+      ),
       format: source.format,
       documentType: source.documentType,
     };
-    const res = await request(app).post('/api/print-templates/import')
-      .set('Authorization', OWNER).send({ file: JSON.stringify(reformatted) });
+    const res = await request(app)
+      .post('/api/print-templates/import')
+      .set('Authorization', OWNER)
+      .send({ file: JSON.stringify(reformatted) });
     assert.equal(res.status, 201, `whitespace/key-reformatted file imports (got ${res.status})`);
-    const sourceRow = getDatabase().prepare('SELECT checksum FROM merchant_print_templates WHERE id = ?')
+    const sourceRow = getDatabase()
+      .prepare('SELECT checksum FROM merchant_print_templates WHERE id = ?')
       .get(templateId) as any;
-    assert.equal(res.body.template.checksum, sourceRow.checksum,
-      'reformatted copy verifies to the persisted source checksum');
+    assert.equal(
+      res.body.template.checksum,
+      sourceRow.checksum,
+      'reformatted copy verifies to the persisted source checksum',
+    );
     ok('whitespace/key-order reformatting does not break verification');
   }
 
@@ -491,25 +654,49 @@ async function runTransfer(): Promise<void> {
     const { order, bill, business } = buildParityFixtures();
     const formatViaSelection = async (selection: string): Promise<Buffer> => {
       const { formatReceipt } = require('../main/printers/thermal');
-      return formatReceipt(order, bill, business, selection, 42, false, false, 'full', [], false, 'en');
+      return formatReceipt(
+        order,
+        bill,
+        business,
+        selection,
+        42,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+      );
     };
 
-    const originalBytes = await formatViaSelection(JSON.stringify({ source: 'merchant', id: templateId }));
-    const importedRows = getDatabase().prepare(
-      'SELECT id FROM merchant_print_templates WHERE origin = \'imported\' ORDER BY updated_at DESC LIMIT 1'
-    ).all() as any[];
+    const originalBytes = await formatViaSelection(
+      JSON.stringify({ source: 'merchant', id: templateId }),
+    );
+    const importedRows = getDatabase()
+      .prepare(
+        "SELECT id FROM merchant_print_templates WHERE origin = 'imported' ORDER BY updated_at DESC LIMIT 1",
+      )
+      .all() as any[];
     const importedId = importedRows[0].id;
-    await request(app).post(`/api/print-templates/${importedId}/activate`).set('Authorization', OWNER);
-    const importedBytes = await formatViaSelection(JSON.stringify({ source: 'merchant', id: importedId }));
-    assert(Buffer.compare(originalBytes, importedBytes) === 0,
-      'original and round-tripped template render byte-identically');
+    await request(app)
+      .post(`/api/print-templates/${importedId}/activate`)
+      .set('Authorization', OWNER);
+    const importedBytes = await formatViaSelection(
+      JSON.stringify({ source: 'merchant', id: importedId }),
+    );
+    assert(
+      Buffer.compare(originalBytes, importedBytes) === 0,
+      'original and round-tripped template render byte-identically',
+    );
     ok('render parity holds across the export/import boundary');
 
-    const archived = await request(app).post(`/api/print-templates/${importedId}/archive`)
+    const archived = await request(app)
+      .post(`/api/print-templates/${importedId}/archive`)
       .set('Authorization', OWNER);
     assert.equal(archived.status, 200);
     assert.equal(archived.body.template.status, 'archived');
-    const reExport = await request(app).get(`/api/print-templates/${importedId}/export`)
+    const reExport = await request(app)
+      .get(`/api/print-templates/${importedId}/export`)
       .set('Authorization', OWNER);
     assert.equal(reExport.status, 200, 'archived templates stay exportable');
     ok('draft -> active -> archive lifecycle intact after import; archived rows remain portable');
@@ -532,14 +719,22 @@ async function runLegacyStorageNormalization(): Promise<void> {
   {
     const legacyText = JSON.stringify(PAYLOAD);
     const canonical = serializeMerchantTemplatePayload(PAYLOAD);
-    assert.notEqual(legacyText, canonical,
-      'premise: legacy storage text differs from the canonical serialization');
+    assert.notEqual(
+      legacyText,
+      canonical,
+      'premise: legacy storage text differs from the canonical serialization',
+    );
     const reorder = (value: Record<string, unknown>): Record<string, unknown> =>
-      Object.keys(value).sort().reverse().reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = value[key];
-        return acc;
-      }, {});
-    const legacyPreviousText = JSON.stringify(reorder(PAYLOAD as unknown as Record<string, unknown>));
+      Object.keys(value)
+        .sort()
+        .reverse()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = value[key];
+          return acc;
+        }, {});
+    const legacyPreviousText = JSON.stringify(
+      reorder(PAYLOAD as unknown as Record<string, unknown>),
+    );
     const tamperedChecksum = 'f'.repeat(64);
 
     const insertLegacy = getDatabase().prepare(`
@@ -554,36 +749,78 @@ async function runLegacyStorageNormalization(): Promise<void> {
     // legacy), a row whose current payload was already rewritten by a later
     // edit but whose rollback point is still legacy, and a row whose stored
     // text no longer matches its checksum (integrity unknown).
-    insertLegacy.run('legacy-active-row', 'Legacy Counter Receipt', legacyText, 'active', null, sha256(legacyText));
-    insertLegacy.run('legacy-rollback-row', 'Legacy Rollback Point', canonical, 'active', legacyPreviousText, sha256(canonical));
-    insertLegacy.run('legacy-tampered-row', 'Legacy Tampered Row', legacyText, 'draft', null, tamperedChecksum);
+    insertLegacy.run(
+      'legacy-active-row',
+      'Legacy Counter Receipt',
+      legacyText,
+      'active',
+      null,
+      sha256(legacyText),
+    );
+    insertLegacy.run(
+      'legacy-rollback-row',
+      'Legacy Rollback Point',
+      canonical,
+      'active',
+      legacyPreviousText,
+      sha256(canonical),
+    );
+    insertLegacy.run(
+      'legacy-tampered-row',
+      'Legacy Tampered Row',
+      legacyText,
+      'draft',
+      null,
+      tamperedChecksum,
+    );
 
     getDatabase().pragma('user_version = 72');
     closeDatabase();
     initDatabase();
 
-    const readRow = (id: string): any => getDatabase().prepare(
-      'SELECT id, status, payload_json, previous_payload_json, checksum FROM merchant_print_templates WHERE id = ?'
-    ).get(id);
+    const readRow = (id: string): any =>
+      getDatabase()
+        .prepare(
+          'SELECT id, status, payload_json, previous_payload_json, checksum FROM merchant_print_templates WHERE id = ?',
+        )
+        .get(id);
 
     const migratedActive = readRow('legacy-active-row');
-    assert.deepEqual(JSON.parse(migratedActive.payload_json), PAYLOAD,
-      'normalization preserves the semantic content exactly');
-    assert.equal(migratedActive.payload_json, canonical,
-      'legacy active row rewritten to the canonical serialization');
-    assert.equal(migratedActive.checksum, sha256(canonical),
-      'checksum recomputed over the canonical text');
+    assert.deepEqual(
+      JSON.parse(migratedActive.payload_json),
+      PAYLOAD,
+      'normalization preserves the semantic content exactly',
+    );
+    assert.equal(
+      migratedActive.payload_json,
+      canonical,
+      'legacy active row rewritten to the canonical serialization',
+    );
+    assert.equal(
+      migratedActive.checksum,
+      sha256(canonical),
+      'checksum recomputed over the canonical text',
+    );
     assert.equal(migratedActive.status, 'active');
 
     const migratedRollback = readRow('legacy-rollback-row');
-    assert.equal(migratedRollback.payload_json, canonical,
-      'already-canonical payload stays byte-identical');
-    assert.equal(migratedRollback.previous_payload_json, canonical,
-      'legacy rollback point normalizes to the same canonical text');
+    assert.equal(
+      migratedRollback.payload_json,
+      canonical,
+      'already-canonical payload stays byte-identical',
+    );
+    assert.equal(
+      migratedRollback.previous_payload_json,
+      canonical,
+      'legacy rollback point normalizes to the same canonical text',
+    );
 
     const untouchedTampered = readRow('legacy-tampered-row');
-    assert.equal(untouchedTampered.payload_json, legacyText,
-      'rows with unverifiable integrity are left untouched');
+    assert.equal(
+      untouchedTampered.payload_json,
+      legacyText,
+      'rows with unverifiable integrity are left untouched',
+    );
     assert.equal(untouchedTampered.checksum, tamperedChecksum);
     ok('legacy payloads and rollback points normalize once; integrity-unknown rows stay untouched');
 
@@ -591,24 +828,36 @@ async function runLegacyStorageNormalization(): Promise<void> {
     getDatabase().pragma('user_version = 72');
     closeDatabase();
     initDatabase();
-    assert.deepEqual(readRow('legacy-active-row'), migratedActive,
-      'second migration run leaves normalized rows unchanged');
+    assert.deepEqual(
+      readRow('legacy-active-row'),
+      migratedActive,
+      'second migration run leaves normalized rows unchanged',
+    );
     assert.deepEqual(readRow('legacy-rollback-row'), migratedRollback);
     ok('normalization is idempotent across repeated upgrade runs');
 
     // The reported failure mode: export -> import of a pre-existing template
     // used to fail with 409 "Checksum mismatch" on every importer.
-    const exported = await request(app).get('/api/print-templates/legacy-active-row/export')
+    const exported = await request(app)
+      .get('/api/print-templates/legacy-active-row/export')
       .set('Authorization', OWNER);
     assert.equal(exported.status, 200, `migrated active template exports (got ${exported.status})`);
-    const reimported = await request(app).post('/api/print-templates/import')
-      .set('Authorization', OWNER).send({ file: exported.text });
-    assert.equal(reimported.status, 201,
-      `exported pre-existing template re-imports (got ${reimported.status}: ${reimported.body?.error ?? ''})`);
+    const reimported = await request(app)
+      .post('/api/print-templates/import')
+      .set('Authorization', OWNER)
+      .send({ file: exported.text });
+    assert.equal(
+      reimported.status,
+      201,
+      `exported pre-existing template re-imports (got ${reimported.status}: ${reimported.body?.error ?? ''})`,
+    );
     assert.equal(reimported.body.template.status, 'draft');
     assert.equal(reimported.body.template.origin, 'imported');
-    assert.equal(reimported.body.template.checksum, migratedActive.checksum,
-      'the migrated row transfers with its persisted checksum intact');
+    assert.equal(
+      reimported.body.template.checksum,
+      migratedActive.checksum,
+      'the migrated row transfers with its persisted checksum intact',
+    );
     ok('templates stored by earlier builds now survive the export -> import round trip');
   }
 }
@@ -622,7 +871,9 @@ async function runLegacyStorageNormalization(): Promise<void> {
     process.exit(0);
   } catch (error) {
     console.error(error);
-    try { closeDatabase(); } catch {}
+    try {
+      closeDatabase();
+    } catch {}
     process.exit(1);
   }
 })();

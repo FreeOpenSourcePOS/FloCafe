@@ -21,6 +21,7 @@ const {
   seedCategory,
   api,
   assert,
+  assertOrThrow,
   assertEqual,
   assertEqualOrThrow,
   assertIncludesOrThrow,
@@ -2308,6 +2309,297 @@ async function main() {
       retainedAfterUpdate.price,
       9.5,
       'F6: retained product price update commits cleanly',
+    );
+
+    console.log(
+      '\n─── Issue #1602: Excel/Sheets CSV hardening (BOM, formatted prices, booleans) ───',
+    );
+    // 1. UTF-8 BOM (\uFEFF) across categories, products (unquoted + quoted headers), addons, and BOM-only input
+    const bomCatImport = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: '\uFEFFname,parent,sort_order\nBOM Category,,10',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(bomCatImport.status, 200, 'BOM category CSV returns 200');
+    assertEqualOrThrow(bomCatImport.data.created, 1, 'BOM category CSV creates category');
+    assertEqualOrThrow(bomCatImport.data.failed, 0, 'BOM category CSV has zero failures');
+    assertOrThrow(
+      db.prepare('SELECT id FROM categories WHERE name = ?').get('BOM Category') !== undefined,
+      'BOM category header parses cleanly as "name"',
+    );
+
+    const bomProdUnquoted = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: '\uFEFFname,category,price,is_active\nBOM Unquoted Latte,BOM Category,15,TRUE',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(bomProdUnquoted.status, 200, 'unquoted BOM product CSV returns 200');
+    assertEqualOrThrow(bomProdUnquoted.data.created, 1, 'unquoted BOM product is created');
+    assertEqualOrThrow(bomProdUnquoted.data.failed, 0, 'unquoted BOM product has zero failures');
+
+    const bomProdQuoted = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: '\uFEFF"id","name","category","price","is_active"\n,"BOM Quoted Mocha","BOM Category","18.50","Yes"',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(bomProdQuoted.status, 200, 'quoted BOM product CSV returns 200');
+    assertEqualOrThrow(bomProdQuoted.data.created, 1, 'quoted BOM product is created');
+    assertEqualOrThrow(bomProdQuoted.data.failed, 0, 'quoted BOM product has zero failures');
+    const bomQuotedRow = db
+      .prepare('SELECT price, is_active FROM products WHERE name = ?')
+      .get('BOM Quoted Mocha') as { price: number; is_active: number } | undefined;
+    assertEqualOrThrow(bomQuotedRow?.price, 18.5, 'quoted BOM product price is parsed');
+    assertEqualOrThrow(bomQuotedRow?.is_active, 1, 'quoted BOM product boolean is parsed');
+
+    const bomAddonQuoted = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: '\uFEFF"group_name","addon_name","price","group_required","track_inventory"\n"BOM Group","BOM Addon","5.00","TRUE","Yes"',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(bomAddonQuoted.status, 200, 'quoted BOM addon CSV returns 200');
+    assertEqualOrThrow(bomAddonQuoted.data.addons_created, 1, 'quoted BOM addon is created');
+    assertEqualOrThrow(bomAddonQuoted.data.failed, 0, 'quoted BOM addon has zero failures');
+    const bomAddonRow = db
+      .prepare(
+        `SELECT a.price, a.track_inventory, g.is_required
+         FROM addons a JOIN addon_groups g ON g.id = a.addon_group_id
+         WHERE a.name = ?`,
+      )
+      .get('BOM Addon') as
+      | { price: number; track_inventory: number; is_required: number }
+      | undefined;
+    assertEqualOrThrow(bomAddonRow?.price, 5, 'quoted BOM addon price is parsed');
+    assertEqualOrThrow(bomAddonRow?.track_inventory, 1, 'quoted BOM addon track_inventory is 1');
+    assertEqualOrThrow(bomAddonRow?.is_required, 1, 'quoted BOM addon group_required is 1');
+
+    const bomOnly = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: { csv: '\uFEFF' },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(bomOnly.status, 400, 'BOM-only CSV is rejected with 400');
+
+    // 2. Unambiguous formatted Excel/Sheets prices
+    const formattedPrices = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          ',,Dollar Price,BOM Category,$12.50,desc,$2.25,,,,,TRUE',
+          ',,ISO Prefix Price,BOM Category,USD 12.50,desc,USD 1.50,,,,,Yes',
+          ',,Grouped Price,BOM Category,"1,250.00",desc,"250.00",,,,,1',
+          ',,Grouped Integer Price,BOM Category,"1,250",desc,,,,,,TRUE',
+          ',,Large Western Grouped Price,BOM Category,"12,345,678.00",desc,,,,,,TRUE',
+          ',,Rupee Grouped Price,BOM Category,"₹ 1,499.50",desc,,,,,,TRUE',
+          ',,Euro NBSP Suffix Price,BOM Category,"12.50\u00a0€",desc,,,,,,TRUE',
+          ',,Bidi NBSP Rupee Price,BOM Category,"\u200e₹\u00a01,499.50\u200f",desc,,,,,,TRUE',
+          ',,ISO Suffix Price,BOM Category,12.50 USD,desc,,,,,,TRUE',
+          ',,Dollar ISO Symbol Price,BOM Category,USD$12.50,desc,,,,,,TRUE',
+          ',,Peso ISO Spaced Symbol Price,BOM Category,MXN $12.50,desc,,,,,,TRUE',
+          ',,Dirham Prefix Price,BOM Category,"د.إ\u00a045.00",desc,,,,,,TRUE',
+          ',,Supplemental Leone ISO Price,BOM Category,SLE 12.50,desc,,,,,,TRUE',
+          ',,Supplemental Caribbean Guilder ISO Price,BOM Category,XCG 12.50,desc,,,,,,TRUE',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(formattedPrices.status, 200, 'formatted prices import returns 200');
+    assertEqualOrThrow(formattedPrices.data.failed, 0, 'all valid formatted prices succeed');
+    assertEqualOrThrow(formattedPrices.data.created, 14, 'all 14 formatted price products created');
+    const checkPrice = (name: string, expectedPrice: number, expectedCost?: number) => {
+      const row = db.prepare('SELECT price, cost FROM products WHERE name = ?').get(name) as
+        | { price: number; cost: number }
+        | undefined;
+      assertEqualOrThrow(row?.price, expectedPrice, `${name} price equals ${expectedPrice}`);
+      if (expectedCost !== undefined) {
+        assertEqualOrThrow(row?.cost, expectedCost, `${name} cost equals ${expectedCost}`);
+      }
+    };
+    checkPrice('Dollar Price', 12.5, 2.25);
+    checkPrice('ISO Prefix Price', 12.5, 1.5);
+    checkPrice('Grouped Price', 1250, 250);
+    checkPrice('Grouped Integer Price', 1250);
+    checkPrice('Large Western Grouped Price', 12345678);
+    checkPrice('Rupee Grouped Price', 1499.5);
+    checkPrice('Euro NBSP Suffix Price', 12.5);
+    checkPrice('Bidi NBSP Rupee Price', 1499.5);
+    checkPrice('ISO Suffix Price', 12.5);
+    checkPrice('Dollar ISO Symbol Price', 12.5);
+    checkPrice('Peso ISO Spaced Symbol Price', 12.5);
+    checkPrice('Dirham Prefix Price', 45);
+    checkPrice('Supplemental Leone ISO Price', 12.5);
+    checkPrice('Supplemental Caribbean Guilder ISO Price', 12.5);
+
+    const formattedAddonPrices = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsv(
+          'Formatted Addons,Dollar Addon,$2.50,FALSE,0,1',
+          'Formatted Addons,Grouped Addon,"1,250.00",No,0,1',
+          'Formatted Addons,Euro NBSP Addon,"12.50\u00a0€",0,0,1',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(formattedAddonPrices.status, 200, 'formatted addon prices return 200');
+    assertEqualOrThrow(formattedAddonPrices.data.failed, 0, 'formatted addon prices have 0 errors');
+    assertEqualOrThrow(formattedAddonPrices.data.addons_created, 3, 'formatted addons created');
+    assertEqualOrThrow(
+      (db.prepare('SELECT price FROM addons WHERE name = ?').get('Grouped Addon') as any)?.price,
+      1250,
+      'grouped addon price equals 1250',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT price FROM addons WHERE name = ?').get('Euro NBSP Addon') as any)?.price,
+      12.5,
+      'NBSP Euro addon price equals 12.5',
+    );
+
+    // 3. Fail-closed rejection of ambiguous comma-decimals, garbage, double/invalid currency, and negatives
+    const rejectedPrices = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          ',,Ambiguous Comma Decimal,BOM Category,"12,50",desc,,,,,,TRUE',
+          ',,Garbage Currency,BOM Category,$abc,desc,,,,,,TRUE',
+          ',,Invalid ISO Code,BOM Category,ABC 12.50,desc,,,,,,TRUE',
+          ',,Reserved XXX ISO Code,BOM Category,XXX 12.50,desc,,,,,,TRUE',
+          ',,Reserved XTS ISO Code,BOM Category,XTS 12.50,desc,,,,,,TRUE',
+          ',,Double Currency Symbol,BOM Category,$$12.50,desc,,,,,,TRUE',
+          ',,Conflicting Currency Symbols,BOM Category,$12.50 €,desc,,,,,,TRUE',
+          ',,Conflicting Euro Dollar Prefix,BOM Category,EUR $12.50,desc,,,,,,TRUE',
+          ',,Conflicting Pound Dollar Prefix,BOM Category,GBP $12.50,desc,,,,,,TRUE',
+          ',,Negative Dollar,BOM Category,-$12.50,desc,,,,,,TRUE',
+          ',,Dollar Negative,BOM Category,$-12.50,desc,,,,,,TRUE',
+          ',,Negative Euro NBSP,BOM Category,"-12.50\u00a0€",desc,,,,,,TRUE',
+          ",,Formula In Price,BOM Category,=CMD('calc'),desc,,,,,,TRUE",
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(rejectedPrices.status, 200, 'rejected prices return row validation results');
+    assertEqualOrThrow(rejectedPrices.data.created, 0, 'no invalid price row is persisted');
+    assertEqualOrThrow(rejectedPrices.data.failed, 13, 'all 13 invalid/ambiguous price rows fail');
+    assertEqualOrThrow(
+      db.prepare('SELECT id FROM products WHERE name = ?').get('Ambiguous Comma Decimal'),
+      undefined,
+      'ambiguous comma-decimal "12,50" is never persisted (never 100x scaled to 1250)',
+    );
+    assertOrThrow(
+      rejectedPrices.data.errors.some((e: string) => e.includes('invalid price "12,50"')),
+      'ambiguous comma-decimal "12,50" reports clear row error',
+    );
+    assertOrThrow(
+      rejectedPrices.data.errors.some((e: string) => e.includes('invalid price "$abc"')),
+      'garbage "$abc" reports clear row error',
+    );
+
+    // 4. Spreadsheet boolean tokens and fail-closed invalid boolean rejection
+    const booleanProducts = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          ',,Bool TRUE,BOM Category,10,desc,,,,,,TRUE',
+          ',,Bool FALSE,BOM Category,10,desc,,,,,,FALSE',
+          ',,Bool Yes,BOM Category,10,desc,,,,,,Yes',
+          ',,Bool No,BOM Category,10,desc,,,,,,No',
+          ',,Bool One,BOM Category,10,desc,,,,,,1',
+          ',,Bool Zero,BOM Category,10,desc,,,,,,0',
+          ',,Bool Empty Default,BOM Category,10,desc,,,,,,',
+          ',,Bool Invalid Maybe,BOM Category,10,desc,,,,,,maybe',
+          ',,Bool Formula,BOM Category,10,desc,,,,,,=TRUE()',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(booleanProducts.status, 200, 'boolean product import returns 200');
+    assertEqualOrThrow(booleanProducts.data.created, 7, 'valid boolean rows are created');
+    assertEqualOrThrow(booleanProducts.data.failed, 2, 'invalid boolean rows fail validation');
+    const checkActive = (name: string, expected: number) => {
+      const row = db.prepare('SELECT is_active FROM products WHERE name = ?').get(name) as
+        | { is_active: number }
+        | undefined;
+      assertEqualOrThrow(row?.is_active, expected, `${name} has is_active=${expected}`);
+    };
+    checkActive('Bool TRUE', 1);
+    checkActive('Bool FALSE', 0);
+    checkActive('Bool Yes', 1);
+    checkActive('Bool No', 0);
+    checkActive('Bool One', 1);
+    checkActive('Bool Zero', 0);
+    checkActive('Bool Empty Default', 1);
+    assertEqualOrThrow(
+      db.prepare('SELECT id FROM products WHERE name = ?').get('Bool Invalid Maybe'),
+      undefined,
+      'invalid boolean "maybe" is not persisted',
+    );
+    assertOrThrow(
+      booleanProducts.data.errors.some((e: string) => e.includes('invalid is_active "maybe"')),
+      'invalid boolean "maybe" reports clear row error',
+    );
+
+    const booleanAddons = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          `${ADDON_HEADER},track_inventory`,
+          'Bool Group,Valid Bool Addon,3,TRUE,0,1,FALSE',
+          'Bool Group,Invalid Track Addon,3,No,0,1,maybe',
+          'Bool Invalid Group,Invalid Req Addon,3,sometimes,0,1,Yes',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(booleanAddons.status, 200, 'boolean addon import returns 200');
+    assertEqualOrThrow(booleanAddons.data.addons_created, 1, 'valid boolean addon is created');
+    assertEqualOrThrow(booleanAddons.data.failed, 2, 'invalid boolean addon rows fail validation');
+    assertEqualOrThrow(
+      db.prepare('SELECT id FROM addons WHERE name = ?').get('Invalid Track Addon'),
+      undefined,
+      'invalid track_inventory addon is not persisted',
+    );
+    assertEqualOrThrow(
+      db.prepare('SELECT id FROM addon_groups WHERE name = ?').get('Bool Invalid Group'),
+      undefined,
+      'invalid group_required does not create addon group',
+    );
+
+    // 5. Formula injection protection & size bounds preserved with BOM
+    const bomFormulaImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: '\uFEFFname,category,price,is_active\n"=CMD(\'calc\')",BOM Category,$10.00,TRUE',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(bomFormulaImport.data.created, 1, 'BOM formula text product imports');
+    const bomExported = await fetchText(baseUrl, '/api/menu/csv/export/products', authHeader);
+    assertIncludesOrThrow(
+      bomExported,
+      "'=CMD('calc')",
+      'exported CSV neutralizes =CMD(...) formula cell with leading single quote',
+    );
+    assertOrThrow(
+      !/,=CMD\(/.test(bomExported),
+      'no bare unneutralized =CMD(...) cell exists in exported CSV',
+    );
+
+    const oversizedBomCsv = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: { csv: '\uFEFFname,price\n' + 'a'.repeat(100_000) + ',10' },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      oversizedBomCsv.status,
+      400,
+      'MAX_CSV_BYTES bound still rejects oversized CSV even with leading BOM',
     );
   } finally {
     server.close();

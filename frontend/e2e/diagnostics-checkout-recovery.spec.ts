@@ -313,6 +313,15 @@ test('a lost prepaid payment response replays the same saved request after bill 
       });
     });
     let loseReply = true;
+    let loseFirstStatus = true;
+    await page.route('**/api/bills/*', async (route) => {
+      if (route.request().method() === 'GET' && loseFirstStatus) {
+        loseFirstStatus = false;
+        await route.abort('timedout');
+        return;
+      }
+      await route.continue();
+    });
     await page.route('**/api/bills/*/payments', async (route) => {
       if (route.request().method() !== 'POST' || !loseReply) {
         await route.continue();
@@ -340,13 +349,19 @@ test('a lost prepaid payment response replays the same saved request after bill 
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
     await page.getByRole('button', { name: /Confirm Payment/ }).click();
 
+    const checkout = page.getByTestId('prepaid-checkout-modal');
+    await expect(checkout).toBeVisible();
     await expect(
-      page
-        .getByRole('main')
-        .getByText('FloCafe could not confirm whether the order or payment was saved.', {
-          exact: true,
-        }),
+      checkout.getByText('FloCafe could not confirm whether the order or payment was saved.', {
+        exact: true,
+      }),
     ).toBeVisible();
+    await checkout.getByText('Technical details', { exact: true }).click();
+    await expect(checkout.getByText(/payment\.create/)).toBeVisible();
+    await expect(checkout.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(checkout).toBeVisible();
+    await expect(checkout.getByRole('button', { name: 'Cash', exact: true })).toBeDisabled();
     expect(paymentRequests).toHaveLength(1);
     expect(captures).toHaveLength(1);
     expect(captures[0]).toMatchObject({
@@ -356,11 +371,25 @@ test('a lost prepaid payment response replays the same saved request after bill 
     });
     expect(captures[0].operation_id).toBe(paymentRequests[0].operationId);
 
-    await page.getByRole('button', { name: 'Place Order' }).click();
-    await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash', exact: true }).click();
-    await page.getByRole('button', { name: /Confirm Payment/ }).click();
+    await checkout.getByRole('button', { name: 'Check payment status' }).click();
+    await expect(checkout.getByRole('button', { name: 'Check payment status' })).toBeEnabled();
+    await expect(checkout.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+    expect(paymentRequests).toHaveLength(1);
+    await checkout.getByRole('button', { name: 'Check payment status' }).click();
+    await expect(checkout.getByRole('button', { name: 'Send same payment' })).toBeVisible();
+    expect(paymentRequests).toHaveLength(1);
+    await expect(
+      checkout.getByText(
+        'Retrying sends the same saved payment with the same request key. Do not start a different payment.',
+      ),
+    ).toBeVisible();
+    await checkout.getByRole('button', { name: 'Send same payment' }).evaluate((button) => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     await expect(page.getByText(/Order #.+ paid!/)).toBeVisible();
+    await expect(checkout.getByText('Payment recorded!', { exact: true })).toBeVisible();
+    await expect(checkout.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
     expect(
       paymentRequests,
       'the committed payment is resolved by replaying the saved request',
@@ -378,6 +407,54 @@ test('a lost prepaid payment response replays the same saved request after bill 
         : JSON.parse(String(recoveredPayments || '[]')),
       'the recovered bill still records one payment',
     ).toHaveLength(1);
+    await checkout.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(checkout).not.toBeVisible();
+  } finally {
+    await restoreBusiness(page, originalBusiness);
+  }
+});
+
+test('prepaid confirmation offers a receipt for the paid customer', async ({ page }) => {
+  const originalBusiness = await setBillingType(page, 'prepaid');
+  const phone = `+668${String(Date.now()).slice(-8)}`;
+  try {
+    const response = await page.request.post(`${BASE}/api/customers`, {
+      headers: { Authorization: `Bearer ${MANAGER_TOKEN}` },
+      data: { name: 'Checkout Receipt Customer', phone, country_code: '+66' },
+    });
+    expect(response.ok()).toBeTruthy();
+    await loginAndOpenPos(page);
+    await page.getByTestId('pos-customer-search-input').first().fill(phone);
+    await page
+      .getByRole('button')
+      .filter({ has: page.getByText(phone, { exact: true }) })
+      .first()
+      .click();
+    await addOneProduct(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    const checkout = page.getByTestId('prepaid-checkout-modal');
+    await expect(checkout.getByRole('button', { name: /^Tax / })).toBeVisible();
+    await checkout.getByRole('button', { name: 'Cash', exact: true }).click();
+    await checkout.getByRole('button', { name: /Confirm Payment/ }).click();
+    await expect(checkout.getByText('Payment recorded!', { exact: true })).toBeVisible();
+    await page.evaluate(() => {
+      const target = window as Window & { receiptShareUrl?: string };
+      window.open = (() => ({
+        opener: null,
+        location: {
+          set href(value: string) {
+            target.receiptShareUrl = value;
+          },
+        },
+      })) as typeof window.open;
+    });
+    await checkout.getByRole('button', { name: 'Share via WhatsApp' }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as Window & { receiptShareUrl?: string }).receiptShareUrl),
+      )
+      .toContain(phone.replace('+', ''));
+    await checkout.getByRole('button', { name: 'Done', exact: true }).click();
   } finally {
     await restoreBusiness(page, originalBusiness);
   }

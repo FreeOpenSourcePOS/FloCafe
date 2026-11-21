@@ -155,9 +155,16 @@ Printing can happen before any user interaction, so the locales a store's print 
 loaded during authenticated bootstrap. `syncPrintPoliciesAtBootstrap()` in
 `frontend/src/lib/print-policy-bootstrap.ts` parses the tenant's `bill_language_policy` and
 `kot_language_policy`, resolves the receipt and KOT languages, loads that set with
-`Promise.allSettled`, and returns the languages whose load rejected. The caller surfaces those
-failures. It does not silently substitute English, because a receipt printed in the wrong language is
-a worse outcome than a visible error.
+`Promise.allSettled`, applies the parsed policies to the settings store, and returns the languages
+whose load rejected. The caller surfaces those failures. It does not silently substitute English,
+because a receipt printed in the wrong language is a worse outcome than a visible error.
+
+Auth paths register that promise with `registerPrintPolicyBootstrap()`, and
+`awaitPrintPolicyBootstrap()` gates `resolveReadyBillPrintLanguages()`,
+`resolveReadyKotTicketLanguage()`, and `ensurePrintLanguagesLoaded()` so even a session that marks
+auth ready synchronously (such as KDS sign-in via `syncAuthenticatedSession()`) waits for the active
+tenant's policies and locales before the first print resolves labels. `clearPrintPolicyBootstrap()`
+releases the barrier on lock, logout, or when no tenant is selected.
 
 An unparseable or missing print policy is not an error: it resolves to the default policy, which
 falls back to the store language.

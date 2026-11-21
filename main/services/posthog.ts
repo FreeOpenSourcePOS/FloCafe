@@ -22,6 +22,8 @@ import {
   type PostHogEnvironment,
 } from './posthog-config';
 import { getOfflineModeAbortSignal, onOfflineModeEnabled } from './offline-mode';
+import { isOperationReference } from '../lib/operation-failure';
+import { queueRefusalFromDetail } from '../printers/print-failure-facts';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
 import {
@@ -127,6 +129,8 @@ const CLOUD_ROUTE_PREFIX = '/api/settings/cloud';
 /** These answer 502 or 503 when a remote host is unreachable, which is normal while offline. */
 const OFFLINE_GATEWAY_ROUTES = ['/api/products/fetch-url', '/api/mobile/devices'];
 const apiFailureSentAt = new Map<string, number>();
+/** Reports already sent, so a delivery retry does not send the same window twice. */
+const sentOperationReports = new Set<string>();
 
 interface CachedConsentState {
   level: ProductAnalyticsLevel;
@@ -644,6 +648,8 @@ export interface PrintFailureFacts {
   detail?: string;
   /** Removed from the text before it is sent; the queue name itself never leaves the machine. */
   printer_name?: string;
+  /** Enum-only facts about the queue and the failing step. */
+  diagnostics?: Record<string, string | number>;
 }
 
 /** Sends a failed print job while error sending is on. Make and model are not known here. */
@@ -669,6 +675,103 @@ export function capturePostHogPrintFailure(facts: PrintFailureFacts): void {
         ...(facts.detail
           ? { error_text: scrubPrinterErrorText(facts.detail, facts.printer_name) }
           : {}),
+        ...(facts.diagnostics ?? {}),
+      },
+    });
+  } catch {
+    // A failed PostHog send is dropped. There is no outbox.
+  }
+}
+
+/** A print the Windows queue refused and the direct print to its own port saved. */
+export function capturePostHogPrintRecovered(facts: {
+  kind: string;
+  transport?: 'direct_tcp_fallback';
+  detail?: string;
+  queuePort?: { kind: string };
+}): void {
+  try {
+    if (facts.transport !== 'direct_tcp_fallback') return;
+    if (!getConsentState().diagnosticsEnabled) return;
+    const current = activeClient();
+    if (!current) return;
+    const who = identity();
+    const queueRefusal = queueRefusalFromDetail(facts.detail);
+    current.capture({
+      distinctId: who.distinctId,
+      event: 'printer_recovered',
+      properties: {
+        ...readSuperProperties(who),
+        ...readOsProperties(),
+        process_type: 'main',
+        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
+        capture_point: 'printer',
+        via: 'direct_tcp',
+        kind: facts.kind,
+        port_kind: facts.queuePort?.kind ?? 'unknown',
+        ...(queueRefusal ? { queue_refusal: queueRefusal } : {}),
+      },
+    });
+  } catch {
+    // A failed PostHog send is dropped. There is no outbox.
+  }
+}
+
+/**
+ * Sends one sealed operation-failure report, while error sending is on. It carries only the
+ * report's validated fields, never a correlation id, a message, or free text.
+ */
+export function capturePostHogOperationFailure(report: Record<string, unknown>): void {
+  try {
+    if (!getConsentState().diagnosticsEnabled) return;
+    const capturePoint = report.capture_point;
+    // Printer failures already leave as printer_failed from the printer capture point.
+    if (typeof capturePoint !== 'string' || capturePoint.startsWith('fc.backend.printer.')) return;
+    const current = activeClient();
+    if (!current) return;
+    const reportId = report.report_id;
+    if (isOperationReference(reportId)) {
+      if (sentOperationReports.has(reportId)) return;
+      // Bounded, so a long run cannot grow the set without end.
+      if (sentOperationReports.size >= 500) sentOperationReports.clear();
+      sentOperationReports.add(reportId);
+    }
+    const lastOccurredAt = new Date(String(report.last_occurred_at ?? ''));
+    const occurredAt = Number.isNaN(lastOccurredAt.getTime()) ? undefined : lastOccurredAt;
+    const reportAppVersion =
+      typeof report.app_version === 'string' && report.app_version.trim()
+        ? report.app_version.trim()
+        : undefined;
+    const reportPlatform =
+      typeof report.platform === 'string' && report.platform.trim()
+        ? report.platform.trim()
+        : undefined;
+    const who = identity();
+    current.capture({
+      distinctId: who.distinctId,
+      event: 'operation_failed',
+      // The report id and its last occurrence keep a resend after a restart as one event.
+      ...(isOperationReference(reportId) ? { uuid: reportId } : {}),
+      ...(occurredAt ? { timestamp: occurredAt } : {}),
+      properties: {
+        ...readSuperProperties(who),
+        ...(reportAppVersion
+          ? {
+              app_version: reportAppVersion,
+              release_channel: /-beta\b/.test(reportAppVersion) ? 'beta' : 'stable',
+            }
+          : {}),
+        ...(reportPlatform ? { platform: reportPlatform } : {}),
+        process_type: 'main',
+        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
+        capture_point: capturePoint,
+        reason_code: report.reason_code,
+        operation: report.operation,
+        stage: report.stage,
+        outcome: report.outcome,
+        classification: report.classification,
+        count: report.count,
+        facts: report.facts,
       },
     });
   } catch {

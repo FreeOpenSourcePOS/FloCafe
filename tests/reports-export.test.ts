@@ -2003,15 +2003,13 @@ async function run(): Promise<void> {
       closeDatabase();
 
       const repoRoot = path.resolve(__dirname, '..');
+      const registerTsx = path.join(repoRoot, 'tests/register-tsx.cjs');
       const bootstrapFile = path.join(testDir, 'run-real-electron-reports-export.cjs');
       fs.writeFileSync(
         bootstrapFile,
         `const path = require('node:path');
 const repoRoot = ${JSON.stringify(repoRoot)};
-require(path.join(repoRoot, 'node_modules/ts-node')).register({
-  transpileOnly: true,
-  project: path.join(repoRoot, 'tests/tsconfig.json'),
-});
+require(${JSON.stringify(registerTsx)});
 require(path.join(repoRoot, 'tests/reports-export.test.ts'));
 `,
         'utf8',

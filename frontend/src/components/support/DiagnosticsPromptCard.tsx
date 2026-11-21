@@ -18,6 +18,7 @@ import { shouldShowDiagnosticsPrompt } from '@shared/diagnostics-prompt';
 interface PromptState {
   enabled: boolean;
   dismissed: boolean;
+  cloud_deletion_blocked?: boolean;
   prompt_count: number;
   last_asked_at: string | null;
   problems_since: number;
@@ -53,6 +54,7 @@ export default function DiagnosticsPromptCard() {
         const show = shouldShowDiagnosticsPrompt({
           enabled: data.enabled,
           dismissed: data.dismissed,
+          cloudDeletionBlocked: Boolean(data.cloud_deletion_blocked),
           promptCount: data.prompt_count,
           lastAskedAt: data.last_asked_at,
           problemsSince: data.problems_since,
@@ -83,20 +85,27 @@ export default function DiagnosticsPromptCard() {
 
   const sendReports = async () => {
     try {
-      await api.post('/settings/diagnostics-prompt', { event: 'accepted' });
-    } catch {
-      /* The count is optional; turning reports on is not. */
-    }
-    try {
       await api.put('/settings/diagnostics_consent', { value: 'true' });
       await api.put('/settings/diagnostics_transmission_enabled', {
         value: 'true',
       });
-      setOpen(false);
-    } catch {
+    } catch (error: unknown) {
+      const response = (error as { response?: { status?: number; data?: { error?: string } } })
+        ?.response;
+      if (response?.status === 409 && response.data?.error === 'cloud_deletion_pending') {
+        setOpen(false);
+        return;
+      }
       // The card stays, so the person can try again.
       toast.error(tp('saveFailed'));
+      return;
     }
+    try {
+      await api.post('/settings/diagnostics-prompt', { event: 'accepted' });
+    } catch {
+      /* The count is optional; turning reports on is not. */
+    }
+    setOpen(false);
   };
 
   const dontAskAgain = async () => {

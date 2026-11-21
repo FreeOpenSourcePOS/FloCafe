@@ -1964,3 +1964,260 @@ test('payment correction waits for fresh eligibility and preserves mixed line in
     releaseBill();
   }
 });
+
+test('shiftless paid order allows payment correction and closed-shift order hides footer button with single-reason menu copy', async ({
+  page,
+}) => {
+  const auth = () => ({
+    Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+  });
+
+  // Ensure no cash shift is open before creating the shiftless paid order
+  const currentRes = await page.request.get(`${BASE}/api/cash-sessions/current`, {
+    headers: auth(),
+  });
+  expect(currentRes.ok()).toBeTruthy();
+  const currentBody = await currentRes.json();
+  const activeSession = currentBody?.session ?? (currentBody?.id ? currentBody : null);
+  if (activeSession?.id) {
+    const closeExisting = await page.request.post(
+      `${BASE}/api/cash-sessions/${activeSession.id}/close`,
+      {
+        headers: auth(),
+        data: { counted_cash_cents: activeSession.expected_cash_cents ?? 0 },
+      },
+    );
+    expect(closeExisting.ok()).toBeTruthy();
+  }
+
+  // Provision owner PIN for payment method correction approval
+  const setPinRes = await page.request.put(`${BASE}/api/staff/e2e-owner`, {
+    headers: auth(),
+    data: { pin: '1234' },
+  });
+  expect(setPinRes.ok()).toBeTruthy();
+
+  try {
+    // 1. Shiftless paid order (card, cash_session_id = 0)
+    const shiftlessOrder = await createTakeaway(page, 'Shiftless payment correction E2E');
+    const shiftlessBillRes = await page.request.post(`${BASE}/api/bills/generate`, {
+      headers: auth(),
+      data: { order_id: shiftlessOrder.id },
+    });
+    expect(shiftlessBillRes.ok()).toBeTruthy();
+    const { bill: shiftlessBill } = await shiftlessBillRes.json();
+    const payShiftlessRes = await page.request.post(
+      `${BASE}/api/bills/${shiftlessBill.id}/payment`,
+      {
+        headers: auth(),
+        data: { method: 'card', amount: null, transaction_id: 'TX-E2E-SHIFTLESS-01' },
+      },
+    );
+    expect(payShiftlessRes.ok()).toBeTruthy();
+    const paidShiftless = (await payShiftlessRes.json()).bill;
+    expect(paidShiftless.payment_details[0].cash_session_id).toBe(0);
+
+    // 2. Closed-shift paid order
+    const openShiftRes = await page.request.post(`${BASE}/api/cash-sessions/open`, {
+      headers: auth(),
+      data: { opening_float_cents: 0 },
+    });
+    expect(openShiftRes.ok()).toBeTruthy();
+    const openedShift = await openShiftRes.json();
+    const closedShiftOrder = await createTakeaway(page, 'Closed-shift payment correction E2E');
+    const closedShiftBillRes = await page.request.post(`${BASE}/api/bills/generate`, {
+      headers: auth(),
+      data: { order_id: closedShiftOrder.id },
+    });
+    expect(closedShiftBillRes.ok()).toBeTruthy();
+    const { bill: closedShiftBill } = await closedShiftBillRes.json();
+    const payClosedShiftRes = await page.request.post(
+      `${BASE}/api/bills/${closedShiftBill.id}/payment`,
+      {
+        headers: auth(),
+        data: { method: 'cash', amount: null },
+      },
+    );
+    expect(payClosedShiftRes.ok()).toBeTruthy();
+    const closeShiftRes = await page.request.post(
+      `${BASE}/api/cash-sessions/${openedShift.id}/close`,
+      {
+        headers: auth(),
+        data: { counted_cash_cents: Math.round(Number(closedShiftBill.total) * 100) },
+      },
+    );
+    expect(closeShiftRes.ok()).toBeTruthy();
+
+    const pinUsersFetched = page
+      .waitForResponse((res) => res.url().includes('/api/auth/pin-users'), { timeout: 5_000 })
+      .catch(() => null);
+    await page.goto(`${BASE}/auth/login`);
+    await pinUsersFetched;
+    const passwordTab = page.getByTestId('signin-mode-password');
+    if (await passwordTab.isVisible()) {
+      await passwordTab.click();
+    }
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+
+    // Verify shiftless paid order exposes working Correct payment method button
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${shiftlessOrder.order_number}` })
+      .click();
+    const detailPanel = page.getByTestId('orders-detail-panel');
+    await expect(detailPanel.getByTestId('correct-payment-method-button')).toBeVisible();
+    await expect(detailPanel.getByTestId('correct-payment-method-button')).toBeEnabled();
+    await detailPanel.getByTestId('correct-payment-method-button').click();
+
+    await expect(page.getByTestId('correct-payment-method-modal')).toBeVisible();
+    await page.getByTestId('correct-payment-method-select').selectOption('cash');
+    await page.getByTestId('correct-payment-pin-input').fill('1234');
+    await page.getByTestId('correct-payment-submit-button').click();
+    await expect(page.getByTestId('correct-payment-method-modal')).toBeHidden();
+
+    // Confirm persisted method switched to cash
+    const updatedShiftlessRes = await page.request.get(`${BASE}/api/bills/${shiftlessBill.id}`, {
+      headers: auth(),
+    });
+    expect(updatedShiftlessRes.ok()).toBeTruthy();
+    const updatedShiftless = (await updatedShiftlessRes.json()).bill;
+    expect(updatedShiftless.payment_details[0].method).toBe('cash');
+    expect(updatedShiftless.payment_details[0].cash_session_id).toBe(0);
+
+    // Verify closed-shift paid order hides footer button and shows concise single-reason in overflow menu
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${closedShiftOrder.order_number}` })
+      .click();
+    await expect(detailPanel.getByTestId('correct-payment-method-button')).toHaveCount(0);
+    await expect(detailPanel).not.toContainText('Unavailable: check refunds');
+
+    // Open the overflow menu (second button in the header actions, right after the Print icon button)
+    const overflowTrigger = detailPanel.locator('button[aria-haspopup="menu"]');
+    await overflowTrigger.click();
+    const menuItem = page.getByTestId('correct-payment-method-menu-item');
+    await expect(menuItem).toBeVisible();
+    await expect(menuItem).toHaveAttribute('aria-disabled', 'true');
+    await expect(menuItem).toContainText('Cash shift is closed');
+  } finally {
+    await page.request.put(`${BASE}/api/staff/e2e-owner`, {
+      headers: auth(),
+      data: { pin: null },
+    });
+  }
+});
+
+test('post-checkout completion banner supports Print, Next Order, and View in Completed in split layout', async ({
+  page,
+}) => {
+  const auth = () => ({
+    Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+  });
+
+  // Create two takeaway orders that settle immediately upon full payment (no KDS hold).
+  const firstOrder = await createTakeaway(page, 'Post-pay transition primary');
+  const secondOrder = await createTakeaway(page, 'Post-pay transition next');
+
+  await login(page, 'owner@flo.local');
+  await page.goto(`${BASE}/orders`);
+
+  const firstRow = page.getByRole('button').filter({ hasText: `#${firstOrder.order_number}` });
+  const secondRow = page.getByRole('button').filter({ hasText: `#${secondOrder.order_number}` });
+  await expect(firstRow).toBeVisible();
+  await expect(secondRow).toBeVisible();
+
+  await firstRow.click();
+  const detailPanel = page.getByTestId('orders-detail-panel');
+  await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toBeVisible();
+
+  // Checkout and pay the first order in full via PaymentModal.
+  await detailPanel.getByRole('button', { name: /Checkout|Take Payment/ }).click();
+  const modal = page.locator('.fixed.inset-0').last();
+  await expect(modal).toBeVisible();
+  await modal.getByRole('button', { name: /^Cash/ }).click();
+  await modal.getByRole('button', { name: /^(Confirm Payment|Pay\s)/ }).click();
+  const modalDone = modal.getByRole('button', { name: 'Done', exact: true });
+  await expect(modalDone).toBeVisible({ timeout: 20_000 });
+  await modalDone.click();
+
+  // Emerald completion banner replaces the amber displacement banner and keeps receipt actions live.
+  const settledBanner = detailPanel.getByTestId('order-settled-banner');
+  await expect(settledBanner).toBeVisible({ timeout: 15_000 });
+  await expect(settledBanner).toContainText('Payment complete');
+  await expect(detailPanel.getByText('This order is no longer in the current list.')).toHaveCount(
+    0,
+  );
+
+  // Clicking Print -> Confirm Print on the just-paid snapshot resolves the bill instead of "Bill not found".
+  const printBtn = detailPanel.getByRole('button', { name: /^(Print|Reprint)$/ }).last();
+  await expect(printBtn).toBeVisible();
+  await printBtn.click();
+  const confirmPrintHeading = page.getByRole('heading', { name: /Print Receipt|Reprint Receipt/ });
+  await expect(confirmPrintHeading).toBeVisible();
+  const billReadPromise = page.waitForResponse(
+    (res) =>
+      res.request().method() === 'GET' && /^\/api\/bills\/\d+$/.test(new URL(res.url()).pathname),
+  );
+  await page.getByRole('button', { name: /Confirm Print|Confirm Reprint/ }).click();
+  expect((await billReadPromise).ok()).toBeTruthy();
+  await expect(page.getByText('Bill not found')).toHaveCount(0);
+
+  // 1-tap Next Order advances directly to an active order and clears the completion banner.
+  await detailPanel.getByTestId('next-active-order-button').click();
+  await expect(settledBanner).toHaveCount(0);
+  await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toHaveCount(0);
+
+  // Also verify View in Completed carries the settled order straight into the Completed tab.
+  await page
+    .getByRole('button')
+    .filter({ hasText: `#${secondOrder.order_number}` })
+    .click();
+  await expect(detailPanel.getByText(`#${secondOrder.order_number}`)).toBeVisible();
+  await detailPanel.getByRole('button', { name: /Checkout|Take Payment/ }).click();
+  const modal2 = page.locator('.fixed.inset-0').last();
+  await expect(modal2).toBeVisible();
+  await modal2.getByRole('button', { name: /^Cash/ }).click();
+  await modal2.getByRole('button', { name: /^(Confirm Payment|Pay\s)/ }).click();
+  const modal2Done = modal2.getByRole('button', { name: 'Done', exact: true });
+  await expect(modal2Done).toBeVisible({ timeout: 20_000 });
+  await modal2Done.click();
+
+  await expect(detailPanel.getByTestId('order-settled-banner')).toBeVisible({ timeout: 15_000 });
+  await detailPanel.getByTestId('view-in-completed-button').click();
+  await expect(page.getByRole('button', { name: 'Completed', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(detailPanel.getByText(`#${secondOrder.order_number}`)).toBeVisible();
+
+  // Cross-status search fallback: searching a paid order while on Unpaid offers "Show matching orders in All".
+  await page.getByRole('button', { name: 'Unpaid', exact: true }).click();
+  const searchInput = page.getByPlaceholder('Search by order number, name, or phone…');
+  await searchInput.fill(firstOrder.order_number);
+  const fallbackButton = page.getByTestId('orders-search-all-fallback');
+  await expect(fallbackButton).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('No matching orders in Unpaid.')).toBeVisible();
+  await fallbackButton.click();
+  await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(
+    page
+      .getByRole('button')
+      .filter({ hasText: `#${firstOrder.order_number}` })
+      .first(),
+  ).toBeVisible();
+  await expect(detailPanel.getByText(`#${firstOrder.order_number}`)).toBeVisible();
+
+  // Confirm orders remain settled on the backend.
+  const verifyRes = await page.request.get(`${BASE}/api/orders/${firstOrder.id}`, {
+    headers: auth(),
+  });
+  expect(verifyRes.ok()).toBeTruthy();
+});

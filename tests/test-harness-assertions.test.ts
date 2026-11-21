@@ -9,7 +9,7 @@
  *   2. the `*OrThrow` variants abort a suite, proven end to end by spawning a
  *      deliberately failing fixture and requiring a non-zero exit.
  *
- * Usage: ts-node --transpile-only -P tests/tsconfig.json tests/test-harness-assertions.test.ts
+ * Usage: npx tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/test-harness-assertions.test.ts
  */
 
 import * as assert from 'node:assert/strict';
@@ -118,13 +118,7 @@ async function run() {
   // ── A failing suite exits non-zero ─────────────────────────────────────────
   const result = spawnSync(
     process.execPath,
-    [
-      require.resolve('ts-node/dist/bin.js'),
-      '--transpile-only',
-      '-P',
-      'tests/tsconfig.json',
-      'tests/fixtures/failing-assertion-suite.ts',
-    ],
+    ['-r', path.join(__dirname, 'register-tsx.cjs'), 'tests/fixtures/failing-assertion-suite.ts'],
     { cwd: path.join(__dirname, '..'), encoding: 'utf8' },
   );
   const stdout = result.stdout || '';

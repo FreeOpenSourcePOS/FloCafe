@@ -92,7 +92,7 @@ function collectReachableScripts(scripts) {
 // A referenced path only counts when the segment actually invokes a test
 // runner. Without this, `echo "tests/foo.test.ts"` would mark that suite
 // covered, and the validator would report a file as run that nothing runs.
-const TEST_RUNNER_PATTERN = /^(?:npx\s+)?(?:node|ts-node|tsx|bun|deno|electron)\b/;
+const TEST_RUNNER_PATTERN = /^(?:npx\s+)?(?:node|tsx|bun|deno|electron)\b/;
 
 function segmentInvokesTestRunner(segment) {
   const withoutWrapper = segment.trim().replace(/^node\s+scripts\/run-test\.cjs\s+/, '');

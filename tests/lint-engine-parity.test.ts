@@ -537,6 +537,112 @@ assert.strictEqual(
   rootPackage.devDependencies.oxfmt,
   'both packages must pin the same exact Oxfmt version',
 );
+assert.match(
+  rootPackage.devDependencies.oxlint,
+  /^\d+\.\d+\.\d+$/,
+  'the root package must pin an exact Oxlint version',
+);
+assert.strictEqual(
+  frontendPackage.devDependencies.oxlint,
+  rootPackage.devDependencies.oxlint,
+  'both packages must pin the same exact Oxlint version',
+);
+assert.match(
+  rootPackage.devDependencies.typescript,
+  /^\d+\.\d+\.\d+$/,
+  'the root package must pin an exact TypeScript version',
+);
+assert.strictEqual(
+  frontendPackage.devDependencies.typescript,
+  rootPackage.devDependencies.typescript,
+  'both packages must pin the same exact TypeScript version',
+);
+
+type DependabotGroup = {
+  patterns?: string[];
+  'exclude-patterns'?: string[];
+  'group-by'?: string;
+  'update-types'?: string[];
+};
+type DependabotUpdate = {
+  'package-ecosystem'?: string;
+  directory?: string;
+  directories?: string[];
+  groups?: Record<string, DependabotGroup>;
+};
+const YAML = require('js-yaml') as { load: (text: string) => unknown };
+const dependabotConfig = YAML.load(readText(path.join(rootDir, '.github', 'dependabot.yml'))) as {
+  updates?: DependabotUpdate[];
+};
+const npmDependabotUpdates = (dependabotConfig.updates || []).filter(
+  (entry) => entry['package-ecosystem'] === 'npm',
+);
+assert.strictEqual(
+  npmDependabotUpdates.length,
+  1,
+  'Dependabot must configure a single npm update block so root and frontend bump in lockstep',
+);
+const npmUpdate = npmDependabotUpdates[0];
+assert.strictEqual(
+  npmUpdate.directory,
+  undefined,
+  'the lockstep npm Dependabot block must use `directories` rather than a single `directory`',
+);
+assert.ok(
+  npmUpdate.directories?.includes('/') && npmUpdate.directories?.includes('/frontend'),
+  'the lockstep npm Dependabot block must cover both "/" and "/frontend"',
+);
+const npmGroups = npmUpdate.groups || {};
+const minorAndPatchGroup = npmGroups['minor-and-patch'];
+assert.ok(
+  minorAndPatchGroup?.patterns?.includes('*'),
+  'the lockstep npm Dependabot block must keep the minor-and-patch wildcard group',
+);
+assert.strictEqual(
+  minorAndPatchGroup?.['group-by'],
+  undefined,
+  'minor-and-patch must not set group-by: dependency-name across all wildcard dependencies',
+);
+
+const matchesPattern = (pattern: string, pkgName: string) =>
+  new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replace(/\*/g, '.*')}$`).test(
+    pkgName,
+  );
+const groupCoversPackage = (group: DependabotGroup, pkgName: string) =>
+  Boolean(group.patterns?.some((pattern) => matchesPattern(pattern, pkgName))) &&
+  !group['exclude-patterns']?.some((pattern) => matchesPattern(pattern, pkgName));
+
+for (const sharedTool of ['oxfmt', 'oxlint', 'typescript']) {
+  assert.ok(
+    minorAndPatchGroup?.['exclude-patterns']?.some((pattern) =>
+      matchesPattern(pattern, sharedTool),
+    ),
+    `minor-and-patch must exclude ${sharedTool} for cross-directory lockstep bumps`,
+  );
+  const matchingGroups = Object.entries(npmGroups).filter(([, group]) =>
+    groupCoversPackage(group, sharedTool),
+  );
+  assert.ok(
+    matchingGroups.length > 0,
+    `Dependabot must define a lockstep group covering ${sharedTool}`,
+  );
+  for (const [groupName, group] of matchingGroups) {
+    assert.strictEqual(
+      group['group-by'],
+      'dependency-name',
+      `Dependabot group ${groupName} for ${sharedTool} must set group-by: dependency-name`,
+    );
+    assert.strictEqual(
+      group['update-types'],
+      undefined,
+      `Dependabot group ${groupName} for ${sharedTool} must not restrict update-types`,
+    );
+    assert.ok(
+      !group.patterns?.includes('*'),
+      `Dependabot lockstep group ${groupName} must target shared tooling rather than "*"`,
+    );
+  }
+}
 
 const rootOxfmtVersion = runOxfmt(backendOxfmt, rootDir, ['--version']);
 const frontendOxfmtVersion = runOxfmt(frontendOxfmt, frontendDir, ['--version']);
@@ -551,6 +657,42 @@ assert.strictEqual(
   parseVersion(frontendOxfmtVersion.stdout),
   frontendPackage.devDependencies.oxfmt,
   'the standalone frontend format command must resolve its own pinned install',
+);
+
+const backendTsc = path.join(
+  rootDir,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
+);
+const frontendTsc = path.join(
+  frontendDir,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
+);
+const parseTscVersion = (stdout: string) => (stdout.match(/Version\s+(\S+)/) || [])[1];
+const rootTscVersion = spawnSync(backendTsc, ['--version'], {
+  cwd: rootDir,
+  encoding: 'utf8',
+  shell: process.platform === 'win32',
+});
+const frontendTscVersion = spawnSync(frontendTsc, ['--version'], {
+  cwd: frontendDir,
+  encoding: 'utf8',
+  shell: process.platform === 'win32',
+});
+assert.strictEqual(rootTscVersion.status, 0, 'the root tsc binary must run');
+assert.strictEqual(frontendTscVersion.status, 0, 'the frontend tsc binary must run');
+assert.strictEqual(
+  parseTscVersion(rootTscVersion.stdout),
+  rootPackage.devDependencies.typescript,
+  'root tsc must resolve the pinned root TypeScript install',
+);
+assert.strictEqual(
+  parseTscVersion(frontendTscVersion.stdout),
+  frontendPackage.devDependencies.typescript,
+  'frontend tsc must resolve the pinned frontend TypeScript install',
 );
 
 for (const [scope, configPath, config] of [

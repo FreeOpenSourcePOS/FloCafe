@@ -1,0 +1,33 @@
+/** Shared with the POS so a refusal code the client accepts and the code the server emits cannot drift. */
+export const ORDER_CREATE_DISPLAY_CODES = [
+  'no_items',
+  'too_many_items',
+  'invalid_type',
+  'invalid_dispatch_policy',
+  'dispatch_policy_unsupported',
+  'invalid_checkout_stage',
+  'invalid_guest_count',
+  'invalid_charge_amount',
+  'invalid_charge_selection',
+  'invalid_online_platform',
+  'invalid_external_order_id',
+  'invalid_delivery_address',
+  'invalid_delivery_note',
+  'invalid_delivery_details',
+  'invalid_scheduled_release',
+  'order_notes_too_long',
+  'item_notes_too_long',
+  'delivery_address_too_long',
+  'delivery_note_too_long',
+  'expected_payment_method_invalid',
+  'item_not_found',
+  'price_invalid',
+  'price_override_forbidden',
+  'addon_quantity_invalid',
+  'idempotency_key_reused',
+  'multi_counter_disabled',
+  'scheduled_orders_disabled',
+  'malformed_body',
+] as const;
+
+export type OrderCreateDisplayCode = (typeof ORDER_CREATE_DISPLAY_CODES)[number];

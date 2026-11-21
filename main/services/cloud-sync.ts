@@ -8,9 +8,12 @@ import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
+import Decimal from 'decimal.js';
 import {
+  dayBoundsInTimezone,
   getDatabase,
   now,
+  parseDbTimestamp,
   parseItemJson,
   attachEffectiveAddons,
   ensureCloudIdentity,
@@ -20,6 +23,7 @@ import {
   isDatabaseMaintenanceActive,
   registerDatabaseMaintenanceEndListener,
   registerDatabaseMaintenanceStartListener,
+  tenantBusinessDayStartTime,
   utcDayBounds,
   utcTodayDate,
   withDatabaseRequest,
@@ -31,7 +35,9 @@ import {
 } from '../lib/diagnostic-signature';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getTenantCurrency } from './refund';
-import { getCurrencyMinorUnitFactor } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
+import { businessDateForInstant } from '../../shared/business-date';
+import { buildDailySalesExportDataset, type DailySalesExportItemRow } from './daily-sales-export';
 import { assertOnlineAllowed, isOfflineMode } from './offline-mode';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 
@@ -93,7 +99,7 @@ const CLOUD_DELETION_KNOWN_STATUSES = new Set([
 ]);
 const CLOUD_DELETION_FINAL_STATUSES = new Set(['approved', 'completed', 'deleted']);
 
-function isCloudDeletionBlocking(status?: string): boolean {
+export function isCloudDeletionBlocking(status?: string | null): boolean {
   return CLOUD_DELETION_BLOCKING_STATUSES.has(status || '');
 }
 
@@ -332,11 +338,6 @@ function sanitizeDiagnosticMetadata(
   }
   return Object.keys(target).length > 0 ? target : undefined;
 }
-
-type DateRange = {
-  from: string;
-  to: string;
-};
 
 /** Fixed operator reason per print failure class. Every one is a source-controlled phrase carrying no source text. */
 const PRINT_FAILURE_REASON: Record<string, string> = {
@@ -859,29 +860,329 @@ function relayEndpoint(serverUrl: string): string {
   return base.toString();
 }
 
-function parseIsoDate(value: unknown, fallback: Date): Date {
-  if (typeof value !== 'string') return fallback;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return fallback;
-  return date;
+const LIVE_REPORT_CONTRACT_VERSION = 1;
+const LIVE_REPORT_BASIS = 'daily-sales-export' as const;
+const LIVE_REPORT_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const LIVE_REPORT_UNSAFE_SYMBOL_RE = /[<>'"&\u0000-\u001f\u007f]/;
+const LIVE_REPORT_MAX_SYMBOL_LENGTH = 6;
+const LIVE_REPORT_DEFAULT_ITEMS_LIMIT = 50;
+const LIVE_REPORT_MIN_ITEMS_LIMIT = 1;
+const LIVE_REPORT_MAX_ITEMS_LIMIT = 100;
+const LIVE_REPORT_DAY_MS = 86_400_000;
+
+type LiveReportSingleDayView = 'dashboard' | 'hourly';
+type LiveReportRangeView = 'sales' | 'items' | 'payments';
+type LiveReportView = LiveReportSingleDayView | LiveReportRangeView;
+type LiveSalesGroupBy = 'day' | 'week' | 'month';
+type LiveItemsSortBy = 'revenue' | 'qty';
+
+type LiveReportContext = {
+  currency: string;
+  currencySymbol?: string;
+  fractionDigits: number;
+  timezone: string;
+  businessDayStart: string;
+  currentBusinessDate: string;
+  currentBusinessDayEndsAt: string;
+  generatedAt: string;
+};
+
+type LiveReportBaseMeta = {
+  report_contract_version: typeof LIVE_REPORT_CONTRACT_VERSION;
+  basis: typeof LIVE_REPORT_BASIS;
+  view: LiveReportView;
+  currency: string;
+  currency_symbol?: string;
+  fraction_digits: number;
+  timezone: string;
+  business_day_start: string;
+  current_business_date: string;
+  current_business_day_ends_at: string;
+  from: string;
+  to: string;
+  generated_at: string;
+};
+
+function reportDaysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return isLeap ? 29 : 28;
+  }
+  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;
+  return 31;
 }
 
-function dateRange(payload?: Record<string, unknown>): DateRange {
-  const nowDate = new Date();
-  const defaultFrom = new Date(nowDate);
-  defaultFrom.setDate(defaultFrom.getDate() - 30);
+function isValidReportCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = LIVE_REPORT_DATE_RE.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1970 || year > 9999) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > reportDaysInMonth(year, month)) return false;
+  return true;
+}
 
-  const from = parseIsoDate(payload?.from, defaultFrom);
-  const to = parseIsoDate(payload?.to, nowDate);
-  const days = Math.abs(to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000);
-  if (days > MAX_COMMAND_RANGE_DAYS) {
-    throw new Error(`Report range cannot exceed ${MAX_COMMAND_RANGE_DAYS} days`);
+function reportDateToUtcMs(dateStr: string): number {
+  const match = LIVE_REPORT_DATE_RE.exec(dateStr)!;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function addReportCalendarDays(dateStr: string, days: number): string {
+  return new Date(reportDateToUtcMs(dateStr) + days * LIVE_REPORT_DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function inclusiveReportDayCount(fromStr: string, toStr: string): number {
+  return (
+    Math.round((reportDateToUtcMs(toStr) - reportDateToUtcMs(fromStr)) / LIVE_REPORT_DAY_MS) + 1
+  );
+}
+
+function sanitizeReportCurrencySymbol(symbol: unknown): string | undefined {
+  if (typeof symbol !== 'string') return undefined;
+  const trimmed = symbol.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > LIVE_REPORT_MAX_SYMBOL_LENGTH ||
+    LIVE_REPORT_UNSAFE_SYMBOL_RE.test(trimmed)
+  ) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function resolveLiveReportContext(
+  db: BetterSqlite3.Database,
+  settings: Record<string, string>,
+  nowInstant: Date = new Date(),
+): LiveReportContext {
+  const snapshot = resolveRegionalSnapshot({
+    country: settings.country,
+    currency: settings.currency,
+    timezone: settings.timezone?.trim(),
+  });
+  const currency = snapshot.currency.trim().toUpperCase();
+  const timezone = snapshot.timezone;
+  const currencySymbol = sanitizeReportCurrencySymbol(snapshot.currencySymbol);
+  const fractionDigits = Number.isInteger(snapshot.currencyFractionDigits)
+    ? Math.min(4, Math.max(0, snapshot.currencyFractionDigits))
+    : 2;
+  const businessDayStart = tenantBusinessDayStartTime(db);
+  const currentBusinessDate = businessDateForInstant({
+    instant: nowInstant,
+    timezone,
+    startTime: businessDayStart,
+  });
+  const currentBusinessDayEndsAt = parseDbTimestamp(
+    dayBoundsInTimezone(currentBusinessDate, timezone, businessDayStart)[1],
+  ).toISOString();
+  return {
+    currency,
+    ...(currencySymbol !== undefined ? { currencySymbol } : {}),
+    fractionDigits,
+    timezone,
+    businessDayStart,
+    currentBusinessDate,
+    currentBusinessDayEndsAt,
+    generatedAt: nowInstant.toISOString(),
+  };
+}
+
+function buildLiveReportBaseMeta(
+  view: LiveReportView,
+  from: string,
+  to: string,
+  ctx: LiveReportContext,
+): LiveReportBaseMeta {
+  return {
+    report_contract_version: LIVE_REPORT_CONTRACT_VERSION,
+    basis: LIVE_REPORT_BASIS,
+    view,
+    currency: ctx.currency,
+    ...(ctx.currencySymbol !== undefined ? { currency_symbol: ctx.currencySymbol } : {}),
+    fraction_digits: ctx.fractionDigits,
+    timezone: ctx.timezone,
+    business_day_start: ctx.businessDayStart,
+    current_business_date: ctx.currentBusinessDate,
+    current_business_day_ends_at: ctx.currentBusinessDayEndsAt,
+    from,
+    to,
+    generated_at: ctx.generatedAt,
+  };
+}
+
+function assertReportPayloadObject(
+  view: LiveReportView,
+  payload: unknown,
+): Record<string, unknown> {
+  if (payload === undefined || payload === null) return {};
+  if (typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(`Invalid report payload for ${view}`);
+  }
+  const record = payload as Record<string, unknown>;
+  if (!isOmittedParam(record.view) && record.view !== view) {
+    throw new Error(`Report view mismatch: expected ${view}, received ${String(record.view)}`);
+  }
+  return record;
+}
+
+function isOmittedParam(value: unknown): boolean {
+  return value === undefined || value === null || value === '';
+}
+
+function resolveSingleDayReportMeta(
+  view: LiveReportSingleDayView,
+  payload: unknown,
+  ctx: LiveReportContext,
+): LiveReportBaseMeta {
+  const opts = assertReportPayloadObject(view, payload);
+  if (
+    !isOmittedParam(opts.from) ||
+    !isOmittedParam(opts.to) ||
+    !isOmittedParam(opts.group_by) ||
+    !isOmittedParam(opts.sort_by) ||
+    !isOmittedParam(opts.limit)
+  ) {
+    throw new Error(`Disallowed range or sort parameters for single-day ${view} report`);
+  }
+  const hasDate = !isOmittedParam(opts.date);
+  const hasRange = !isOmittedParam(opts.range);
+  if (hasDate && hasRange) {
+    throw new Error('Cannot combine range with explicit date parameter');
   }
 
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
+  let targetDate: string;
+  if (hasDate) {
+    if (!isValidReportCalendarDate(opts.date)) {
+      throw new Error('Invalid date; expected a valid YYYY-MM-DD calendar date');
+    }
+    targetDate = opts.date;
+  } else if (hasRange) {
+    if (opts.range !== 'today' && opts.range !== 'yesterday') {
+      throw new Error(`Single-day ${view} report only supports today or yesterday range`);
+    }
+    targetDate =
+      opts.range === 'yesterday'
+        ? addReportCalendarDays(ctx.currentBusinessDate, -1)
+        : ctx.currentBusinessDate;
+  } else {
+    targetDate = ctx.currentBusinessDate;
+  }
+
+  return buildLiveReportBaseMeta(view, targetDate, targetDate, ctx);
+}
+
+function resolveRangeReportBounds(
+  view: LiveReportRangeView,
+  opts: Record<string, unknown>,
+  ctx: LiveReportContext,
+): { from: string; to: string } {
+  if (!isOmittedParam(opts.date)) {
+    throw new Error(`Parameter date is not allowed on range view ${view}`);
+  }
+  const hasFrom = !isOmittedParam(opts.from);
+  const hasTo = !isOmittedParam(opts.to);
+  const hasRange = !isOmittedParam(opts.range);
+
+  if (hasRange && (hasFrom || hasTo)) {
+    throw new Error('Cannot combine range with explicit from/to dates');
+  }
+
+  if (hasFrom || hasTo) {
+    if (!hasFrom || !hasTo) {
+      throw new Error('Both from and to dates (YYYY-MM-DD) are required');
+    }
+    if (!isValidReportCalendarDate(opts.from) || !isValidReportCalendarDate(opts.to)) {
+      throw new Error('Invalid from or to date; expected valid YYYY-MM-DD calendar dates');
+    }
+    if (opts.from > opts.to) {
+      throw new Error('Invalid date range: from must not be after to');
+    }
+    const daySpan = inclusiveReportDayCount(opts.from, opts.to);
+    if (daySpan > MAX_COMMAND_RANGE_DAYS) {
+      throw new Error(`Report range cannot exceed ${MAX_COMMAND_RANGE_DAYS} days`);
+    }
+    return { from: opts.from, to: opts.to };
+  }
+
+  const preset = hasRange ? opts.range : 'last7';
+  if (preset === 'today') {
+    return { from: ctx.currentBusinessDate, to: ctx.currentBusinessDate };
+  }
+  if (preset === 'yesterday') {
+    const yesterday = addReportCalendarDays(ctx.currentBusinessDate, -1);
+    return { from: yesterday, to: yesterday };
+  }
+  if (preset === 'last7') {
+    return {
+      from: addReportCalendarDays(ctx.currentBusinessDate, -6),
+      to: ctx.currentBusinessDate,
+    };
+  }
+  if (preset === 'last30') {
+    return {
+      from: addReportCalendarDays(ctx.currentBusinessDate, -29),
+      to: ctx.currentBusinessDate,
+    };
+  }
+  throw new Error(`Unsupported report range: ${String(preset)}`);
+}
+
+function parseReportItemsLimit(value: unknown): number {
+  if (isOmittedParam(value)) return LIVE_REPORT_DEFAULT_ITEMS_LIMIT;
+  let parsed: number;
+  if (typeof value === 'number') {
+    parsed = value;
+  } else if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    parsed = Number(value.trim());
+  } else {
+    throw new Error('Items limit must be an integer between 1 and 100');
+  }
+  if (
+    !Number.isInteger(parsed) ||
+    parsed < LIVE_REPORT_MIN_ITEMS_LIMIT ||
+    parsed > LIVE_REPORT_MAX_ITEMS_LIMIT
+  ) {
+    throw new Error('Items limit must be an integer between 1 and 100');
+  }
+  return parsed;
+}
+
+function compareStringsCodePoint(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function sortDailySalesItems(
+  items: DailySalesExportItemRow[],
+  sortBy: LiveItemsSortBy,
+): DailySalesExportItemRow[] {
+  return [...items].sort((a, b) => {
+    const primary =
+      sortBy === 'qty' ? b.quantity - a.quantity : b.net_item_sales - a.net_item_sales;
+    if (primary !== 0) return primary;
+    const secondary =
+      sortBy === 'qty' ? b.net_item_sales - a.net_item_sales : b.quantity - a.quantity;
+    if (secondary !== 0) return secondary;
+    const nameA = String(a.product_name || 'Unknown').trim() || 'Unknown';
+    const nameB = String(b.product_name || 'Unknown').trim() || 'Unknown';
+    const byName = compareStringsCodePoint(nameA, nameB);
+    if (byName !== 0) return byName;
+    const byId = compareStringsCodePoint(String(a.product_id || ''), String(b.product_id || ''));
+    if (byId !== 0) return byId;
+    return compareStringsCodePoint(String(a.product_sku ?? ''), String(b.product_sku ?? ''));
+  });
+}
+
+function isoWeekMonday(dateStr: string): string {
+  const utcDay = new Date(reportDateToUtcMs(dateStr)).getUTCDay();
+  const offsetToMonday = utcDay === 0 ? -6 : 1 - utcDay;
+  return addReportCalendarDays(dateStr, offsetToMonday);
 }
 
 function safeJsonParse(value: string | null | undefined): unknown {
@@ -2682,6 +2983,18 @@ export class CloudSyncService {
           if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;
           const currentCfg = this.loadSettings(false);
           if (!currentCfg || isCloudDeletionBlocking(currentCfg.cloud_deletion_status)) return;
+          // Before the transport checks: a skipped row stays pending, so a resend after a
+          // restart must not be the only way the report reaches PostHog.
+          try {
+            const report = JSON.parse(row.payload) as Record<string, unknown>;
+            if (report.schema_version === 2) {
+              const { capturePostHogOperationFailure } =
+                require('./posthog') as typeof import('./posthog');
+              capturePostHogOperationFailure(report);
+            }
+          } catch {
+            /* A payload we cannot read carries no report */
+          }
           const rowTransport: DiagnosticTransport =
             row.transport === 'anonymous' ? 'anonymous' : 'signed';
           if (rowTransport === 'signed' && (!currentCfg.sync_enabled || !currentCfg.api_key))
@@ -3627,197 +3940,297 @@ export class CloudSyncService {
     return { order };
   }
 
-  private salesReport(payload?: Record<string, unknown>) {
+  private salesReport(payload?: Record<string, unknown>, nowInstant: Date = new Date()) {
     const db = getDatabase();
-    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    const range = dateRange(payload);
-    const totals = db
-      .prepare(`
-      SELECT
-        COUNT(*) as bill_count,
-        COALESCE(SUM(total), 0) as gross_sales,
-        COALESCE(SUM(subtotal), 0) as subtotal,
-        COALESCE(SUM(tax_amount), 0) as tax_amount,
-        COALESCE(SUM(discount_amount), 0) as discount_amount,
-        COALESCE(SUM(paid_amount), 0)
-          - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
-      FROM bills
-      WHERE paid_at >= ? AND paid_at <= ?
-    `)
-      .get(minorFactor, range.from, range.to, range.from, range.to);
-
-    const byDay = db
-      .prepare(`
-      WITH events AS (
-        SELECT date(paid_at) as date, 1 as bill_count, paid_amount as gross_sales
-        FROM bills WHERE paid_at >= ? AND paid_at <= ?
-        UNION ALL
-        SELECT date(created_at), 0, -(CAST(amount_cents AS REAL) / ?)
-        FROM refunds WHERE created_at >= ? AND created_at <= ?
-      )
-      SELECT date, SUM(bill_count) as bill_count, COALESCE(SUM(gross_sales), 0) as gross_sales
-      FROM events
-      GROUP BY date
-      ORDER BY date ASC
-    `)
-      .all(range.from, range.to, minorFactor, range.from, range.to);
-
-    const topItems = db
-      .prepare(`
-      SELECT oi.product_id, oi.product_name,
-        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) as quantity,
-        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) as total
-      FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
-      LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
-      WHERE b.paid_at IS NOT NULL
-        AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
-        AND COALESCE(b.paid_at, b.created_at) >= ?
-        AND COALESCE(b.paid_at, b.created_at) <= ?
-      GROUP BY oi.product_id, oi.product_name
-      ORDER BY total DESC
-      LIMIT 20
-    `)
-      .all(range.from, range.to);
-
-    return {
-      range,
-      totals,
-      data: (byDay as any[]).map((row) => ({
-        period: row.date,
-        total: row.gross_sales,
-        bill_count: row.bill_count,
-      })),
-      top_items: topItems,
+    const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
+    const opts = assertReportPayloadObject('sales', payload);
+    if (!isOmittedParam(opts.sort_by) || !isOmittedParam(opts.limit)) {
+      throw new Error('Parameters sort_by and limit are not allowed on sales report');
+    }
+    const rawGroupBy = isOmittedParam(opts.group_by) ? 'day' : opts.group_by;
+    if (rawGroupBy !== 'day' && rawGroupBy !== 'week' && rawGroupBy !== 'month') {
+      throw new Error(`Unsupported sales group_by: ${String(rawGroupBy)}`);
+    }
+    const groupBy: LiveSalesGroupBy = rawGroupBy;
+    const { from, to } = resolveRangeReportBounds('sales', opts, ctx);
+    const meta = {
+      ...buildLiveReportBaseMeta('sales', from, to, ctx),
+      group_by: groupBy,
     };
-  }
 
-  private dashboardReport(payload?: Record<string, unknown>) {
-    const range = dateRange({ from: payload?.date, to: payload?.date });
-    const db = getDatabase();
-    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    const totals = db
-      .prepare(`
-      SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0)
-             - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)), 0) AS total_sales,
-             COALESCE(SUM(tax_amount), 0) AS total_tax,
-             COALESCE(SUM(discount_amount), 0) AS total_discount
-        FROM bills
-       WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
-    `)
-      .get(minorFactor, range.from, range.to, range.from, range.to) as any;
-    const topItems = db
-      .prepare(`
-      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty,
-             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue,
-             COALESCE(AVG(oi.unit_price), 0) AS price
-        FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
-        LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
-       WHERE b.paid_at IS NOT NULL AND date(b.paid_at) BETWEEN date(?) AND date(?)
-         AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
-       GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT 5
-    `)
-      .all(range.from, range.to);
-    const paymentRows = this.paymentBreakdown(range);
-    const totalSales = Number(totals.total_sales || 0);
-    return {
-      ...totals,
-      avg_order_value: totals.bill_count ? totalSales / Number(totals.bill_count) : 0,
-      payment_breakdown: Object.fromEntries(
-        (paymentRows as any[]).map((row) => [
-          String(row.method || 'other').toLowerCase(),
-          row.amount,
-        ]),
-      ),
-      top_items: topItems,
-    };
-  }
+    const dataset = buildDailySalesExportDataset({ from, to }, db, {
+      maxRangeDays: MAX_COMMAND_RANGE_DAYS,
+    });
+    const { summary } = dataset;
 
-  private hourlyReport(payload?: Record<string, unknown>) {
-    const range = dateRange({ from: payload?.date, to: payload?.date });
-    const db = getDatabase();
-    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    const rows = db
-      .prepare(`
-      WITH events AS (
-        SELECT strftime('%H', paid_at) AS hour, paid_amount AS sales, 1 AS bills
-        FROM bills WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
-        UNION ALL
-        SELECT strftime('%H', created_at), -(CAST(amount_cents AS REAL) / ?), 0
-        FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)
-      )
-      SELECT hour, COALESCE(SUM(sales), 0) AS sales, SUM(bills) AS bills
-      FROM events GROUP BY hour ORDER BY hour
-    `)
-      .all(range.from, range.to, minorFactor, range.from, range.to) as any[];
-    const byHour = new Map(rows.map((row) => [String(row.hour).padStart(2, '0'), row]));
-    return {
-      hours: Array.from({ length: 24 }, (_, hour) => {
-        const row = byHour.get(String(hour).padStart(2, '0'));
+    let data: Array<{ period: string; total: number; bill_count: number }>;
+    if (groupBy === 'day') {
+      data = dataset.daily.map((day) => ({
+        period: day.business_date,
+        total: day.net_collected,
+        bill_count: day.paid_bill_count,
+      }));
+    } else {
+      const buckets = new Map<string, { period: string; total: Decimal; bill_count: number }>();
+      for (const day of dataset.daily) {
+        const rawBucketStart =
+          groupBy === 'week'
+            ? isoWeekMonday(day.business_date)
+            : `${day.business_date.slice(0, 7)}-01`;
+        const clampedPeriod = rawBucketStart < from ? from : rawBucketStart;
+        const existing = buckets.get(clampedPeriod);
+        if (existing) {
+          existing.total = existing.total.plus(day.net_collected);
+          existing.bill_count += day.paid_bill_count;
+        } else {
+          buckets.set(clampedPeriod, {
+            period: clampedPeriod,
+            total: new Decimal(day.net_collected),
+            bill_count: day.paid_bill_count,
+          });
+        }
+      }
+      data = Array.from(buckets.values()).map((bucket) => ({
+        period: bucket.period,
+        total: bucket.total.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
+        bill_count: bucket.bill_count,
+      }));
+    }
+
+    const avgOrderValue =
+      summary.paid_bill_count > 0
+        ? new Decimal(summary.net_collected)
+            .div(summary.paid_bill_count)
+            .toDecimalPlaces(ctx.fractionDigits, Decimal.ROUND_HALF_UP)
+            .toNumber()
+        : 0;
+
+    const topItems = sortDailySalesItems(dataset.items, 'revenue')
+      .slice(0, 20)
+      .map((item) => {
+        const name = String(item.product_name || 'Unknown').trim() || 'Unknown';
         return {
-          hour: `${String(hour).padStart(2, '0')}:00`,
-          sales: row?.sales || 0,
-          bills: row?.bills || 0,
+          product_id: item.product_id,
+          product_name: name,
+          name,
+          quantity: item.quantity,
+          qty: item.quantity,
+          total: item.net_item_sales,
+          revenue: item.net_item_sales,
         };
-      }),
+      });
+
+    return {
+      meta,
+      range: { from, to },
+      totals: {
+        bill_count: summary.paid_bill_count,
+        total_sales: summary.net_collected,
+        gross_sales: summary.gross_collected,
+        paid_amount: summary.net_collected,
+        refunds_issued: summary.refunds_issued,
+        tax_amount: summary.tax_total,
+        total_tax: summary.tax_total,
+        discount_amount: summary.discount_total,
+        total_discount: summary.discount_total,
+        avg_order_value: avgOrderValue,
+      },
+      data,
+      top_items: topItems,
     };
   }
 
-  private itemsReport(payload?: Record<string, unknown>) {
-    const range = dateRange(payload);
-    const requestedLimit = Number(payload?.limit);
-    const limit = Number.isInteger(requestedLimit)
-      ? Math.min(Math.max(requestedLimit, 1), 100)
-      : 50;
-    const items = getDatabase()
-      .prepare(`
-      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty_sold,
-             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue
-        FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
-        LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
-       WHERE b.paid_at IS NOT NULL AND date(b.paid_at) BETWEEN date(?) AND date(?)
-         AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
-       GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT ?
-    `)
-      .all(range.from, range.to, limit);
-    return { items };
+  private dashboardReport(payload?: Record<string, unknown>, nowInstant: Date = new Date()) {
+    const db = getDatabase();
+    const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
+    const meta = resolveSingleDayReportMeta('dashboard', payload, ctx);
+    const dataset = buildDailySalesExportDataset(meta.from, db, {
+      maxRangeDays: MAX_COMMAND_RANGE_DAYS,
+    });
+    const { summary } = dataset;
+
+    const avgOrderValue =
+      summary.paid_bill_count > 0
+        ? new Decimal(summary.net_collected)
+            .div(summary.paid_bill_count)
+            .toDecimalPlaces(ctx.fractionDigits, Decimal.ROUND_HALF_UP)
+            .toNumber()
+        : 0;
+
+    const paymentMap = new Map<string, Decimal>();
+    for (const row of summary.payment_methods) {
+      const key = String(row.method || 'unknown').trim() || 'unknown';
+      paymentMap.set(key, (paymentMap.get(key) ?? new Decimal(0)).plus(row.total));
+    }
+    const paymentBreakdown: Record<string, number> = {};
+    for (const [method, amount] of paymentMap.entries()) {
+      paymentBreakdown[method] = amount.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber();
+    }
+
+    const topItems = sortDailySalesItems(dataset.items, 'revenue')
+      .slice(0, 5)
+      .map((item) => {
+        const name = String(item.product_name || 'Unknown').trim() || 'Unknown';
+        const price =
+          item.quantity > 0
+            ? new Decimal(item.net_item_sales)
+                .div(item.quantity)
+                .toDecimalPlaces(ctx.fractionDigits, Decimal.ROUND_HALF_UP)
+                .toNumber()
+            : 0;
+        return {
+          name,
+          qty: item.quantity,
+          revenue: item.net_item_sales,
+          price,
+        };
+      });
+
+    return {
+      meta,
+      total_sales: summary.net_collected,
+      bill_count: summary.paid_bill_count,
+      avg_order_value: avgOrderValue,
+      total_tax: summary.tax_total,
+      total_discount: summary.discount_total,
+      payment_breakdown: paymentBreakdown,
+      top_items: topItems,
+    };
   }
 
-  private paymentsReport(payload?: Record<string, unknown>) {
-    const range = dateRange(payload);
-    const rows = this.paymentBreakdown(range) as any[];
-    const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  private hourlyReport(payload?: Record<string, unknown>, nowInstant: Date = new Date()) {
+    const db = getDatabase();
+    const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
+    const meta = resolveSingleDayReportMeta('hourly', payload, ctx);
+    const [dayStartUtc, dayEndUtc] = dayBoundsInTimezone(
+      meta.from,
+      ctx.timezone,
+      ctx.businessDayStart,
+    );
+    const minorFactor = getCurrencyMinorUnitFactor(ctx.currency);
+
+    const billRows = db
+      .prepare('SELECT paid_at, paid_amount FROM bills WHERE paid_at >= ? AND paid_at < ?')
+      .all(dayStartUtc, dayEndUtc) as Array<{ paid_at: string; paid_amount: number | null }>;
+    const refundRows = db
+      .prepare(
+        'SELECT created_at, CAST(amount_cents AS REAL) AS amount_cents FROM refunds WHERE created_at >= ? AND created_at < ?',
+      )
+      .all(dayStartUtc, dayEndUtc) as Array<{ created_at: string; amount_cents: number | null }>;
+
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: ctx.timezone,
+      hour: '2-digit',
+      hourCycle: 'h23',
+    });
+    const localHourOf = (stored: string): number => {
+      const instant = parseDbTimestamp(stored);
+      const hourPart = hourFormatter.formatToParts(instant).find((p) => p.type === 'hour')?.value;
+      const parsed = Number(hourPart === '24' ? '0' : hourPart);
+      return Number.isInteger(parsed) && parsed >= 0 && parsed <= 23 ? parsed : 0;
+    };
+
+    const slotSales = Array.from({ length: 24 }, () => new Decimal(0));
+    const slotBills = Array.from({ length: 24 }, () => 0);
+
+    for (const row of billRows) {
+      const hour = localHourOf(row.paid_at);
+      slotSales[hour] = slotSales[hour].plus(Number(row.paid_amount || 0));
+      slotBills[hour] += 1;
+    }
+    for (const row of refundRows) {
+      const hour = localHourOf(row.created_at);
+      slotSales[hour] = slotSales[hour].minus(
+        new Decimal(Number(row.amount_cents || 0)).div(minorFactor),
+      );
+    }
+
     return {
-      total,
-      breakdown: rows.map((row) => ({
-        method: row.method || 'Other',
-        amount: row.amount || 0,
-        count: row.count || 0,
-        percent: total ? (Number(row.amount || 0) / total) * 100 : 0,
+      meta,
+      hours: Array.from({ length: 24 }, (_, hour) => ({
+        hour: `${String(hour).padStart(2, '0')}:00`,
+        sales: slotSales[hour].toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
+        bills: slotBills[hour],
       })),
     };
   }
 
-  private paymentBreakdown(range: DateRange) {
+  private itemsReport(payload?: Record<string, unknown>, nowInstant: Date = new Date()) {
     const db = getDatabase();
-    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    return db
-      .prepare(`
-      WITH entries AS (
-        SELECT COALESCE(pm.name, json_extract(je.value, '$.method')) AS method,
-               json_extract(je.value, '$.amount') AS amount,
-               COALESCE(json_extract(je.value, '$.timestamp'), b.paid_at, b.created_at) AS occurred_at
-          FROM bills b, json_each(b.payment_details) je
-          LEFT JOIN payment_methods pm ON pm.id = CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER)
-         WHERE b.payment_details IS NOT NULL
-        UNION ALL
-        SELECT method, -(CAST(amount_cents AS REAL) / ?), created_at FROM refunds
-      )
-      SELECT method, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount
-        FROM entries
-       WHERE date(occurred_at) BETWEEN date(?) AND date(?)
-       GROUP BY method ORDER BY amount DESC
-    `)
-      .all(minorFactor, range.from, range.to);
+    const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
+    const opts = assertReportPayloadObject('items', payload);
+    if (!isOmittedParam(opts.group_by)) {
+      throw new Error('Parameter group_by is not allowed on items report');
+    }
+    const rawSortBy = isOmittedParam(opts.sort_by) ? 'revenue' : opts.sort_by;
+    if (rawSortBy !== 'revenue' && rawSortBy !== 'qty') {
+      throw new Error(`Unsupported items sort_by: ${String(rawSortBy)}`);
+    }
+    const sortBy: LiveItemsSortBy = rawSortBy;
+    const limit = parseReportItemsLimit(opts.limit);
+    const { from, to } = resolveRangeReportBounds('items', opts, ctx);
+    const meta = {
+      ...buildLiveReportBaseMeta('items', from, to, ctx),
+      sort_by: sortBy,
+      limit,
+    };
+
+    const dataset = buildDailySalesExportDataset({ from, to }, db, {
+      maxRangeDays: MAX_COMMAND_RANGE_DAYS,
+    });
+    const items = sortDailySalesItems(dataset.items, sortBy)
+      .slice(0, limit)
+      .map((item) => ({
+        name: String(item.product_name || 'Unknown').trim() || 'Unknown',
+        qty_sold: item.quantity,
+        revenue: item.net_item_sales,
+      }));
+
+    return { meta, items };
+  }
+
+  private paymentsReport(payload?: Record<string, unknown>, nowInstant: Date = new Date()) {
+    const db = getDatabase();
+    const ctx = resolveLiveReportContext(db, this.readSettings(db), nowInstant);
+    const opts = assertReportPayloadObject('payments', payload);
+    if (
+      !isOmittedParam(opts.group_by) ||
+      !isOmittedParam(opts.sort_by) ||
+      !isOmittedParam(opts.limit)
+    ) {
+      throw new Error('Parameters group_by, sort_by, and limit are not allowed on payments report');
+    }
+    const { from, to } = resolveRangeReportBounds('payments', opts, ctx);
+    const meta = buildLiveReportBaseMeta('payments', from, to, ctx);
+
+    const dataset = buildDailySalesExportDataset({ from, to }, db, {
+      maxRangeDays: MAX_COMMAND_RANGE_DAYS,
+    });
+    const total = dataset.summary.net_collected;
+    const breakdown = dataset.summary.payment_methods.map((row) => {
+      const method = String(row.method || 'unknown').trim() || 'unknown';
+      const amount = row.total;
+      const percent =
+        total !== 0
+          ? new Decimal(amount)
+              .div(total)
+              .mul(100)
+              .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+              .toNumber()
+          : 0;
+      return {
+        method,
+        amount,
+        count: row.count,
+        percent,
+      };
+    });
+
+    return {
+      meta,
+      total,
+      breakdown,
+    };
   }
 
   private buildOrderSnapshot(orderId: number | string) {

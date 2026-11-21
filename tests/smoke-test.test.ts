@@ -14,13 +14,16 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
   return originalLoad.apply(this, arguments as any);
 };
 
-import { startServer, stopServer, getServerPort } from '../main/server';
-import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
-import { initDatabase, closeDatabase, getDatabase } from '../main/db';
+const { startServer, stopServer, getServerPort } =
+  require('../main/server') as typeof import('../main/server');
+const { startKdsServer, stopKdsServer, getKdsPort } =
+  require('../main/kds-server') as typeof import('../main/kds-server');
+const { initDatabase, closeDatabase, getDatabase } =
+  require('../main/db') as typeof import('../main/db');
 
 async function run() {
   console.log('Testing Dual-Server Application Smoke Test...');
-  
+
   const assert = (condition: boolean, msg: string) => {
     if (!condition) {
       throw new Error(`Assertion failed: ${msg}`);
@@ -65,11 +68,11 @@ async function run() {
     closeDatabase();
     try {
       fs.rmSync(testDir, { recursive: true, force: true });
-    } catch { }
+    } catch {}
   }
 }
 
-run().catch(err => {
+run().catch((err) => {
   console.error(err);
   process.exit(1);
 });

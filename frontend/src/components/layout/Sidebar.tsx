@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -29,6 +29,10 @@ import {
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
+import {
+  CLOUD_ACCOUNT_STATUS_CHANGED_EVENT,
+  useCloudAttentionStore,
+} from '@/store/cloud-attention';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
@@ -163,7 +167,16 @@ export default function AppSidebar() {
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
-  const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
+  const canManageCloudAccount = tenantCan(currentTenant, 'cloud.account.manage');
+  const cloudAttentionTenantId = useCloudAttentionStore((s) => s.tenantId);
+  const cloudNeedsAttention = useCloudAttentionStore((s) => s.anyNeedsAttention);
+  const refreshCloudAttention = useCloudAttentionStore((s) => s.refreshForTenant);
+  const settingsNeedsAttention =
+    canManageCloudAccount &&
+    currentTenant?.id != null &&
+    cloudAttentionTenantId === currentTenant.id &&
+    cloudNeedsAttention;
+  const settingsAttentionDescId = useId();
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const closeMobile = () => {
     if (isMobile) setOpenMobile(false);
@@ -233,35 +246,16 @@ export default function AppSidebar() {
   }, [currentTenant, setKdsEnabled, setWhatsappEnabled]);
 
   useEffect(() => {
-    if (!tenantCan(currentTenant, 'cloud.account.manage')) return;
-    let active = true;
-    const refreshCloudAttention = async () => {
-      try {
-        const [accountResponse, cloudResponse] = await Promise.all([
-          api.get('/settings/cloud/account'),
-          api.get('/settings/cloud'),
-        ]);
-        if (!active) return;
-        const deletionStatus =
-          accountResponse.data?.deletion_request?.status ||
-          cloudResponse.data?.cloud_deletion_status;
-        setEmailNeedsAttention(
-          (accountResponse.data?.cloud_account_available !== false &&
-            Boolean(accountResponse.data?.email) &&
-            !accountResponse.data?.verified) ||
-            ['pending', 'processing', 'failed'].includes(deletionStatus),
-        );
-      } catch {
-        if (active) setEmailNeedsAttention(false);
-      }
+    void refreshCloudAttention(currentTenant);
+    if (!canManageCloudAccount) return;
+    const handleStatusChanged = () => {
+      void refreshCloudAttention(currentTenant, { force: true });
     };
-    void refreshCloudAttention();
-    window.addEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
+    window.addEventListener(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT, handleStatusChanged);
     return () => {
-      active = false;
-      window.removeEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
+      window.removeEventListener(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT, handleStatusChanged);
     };
-  }, [currentTenant]);
+  }, [canManageCloudAccount, currentTenant, refreshCloudAttention]);
 
   return (
     <Sidebar collapsible="icon">
@@ -296,12 +290,21 @@ export default function AppSidebar() {
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
-                        <Link href={item.href} onClick={closeMobile}>
+                        <Link
+                          href={item.href}
+                          onClick={closeMobile}
+                          aria-describedby={
+                            item.href === '/settings' && settingsNeedsAttention
+                              ? settingsAttentionDescId
+                              : undefined
+                          }
+                        >
                           <span className="relative flex size-4 shrink-0 items-center justify-center">
                             <item.icon className="size-4 shrink-0" />
-                            {item.href === '/settings' && emailNeedsAttention && (
+                            {item.href === '/settings' && settingsNeedsAttention && (
                               <span
-                                aria-label="Email verification required"
+                                data-testid="sidebar-settings-attention"
+                                aria-hidden="true"
                                 className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar"
                               />
                             )}
@@ -309,6 +312,11 @@ export default function AppSidebar() {
                           <span>{t(item.labelKey)}</span>
                         </Link>
                       </SidebarMenuButton>
+                      {item.href === '/settings' && settingsNeedsAttention && (
+                        <span id={settingsAttentionDescId} className="sr-only">
+                          Action required
+                        </span>
+                      )}
                     </SidebarMenuItem>
                   );
                 })}

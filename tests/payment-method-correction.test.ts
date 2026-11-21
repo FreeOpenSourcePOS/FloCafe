@@ -200,6 +200,14 @@ async function main() {
 
   try {
     // ── 0. Sessionless payment before any shift opens (cash_session_id = 0) ─
+    const createPreShiftUpi = await api(baseUrl, '/api/payment-methods', {
+      method: 'POST',
+      headers: ownerAuth,
+      body: { name: 'PreShiftUPI' },
+    });
+    assertEqualOrThrow(createPreShiftUpi.status, 201, 'PreShiftUPI custom payment method created');
+    const preShiftUpiId = createPreShiftUpi.data.payment_method.id;
+
     const { bill: sessionlessBill } = await createPaidBill('prod-80', 'card', {
       transaction_id: 'TX-SESSIONLESS-001',
     });
@@ -208,8 +216,168 @@ async function main() {
       0,
       'payment recorded without an open shift has cash_session_id = 0',
     );
-    // Delete the pre-shift bill's order/bill after testing it inside Shift 1 so Shift 1 X-report starts clean
-    // (we'll verify rejection once Shift 1 is open)
+
+    // F6a: Shiftless payment on an open business day is eligible before any shift opens
+    const preShiftRead = await api(baseUrl, `/api/bills/${sessionlessBill.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      preShiftRead.data.bill.payment_method_correction?.correctable,
+      true,
+      'F6a: shiftless bill reports payment_method_correction.correctable = true before shift opens',
+    );
+    assertEqualOrThrow(
+      preShiftRead.data.bill.payment_method_correction?.reason,
+      null,
+      'F6a: shiftless bill reports payment_method_correction.reason = null before shift opens',
+    );
+
+    // Shiftless Non-cash -> Non-cash (card -> custom PreShiftUPI) keeps cash_session_id = 0
+    const shiftlessNonCashToNonCash = await api(
+      baseUrl,
+      `/api/bills/${sessionlessBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'custom',
+          payment_method_id: preShiftUpiId,
+          reason: 'Recorded as card instead of UPI before shift opened',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      shiftlessNonCashToNonCash.status,
+      200,
+      'F6a: shiftless card -> custom UPI succeeds with 200',
+    );
+    assertEqualOrThrow(
+      shiftlessNonCashToNonCash.data.bill.payment_details[0].cash_session_id,
+      0,
+      'F6a: shiftless Non-cash -> Non-cash keeps cash_session_id = 0',
+    );
+    assertEqualOrThrow(
+      shiftlessNonCashToNonCash.data.bill.payment_method_correction?.correctable,
+      true,
+      'F6a: PATCH response bill includes refreshed payment_method_correction.correctable = true',
+    );
+
+    // require_open_shift = 'true' blocks Non-cash -> Cash when no shift is open, but still allows Non-cash -> Non-cash
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('require_open_shift', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'",
+    ).run();
+    const blockedToCash = await api(baseUrl, `/api/bills/${sessionlessBill.id}/payments/0/method`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: {
+        method: 'cash',
+        reason: 'Attempt cash without open shift when require_open_shift=true',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(
+      blockedToCash.status,
+      409,
+      'F6a: require_open_shift=true rejects shiftless Non-cash -> Cash with 409',
+    );
+    assertEqualOrThrow(
+      blockedToCash.data.code,
+      'cash_session_required',
+      'F6a: require_open_shift=true returns code = cash_session_required',
+    );
+
+    const allowedCardWhileRequired = await api(
+      baseUrl,
+      `/api/bills/${sessionlessBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'card',
+          transaction_id: 'TX-SESSIONLESS-002',
+          reason: 'Switch UPI -> card while require_open_shift=true and no shift open',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      allowedCardWhileRequired.status,
+      200,
+      'F6a: require_open_shift=true still allows shiftless UPI -> card (200)',
+    );
+    assertEqualOrThrow(
+      allowedCardWhileRequired.data.bill.payment_details[0].cash_session_id,
+      0,
+      'F6a: shiftless UPI -> card keeps cash_session_id = 0',
+    );
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'").run();
+
+    // With require_open_shift = 'false' and no shift open, Non-cash -> Cash keeps cash_session_id = 0
+    const shiftlessToCash = await api(
+      baseUrl,
+      `/api/bills/${sessionlessBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'cash',
+          reason: 'Customer paid cash without shift open',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      shiftlessToCash.status,
+      200,
+      'F6a: with require_open_shift=false, shiftless card -> cash succeeds (200)',
+    );
+    assertEqualOrThrow(
+      shiftlessToCash.data.bill.payment_details[0].cash_session_id,
+      0,
+      'F6a: shiftless card -> cash with no open shift keeps cash_session_id = 0',
+    );
+
+    // Switch sessionlessBill back to card (still cash_session_id = 0) and create a second pre-shift cash bill
+    await api(baseUrl, `/api/bills/${sessionlessBill.id}/payments/0/method`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: {
+        method: 'card',
+        transaction_id: 'TX-SESSIONLESS-003',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+    });
+    const { bill: preShiftCashBill } = await createPaidBill('prod-80', 'cash');
+    assertEqualOrThrow(
+      preShiftCashBill.payment_details[0].cash_session_id,
+      0,
+      'second pre-shift cash bill has cash_session_id = 0',
+    );
+
+    // Create a pre-shift card bill on yesterday's open business date to test date-mismatch rejection
+    const { bill: yesterdayCardBill } = await createPaidBill('prod-80', 'card', {
+      transaction_id: 'TX-YESTERDAY-001',
+    });
+    const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString();
+    const yesterdayPayments = JSON.parse(
+      (
+        db
+          .prepare('SELECT payment_details FROM bills WHERE id = ?')
+          .get(yesterdayCardBill.id) as any
+      ).payment_details,
+    );
+    yesterdayPayments[0].timestamp = yesterdayIso;
+    db.prepare('UPDATE bills SET payment_details = ?, paid_at = ? WHERE id = ?').run(
+      JSON.stringify(yesterdayPayments),
+      yesterdayIso,
+      yesterdayCardBill.id,
+    );
 
     // ── 1. Open a cash shift (opening float $50 = 5000 cents) ─────────────
     const openSessionRes = await api(baseUrl, '/api/cash-sessions/open', {
@@ -220,8 +388,9 @@ async function main() {
     assertEqualOrThrow(openSessionRes.status, 200, 'open cash session succeeds');
     const session1Id = openSessionRes.data.id;
 
-    // F6a: Payment recorded with cash_session_id = 0 (no open shift at payment time) is rejected with 409 even after a shift opens
-    const correctSessionlessRes = await api(
+    // F6a: Once Shift 1 is open on the same business date:
+    // - card (cash_session_id = 0) -> cash attaches to Shift 1 and records old_cash_session_id = 0
+    const attachToShift1 = await api(
       baseUrl,
       `/api/bills/${sessionlessBill.id}/payments/0/method`,
       {
@@ -229,39 +398,96 @@ async function main() {
         headers: managerAuth,
         body: {
           method: 'cash',
-          reason: 'Attempt to move sessionless payment into open shift',
+          reason: 'Attach same-day shiftless card payment to open cash shift',
           approver_id: managerId,
           override_pin: '1234',
         },
       },
     );
     assertEqualOrThrow(
-      correctSessionlessRes.status,
-      409,
-      'payment recorded with cash_session_id = 0 is rejected with 409 even after a shift opens',
+      attachToShift1.status,
+      200,
+      'F6a: same-day shiftless card -> cash attaches to open Shift 1 (200)',
     );
     assertEqualOrThrow(
-      correctSessionlessRes.data.reason,
-      'shift_closed',
-      'sessionless payment rejection includes reason = shift_closed',
+      attachToShift1.data.bill.payment_details[0].cash_session_id,
+      session1Id,
+      'F6a: shiftless card -> cash attaches cash_session_id = session1Id',
     );
-    const unchangedSessionless = await api(baseUrl, `/api/bills/${sessionlessBill.id}`, {
+    assertEqualOrThrow(
+      attachToShift1.data.audit.old_cash_session_id,
+      0,
+      'F6a: audit records old_cash_session_id = 0',
+    );
+    assertEqualOrThrow(
+      attachToShift1.data.audit.cash_session_id,
+      session1Id,
+      'F6a: audit records cash_session_id = session1Id',
+    );
+
+    // - pre-shift cash (cash_session_id = 0) -> card while Shift 1 is open keeps cash_session_id = 0 and never reduces Shift 1 expected_cash
+    const shift1BeforePreShiftCashSwap = await api(baseUrl, '/api/cash-sessions/current', {
+      headers: managerAuth,
+    });
+    const expectedBeforeSwap = shift1BeforePreShiftCashSwap.data.expected_cash_cents;
+    const preShiftCashToCard = await api(
+      baseUrl,
+      `/api/bills/${preShiftCashBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'card',
+          transaction_id: 'TX-PRESHIFT-CASH-TO-CARD',
+          reason: 'Pre-shift cash sale was actually card',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      preShiftCashToCard.status,
+      200,
+      'F6a: pre-shift cash (cash_session_id = 0) -> card succeeds while Shift 1 is open (200)',
+    );
+    assertEqualOrThrow(
+      preShiftCashToCard.data.bill.payment_details[0].cash_session_id,
+      0,
+      'F6a: pre-shift cash -> card keeps cash_session_id = 0',
+    );
+    const shift1AfterPreShiftCashSwap = await api(baseUrl, '/api/cash-sessions/current', {
       headers: managerAuth,
     });
     assertEqualOrThrow(
-      unchangedSessionless.data.bill.payment_method_correction?.reason,
+      shift1AfterPreShiftCashSwap.data.expected_cash_cents,
+      expectedBeforeSwap,
+      'F6a: pre-shift cash -> card does not reduce Shift 1 expected_cash_cents',
+    );
+
+    // - cross-day shiftless card -> cash when Shift 1 opened today is rejected with 409 shift_closed
+    const crossDayAttachAttempt = await api(
+      baseUrl,
+      `/api/bills/${yesterdayCardBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'cash',
+          reason: 'Cross-day shiftless card -> cash should be rejected',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      crossDayAttachAttempt.status,
+      409,
+      'F6a: cross-day shiftless card -> cash is rejected with 409',
+    );
+    assertEqualOrThrow(
+      crossDayAttachAttempt.data.reason,
       'shift_closed',
-      'sessionless read reports shift_closed',
-    );
-    assertEqualOrThrow(
-      unchangedSessionless.data.bill.payment_details[0].cash_session_id,
-      0,
-      'sessionless payment cash_session_id remains 0',
-    );
-    assertEqualOrThrow(
-      unchangedSessionless.data.bill.payment_details[0].method,
-      'card',
-      'sessionless payment method remains card',
+      'F6a: cross-day shiftless card -> cash returns reason = shift_closed',
     );
 
     // F6b: Legacy/untagged card payment with no cash_session_id and no cash_transactions row is rejected with 409
@@ -310,13 +536,17 @@ async function main() {
       undefined,
       'untagged payment is not silently assigned cash_session_id',
     );
-    // Clean up the F6 fixture bill so X-report totals below reflect only Shift 1 bills
-    db.prepare('DELETE FROM payment_transaction_refs WHERE bill_id = ?').run(
-      String(sessionlessBill.id),
-    );
-    db.prepare('DELETE FROM bills WHERE id = ?').run(sessionlessBill.id);
-    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(sessionlessBill.order_id);
-    db.prepare('DELETE FROM orders WHERE id = ?').run(sessionlessBill.order_id);
+    // Clean up F6 fixture bills and temporary custom method so X-report totals below reflect only Shift 1 bills
+    for (const cleanupBill of [sessionlessBill, preShiftCashBill, yesterdayCardBill]) {
+      db.prepare('DELETE FROM payment_transaction_refs WHERE bill_id = ?').run(
+        String(cleanupBill.id),
+      );
+      db.prepare('DELETE FROM order_audit_log WHERE order_id = ?').run(cleanupBill.order_id);
+      db.prepare('DELETE FROM bills WHERE id = ?').run(cleanupBill.id);
+      db.prepare('DELETE FROM order_items WHERE order_id = ?').run(cleanupBill.order_id);
+      db.prepare('DELETE FROM orders WHERE id = ?').run(cleanupBill.order_id);
+    }
+    db.prepare('DELETE FROM payment_methods WHERE id = ?').run(preShiftUpiId);
 
     // ── 2. Cash -> Card on open shift updates shift expected cash & X-report ─
     const { order: order1, bill: bill1 } = await createPaidBill('prod-100', 'cash');
@@ -341,7 +571,7 @@ async function main() {
       }
     ).payment_details;
     const originalLines = JSON.parse(originalDetails);
-    for (const sessionId of [null, 0, 99999999]) {
+    for (const sessionId of [null, '', 99999999]) {
       const modifiedLines = JSON.parse(originalDetails);
       modifiedLines[0].cash_session_id = sessionId;
       db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
@@ -352,7 +582,21 @@ async function main() {
       assertEqualOrThrow(
         read.data.bill.payment_method_correction?.reason,
         'shift_closed',
-        `original shift ${sessionId} is ineligible`,
+        `original shift ${String(sessionId)} is ineligible`,
+      );
+    }
+    {
+      const shiftlessLines = JSON.parse(originalDetails);
+      shiftlessLines[0].cash_session_id = 0;
+      db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+        JSON.stringify(shiftlessLines),
+        bill1.id,
+      );
+      const read = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: managerAuth });
+      assertEqualOrThrow(
+        read.data.bill.payment_method_correction?.correctable,
+        true,
+        'original shift 0 (NO_CASH_SESSION_ID) is eligible on open business day',
       );
     }
     const refundedLine = JSON.parse(originalDetails);
@@ -818,6 +1062,16 @@ async function main() {
       true,
       'Idempotency-Key replay sets idempotentReplay = true',
     );
+    assertEqualOrThrow(
+      Array.isArray(idemReplay.data.bill.payment_details),
+      true,
+      'Idempotency-Key replay returns parsed payment_details array',
+    );
+    assertEqualOrThrow(
+      idemReplay.data.bill.payment_details[0]?.method,
+      'card',
+      'Idempotency-Key replay returns parsed payment line method',
+    );
 
     // Natural replay without Idempotency-Key
     const naturalReplay = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
@@ -1219,6 +1473,26 @@ async function main() {
       true,
       'Idempotency-Key replay after shift close sets idempotentReplay = true',
     );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.bill.payment_method_correction?.correctable,
+      false,
+      'Idempotency-Key replay after shift close refreshes payment_method_correction.correctable to false',
+    );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.bill.payment_method_correction?.reason,
+      'shift_closed',
+      'Idempotency-Key replay after shift close refreshes payment_method_correction.reason to shift_closed',
+    );
+    assertEqualOrThrow(
+      Array.isArray(idemReplayAfterShiftClose.data.bill.payment_details),
+      true,
+      'Idempotency-Key replay after shift close returns parsed payment_details array',
+    );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.bill.payment_details[0]?.method,
+      'card',
+      'Idempotency-Key replay after shift close returns parsed payment line method',
+    );
 
     // ── 12. Open shift 2, pay splitBillB, and verify split-sibling guard ──
     const openSession2Res = await api(baseUrl, '/api/cash-sessions/open', {
@@ -1481,6 +1755,170 @@ async function main() {
     db.prepare("UPDATE settings SET value = 'false' WHERE key = 'one_shift_per_staff'").run();
     db.prepare('DELETE FROM cash_sessions WHERE id IN (?, ?)').run(shiftAId, shiftBId);
 
+    // ── 12c. Prepaid / QSR & Split-bill shiftless tests (no open shift) ───
+    db.prepare(
+      "UPDATE cash_sessions SET status = 'closed', closed_at = ? WHERE status = 'open'",
+    ).run(now());
+
+    // Prepaid / QSR shiftless payment via POST /api/bills/:id/payments
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('multi_counter_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'",
+    ).run();
+    const qsrOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: cashierAuth,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-80', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(qsrOrderRes.status, 201, 'prepaid/QSR order created');
+    const qsrBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: cashierAuth,
+      body: { order_id: qsrOrderRes.data.order.id },
+    });
+    assertOrThrow(
+      qsrBillRes.status === 200 || qsrBillRes.status === 201,
+      'prepaid/QSR bill generated or returned',
+    );
+    const qsrPayRes = await api(baseUrl, `/api/bills/${qsrBillRes.data.bill.id}/payments`, {
+      method: 'POST',
+      headers: cashierAuth,
+      body: {
+        payments: [{ method: 'card', amount: 80, transaction_id: 'TX-QSR-SHIFTLESS-1' }],
+      },
+    });
+    assertEqualOrThrow(qsrPayRes.status, 200, 'prepaid/QSR bill paid without open shift (200)');
+    assertEqualOrThrow(
+      qsrPayRes.data.bill.payment_details[0].cash_session_id,
+      0,
+      'prepaid/QSR bill records cash_session_id = 0',
+    );
+    const qsrCorrectRes = await api(
+      baseUrl,
+      `/api/bills/${qsrBillRes.data.bill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'cash',
+          reason: 'Prepaid QSR customer paid cash',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      qsrCorrectRes.status,
+      200,
+      'prepaid/QSR shiftless payment correction succeeds (200)',
+    );
+    assertEqualOrThrow(
+      qsrCorrectRes.data.bill.payment_method_correction?.correctable,
+      true,
+      'prepaid/QSR PATCH returns bill.payment_method_correction.correctable = true',
+    );
+    assertEqualOrThrow(
+      qsrCorrectRes.data.bill.payment_details[0].cash_session_id,
+      0,
+      'prepaid/QSR shiftless correction keeps cash_session_id = 0 when no shift is open',
+    );
+
+    // Split-bill shiftless test: 2 child bills paid with cash_session_id = 0
+    const splitShiftlessOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: cashierAuth,
+      body: {
+        type: 'dine_in',
+        table_id: 'table-split-1337',
+        items: [{ product_id: 'prod-100', quantity: 2 }],
+      },
+    });
+    assertEqualOrThrow(splitShiftlessOrderRes.status, 201, 'shiftless split dine-in order created');
+    const splitShiftlessItemId = splitShiftlessOrderRes.data.order.items[0].id;
+    const splitShiftlessSourceRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: cashierAuth,
+      body: { order_id: splitShiftlessOrderRes.data.order.id },
+    });
+    assertEqualOrThrow(
+      splitShiftlessSourceRes.status,
+      201,
+      'shiftless split source bill generated',
+    );
+    const splitShiftlessRes = await api(
+      baseUrl,
+      `/api/bills/${splitShiftlessSourceRes.data.bill.id}/split-check`,
+      {
+        method: 'POST',
+        headers: cashierAuth,
+        body: {
+          checks: [
+            { label: 'Guest 1', items: [{ order_item_id: splitShiftlessItemId, quantity: 1 }] },
+            { label: 'Guest 2', items: [{ order_item_id: splitShiftlessItemId, quantity: 1 }] },
+          ],
+        },
+      },
+    );
+    assertEqualOrThrow(
+      splitShiftlessRes.status,
+      201,
+      'shiftless split check created 2 child bills',
+    );
+    const [splitShiftlessA, splitShiftlessB] = splitShiftlessRes.data.bills;
+    const payShiftlessA = await api(baseUrl, `/api/bills/${splitShiftlessA.id}/payment`, {
+      method: 'POST',
+      headers: cashierAuth,
+      body: { method: 'cash', amount: null },
+    });
+    assertEqualOrThrow(payShiftlessA.status, 200, 'splitShiftlessA paid without open shift');
+    const payShiftlessB = await api(baseUrl, `/api/bills/${splitShiftlessB.id}/payment`, {
+      method: 'POST',
+      headers: cashierAuth,
+      body: { method: 'card', amount: null, transaction_id: 'TX-SPLIT-SHIFTLESS-B' },
+    });
+    assertEqualOrThrow(payShiftlessB.status, 200, 'splitShiftlessB paid without open shift');
+
+    const readShiftlessA = await api(baseUrl, `/api/bills/${splitShiftlessA.id}`, {
+      headers: managerAuth,
+    });
+    const readShiftlessB = await api(baseUrl, `/api/bills/${splitShiftlessB.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      readShiftlessA.data.bill.payment_method_correction?.correctable,
+      true,
+      'shiftless split sibling A reports correctable = true',
+    );
+    assertEqualOrThrow(
+      readShiftlessB.data.bill.payment_method_correction?.correctable,
+      true,
+      'shiftless split sibling B reports correctable = true',
+    );
+
+    const correctShiftlessA = await api(
+      baseUrl,
+      `/api/bills/${splitShiftlessA.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'card',
+          transaction_id: 'TX-SPLIT-SHIFTLESS-A-CORRECTED',
+          reason: 'Split guest paid card',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      correctShiftlessA.status,
+      200,
+      'correcting shiftless split sibling A succeeds (200)',
+    );
+
     // ── 13. Closed business day refusal (409) ─────────────────────────────
     const { bill: bill3 } = await createPaidBill('prod-80', 'cash');
     const businessDate = (
@@ -1502,6 +1940,22 @@ async function main() {
       closedDayRead.data.bill.payment_method_correction?.reason,
       'day_closed',
       'closed day read reports day_closed',
+    );
+    const closedDaySplitARead = await api(baseUrl, `/api/bills/${splitShiftlessA.id}`, {
+      headers: managerAuth,
+    });
+    const closedDaySplitBRead = await api(baseUrl, `/api/bills/${splitShiftlessB.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      closedDaySplitARead.data.bill.payment_method_correction?.reason,
+      'day_closed',
+      'closing business day flips shiftless split sibling A to day_closed',
+    );
+    assertEqualOrThrow(
+      closedDaySplitBRead.data.bill.payment_method_correction?.reason,
+      'day_closed',
+      'closing business day flips shiftless split sibling B to day_closed',
     );
 
     const closedDayAttempt = await api(baseUrl, `/api/bills/${bill3.id}/payments/0/method`, {
@@ -1566,8 +2020,22 @@ async function main() {
         const messages = require('../frontend/src/lib/i18n/messages/en.json');
         const { useAuthStore } = require('../frontend/src/store/auth');
         const { OrderDetailPanel } = require('../frontend/src/components/orders/OrderDetailPanel');
+        const {
+          getPaymentCorrectionUnavailableMessage,
+        } = require('../frontend/src/components/orders/CorrectPaymentMethodModal');
 
-        const renderPanel = (role: string) => {
+        const renderPanel = (
+          role: string,
+          correctionOverride: {
+            correctable: boolean;
+            reason: string | null;
+            lines: Array<{ index: number; correctable: boolean; reason: string | null }>;
+          } = {
+            correctable: true,
+            reason: null,
+            lines: [{ index: 0, correctable: true, reason: null }],
+          },
+        ) => {
           useAuthStore.setState({
             currentTenant: {
               id: 1,
@@ -1595,6 +2063,7 @@ async function main() {
             balance: 0,
             payment_status: 'paid',
             payment_details: [{ method: 'cash', amount: 100, cash_session_id: 1 }],
+            payment_method_correction: correctionOverride,
           };
           const orderFixture = {
             id: 701,
@@ -1666,6 +2135,36 @@ async function main() {
           !renderPanel('chef').includes('data-testid="correct-payment-method-button"'),
           'OrderDetailPanel hides Correct Payment Method button for chef role',
         );
+
+        const expectedReasons: Array<[string, string]> = [
+          ['day_closed', 'Business day is closed'],
+          ['shift_closed', 'Cash shift is closed'],
+          ['bill_refunded', 'Refunded payments cannot be changed'],
+          ['wallet_method_immutable', 'Wallet payments cannot be changed'],
+          ['split_sibling_shift_closed', "A split bill's shift is closed"],
+        ];
+        const tOrdersLookup = (key: string) =>
+          (messages.orders as Record<string, string>)[key] ?? key;
+        for (const [reason, expectedText] of expectedReasons) {
+          const markup = renderPanel('owner', {
+            correctable: false,
+            reason,
+            lines: [{ index: 0, correctable: false, reason }],
+          });
+          assertOrThrow(
+            !markup.includes('data-testid="correct-payment-method-button"'),
+            `OrderDetailPanel hides footer correct-payment-method-button when reason=${reason}`,
+          );
+          assertOrThrow(
+            !markup.includes('Unavailable: check refunds'),
+            `OrderDetailPanel omits legacy 4-clause unavailable paragraph when reason=${reason}`,
+          );
+          assertEqualOrThrow(
+            getPaymentCorrectionUnavailableMessage(tOrdersLookup, reason),
+            expectedText,
+            `getPaymentCorrectionUnavailableMessage maps ${reason} to concise single-reason text`,
+          );
+        }
 
         db.prepare("DELETE FROM settings WHERE key = 'country'").run();
         const eligibility = paymentMethodCorrectionEligibility(db, bill1 as any);

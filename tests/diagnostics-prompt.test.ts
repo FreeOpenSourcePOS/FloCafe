@@ -65,6 +65,11 @@ async function main() {
     '"Don\'t ask again" is final',
   );
   assertEqualOrThrow(
+    shouldShowDiagnosticsPrompt({ ...base, cloudDeletionBlocked: true }),
+    false,
+    'it stays quiet while cloud deletion is active or completed',
+  );
+  assertEqualOrThrow(
     shouldShowDiagnosticsPrompt({ ...base, problemsSince: 0 }),
     false,
     'it stays quiet when nothing new went wrong since the last ask',
@@ -202,6 +207,84 @@ async function main() {
     body: { value: 'true' },
   });
   assertEqualOrThrow(serverConsent.status, 403, 'a server cannot turn reports on');
+
+  console.log('\n4. Cloud deletion suppresses the prompt and blocks accepted events');
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_prompt_dismissed', 'false', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(new Date().toISOString());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_prompt_count', '0', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(new Date().toISOString());
+  db.prepare(`DELETE FROM settings WHERE key = 'diagnostics_prompt_last_at'`).run();
+  for (const deletionStatus of [
+    'pending',
+    'processing',
+    'approved',
+    'completed',
+    'deleted',
+    'failed',
+    'unknown',
+  ]) {
+    db.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('cloud_deletion_status', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run(deletionStatus, new Date().toISOString());
+    const blockedState = await read();
+    assertEqualOrThrow(blockedState.status, 200, `reads prompt state during ${deletionStatus}`);
+    assertEqualOrThrow(
+      blockedState.data.cloud_deletion_blocked,
+      true,
+      `cloud_deletion_blocked is true when status is ${deletionStatus}`,
+    );
+    const blockedShown = await post('shown');
+    assertEqualOrThrow(blockedShown.status, 200, `shown is a no-op during ${deletionStatus}`);
+    assertEqualOrThrow(
+      blockedShown.data.prompt_count,
+      0,
+      `shown does not mutate prompt_count during ${deletionStatus}`,
+    );
+    assertEqualOrThrow(
+      blockedShown.data.last_asked_at,
+      null,
+      `shown does not record last_asked_at during ${deletionStatus}`,
+    );
+    const blockedAccepted = await post('accepted');
+    assertEqualOrThrow(
+      blockedAccepted.status,
+      409,
+      `accepted returns 409 when cloud_deletion_status is ${deletionStatus}`,
+    );
+    assertEqualOrThrow(
+      blockedAccepted.data.error,
+      'cloud_deletion_pending',
+      `accepted returns cloud_deletion_pending error when status is ${deletionStatus}`,
+    );
+  }
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('cloud_deletion_status', '', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(new Date().toISOString());
+  const unblockedState = await read();
+  assertEqualOrThrow(
+    unblockedState.data.cloud_deletion_blocked,
+    false,
+    'cloud_deletion_blocked clears once cloud_deletion_status is empty',
+  );
+  const unblockedShown = await post('shown');
+  assertEqualOrThrow(unblockedShown.status, 200, 'shown succeeds once cloud deletion is cleared');
+  assertEqualOrThrow(
+    unblockedShown.data.prompt_count,
+    1,
+    'shown increments prompt_count from 0 once cloud deletion is cleared',
+  );
+  const unblockedAccepted = await post('accepted');
+  assertEqualOrThrow(
+    unblockedAccepted.status,
+    200,
+    'accepted succeeds once cloud deletion is cleared',
+  );
 
   console.log('\n' + '='.repeat(56));
   console.log('All diagnostics prompt tests passed.');

@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import Database from 'better-sqlite3';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -47,16 +48,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import Database from 'better-sqlite3';
-import {
-  closeDatabase,
-  createBackup,
-  getCurrentSchemaVersion,
-  initDatabase,
-  isManagedBackupFile,
-} from '../main/db';
-import { registerIpcHandlers } from '../main/ipc';
-import { setMasterPin } from '../main/services/master-pin';
+const { closeDatabase, createBackup, getCurrentSchemaVersion, initDatabase, isManagedBackupFile } =
+  require('../main/db') as typeof import('../main/db');
+const { registerIpcHandlers } = require('../main/ipc') as typeof import('../main/ipc');
+const { setMasterPin } =
+  require('../main/services/master-pin') as typeof import('../main/services/master-pin');
 
 async function run(): Promise<void> {
   setMasterPin('1234');
@@ -222,6 +218,47 @@ async function run(): Promise<void> {
     String(messageBoxCalls[0].detail ?? ''),
     /migrate/i,
     'schema mismatch dialog explains forward schema migration',
+  );
+
+  const legacyManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-legacy123.db');
+  fs.copyFileSync(validManaged, legacyManaged);
+  {
+    const legacyDb = new Database(legacyManaged);
+    legacyDb.exec('DROP TABLE _flo_meta');
+    legacyDb.pragma(`user_version = ${olderVersion}`);
+    legacyDb.close();
+  }
+  messageBoxCalls.length = 0;
+  const legacyRestore = await restoreHandler(trustedSender, '1234', legacyManaged);
+  assert.equal(legacyRestore.success, true, 'IPC restores an older backup without Flo metadata');
+  assert.equal(
+    messageBoxCalls.length,
+    1,
+    'IPC confirms the detected older version before migration',
+  );
+
+  const zeroMetaManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-zero123.db');
+  fs.copyFileSync(validManaged, zeroMetaManaged);
+  {
+    const zeroMetaDb = new Database(zeroMetaManaged);
+    zeroMetaDb.prepare("UPDATE _flo_meta SET value = '0' WHERE key = 'schema_version'").run();
+    zeroMetaDb.close();
+  }
+  messageBoxCalls.length = 0;
+  const zeroMetaRestore = await restoreHandler(trustedSender, '1234', zeroMetaManaged);
+  assert.deepEqual(
+    zeroMetaRestore,
+    {
+      success: false,
+      error:
+        'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.',
+    },
+    'IPC rejects zero metadata schema_version at preflight',
+  );
+  assert.equal(
+    messageBoxCalls.length,
+    0,
+    'IPC does not show a schema migration confirmation dialog for zero metadata schema_version',
   );
 
   const restoreIntentPath = path.join(testDir, 'google-drive-restore.pending');

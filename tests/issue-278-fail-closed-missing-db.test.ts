@@ -27,7 +27,8 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import { closeDatabase, getDatabase, getDbPath, initDatabase, resetDatabaseWithBackup } from '../main/db';
+const { closeDatabase, getDatabase, getDbPath, initDatabase, resetDatabaseWithBackup } =
+  require('../main/db') as typeof import('../main/db');
 
 function removeDbFiles(dbPath: string): void {
   for (const suffix of ['', '-wal', '-shm']) {
@@ -62,7 +63,11 @@ async function run() {
       (err: any) => err?.code === 'ERR_DATABASE_MISSING',
       'missing db on an initialized production install throws ERR_DATABASE_MISSING',
     );
-    assert.equal(fs.existsSync(dbPath), false, 'refusing to start does not create a new blank database file');
+    assert.equal(
+      fs.existsSync(dbPath),
+      false,
+      'refusing to start does not create a new blank database file',
+    );
 
     // 3. The disposable E2E db-path override bypasses the guard entirely,
     //    same as it bypasses getDbPath()'s normal production resolution.
@@ -70,7 +75,11 @@ async function run() {
     process.env.FLO_E2E_DB_PATH = e2eDbPath;
     try {
       initDatabase();
-      assert.equal(fs.existsSync(e2eDbPath), true, 'FLO_E2E_DB_PATH override may still create a fresh database');
+      assert.equal(
+        fs.existsSync(e2eDbPath),
+        true,
+        'FLO_E2E_DB_PATH override may still create a fresh database',
+      );
       closeDatabase();
     } finally {
       delete process.env.FLO_E2E_DB_PATH;
@@ -86,7 +95,8 @@ async function run() {
     assert.equal(fs.existsSync(backupPath), true, 'reset takes a safety backup before wiping');
     assert.equal(fs.existsSync(dbPath), true, 'reset recreates the database file');
     assert.equal(
-      (getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count,
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number })
+        .count,
       0,
       'reset produces a genuinely blank database',
     );
@@ -100,7 +110,9 @@ async function run() {
 }
 
 run().catch((error) => {
-  try { closeDatabase(); } catch { }
+  try {
+    closeDatabase();
+  } catch {}
   Module._load = originalLoad;
   fs.rmSync(testDir, { recursive: true, force: true });
   console.error(error);

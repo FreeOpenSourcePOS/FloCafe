@@ -183,7 +183,7 @@ cart().clearCart();
 for (const code of ['KWD', 'BHD', 'OMR', 'JOD', 'TND', 'KW', 'BH', 'OM', 'JO', 'TN']) {
   assert.equal(resolveActiveCurrencyDecimals(code), 3, `${code} resolves to 3 fraction digits`);
 }
-for (const code of ['JPY', 'KRW', 'VND', 'COP', 'JP', 'KR', 'VN', 'CO']) {
+for (const code of ['JPY', 'KRW', 'VND', 'COP', 'SYP', 'JP', 'KR', 'VN', 'CO', 'SY']) {
   assert.equal(resolveActiveCurrencyDecimals(code), 0, `${code} resolves to 0 fraction digits`);
 }
 assert.equal(clampCartPriceOverride(1.234, 2.5, 'KWD'), 1.234, 'KWD preserves 1.234');
@@ -272,6 +272,18 @@ try {
     'JPY order payload carries 1081',
   );
   cart().clearCart();
+
+  mockStorage.set('pos-auth', JSON.stringify({ state: { tenant: { country: 'SY' } } }));
+  assert.equal(
+    resolveActiveCurrencyDecimals(),
+    0,
+    'active SY tenant without explicit currency resolves to 0 decimals',
+  );
+  assert.equal(
+    clampCartPriceOverride(1500.6, 2000),
+    1501,
+    'SY tenant without explicit currency rounds override to 0 decimals',
+  );
 } finally {
   if (previousLocalStorageDesc) {
     Object.defineProperty(globalThis, 'localStorage', previousLocalStorageDesc);

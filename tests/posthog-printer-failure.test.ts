@@ -145,6 +145,46 @@ async function mainTest(): Promise<void> {
   assert.equal(gatedText.includes('192.168'), false, 'the gate drops the host address');
   assert.equal(gatedText.includes('spool'), false, 'the gate drops the spool path');
 
+  // The queue diagnostics ride on the failure event, as closed sets only.
+  capturePostHogPrintFailure({
+    ...failure,
+    diagnostics: {
+      port_kind: 'tcp_raw',
+      queue_refusal: 'offline',
+      failure_step: 'pre_spool',
+      bypass: 'failed',
+      snmp_enabled: 'yes',
+      win32_error: 1801,
+    },
+  });
+  const diagnosed = latestEvent();
+  assert.equal(diagnosed?.port_kind, 'tcp_raw', 'the port kind reaches PostHog');
+  assert.equal(diagnosed?.win32_error, 1801, 'the Win32 error reaches PostHog');
+  assert.equal(diagnosed?.bypass, 'failed', 'the bypass outcome reaches PostHog');
+
+  // A print the bypass saved is one event, under the same consent.
+  const { capturePostHogPrintRecovered } = require('../main/services/posthog');
+  const saved = {
+    kind: 'receipt',
+    transport: 'direct_tcp_fallback' as const,
+    detail: 'Exception calling "SendRaw" with "2" argument(s): "printer is offline"',
+    queuePort: { kind: 'tcp_raw' },
+  };
+  capturePostHogPrintRecovered(saved);
+  const recovered = latestEvent();
+  assert.equal(clients.at(-1)?.events.at(-1)?.event, 'printer_recovered');
+  assert.equal(recovered?.capture_point, 'printer');
+  assert.equal(recovered?.via, 'direct_tcp');
+  assert.equal(recovered?.port_kind, 'tcp_raw');
+  assert.equal(recovered?.queue_refusal, 'offline');
+  const before = clients.at(-1)?.events.length;
+  capturePostHogPrintRecovered({ ...saved, transport: undefined });
+  assert.equal(clients.at(-1)?.events.length, before, 'a plain success sends no recovery event');
+  setSetting('diagnostics_transmission_enabled', 'false');
+  capturePostHogPrintRecovered(saved);
+  assert.equal(clients.at(-1)?.events.length, before, 'no consent, no recovery event');
+  setSetting('diagnostics_transmission_enabled', 'true');
+
   // Unknown values and a foreign event name never pass the allowlist.
   const dropped = scrubPostHogEvent(
     { event: 'printer_failed', properties: { capture_point: 'printer', kind: 'whatever' } },

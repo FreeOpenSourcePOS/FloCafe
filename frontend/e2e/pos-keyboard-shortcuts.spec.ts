@@ -203,7 +203,95 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(tableModal).not.toBeVisible();
   });
 
-  test('F4 opens checkout modal, and Space tenders cash to complete order', async ({ page }) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 600 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`checkout keeps the payment station visible at ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }) => {
+      await page.getByRole('button', { name: 'Takeaway' }).click();
+      await page.getByTestId('pos-product-card').first().click();
+      await page.locator('body').click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press('F4');
+      const modal = page.getByTestId('prepaid-checkout-modal');
+      await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible();
+      await page.setViewportSize(viewport);
+      const keypad = modal.getByLabel('Numeric keypad');
+      const clear = keypad.getByRole('button', { name: 'Clear amount' });
+      const before = await clear.boundingBox();
+      expect(before).not.toBeNull();
+      expect(before!.y).toBeGreaterThanOrEqual(0);
+      expect(before!.y + before!.height).toBeLessThanOrEqual(viewport.height);
+      const cash = modal.getByRole('button', { name: 'Cash', exact: true });
+      const card = modal.getByRole('button', { name: 'Card', exact: true });
+      await cash.click();
+      const cashInput = cash.locator('..').locator('input');
+      await cashInput.fill('5');
+      await card.click();
+      await cash.click();
+      await expect(cashInput).toHaveValue('5');
+      const inputBounds = await cashInput.boundingBox();
+      expect(inputBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(inputBounds!.x + inputBounds!.width).toBeLessThanOrEqual(viewport.width);
+      const after = await clear.boundingBox();
+      expect(after!.y).toBe(before!.y);
+      if (viewport.width < 1024) {
+        await modal.getByRole('button', { name: 'Items', exact: true }).click();
+        await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible();
+        expect((await clear.boundingBox())!.y).toBe(before!.y);
+      }
+      await modal.getByRole('button', { name: 'Discounts', exact: true }).click();
+      expect((await clear.boundingBox())!.y).toBe(before!.y);
+    });
+  }
+
+  test('prepaid checkout stays visible and locked while submission is pending', async ({
+    page,
+  }) => {
+    let releaseRequest!: () => void;
+    let markStarted!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const requestGate = new Promise<void>((resolve) => {
+      releaseRequest = resolve;
+    });
+    await page.route('**/api/orders', async (route) => {
+      if (route.request().method() === 'POST') {
+        markStarted();
+        await requestGate;
+      }
+      await route.continue();
+    });
+    try {
+      await page.getByRole('button', { name: 'Takeaway' }).click();
+      await page.getByTestId('pos-product-card').first().click();
+      await page.locator('body').click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press('F4');
+      const modal = page.getByTestId('prepaid-checkout-modal');
+      await expect(modal.getByTestId('prepaid-checkout-summary')).toBeVisible();
+      await modal.getByRole('button', { name: 'Cash', exact: true }).click();
+      await modal.getByRole('button', { name: /Confirm Payment/ }).click();
+      await requestStarted;
+      await expect(modal).toBeVisible();
+      await expect(modal.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+      await expect(modal.getByLabel('Numeric keypad').locator('button:not(:disabled)')).toHaveCount(
+        0,
+      );
+      await page.keyboard.press('Escape');
+      await expect(modal).toBeVisible();
+      releaseRequest();
+      await modal.getByRole('button', { name: 'Done', exact: true }).click({ timeout: 15000 });
+      await expect(modal).not.toBeVisible({ timeout: 15000 });
+    } finally {
+      releaseRequest();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+
+  test('F4 opens checkout and payment requires the confirmation button', async ({ page }) => {
     // Select Takeaway mode so checkout does not require table selection
     await page.getByRole('button', { name: 'Takeaway' }).click();
 
@@ -226,10 +314,16 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     // Wait for tax preview calculation to settle
     await expect(checkoutModal.getByText(/Total Due/i)).toBeVisible({ timeout: 5_000 });
 
-    // Press Space inside checkout modal to tender cash and complete
+    // Space on the workspace does not submit a payment.
     await page.keyboard.press('Space');
+    await expect(checkoutModal).toBeVisible();
+    await expect(checkoutModal.getByText(/Balance Due:/)).toBeVisible();
+    await checkoutModal.getByRole('button', { name: 'Cash', exact: true }).click();
+    await expect(checkoutModal.getByText(/Balance Due:/)).toHaveCount(0);
+    await checkoutModal.getByRole('button', { name: /Confirm Payment/ }).click();
 
-    // Order settles and checkout modal closes
+    // Order settles and the cashier dismisses the confirmation.
+    await checkoutModal.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(checkoutModal).not.toBeVisible({ timeout: 10_000 });
 
     // Take screenshot of completed state
@@ -273,7 +367,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(checkoutModal).toBeVisible({ timeout: 5_000 });
   });
 
-  test('holding Space to open checkout or repeating Space/Enter inside modal does not auto-confirm until a fresh press', async ({
+  test('holding Space to open checkout or repeating Space/Enter inside modal does not auto-confirm', async ({
     page,
   }) => {
     await page.getByRole('button', { name: 'Takeaway' }).click();
@@ -404,7 +498,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       const billsMidData = await billsMidRes.json();
       expect(billsMidData.pagination.total).toBe(paidBillsBeforeCount);
 
-      // Release key (keyup) then press a fresh non-repeat Space to confirm once
+      // Release the key and verify a fresh Space cannot submit payment.
       await page.evaluate(() => {
         window.dispatchEvent(
           new KeyboardEvent('keyup', {
@@ -416,11 +510,17 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
         );
       });
 
+      await confirmBtn.blur();
+      await page.keyboard.press('Space');
+      await expect(checkoutModal).toBeVisible();
+      expect(orderCreateRequests).toBe(0);
+      expect(paymentCreateRequests).toBe(0);
       const paymentDonePromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && res.url().includes('/payments'),
       );
-      await page.keyboard.press('Space');
+      await checkoutModal.getByRole('button', { name: /Confirm Payment/ }).click();
       await paymentDonePromise;
+      await checkoutModal.getByRole('button', { name: 'Done', exact: true }).click();
       await expect(checkoutModal).not.toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('cart-item')).toHaveCount(0, { timeout: 10_000 });
       expect(orderCreateRequests).toBe(1);
@@ -432,7 +532,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       const billsAfterData = await billsAfterRes.json();
       expect(billsAfterData.pagination.total).toBe(paidBillsBeforeCount + 1);
 
-      // Also verify fresh non-repeat Enter after keyup confirms once on a second order
+      // Verify Enter also requires an explicit payment action on a second order.
       await page.getByRole('button', { name: 'Takeaway' }).click();
       await productCard.click();
       await expect(page.getByTestId('cart-item').first()).toBeVisible({ timeout: 5_000 });
@@ -466,11 +566,17 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       expect(orderCreateRequests).toBe(1);
       expect(paymentCreateRequests).toBe(1);
 
+      await page.keyboard.press('Enter');
+      await expect(checkoutModal).toBeVisible();
+      expect(orderCreateRequests).toBe(1);
+      expect(paymentCreateRequests).toBe(1);
+      await checkoutModal.getByRole('button', { name: 'Cash', exact: true }).click();
       const enterPaymentDonePromise = page.waitForResponse(
         (res) => res.request().method() === 'POST' && res.url().includes('/payments'),
       );
-      await page.keyboard.press('Enter');
+      await checkoutModal.getByRole('button', { name: /Confirm Payment/ }).click();
       await enterPaymentDonePromise;
+      await checkoutModal.getByRole('button', { name: 'Done', exact: true }).click();
       await expect(checkoutModal).not.toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('cart-item')).toHaveCount(0, { timeout: 10_000 });
       expect(orderCreateRequests).toBe(2);
@@ -649,12 +755,93 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await page.getByRole('button', { name: 'Remove', exact: true }).first().click();
   });
 
-  test('Escape closes the payment queue drawer', async ({ page }) => {
+  test('Escape closes the payment queue drawer in one press and FLOCAFE-TICKET Enter looks up ticket without focus leak', async ({
+    page,
+  }) => {
+    const fetchedBillIds: string[] = [];
     await page.route('**/api/settings/multi_counter_enabled', async (route) => {
       await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
     });
     await page.route('**/api/counters*', async (route) => {
       await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 7777,
+              order_number: 'ORD-7777',
+              type: 'takeaway',
+              total: 42,
+              total_amount: 42,
+              paid_amount: 0,
+              ticket_balance: 42,
+              ticket_paid_amount: 0,
+              balance: 42,
+              checkout_stage: 'awaiting_payment',
+              release_status: 'scheduled',
+              created_at: '2026-11-18 12:00:00',
+              bill_id: 7778,
+              bill_number: 'BILL-7778',
+              bill_payment_status: 'unpaid',
+            },
+          ],
+          awaiting_count: 1,
+          blocked_count: 0,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.route('**/api/bills/*', async (route) => {
+      const url = route.request().url();
+      const id = url.split('/').pop() || '';
+      fetchedBillIds.push(id);
+      await route.fulfill({
+        status: 200,
+        json: {
+          bill: {
+            id: Number(id),
+            bill_number: `BILL-${id}`,
+            order_id: id === '7778' ? 7777 : 9991,
+            subtotal: id === '7778' ? 42 : 10,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: id === '7778' ? 42 : 10,
+            paid_amount: 0,
+            balance: id === '7778' ? 42 : 10,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
+    });
+    await page.route('**/api/orders/by-ticket/*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          order: { id: 9991, order_number: 'ORD-9991', type: 'takeaway' },
+          bill: {
+            id: 9992,
+            bill_number: 'BILL-9992',
+            order_id: 9991,
+            subtotal: 10,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: 10,
+            paid_amount: 0,
+            balance: 10,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
     });
     await page.reload();
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
@@ -663,12 +850,523 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const drawer = page.getByTestId('payment-queue-drawer');
     await expect(drawer).toBeVisible();
 
-    await page.getByTestId('payment-queue-search').focus();
+    const queueSearch = page.getByTestId('payment-queue-search');
+    await expect(queueSearch).toBeFocused();
+
+    // Typing FLOCAFE-TICKET: payload + Enter looks up the ticket immediately, blurs queue search, and opens PaymentModal
+    await queueSearch.fill('FLOCAFE-TICKET:ORD-9991');
+    await queueSearch.press('Enter');
+    await expect(queueSearch).toHaveValue('');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(queueSearch).not.toBeFocused();
+
+    // Pressing Enter or typing digits inside PaymentModal must NOT leak into payment-queue-search or open ORD-7777
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('25');
+    await expect(queueSearch).toHaveValue('');
+    expect(fetchedBillIds).not.toContain('7778');
+
+    // Single Escape closes PaymentModal on top
     await page.keyboard.press('Escape');
-    await expect(drawer).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+
+    // Single Escape closes the drawer even while payment-queue-search has focus
+    await queueSearch.focus();
+    await expect(queueSearch).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
     await expect(page.getByTestId('pos-payment-queue-btn')).toBeFocused();
+  });
+
+  test('Enter in payment queue drawer does not auto-open blocked unpaid orders', async ({
+    page,
+  }) => {
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 503,
+              order_number: 'BLK-UNPAID-503',
+              type: 'takeaway',
+              total: 20,
+              total_amount: 20,
+              paid_amount: 0,
+              ticket_balance: 20,
+              ticket_paid_amount: 0,
+              balance: 20,
+              checkout_stage: 'awaiting_payment',
+              release_status: 'blocked',
+              release_blocked_reason: 'Insufficient stock',
+              created_at: '2026-11-18 12:00:00',
+              bill_id: 603,
+              bill_number: 'BILL-603',
+              bill_payment_status: 'unpaid',
+            },
+          ],
+          awaiting_count: 0,
+          blocked_count: 1,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTestId('queue-ticket-BLK-UNPAID-503')).toBeVisible();
+
+    const queueSearch = page.getByTestId('payment-queue-search');
+    await expect(queueSearch).toBeFocused();
+    await queueSearch.press('Enter');
+
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    await expect(drawer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+  });
+
+  test('PaymentQueueDrawer Enter guards stale orders after failed search and during reopen fetch', async ({
+    page,
+  }) => {
+    const fetchedBillIds: string[] = [];
+    let queueMode: 'initial' | 'fail' | 'recover' | 'hold' = 'initial';
+    let releaseHold!: () => void;
+    const holdGate = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      if (queueMode === 'fail') {
+        await route.fulfill({ status: 500, json: { error: 'Temporary queue error' } });
+        return;
+      }
+      if (queueMode === 'hold') {
+        await holdGate;
+        await route.fulfill({
+          status: 200,
+          json: {
+            orders: [
+              {
+                id: 1002,
+                order_number: 'ORD-1002',
+                type: 'takeaway',
+                total: 25,
+                total_amount: 25,
+                paid_amount: 0,
+                ticket_balance: 25,
+                ticket_paid_amount: 0,
+                balance: 25,
+                checkout_stage: 'awaiting_payment',
+                release_status: 'scheduled',
+                created_at: '2026-11-18 12:05:00',
+                bill_id: 602,
+                bill_number: 'BILL-602',
+                bill_payment_status: 'unpaid',
+              },
+            ],
+            awaiting_count: 1,
+            blocked_count: 0,
+            has_more: false,
+            next_cursor: null,
+          },
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 1001,
+              order_number: 'ORD-1001',
+              type: 'takeaway',
+              total: 19,
+              total_amount: 19,
+              paid_amount: 0,
+              ticket_balance: 19,
+              ticket_paid_amount: 0,
+              balance: 19,
+              checkout_stage: 'awaiting_payment',
+              release_status: 'scheduled',
+              created_at: '2026-11-18 12:00:00',
+              bill_id: 601,
+              bill_number: 'BILL-601',
+              bill_payment_status: 'unpaid',
+            },
+          ],
+          awaiting_count: 1,
+          blocked_count: 0,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.route('**/api/bills/*', async (route) => {
+      const id = route.request().url().split('/').pop() || '';
+      fetchedBillIds.push(id);
+      const isSecond = id === '602';
+      await route.fulfill({
+        status: 200,
+        json: {
+          bill: {
+            id: Number(id),
+            bill_number: `BILL-${id}`,
+            order_id: isSecond ? 1002 : 1001,
+            subtotal: isSecond ? 25 : 19,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: isSecond ? 25 : 19,
+            paid_amount: 0,
+            balance: isSecond ? 25 : 19,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTestId('queue-ticket-ORD-1001')).toBeVisible();
+
+    const queueSearch = page.getByTestId('payment-queue-search');
+    queueMode = 'fail';
+    const failResp = page.waitForResponse(
+      (res) => res.url().includes('/api/orders/awaiting-payment') && res.status() === 500,
+    );
+    await queueSearch.fill('777');
+    await queueSearch.press('Enter');
+    await failResp;
+
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(fetchedBillIds).toEqual([]);
+
+    queueMode = 'recover';
+    const recoverResp = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/orders/awaiting-payment') &&
+        res.url().includes('ORD-1001') &&
+        res.status() === 200,
+    );
+    await queueSearch.fill('ORD-1001');
+    await queueSearch.press('Enter');
+    await recoverResp;
+
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['601']);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    await queueSearch.fill('');
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+
+    queueMode = 'hold';
+    await page.getByTestId('pos-payment-queue-btn').click();
+    await expect(drawer).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['601']);
+
+    const reopenResp = page.waitForResponse(
+      (res) => res.url().includes('/api/orders/awaiting-payment') && res.status() === 200,
+    );
+    releaseHold();
+    await reopenResp;
+    await expect(page.getByTestId('queue-ticket-ORD-1002')).toBeVisible();
+
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['601', '602']);
+  });
+
+  test('PaymentQueueDrawer Enter prefers exact order_number match over substring noise rows', async ({
+    page,
+  }) => {
+    const fetchedBillIds: string[] = [];
+    const buildOrder = (overrides: Record<string, unknown>) => ({
+      type: 'takeaway',
+      total: 15,
+      total_amount: 15,
+      paid_amount: 0,
+      ticket_balance: 15,
+      ticket_paid_amount: 0,
+      balance: 15,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'scheduled',
+      created_at: '2026-11-18 12:00:00',
+      bill_payment_status: 'unpaid',
+      ...overrides,
+    });
+
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      const search = new URL(route.request().url()).searchParams.get('search') || '';
+      if (search === '0012' || search === '001') {
+        await route.fulfill({
+          status: 200,
+          json: {
+            orders: [
+              buildOrder({ id: 1012, order_number: '0012', bill_id: 612, bill_number: 'BILL-612' }),
+              buildOrder({
+                id: 1045,
+                order_number: '0045',
+                customer_phone: '+15550012',
+                bill_id: 645,
+                bill_number: 'BILL-645',
+              }),
+            ],
+            awaiting_count: 2,
+            blocked_count: 0,
+            has_more: search === '0012',
+            next_cursor: null,
+          },
+        });
+        return;
+      }
+      if (search === 'BLK-UNPAID-503') {
+        await route.fulfill({
+          status: 200,
+          json: {
+            orders: [
+              buildOrder({
+                id: 1053,
+                order_number: 'BLK-UNPAID-503',
+                release_status: 'blocked',
+                release_blocked_reason: 'Insufficient stock',
+                bill_id: 653,
+                bill_number: 'BILL-653',
+              }),
+              buildOrder({
+                id: 1099,
+                order_number: '0099',
+                customer_phone: 'BLK-UNPAID-503',
+                bill_id: 699,
+                bill_number: 'BILL-699',
+              }),
+            ],
+            awaiting_count: 1,
+            blocked_count: 1,
+            has_more: false,
+            next_cursor: null,
+          },
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [],
+          awaiting_count: 0,
+          blocked_count: 0,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+    await page.route('**/api/bills/*', async (route) => {
+      const id = route.request().url().split('/').pop() || '';
+      fetchedBillIds.push(id);
+      await route.fulfill({
+        status: 200,
+        json: {
+          bill: {
+            id: Number(id),
+            bill_number: `BILL-${id}`,
+            order_id: 1012,
+            subtotal: 15,
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: 15,
+            paid_amount: 0,
+            balance: 15,
+            payment_status: 'unpaid',
+            payment_details: [],
+          },
+        },
+      });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+    const queueSearch = page.getByTestId('payment-queue-search');
+
+    const nonExactResp = page.waitForResponse(
+      (res) => res.url().includes('search=001') && !res.url().includes('search=0012'),
+    );
+    await queueSearch.fill('001');
+    await queueSearch.press('Enter');
+    await nonExactResp;
+    await expect(page.getByTestId('queue-ticket-0012')).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(fetchedBillIds).toEqual([]);
+
+    const blockedExactResp = page.waitForResponse((res) =>
+      res.url().includes('search=BLK-UNPAID-503'),
+    );
+    await queueSearch.fill('BLK-UNPAID-503');
+    await queueSearch.press('Enter');
+    await blockedExactResp;
+    await expect(page.getByTestId('queue-ticket-BLK-UNPAID-503')).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toHaveCount(0);
+    expect(fetchedBillIds).toEqual([]);
+
+    const exactResp = page.waitForResponse((res) => res.url().includes('search=0012'));
+    await queueSearch.fill('0012');
+    await queueSearch.press('Enter');
+    await exactResp;
+    await expect(page.getByTestId('queue-ticket-0012')).toBeVisible();
+    await queueSearch.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(Array.from(new Set(fetchedBillIds))).toEqual(['612']);
+  });
+
+  test('Escape inside ScheduledOrdersDrawer EditOrderItemModal closes child modal before drawer', async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/auth/login`);
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 20_000 });
+    await setLanguage(page, 'en');
+
+    await page.route('**/api/settings/scheduled_orders_enabled', async (route) => {
+      await route.fulfill({
+        json: { setting: { key: 'scheduled_orders_enabled', value: 'true' } },
+      });
+    });
+    await page.route('**/api/orders/scheduled*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: 8801,
+              order_number: 'ORD-8801',
+              type: 'takeaway',
+              status: 'pending',
+              release_status: 'scheduled',
+              scheduled_for: '2035-01-15T10:30:00.000Z',
+              total: 10,
+              created_at: '2026-11-18 12:00:00',
+              items: [
+                {
+                  id: 8802,
+                  order_id: 8801,
+                  product_id: 'prod-1',
+                  product_name: 'E2E Coffee',
+                  quantity: 1,
+                  unit_price: 10,
+                  total: 10,
+                  status: 'pending',
+                },
+              ],
+            },
+          ],
+          total_active: 1,
+          has_more: false,
+          next_cursor: null,
+        },
+      });
+    });
+
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-scheduled-orders-btn').click();
+    const drawer = page.getByTestId('scheduled-orders-drawer');
+    await expect(drawer).toBeVisible();
+
+    await page.getByTestId('scheduled-edit-item-btn-8802').click();
+    const editQtyInput = page.locator('div.fixed.inset-0 input[type="number"]').last();
+    await expect(editQtyInput).toBeVisible();
+    await editQtyInput.focus();
+    await expect(editQtyInput).toBeFocused();
+
+    // 1st Escape closes EditOrderItemModal only; ScheduledOrdersDrawer stays open
+    await page.keyboard.press('Escape');
+    await expect(editQtyInput).toHaveCount(0);
+    await expect(drawer).toBeVisible();
+
+    // 2nd Escape closes ScheduledOrdersDrawer
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+  });
+
+  test('ProductGrid search clear button and Escape clear non-empty filter before blurring', async ({
+    page,
+  }) => {
+    const searchInput = page.getByTestId('pos-product-search');
+    const clearBtn = page.getByTestId('pos-product-search-clear');
+
+    await expect(clearBtn).toHaveCount(0);
+    await searchInput.focus();
+    await searchInput.fill('Coffee');
+    await expect(clearBtn).toBeVisible();
+
+    // Clicking [X] clears search and keeps focus in the search input
+    await clearBtn.click();
+    await expect(searchInput).toHaveValue('');
+    await expect(clearBtn).toHaveCount(0);
+    await expect(searchInput).toBeFocused();
+
+    // First Escape clears non-empty search without blurring; second Escape blurs
+    await searchInput.fill('Coffee');
+    await expect(clearBtn).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(searchInput).toHaveValue('');
+    await expect(clearBtn).toHaveCount(0);
+    await expect(searchInput).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(searchInput).not.toBeFocused();
   });
 
   test('PrepaidCheckoutModal focused buttons are not hijacked by global Space/Enter quick-pay', async ({

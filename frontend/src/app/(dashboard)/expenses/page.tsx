@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { Plus, SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import ExpenseWorkflow from '@/components/expenses/ExpenseWorkflow';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
@@ -39,6 +40,7 @@ export default function ExpensesPage() {
   const tInventory = useTranslations('inventory');
   const tNav = useTranslations('nav');
   const tOrders = useTranslations('orders');
+  const tDashboard = useTranslations('dashboard');
   const { currentTenant, refreshAuthContext } = useAuthStore();
   const fmt = useFormatCurrency();
   const fmtMinor = (amountMinor: number | null, currencyCode: string) =>
@@ -292,13 +294,14 @@ export default function ExpensesPage() {
           >
             {t('from')}
           </label>
-          <input
+          <DatePickerInput
             id="expense-filter-from"
             type="date"
             data-testid="expense-filter-from"
             value={filters?.from ?? ''}
             onChange={(event) => updateFilter({ from: event.target.value })}
-            className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+            pickerAriaLabel={tDashboard('openDatePicker')}
+            className="rounded-lg border border-border bg-card ps-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-brand"
           />
         </div>
         <div>
@@ -308,13 +311,14 @@ export default function ExpensesPage() {
           >
             {t('to')}
           </label>
-          <input
+          <DatePickerInput
             id="expense-filter-to"
             type="date"
             data-testid="expense-filter-to"
             value={filters?.to ?? ''}
             onChange={(event) => updateFilter({ to: event.target.value })}
-            className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+            pickerAriaLabel={tDashboard('openDatePicker')}
+            className="rounded-lg border border-border bg-card ps-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-brand"
           />
         </div>
         <div>

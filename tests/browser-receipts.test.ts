@@ -1592,6 +1592,75 @@ async function run() {
           textSize: 'invalid_size' as any,
         }).includes('font-size:13px;'),
     );
+
+    const sySypBill = {
+      ...testIranBill,
+      bill_number: 'BILL-SY-1001',
+      subtotal: 1500,
+      tax_amount: 0,
+      total: 1500,
+      paid_amount: 1500,
+      payment_details: [{ method: 'cash', amount: 1500, timestamp: '2026-08-17T14:35:00.000Z' }],
+      order: {
+        ...testIranOrder,
+        order_number: 'ORD-SY-1001',
+        items: [
+          {
+            id: 1,
+            order_id: 101,
+            product_id: 'p-sy',
+            product_name: 'قهوة عربية',
+            unit_price: 1500,
+            quantity: 1,
+            subtotal: 1500,
+            tax_amount: 0,
+            total: 1500,
+            addons: null,
+            special_instructions: null,
+            status: 'served',
+          },
+        ],
+      },
+    };
+    const syTenant = {
+      business_name: 'Damascus Roastery',
+      currency: 'SYP',
+      country: 'SY',
+      timezone: 'Asia/Damascus',
+    };
+    const syHtmlDefault = generateBillHtml(sySypBill, syTenant, {
+      language: 'ar',
+      paperSize: 'thermal80',
+      trimDecimals: false,
+    });
+    const syHtmlTrimmed = generateBillHtml(sySypBill, syTenant, {
+      language: 'ar',
+      paperSize: 'thermal80',
+      trimDecimals: true,
+    });
+    assert(
+      'web-print SYP in SY formats with ل.س. instead of £ (trimDecimals false and true)',
+      syHtmlDefault.includes('ل.س.') &&
+        !syHtmlDefault.includes('£') &&
+        syHtmlTrimmed.includes('ل.س.') &&
+        !syHtmlTrimmed.includes('£'),
+    );
+
+    const usSypTenant = {
+      business_name: 'Damascus US',
+      currency: 'SYP',
+      country: 'US',
+      timezone: 'America/New_York',
+    };
+    const usSypHtmlTrimmed = generateBillHtml(sySypBill, usSypTenant, {
+      language: 'en',
+      paperSize: 'thermal80',
+      trimDecimals: true,
+    });
+    assert(
+      'web-print SYP in US with trimDecimals formats with SYP instead of £',
+      usSypHtmlTrimmed.includes('SYP') && !usSypHtmlTrimmed.includes('£'),
+    );
   }
 
   // Generate Reviewer-Visible Artifacts (HTML & Screenshots via Playwright)

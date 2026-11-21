@@ -1,3 +1,6 @@
+import { ORDER_CREATE_DISPLAY_CODES } from './order-create-display-codes';
+import { PRINTER_DIAGNOSTIC_FACT_RULES } from '../printers/print-failure-facts';
+
 export type OperationOutcome = 'not_applied' | 'applied' | 'partial' | 'unknown' | 'not_applicable';
 export type OperationFailureClass = 'expected_rejection' | 'unexpected_failure';
 
@@ -309,13 +312,31 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     },
   },
   {
+    capture_point: 'fc.backend.order.create.addon_group_validation',
+    reason_code: 'order.addon_selection_required',
+    operation: 'order.create',
+    stage: 'validation',
+    classification: 'expected_rejection',
+    outcomes: ['not_applied'],
+    facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.order.create.addon_item_validation',
+    reason_code: 'order.addon_unavailable',
+    operation: 'order.create',
+    stage: 'validation',
+    classification: 'expected_rejection',
+    outcomes: ['not_applied'],
+    facts: NO_FACTS,
+  },
+  {
     capture_point: 'fc.backend.order.create.other_validation',
     reason_code: 'validation.rejected',
     operation: 'order.create',
     stage: 'validation',
     classification: 'expected_rejection',
     outcomes: ['not_applied'],
-    facts: NO_FACTS,
+    facts: { display_code: { type: 'enum', values: ORDER_CREATE_DISPLAY_CODES } },
   },
   {
     capture_point: 'fc.backend.order.create.persistence',
@@ -867,6 +888,7 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     facts: {
       failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
       connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
       kind: { type: 'enum', values: ['receipt'], required: true },
     },
   },
@@ -880,6 +902,7 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     facts: {
       failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
       connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
       kind: { type: 'enum', values: ['kot'], required: true },
     },
   },
@@ -893,6 +916,7 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     facts: {
       failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
       connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
       kind: { type: 'enum', values: ['receipt'], required: true },
     },
   },
@@ -906,6 +930,7 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     facts: {
       failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
       connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
       kind: { type: 'enum', values: ['kot'], required: true },
     },
   },
@@ -919,6 +944,7 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     facts: {
       failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
       connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
       kind: { type: 'enum', values: ['delivery_slip'], required: true },
     },
   },
@@ -932,7 +958,36 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     facts: {
       failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
       connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
       kind: { type: 'enum', values: ['delivery_slip'], required: true },
+    },
+  },
+  {
+    capture_point: 'fc.backend.printer.payment_ticket.queue',
+    reason_code: 'printer.queue_failed',
+    operation: 'printer.print',
+    stage: 'printing',
+    classification: 'unexpected_failure',
+    outcomes: ['not_applied', 'partial', 'unknown'],
+    facts: {
+      failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
+      connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
+      kind: { type: 'enum', values: ['payment_ticket'], required: true },
+    },
+  },
+  {
+    capture_point: 'fc.backend.printer.payment_ticket.timeout',
+    reason_code: 'printer.timeout',
+    operation: 'printer.print',
+    stage: 'printing',
+    classification: 'unexpected_failure',
+    outcomes: ['not_applied', 'partial', 'unknown'],
+    facts: {
+      failure_class: { type: 'enum', values: PRINT_FAILURE_CLASSES },
+      connection_type: { type: 'enum', values: PRINT_CONNECTION_TYPES },
+      ...PRINTER_DIAGNOSTIC_FACT_RULES,
+      kind: { type: 'enum', values: ['payment_ticket'], required: true },
     },
   },
   {

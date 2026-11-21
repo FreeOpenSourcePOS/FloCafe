@@ -104,9 +104,10 @@ Backend consumers of `resolveRegionalSnapshot()`:
 | `main/services/refund.ts` | Refund minor units and the business timezone used for the refund window. |
 | `main/services/daily-sales-export.ts` | Currency minor-unit factor for the accounting export, and regional locale and formatting preferences for `serializeDailySalesExportHtml` and `formatDailySalesWhatsAppMessage`. |
 | `main/services/daily-invoices-export.ts` | Regional locale and formatting preferences for `buildDailyInvoicesExportDataset` and `serializeDailyInvoicesExportHtml`. |
+| `main/services/cloud-sync.ts` | Currency, currency symbol, fraction digits, and business timezone in `resolveLiveReportContext()` for live relay reports. |
 | `main/services/expenses.ts` | Store currency and business timezone for expense business-date resolution. |
 | `main/services/whatsapp.ts` | Store regional snapshot for WhatsApp message formatting. |
-| `main/routes/menu-csv.ts` | Amount formatting and separators for menu and add-on CSV export. |
+| `main/routes/menu-csv.ts` | Amount formatting and localized or currency-stripped numeric parsing for menu and add-on CSV export and import. |
 | `main/routes/printers.ts` | Regional snapshot for menu and delivery-slip print assembly. |
 | `main/db.ts` | `requireTenantTimezone()` for order and bill numbering, and the target-currency snapshot taken inside the destructive currency reset. |
 | `main/printers/thermal.ts` | Receipt currency symbol, fraction digits, and business timezone. |
@@ -140,6 +141,12 @@ separator for CSV output. It is used by `main/routes/menu-csv.ts` for menu, add-
 price and cost columns. `toCsvRow()` in `main/lib/csv.ts` then quotes fields and neutralises
 spreadsheet formula triggers on non-numeric strings, so a product name beginning with `=`, `+`, `-`,
 or `@` cannot execute when the export is opened in a spreadsheet.
+
+On CSV import, `main/routes/menu-csv.ts` wraps `canonicalizeLocalizedAmount()` in
+`canonicalizeCsvLocalizedAmount()`, which trims spreadsheet whitespace and directional marks, strips
+unambiguous currency symbols or valid ISO 4217 currency codes, delegates to
+`canonicalizeLocalizedAmount()`, and falls back to standard three-digit comma-grouped dot-decimal
+numbers (`1,234.56`) or plain numeric tokens while rejecting ambiguous or malformed values.
 
 ## Compliance
 

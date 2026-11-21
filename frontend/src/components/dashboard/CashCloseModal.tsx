@@ -14,6 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import {
   Lock,
   Loader2,
@@ -187,7 +188,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               return (
                 <li key={step} className="flex items-center gap-2 flex-1 last:flex-none">
                   <span
-                    className={`flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-semibold border ${active ? 'bg-brand text-brand-foreground border-brand' : completed ? 'bg-brand/15 text-brand border-brand/30' : 'bg-muted text-muted-foreground border-border'}`}
+                    className={`flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-semibold border ${active ? 'bg-brand text-white border-brand' : completed ? 'bg-brand/15 text-brand border-brand/30' : 'bg-muted text-muted-foreground border-border'}`}
                     aria-current={active ? 'step' : undefined}
                   >
                     {completed ? <Check size={12} /> : step}
@@ -231,7 +232,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                   >
                     {t('businessDateLabel')}
                   </label>
-                  <input
+                  <DatePickerInput
                     id="business-date"
                     type="date"
                     value={businessDate}
@@ -244,7 +245,8 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                       setSelectedSessionId(null);
                       setBusinessDate(next);
                     }}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+                    pickerAriaLabel={t('openDatePicker')}
+                    className="w-full ps-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
                   />
                   {xReport?.periodStart && xReport?.periodEnd && (
                     <p className="text-xs text-muted-foreground mt-1">

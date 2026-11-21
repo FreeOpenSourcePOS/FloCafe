@@ -486,7 +486,7 @@ jobs:
             --file "$SNAP_EVIDENCE"
 
   release-mac:
-    runs-on: macos-14
+    runs-on: macos-15
     needs: create-release
     if: needs.create-release.outputs.promotion_only != 'true'
     # Was two parallel 60-minute matrix jobs (one per arch); now one job builds,

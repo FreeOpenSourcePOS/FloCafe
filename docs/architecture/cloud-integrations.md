@@ -271,8 +271,11 @@ onto another terminal brings its seed, so both terminals share a device id.
   `occurrences`, and the slowest statement (`slowest_query_ms`, `slowest_query`). Every such request
   writes one `console.warn` line, whether or not telemetry is on.
 - The error-report card counts `diagnostics_prompt_shown` each time it appears and
-  `diagnostics_prompt_accepted` when Send reports is chosen, under the same usage consent as every
-  other usage event. The device-side counters, not these events, enforce the ask cap.
+  `diagnostics_prompt_accepted` only after Send reports saves `diagnostics_consent` and
+  `diagnostics_transmission_enabled`, under the same usage consent as every other usage event. While
+  cloud deletion blocks consent (`cloud_deletion_blocked`), the prompt stays suppressed, `shown`
+  does not record or emit, and `accepted` returns `409` (`cloud_deletion_pending`). The device-side
+  counters, not these events, enforce the ask cap.
 - The renderer sends at most one `$pageview` per screen per staff member every 30 minutes
   (`shared/posthog-screen-views.ts`); views inside the window are folded into the next pageview's
   `repeat_views`. A screen is the route path with id-like segments removed, plus `settings_tab` on
@@ -293,6 +296,19 @@ sent when that check is on, at every sharing level. When the check is off, the
 exception stays on the machine. The client itself is disabled only at `off` with diagnostics
 transmission also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
 both checks.
+
+**Failures follow the same check.** Two diagnostics events leave PostHog's exception stream and
+follow transmission. `printer_failed` carries the failure class, connection type, job kind, release,
+OS, install source, and correlation id, plus the scrubbed error text, and never the queue name.
+`operation_failed` reuses each sealed v2 report queued in `store_diagnostics_outbox` (grouped by
+capture point, outcome, validated facts, release, and hour window, and split across report-count
+bounds or subsequent flushes): one event per sealed report, carrying `reason_code`, `operation`,
+`stage`, `outcome`, `classification`, `count`, `capture_point`, the report's `app_version` and
+`platform`, and the report's validated `facts`. It carries no correlation id and no free text, and
+a printer capture point (`fc.backend.printer.*`) is left out because `printer_failed` already covers
+it. The event uses `report_id` as its PostHog `uuid`, so a resend after a restart deduplicates to
+the same event. The report flush runs only while a diagnostics transport is set up (anonymous
+telemetry or a cloud account), so with neither there is no `operation_failed`.
 
 | Capture point                             | Source                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -540,6 +556,21 @@ Issuing a pairing code is the endpoint that returns the stale claim message desc
 its failure is reported as HTTP 409 for an unregistered store and HTTP 502 for any other cloud
 failure, so a connectivity problem is distinguishable from a registration problem.
 
+**Live relay reports.** `CloudSyncService.runCommand()` in
+[`main/services/cloud-sync.ts`](../../main/services/cloud-sync.ts) serves five live report commands
+for RevFlo (`report.dashboard`, `report.hourly`, `report.sales`, `report.items`, `report.payments`),
+emitting `meta.report_contract_version: 1` payloads on `meta.basis: 'daily-sales-export'`. Store
+`currency`, optional `currency_symbol`, `fraction_digits`, and `timezone` come from
+`resolveRegionalSnapshot()` (see [regional settings](regional-settings.md)), and day bounds use
+`business_day_start_time` (see [business time](business-time.md)). Single-day views (`dashboard`,
+`hourly`) accept `date` or `range` (`today` or `yesterday`); range views (`sales`, `items`,
+`payments`) accept `range` (`today`, `yesterday`, `last7` default, `last30`) or paired `from`/`to`
+dates up to 370 inclusive days (`MAX_COMMAND_RANGE_DAYS`), plus `group_by` (`day`, `week`, `month`)
+on `sales` and `sort_by` (`revenue`, `qty`) and `limit` (`1` to `100`, default `50`) on `items`.
+`dashboard`, `sales`, `items`, and `payments` share `buildDailySalesExportDataset()` (see
+[daily sales export](../reference/daily-sales-export.md)), while `hourly` aggregates paid `bills`
+and `refunds` across the day's `[start, end)` UTC window bucketed by store-local hour.
+
 ## Support ticket outbox
 
 A support request is written to the `support_ticket_outbox` table with a `status` of `pending`,
@@ -630,5 +661,6 @@ npm run test:telemetry
 npm run test:support-ticket
 npm run test:cloud-account-status
 npm run test:cloud-live-orders-batching
+npm run test:cloud-live-reports
 npm run test:recovery-cloud   # includes tests/cloud-deletion-recovery.test.ts
 ```

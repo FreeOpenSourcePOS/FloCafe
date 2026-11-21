@@ -47,7 +47,7 @@ function assert(label: string, cond: boolean, detail?: string) {
 
 /**
  * Load frontend TypeScript modules without changing their production aliases.
- * ts-node transpiles these files, but Node does not apply tsconfig `paths` at
+ * tsx transpiles these files, but plain Node does not apply tsconfig `paths` at
  * runtime, so the hook is scoped to the require operation and then restored.
  */
 function loadFrontendPrinterModules(): {

@@ -7,6 +7,7 @@ import {
   upsertSettings,
 } from '../db';
 import { DIAGNOSTICS_PROMPT_MAX } from '../../shared/diagnostics-prompt';
+import { isCloudDeletionBlocking } from './cloud-sync';
 
 const COUNT_KEY = 'diagnostics_prompt_count';
 const LAST_AT_KEY = 'diagnostics_prompt_last_at';
@@ -15,6 +16,7 @@ const DISMISSED_KEY = 'diagnostics_prompt_dismissed';
 export interface DiagnosticsPromptState {
   enabled: boolean;
   dismissed: boolean;
+  cloud_deletion_blocked: boolean;
   prompt_count: number;
   last_asked_at: string | null;
   problems_since: number;
@@ -46,6 +48,7 @@ export function readDiagnosticsPromptState(): DiagnosticsPromptState {
   return {
     enabled: isDiagnosticsTransmissionEnabled(),
     dismissed: getSettingValue(DISMISSED_KEY) === 'true',
+    cloud_deletion_blocked: isCloudDeletionBlocking(getSettingValue('cloud_deletion_status')),
     prompt_count: readCount(),
     last_asked_at: lastAskedAt,
     problems_since: countProblemsSince(lastAskedAt),
@@ -55,7 +58,10 @@ export function readDiagnosticsPromptState(): DiagnosticsPromptState {
 /** Records an ask. The cap is enforced here, so a client cannot nag past it. */
 export function recordDiagnosticsPromptShown(): DiagnosticsPromptState {
   const count = readCount();
-  if (count < DIAGNOSTICS_PROMPT_MAX) {
+  if (
+    !isCloudDeletionBlocking(getSettingValue('cloud_deletion_status')) &&
+    count < DIAGNOSTICS_PROMPT_MAX
+  ) {
     upsertSettings({
       [COUNT_KEY]: String(count + 1),
       [LAST_AT_KEY]: new Date().toISOString(),

@@ -35,14 +35,23 @@ diagnosticsPromptRoutes.post(
   (req: Request, res: Response) => {
     try {
       const event = req.body?.event;
+      const state = readDiagnosticsPromptState();
       if (event === 'shown') {
+        if (state.cloud_deletion_blocked) {
+          res.json(state);
+          return;
+        }
         res.json(recordDiagnosticsPromptShown());
         capturePostHogUsage('diagnostics_prompt_shown');
         return;
       }
       if (event === 'accepted') {
+        if (state.cloud_deletion_blocked) {
+          res.status(409).json({ error: 'cloud_deletion_pending' });
+          return;
+        }
         capturePostHogUsage('diagnostics_prompt_accepted');
-        res.json(readDiagnosticsPromptState());
+        res.json(state);
         return;
       }
       if (event === 'dismissed') {

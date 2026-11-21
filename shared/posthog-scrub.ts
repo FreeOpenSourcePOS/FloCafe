@@ -4,6 +4,15 @@
  */
 
 import { scrubPrinterErrorText } from './printer-error-text';
+import {
+  BYPASS_OUTCOMES,
+  DRIVER_KINDS,
+  FAILURE_STEPS,
+  PORT_KINDS,
+  QUEUE_REFUSALS,
+  SNMP_STATES,
+  WIN32_ERROR_MAX,
+} from './print/printer-facts';
 
 export const POSTHOG_CAPTURE_POINTS = [
   'uncaughtException',
@@ -17,7 +26,11 @@ export const POSTHOG_CAPTURE_POINTS = [
 export type PostHogCapturePoint = (typeof POSTHOG_CAPTURE_POINTS)[number];
 
 /** Diagnostics events that follow error-sending consent, not the usage level. */
-export const POSTHOG_DIAGNOSTIC_EVENTS = ['printer_failed'] as const;
+export const POSTHOG_DIAGNOSTIC_EVENTS = [
+  'printer_failed',
+  'printer_recovered',
+  'operation_failed',
+] as const;
 
 export type PostHogDiagnosticEvent = (typeof POSTHOG_DIAGNOSTIC_EVENTS)[number];
 
@@ -165,8 +178,34 @@ const PRINT_ENUM_KEYS: Record<string, Set<string>> = {
     'unsupported',
     'unknown',
   ]),
+  port_kind: new Set(PORT_KINDS),
+  queue_refusal: new Set(QUEUE_REFUSALS),
+  failure_step: new Set(FAILURE_STEPS),
+  snmp_enabled: new Set(SNMP_STATES),
+  driver_kind: new Set(DRIVER_KINDS),
+  bypass: new Set(BYPASS_OUTCOMES),
+  via: new Set(['direct_tcp']),
 };
+
+/** Bounded integers a print failure may carry, keyed to their largest allowed value. */
+const PRINT_INTEGER_KEYS: Record<string, number> = { win32_error: WIN32_ERROR_MAX };
 const DIAGNOSTIC_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** An operation failure is code-shaped only: ids from the operation registry, a count, flat facts. */
+const OPERATION_CAPTURE_POINT = /^fc(?:\.[a-z][a-z0-9_]*){2,5}$/;
+const OPERATION_CODE = /^[a-z][a-z0-9]*(?:[._][a-z][a-z0-9]*){0,5}$/;
+const OPERATION_CLASSES = new Set(['expected_rejection', 'unexpected_failure']);
+const OPERATION_OUTCOMES = new Set([
+  'not_applied',
+  'applied',
+  'partial',
+  'unknown',
+  'not_applicable',
+]);
+const FACT_KEY = /^[a-z][a-z0-9_]{0,40}$/;
+const FACT_TEXT = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_FACTS = 12;
+const MAX_FACT_NUMBER = 1_000_000_000;
 
 const PROJECT_MARKERS = [
   'frontend/src/',
@@ -614,8 +653,54 @@ function scrubDiagnosticEvent(event: ScrubbableEvent): ScrubbableEvent | null {
   if (typeof source.correlation_id === 'string' && DIAGNOSTIC_ID.test(source.correlation_id)) {
     properties.correlation_id = source.correlation_id;
   }
+  for (const [key, max] of Object.entries(PRINT_INTEGER_KEYS)) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= max) {
+      properties[key] = value;
+    }
+  }
   const errorText = scrubPrinterErrorText(source.error_text);
   if (errorText) properties.error_text = errorText;
+  return { ...withoutPersonOperators(event), properties };
+}
+
+function scrubFailureFacts(value: unknown): Record<string, string | number> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const kept: Record<string, string | number> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (Object.keys(kept).length >= MAX_FACTS) break;
+    if (!FACT_KEY.test(key)) continue;
+    if (typeof entry === 'number' && Number.isFinite(entry) && Math.abs(entry) <= MAX_FACT_NUMBER) {
+      kept[key] = entry;
+    } else if (typeof entry === 'string' && FACT_TEXT.test(entry)) {
+      kept[key] = entry;
+    }
+  }
+  return Object.keys(kept).length > 0 ? kept : null;
+}
+
+function scrubOperationFailure(event: ScrubbableEvent): ScrubbableEvent | null {
+  const source = event.properties ?? {};
+  const capturePoint = source.capture_point;
+  if (typeof capturePoint !== 'string' || !OPERATION_CAPTURE_POINT.test(capturePoint)) return null;
+  const properties: Record<string, unknown> = {
+    ...contextProperties(source),
+    capture_point: capturePoint,
+  };
+  for (const key of ['reason_code', 'operation', 'stage'] as const) {
+    const value = source[key];
+    if (typeof value === 'string' && OPERATION_CODE.test(value)) properties[key] = value;
+  }
+  if (typeof source.classification === 'string' && OPERATION_CLASSES.has(source.classification))
+    properties.classification = source.classification;
+  if (typeof source.outcome === 'string' && OPERATION_OUTCOMES.has(source.outcome))
+    properties.outcome = source.outcome;
+  const count = source.count;
+  if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 1 && count <= 100_000)
+    properties.count = count;
+  const facts = scrubFailureFacts(source.facts);
+  if (facts) properties.facts = facts;
+  // A correlation id names one attempt, not a window, so it is never part of this event.
   return { ...withoutPersonOperators(event), properties };
 }
 
@@ -673,6 +758,10 @@ function scrubAllowed(
   if (event.event === '$exception') {
     if (!options.allowExceptions) return null;
     return withoutLinkedRefs(scrubException(event, options), options.telemetryEnabled);
+  }
+  if (event.event === 'operation_failed') {
+    if (!options.allowExceptions) return null;
+    return withoutLinkedRefs(scrubOperationFailure(event), options.telemetryEnabled);
   }
   if (DIAGNOSTIC_EVENT_SET.has(event.event)) {
     if (!options.allowExceptions) return null;

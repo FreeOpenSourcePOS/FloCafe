@@ -218,6 +218,7 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
         usePosKeyboardShortcuts: typeof usePosKeyboardShortcuts;
       };
 
+    let dismissCalls = 0;
     let tenderCalls = 0;
     let incrementCalls = 0;
     let decrementCalls = 0;
@@ -230,7 +231,10 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
       onTender: () => {
         tenderCalls += 1;
       },
-      onDismissModalOrBlur: () => false,
+      onDismissModalOrBlur: () => {
+        dismissCalls += 1;
+        return false;
+      },
       onIncrementLastItem: () => {
         incrementCalls += 1;
       },
@@ -366,6 +370,69 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
       1,
       'Ctrl+K / Meta+K in modal INPUT must not focus background product search when anyModalOpen is true',
     );
+
+    // 7. defaultPrevented Escape (e.g. handled by Radix Dialog) must not trigger onDismissModalOrBlur
+    const defaultPreventedEscape = {
+      key: 'Escape',
+      code: 'Escape',
+      defaultPrevented: true,
+      repeat: false,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      target: new FakeHTMLElement('DIV'),
+      preventDefault: () => undefined,
+    } as unknown as KeyboardEvent;
+    keydownListener!(defaultPreventedEscape);
+    assert.strictEqual(
+      dismissCalls,
+      0,
+      'already-prevented Escape event must not cascade into onDismissModalOrBlur',
+    );
+
+    // 8. useBarcodeScanner preserves buffer across Shift keydown (e.g. ':' in FLOCAFE-TICKET:)
+    delete require.cache[require.resolve('../frontend/src/hooks/useBarcodeScanner')];
+    const { useBarcodeScanner } = require('../frontend/src/hooks/useBarcodeScanner') as {
+      useBarcodeScanner: (onScan: (code: string) => void, enabled?: boolean) => void;
+    };
+    const scannedCodes: string[] = [];
+    useBarcodeScanner((code) => scannedCodes.push(code), true);
+    assert.ok(keydownListener, 'useBarcodeScanner registers keydown listener');
+    for (const key of [
+      'F',
+      'L',
+      'O',
+      'C',
+      'A',
+      'F',
+      'E',
+      '-',
+      'T',
+      'I',
+      'C',
+      'K',
+      'E',
+      'T',
+      'Shift',
+      ':',
+      '9',
+      '9',
+      'Enter',
+    ]) {
+      keydownListener!({
+        key,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        target: new FakeHTMLElement('DIV'),
+      } as unknown as KeyboardEvent);
+    }
+    assert.deepStrictEqual(
+      scannedCodes,
+      ['FLOCAFE-TICKET:99'],
+      'useBarcodeScanner preserves rapid Shift+: inside FLOCAFE-TICKET scan payload',
+    );
   } finally {
     while (cleanups.length > 0) {
       cleanups.pop()?.();
@@ -416,6 +483,7 @@ try {
     'lucide-react': {
       Search: () => null,
       SlidersHorizontal: () => null,
+      X: () => null,
     },
     'react-hot-toast': {
       __esModule: true,
@@ -543,6 +611,62 @@ try {
     'non-composing Enter adds matched product to cart',
   );
   assert.deepStrictEqual(searchUpdates, [''], 'non-composing Enter clears search input');
+
+  // 4b. ProductGrid [X] clear button & Escape-to-clear behavior
+  const clearBtn = findByTestId(tree, 'pos-product-search-clear');
+  assert.ok(clearBtn, 'renders pos-product-search-clear button when search is non-empty');
+  searchUpdates.length = 0;
+  (clearBtn.props.onClick as () => void)();
+  assert.deepStrictEqual(searchUpdates, [''], 'clicking pos-product-search-clear clears search');
+
+  searchUpdates.length = 0;
+  addedProducts.length = 0;
+  let escapeStopped = false;
+  onKeyDown({
+    key: 'Escape',
+    keyCode: 27,
+    nativeEvent: { isComposing: false },
+    stopPropagation: () => {
+      escapeStopped = true;
+    },
+  });
+  assert.strictEqual(escapeStopped, true, 'Escape on non-empty search calls stopPropagation');
+  assert.deepStrictEqual(searchUpdates, [''], 'Escape on non-empty search clears search');
+  assert.strictEqual(addedProducts.length, 0, 'Escape does not add product to cart');
+
+  const emptyTree = ProductGrid({
+    categories: [],
+    products: [coffeeProduct],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: '',
+    setSearch: (s: string) => searchUpdates.push(s),
+    currency: 'USD',
+    onProductClick: (product: unknown, quantity: number) =>
+      addedProducts.push({ product, quantity }),
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  assert.strictEqual(
+    findByTestId(emptyTree, 'pos-product-search-clear'),
+    null,
+    'omits pos-product-search-clear when search is empty',
+  );
+  const emptyInput = findByTestId(emptyTree, 'pos-product-search');
+  assert.ok(emptyInput, 'renders pos-product-search when search is empty');
+  searchUpdates.length = 0;
+  let emptyEscapeStopped = false;
+  (emptyInput.props.onKeyDown as (e: Record<string, unknown>) => void)({
+    key: 'Escape',
+    keyCode: 27,
+    nativeEvent: { isComposing: false },
+    stopPropagation: () => {
+      emptyEscapeStopped = true;
+    },
+  });
+  assert.strictEqual(emptyEscapeStopped, false, 'Escape on empty search bubbles to window');
+  assert.strictEqual(searchUpdates.length, 0, 'Escape on empty search does not call setSearch');
+
   // 5. Trailing asterisk "3*" keeps product card visible and does not add on premature Enter
   addedProducts.length = 0;
   searchUpdates.length = 0;
@@ -1278,7 +1402,15 @@ console.log(
   } = {
     customer: null,
     customerId: null,
-    items: [{ id: 'item-1', price: 100, quantity: 1 }],
+    items: [
+      {
+        id: 'item-1',
+        product: { name: 'Test item', price: 100 },
+        quantity: 1,
+        addons: [],
+        special_instructions: '',
+      },
+    ],
     orderType: 'dine_in',
     onlinePlatform: null,
     waivedChargeIds: new Set(),
@@ -1344,6 +1476,7 @@ console.log(
       'use-intl': {
         useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) =>
           params ? `${ns}.${key}:${JSON.stringify(params)}` : `${ns}.${key}`,
+        useLocale: () => 'en-US',
       },
       '@/store/auth': {
         useAuthStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -1835,17 +1968,8 @@ console.log(
     );
     assert.strictEqual(
       prepaidConfirms.length,
-      1,
-      'PrepaidCheckoutModal confirms order on non-repeat Space on modal surface',
-    );
-    assert.deepStrictEqual(
-      prepaidConfirms[0],
-      {
-        payments: [{ method: 'cash', amount: 100 }],
-        walletAmount: 0,
-        discount: null,
-      },
-      'PrepaidCheckoutModal auto-allocates remaining balance to cash and confirms',
+      0,
+      'PrepaidCheckoutModal requires an explicit payment action after Space',
     );
 
     const escRes = dispatchPrepaidKey({

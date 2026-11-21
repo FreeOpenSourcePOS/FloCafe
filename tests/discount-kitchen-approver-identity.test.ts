@@ -408,6 +408,60 @@ async function run() {
         managerA.id,
         'Audit log attributes override to Manager A when approval required',
       );
+
+      // Order discount with wrong PIN returns structured operation failure metadata
+      const { orderId: orderFailId } = await setupOrderWithPartialPayment();
+      const opRef = '11111111-2222-4333-8444-555555555555';
+      const orderWrongPinRes = await api(baseUrl, `/api/orders/${orderFailId}/discount`, {
+        method: 'PATCH',
+        body: {
+          discount_type: 'percentage',
+          discount_value: 10,
+          approver_id: managerA.id,
+          override_pin: '0000',
+        },
+        headers: { ...ownerAuth, 'x-operation-id': opRef },
+      });
+      assertEqualOrThrow(
+        orderWrongPinRes.status,
+        403,
+        'Order discount with wrong PIN rejects with 403 when approval required',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.error,
+        'Invalid manager PIN',
+        'Order discount wrong PIN error message matches Invalid manager PIN',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.operation,
+        'order.discount',
+        'Order discount wrong PIN returns structured operation=order.discount',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.reason_code,
+        'discount.rejected',
+        'Order discount wrong PIN returns reason_code=discount.rejected',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.stage,
+        'validation',
+        'Order discount wrong PIN returns stage=validation',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.classification,
+        'expected_rejection',
+        'Order discount wrong PIN returns classification=expected_rejection',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.outcome,
+        'not_applied',
+        'Order discount wrong PIN returns outcome=not_applied',
+      );
+      assertEqualOrThrow(
+        orderWrongPinRes.data.correlation_id,
+        opRef,
+        'Order discount wrong PIN echoes correlation_id',
+      );
     }
 
     // ── 7. Conflicting approver identifiers reject with 400 ──

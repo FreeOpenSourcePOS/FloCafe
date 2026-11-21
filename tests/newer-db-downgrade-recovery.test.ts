@@ -4,6 +4,8 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import Database from 'better-sqlite3';
+import jwt from 'jsonwebtoken';
 
 const nativeFs = require('node:fs') as typeof import('node:fs');
 const Module = require('module');
@@ -40,9 +42,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import Database from 'better-sqlite3';
-import jwt from 'jsonwebtoken';
-import {
+const {
   buildIdealSchemaDb,
   closeDatabase,
   createBackup,
@@ -65,15 +65,15 @@ import {
   restoreBackup,
   restoreCompatibleBackupForDowngrade,
   SchemaVersionMismatchError,
-} from '../main/db';
-import { FLOCAFE_RELEASES_URL, runDowngradeRecoveryFlow } from '../main/downgrade-recovery';
-import { getUserAuthStatus, isTokenRevoked, revokeToken } from '../main/middleware/security';
-import {
-  clearJWTSecretCache,
-  getJWTSecret,
-  JWT_SECRET_SAFE_STORAGE_MARKER,
-} from '../main/security/jwt-secret';
-import { runHealthCheck } from '../main/services/schema-health';
+} = require('../main/db') as typeof import('../main/db');
+const { FLOCAFE_RELEASES_URL, runDowngradeRecoveryFlow } =
+  require('../main/downgrade-recovery') as typeof import('../main/downgrade-recovery');
+const { getUserAuthStatus, isTokenRevoked, revokeToken } =
+  require('../main/middleware/security') as typeof import('../main/middleware/security');
+const { clearJWTSecretCache, getJWTSecret, JWT_SECRET_SAFE_STORAGE_MARKER } =
+  require('../main/security/jwt-secret') as typeof import('../main/security/jwt-secret');
+const { runHealthCheck } =
+  require('../main/services/schema-health') as typeof import('../main/services/schema-health');
 
 function sha256File(filePath: string): string {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
@@ -3652,10 +3652,8 @@ async function run(): Promise<void> {
       const child = spawn(
         process.execPath,
         [
-          require.resolve('ts-node/dist/bin.js'),
-          '--transpile-only',
-          '-P',
-          path.join(__dirname, 'tsconfig.json'),
+          '-r',
+          path.join(__dirname, 'register-tsx.cjs'),
           path.join(__dirname, 'startup-failure-child.cjs'),
         ],
         {

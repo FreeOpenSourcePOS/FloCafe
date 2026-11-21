@@ -34,6 +34,8 @@ interface Props {
   onClose: () => void;
   onSaved: (order: Order) => void;
   onIdentityChanged: () => void;
+  onBusyChange?: (busy: boolean) => void;
+  onRegisterDismissHandler?: (handler?: () => boolean) => void;
 }
 
 interface AttemptState {
@@ -76,6 +78,8 @@ export default function EditOrderItemModal({
   onClose,
   onSaved,
   onIdentityChanged,
+  onBusyChange,
+  onRegisterDismissHandler,
 }: Props) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -106,6 +110,40 @@ export default function EditOrderItemModal({
   const [customizingProduct, setCustomizingProduct] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
   const inFlightRef = useRef(false);
+  const onBusyChangeRef = useRef(onBusyChange);
+
+  useEffect(() => {
+    onBusyChangeRef.current = onBusyChange;
+  }, [onBusyChange]);
+
+  useEffect(() => {
+    onBusyChangeRef.current?.(saving);
+  }, [saving]);
+
+  useEffect(() => {
+    return () => {
+      onBusyChangeRef.current?.(false);
+    };
+  }, []);
+
+  const dismissHandlerRef = useRef<() => boolean>(() => true);
+  useEffect(() => {
+    dismissHandlerRef.current = () => {
+      if (inFlightRef.current || saving) return true;
+      if (customizingProduct) {
+        setCustomizingProduct(null);
+        return true;
+      }
+      onClose();
+      return true;
+    };
+  });
+
+  useEffect(() => {
+    if (!onRegisterDismissHandler) return;
+    onRegisterDismissHandler(() => dismissHandlerRef.current());
+    return () => onRegisterDismissHandler(undefined);
+  }, [onRegisterDismissHandler]);
 
   useEffect(() => {
     if (mode !== 'replace' || products.length > 0) return;
@@ -186,6 +224,7 @@ export default function EditOrderItemModal({
       // Best-effort refresh before closing the conflicted modal.
     }
     inFlightRef.current = false;
+    onBusyChangeRef.current?.(false);
     setSaving(false);
     onClose();
   };
@@ -198,6 +237,7 @@ export default function EditOrderItemModal({
     }
 
     inFlightRef.current = true;
+    onBusyChangeRef.current?.(true);
     setSaving(true);
     let persisted = lockedAttempt !== null;
 
@@ -323,6 +363,7 @@ export default function EditOrderItemModal({
       const postLockActorId = postLockIdentity.user ? String(postLockIdentity.user.id) : null;
       if (postLockIdentity.currentTenant?.id !== tenantId || postLockActorId !== actorId) {
         inFlightRef.current = false;
+        onBusyChangeRef.current?.(false);
         setSaving(false);
         onClose();
         onIdentityChanged();
@@ -332,6 +373,7 @@ export default function EditOrderItemModal({
       toast.success(tOrders('itemEdited'));
       onSaved(committedOrder);
       inFlightRef.current = false;
+      onBusyChangeRef.current?.(false);
       setSaving(false);
       onClose();
     } catch (error) {
@@ -350,6 +392,7 @@ export default function EditOrderItemModal({
       }
     } finally {
       inFlightRef.current = false;
+      onBusyChangeRef.current?.(false);
       setSaving(false);
     }
   };

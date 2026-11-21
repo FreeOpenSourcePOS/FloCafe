@@ -31,7 +31,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 
-const { settingsRoutes } = require('../main/routes/settings');
+const { settingsRoutes, deriveCurrencySymbol } = require('../main/routes/settings');
 const { printerRoutes } = require('../main/routes/printers');
 const { listSupportedCurrencyCodes } = require('../shared/currencies');
 const { getCurrencySymbol } = require('../main/countries');
@@ -179,6 +179,62 @@ async function main() {
       '',
       'no supported currency symbol is left without an ASCII fallback',
     );
+
+    console.log('\n6. SYP derives ل.س. for SY, SYP for US, and prints SYP on thermal receipts');
+    assertEqual(
+      deriveCurrencySymbol('SYP', 'SY'),
+      'ل.س.',
+      'deriveCurrencySymbol(SYP, SY) returns ل.س.',
+    );
+    assertEqual(
+      deriveCurrencySymbol('SYP', 'US'),
+      'SYP',
+      'deriveCurrencySymbol(SYP, US) returns SYP',
+    );
+    upsertSetting(db, 'country', 'SY');
+    upsertSetting(db, 'currency', 'SYP');
+    upsertSetting(db, 'currency_symbol', '£');
+    const sySettingsRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        business_name: 'Cafe Damascus',
+        country: 'SY',
+        currency: 'SYP',
+        timezone: 'Asia/Damascus',
+      },
+    });
+    assertEqual(sySettingsRes.status, 200, 'SY business settings update succeeds');
+    const sySavedSymbol = db
+      .prepare("SELECT value FROM settings WHERE key = 'currency_symbol'")
+      .get() as { value: string };
+    assertEqual(sySavedSymbol.value, 'ل.س.', 'SYP in SY derives ل.س. symbol');
+
+    const syPreview = await api(baseUrl, '/api/printers/print-bill', {
+      method: 'POST',
+      headers: authHeader,
+      body: { billId, preview: true, useUnicode: false },
+    });
+    assertEqual(syPreview.status, 200, 'SYP print preview succeeds');
+    assertIncludes(syPreview.data.text, 'SYP', 'SYP thermal ASCII preview uses SYP prefix');
+    assert(!syPreview.data.text.includes('£'), 'SYP preview does not display generic £');
+    assert(!syPreview.data.text.includes('GBP'), 'SYP preview does not fall back to GBP');
+
+    const usSypSettingsRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        business_name: 'Cafe Damascus US',
+        country: 'US',
+        currency: 'SYP',
+        timezone: 'America/New_York',
+      },
+    });
+    assertEqual(usSypSettingsRes.status, 200, 'US+SYP business settings update succeeds');
+    const usSavedSymbol = db
+      .prepare("SELECT value FROM settings WHERE key = 'currency_symbol'")
+      .get() as { value: string };
+    assertEqual(usSavedSymbol.value, 'SYP', 'SYP in US derives SYP symbol');
   } finally {
     if (server) server.close();
     closeDatabase();

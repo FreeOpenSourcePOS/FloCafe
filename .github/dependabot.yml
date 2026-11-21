@@ -1,8 +1,10 @@
 version: 2
 updates:
-  # Root project dependencies
+  # Root and frontend dependencies (lockstep so shared tools like oxfmt/oxlint/typescript update together)
   - package-ecosystem: "npm"
-    directory: "/"
+    directories:
+      - "/"
+      - "/frontend"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -12,28 +14,19 @@ updates:
     commit-message:
       prefix: "chore(deps):"
     groups:
+      shared-tooling:
+        group-by: "dependency-name"
+        patterns:
+          - "oxfmt"
+          - "oxlint"
+          - "typescript"
       minor-and-patch:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
-
-  # Frontend submodule dependencies
-  - package-ecosystem: "npm"
-    directory: "/frontend"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "chore(deps):"
-    groups:
-      minor-and-patch:
-        patterns:
-          - "*"
+        exclude-patterns:
+          - "oxfmt"
+          - "oxlint"
+          - "typescript"
         update-types:
           - "minor"
           - "patch"

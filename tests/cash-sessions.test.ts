@@ -2723,8 +2723,8 @@ async function main() {
           Number(detailsMgr[0]?.cash_session_id) === 0,
           '#1339: sessionless actor payment stores cash_session_id = 0 (NO_CASH_SESSION_ID) and does not leak into Shift A or B',
         );
-        // If the manager subsequently opens a shift and attempts to correct that sessionless payment line (cash_session_id === 0),
-        // it must be rejected with 409 shift_closed rather than moving into the manager's open shift.
+        // If the manager subsequently opens a shift and corrects that sessionless cash payment line (cash_session_id === 0)
+        // to card, it succeeds while keeping cash_session_id = 0 so the manager's open shift expected_cash stays 0.
         const openMgrShift = await request(app)
           .post('/api/cash-sessions/open')
           .set('Authorization', `Bearer ${s11ManagerToken}`)
@@ -2740,11 +2740,22 @@ async function main() {
             override_pin: '1234',
           });
         assert(
-          correctSessionless.status === 409 && correctSessionless.body?.reason === 'shift_closed',
-          `#1339: correcting a sessionless payment line (cash_session_id=0) is rejected with 409 shift_closed (got ${correctSessionless.status} ${correctSessionless.body?.reason})`,
+          correctSessionless.status === 200 &&
+            correctSessionless.body?.bill?.payment_details?.[0]?.cash_session_id === 0,
+          `#1339: correcting a sessionless cash payment line (cash_session_id=0) to card succeeds (200) and keeps cash_session_id=0 (got ${correctSessionless.status} sid=${correctSessionless.body?.bill?.payment_details?.[0]?.cash_session_id})`,
+        );
+        const curMgrShift = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        assert(
+          curMgrShift.status === 200 && curMgrShift.body?.expected_cash_cents === 0,
+          `#1339: manager open shift expected_cash_cents stays 0 after pre-shift cash -> card correction (got ${curMgrShift.body?.expected_cash_cents})`,
         );
         db.prepare('DELETE FROM cash_sessions WHERE id = ?').run(openMgrShift.body?.id);
         // Delete the unscoped manager test bill so day close compares purely Shift A + Shift B
+        db.prepare(
+          `DELETE FROM order_audit_log WHERE order_id = (SELECT order_id FROM bills WHERE id = ?)`,
+        ).run(billMgrId);
         db.prepare('DELETE FROM bills WHERE id = ?').run(billMgrId);
         db.prepare(`DELETE FROM orders WHERE order_number = 'ORD-1339-MGR'`).run();
       });

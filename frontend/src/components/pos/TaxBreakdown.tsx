@@ -32,30 +32,62 @@ export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }
   const fmt = (n: number) => formatCurrencyForTenant(n, tenantCountry, tenantCurrency);
 
   return (
-    <div>
+    <div className="tabular-nums">
       <button
+        type="button"
+        aria-expanded={hasBreakdown ? expanded : undefined}
         onClick={() => hasBreakdown && setExpanded(!expanded)}
-        className={`flex items-center gap-1 w-full text-start ${hasBreakdown ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+        className={`flex w-full items-center gap-1.5 rounded-md py-0.5 text-start transition-colors ${
+          hasBreakdown ? 'cursor-pointer hover:text-foreground' : 'cursor-default'
+        }`}
       >
-        {hasBreakdown && (
-          expanded
-            ? <ChevronDown size={12} className={theme === 'light' ? 'text-gray-400' : 'text-slate-400'} />
-            : <ChevronRight size={12} className={`rtl-flip ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`} />
-        )}
-        <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{t('tax')}</span>
+        {hasBreakdown &&
+          (expanded ? (
+            <ChevronDown
+              size={13}
+              className={theme === 'light' ? 'text-muted-foreground' : 'text-slate-400'}
+            />
+          ) : (
+            <ChevronRight
+              size={13}
+              className={`rtl-flip ${theme === 'light' ? 'text-muted-foreground' : 'text-slate-400'}`}
+            />
+          ))}
+        <span
+          className={`text-sm ${theme === 'light' ? 'text-muted-foreground' : 'text-slate-300'}`}
+        >
+          {t('tax')}
+        </span>
         <span className="flex-1" />
-        <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{fmt(taxAmount)}</span>
+        <span
+          className={`text-sm font-medium ${theme === 'light' ? 'text-foreground' : 'text-slate-200'}`}
+        >
+          {fmt(taxAmount)}
+        </span>
       </button>
       {expanded && hasBreakdown && (
-        <div className="ms-4 mt-1 space-y-0.5">
+        <div
+          className={`ms-1.5 mt-1.5 space-y-1 border-s ps-3 ${
+            theme === 'light' ? 'border-border dark:border-white/10' : 'border-slate-700'
+          }`}
+        >
           {breakdownArray.map((line, i) => {
             const title = line?.title || 'Tax';
             const rate = typeof line?.rate === 'number' ? line.rate : 0;
             const amount = typeof line?.amount === 'number' ? line.amount : 0;
             return (
-              <div key={`${title}_${rate}_${i}`} className={`flex justify-between text-xs ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`}>
+              <div
+                key={`${title}_${rate}_${i}`}
+                className={`flex justify-between gap-2 text-xs ${
+                  theme === 'light' ? 'text-muted-foreground' : 'text-slate-400'
+                }`}
+              >
                 <span>{t('taxLine', { title, rate })}</span>
-                <span>{fmt(amount)}</span>
+                <span
+                  className={`font-medium ${theme === 'light' ? 'text-foreground' : 'text-slate-300'}`}
+                >
+                  {fmt(amount)}
+                </span>
               </div>
             );
           })}

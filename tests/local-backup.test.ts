@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import Database from 'better-sqlite3';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -61,8 +62,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const express = require('express');
 const request = require('supertest');
-import Database from 'better-sqlite3';
-import {
+const {
   closeDatabase,
   createBackup,
   getDatabase,
@@ -71,11 +71,13 @@ import {
   resetDatabaseForCurrencyChange,
   resetDatabaseWithBackup,
   restoreBackup,
-} from '../main/db';
-import { registerIpcHandlers } from '../main/ipc';
-import { databaseToolsRoutes } from '../main/routes/database-tools';
-import { resetMasterPin } from '../main/services/master-pin';
-import {
+} = require('../main/db') as typeof import('../main/db');
+const { registerIpcHandlers } = require('../main/ipc') as typeof import('../main/ipc');
+const { databaseToolsRoutes } =
+  require('../main/routes/database-tools') as typeof import('../main/routes/database-tools');
+const { resetMasterPin } =
+  require('../main/services/master-pin') as typeof import('../main/services/master-pin');
+const {
   LOCAL_BACKUP_RETENTION,
   getLastLocalBackupAt,
   getLocalBackupDir,
@@ -88,7 +90,7 @@ import {
   pruneLocalBackups,
   retainBackupLocally,
   setLocalBackupEnabled,
-} from '../main/services/local-backup';
+} = require('../main/services/local-backup') as typeof import('../main/services/local-backup');
 
 const HOUR = 60 * 60_000;
 

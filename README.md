@@ -195,7 +195,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
 - **Offline-first architecture:** Local SQLite storage with auto-migrating schema and fail-closed safety.
 - **Granular roles & permissions:** Owner, Manager, Cashier, Server, and Chef roles with context-aware access policies.
 - **Multi-language support:** 32 localized languages with full bidirectional RTL rendering (Arabic, Persian, Urdu).
-- **131 Country profiles:** 109 world currencies with localized phone parsing, number formatting, and timezone handling.
+- **245 Country profiles:** 153 world currencies with localized phone parsing, number formatting, and timezone handling.
 - **Country tax packs:** Signed regional tax pack integration and manual rule engine.
 - **Automated database backups:** Pre-migration automatic snapshots, manual exports, and optional Google Drive sync.
 - **Customer loyalty & CRM:** Customer directory, purchase histories, and point redemption.
@@ -254,144 +254,258 @@ FloCafe includes UI translations for:
 
 UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/architecture/internationalization.md).
 
-FloCafe ships with 131 country profiles covering 109 currencies. Each profile sets a default currency, locale, and setup timezone; store owners can override the timezone during setup or later in Settings.
+FloCafe ships with 245 country profiles covering 153 currencies. Each profile sets a default currency, locale, and setup timezone; store owners can override the timezone during setup or later in Settings.
 
 <details>
 <summary>Supported country profiles, currencies, and default timezones</summary>
 
-| Country                   | Currency | Default timezone               |
-| ------------------------- | -------- | ------------------------------ |
-| India (IN)                | INR      | Asia/Kolkata                   |
-| Argentina (AR)            | ARS      | America/Argentina/Buenos_Aires |
-| United States (US)        | USD      | America/New_York               |
-| Canada (CA)               | CAD      | America/Toronto                |
-| United Kingdom (GB)       | GBP      | Europe/London                  |
-| Thailand (TH)             | THB      | Asia/Bangkok                   |
-| Singapore (SG)            | SGD      | Asia/Singapore                 |
-| Malaysia (MY)             | MYR      | Asia/Kuala_Lumpur              |
-| Indonesia (ID)            | IDR      | Asia/Jakarta                   |
-| Philippines (PH)          | PHP      | Asia/Manila                    |
-| Vietnam (VN)              | VND      | Asia/Ho_Chi_Minh               |
-| Australia (AU)            | AUD      | Australia/Sydney               |
-| New Zealand (NZ)          | NZD      | Pacific/Auckland               |
-| United Arab Emirates (AE) | AED      | Asia/Dubai                     |
-| Saudi Arabia (SA)         | SAR      | Asia/Riyadh                    |
-| South Africa (ZA)         | ZAR      | Africa/Johannesburg            |
-| Morocco (MA)              | MAD      | Africa/Casablanca              |
-| Kenya (KE)                | KES      | Africa/Nairobi                 |
-| Nigeria (NG)              | NGN      | Africa/Lagos                   |
-| Brazil (BR)               | BRL      | America/Sao_Paulo              |
-| Mexico (MX)               | MXN      | America/Mexico_City            |
-| Chile (CL)                | CLP      | America/Santiago               |
-| Uruguay (UY)              | UYU      | America/Montevideo             |
-| Paraguay (PY)             | PYG      | America/Asuncion               |
-| Japan (JP)                | JPY      | Asia/Tokyo                     |
-| South Korea (KR)          | KRW      | Asia/Seoul                     |
-| China (CN)                | CNY      | Asia/Shanghai                  |
-| Hong Kong SAR China (HK)  | HKD      | Asia/Hong_Kong                 |
-| Taiwan (TW)               | TWD      | Asia/Taipei                    |
-| Pakistan (PK)             | PKR      | Asia/Karachi                   |
-| Bangladesh (BD)           | BDT      | Asia/Dhaka                     |
-| Sri Lanka (LK)            | LKR      | Asia/Colombo                   |
-| Nepal (NP)                | NPR      | Asia/Kathmandu                 |
-| Egypt (EG)                | EGP      | Africa/Cairo                   |
-| Israel (IL)               | ILS      | Asia/Jerusalem                 |
-| Türkiye (TR)              | TRY      | Europe/Istanbul                |
-| Iran (IR)                 | IRR      | Asia/Tehran                    |
-| Germany (DE)              | EUR      | Europe/Berlin                  |
-| France (FR)               | EUR      | Europe/Paris                   |
-| Italy (IT)                | EUR      | Europe/Rome                    |
-| Spain (ES)                | EUR      | Europe/Madrid                  |
-| Portugal (PT)             | EUR      | Europe/Lisbon                  |
-| Netherlands (NL)          | EUR      | Europe/Amsterdam               |
-| Belgium (BE)              | EUR      | Europe/Brussels                |
-| Ireland (IE)              | EUR      | Europe/Dublin                  |
-| Austria (AT)              | EUR      | Europe/Vienna                  |
-| Greece (GR)               | EUR      | Europe/Athens                  |
-| Finland (FI)              | EUR      | Europe/Helsinki                |
-| Luxembourg (LU)           | EUR      | Europe/Luxembourg              |
-| Malta (MT)                | EUR      | Europe/Malta                   |
-| Cyprus (CY)               | EUR      | Asia/Nicosia                   |
-| Slovakia (SK)             | EUR      | Europe/Bratislava              |
-| Slovenia (SI)             | EUR      | Europe/Ljubljana               |
-| Estonia (EE)              | EUR      | Europe/Tallinn                 |
-| Latvia (LV)               | EUR      | Europe/Riga                    |
-| Lithuania (LT)            | EUR      | Europe/Vilnius                 |
-| Croatia (HR)              | EUR      | Europe/Zagreb                  |
-| Switzerland (CH)          | CHF      | Europe/Zurich                  |
-| Sweden (SE)               | SEK      | Europe/Stockholm               |
-| Norway (NO)               | NOK      | Europe/Oslo                    |
-| Denmark (DK)              | DKK      | Europe/Copenhagen              |
-| Poland (PL)               | PLN      | Europe/Warsaw                  |
-| Czechia (CZ)              | CZK      | Europe/Prague                  |
-| Hungary (HU)              | HUF      | Europe/Budapest                |
-| Romania (RO)              | RON      | Europe/Bucharest               |
-| Bulgaria (BG)             | BGN      | Europe/Sofia                   |
-| Iceland (IS)              | ISK      | Atlantic/Reykjavik             |
-| Serbia (RS)               | RSD      | Europe/Belgrade                |
-| Ukraine (UA)              | UAH      | Europe/Kyiv                    |
-| Albania (AL)              | ALL      | Europe/Tirane                  |
-| North Macedonia (MK)      | MKD      | Europe/Skopje                  |
-| Bosnia & Herzegovina (BA) | BAM      | Europe/Sarajevo                |
-| Moldova (MD)              | MDL      | Europe/Chisinau                |
-| Georgia (GE)              | GEL      | Asia/Tbilisi                   |
-| Armenia (AM)              | AMD      | Asia/Yerevan                   |
-| Azerbaijan (AZ)           | AZN      | Asia/Baku                      |
-| Qatar (QA)                | QAR      | Asia/Qatar                     |
-| Kuwait (KW)               | KWD      | Asia/Kuwait                    |
-| Bahrain (BH)              | BHD      | Asia/Bahrain                   |
-| Oman (OM)                 | OMR      | Asia/Muscat                    |
-| Jordan (JO)               | JOD      | Asia/Amman                     |
-| Lebanon (LB)              | LBP      | Asia/Beirut                    |
-| Iraq (IQ)                 | IQD      | Asia/Baghdad                   |
-| Yemen (YE)                | YER      | Asia/Aden                      |
-| Ghana (GH)                | GHS      | Africa/Accra                   |
-| Tanzania (TZ)             | TZS      | Africa/Dar_es_Salaam           |
-| Uganda (UG)               | UGX      | Africa/Kampala                 |
-| Ethiopia (ET)             | ETB      | Africa/Addis_Ababa             |
-| Rwanda (RW)               | RWF      | Africa/Kigali                  |
-| Côte d’Ivoire (CI)        | XOF      | Africa/Abidjan                 |
-| Senegal (SN)              | XOF      | Africa/Dakar                   |
-| Cameroon (CM)             | XAF      | Africa/Douala                  |
-| Zambia (ZM)               | ZMW      | Africa/Lusaka                  |
-| Mauritius (MU)            | MUR      | Indian/Mauritius               |
-| Tunisia (TN)              | TND      | Africa/Tunis                   |
-| Algeria (DZ)              | DZD      | Africa/Algiers                 |
-| Botswana (BW)             | BWP      | Africa/Gaborone                |
-| Namibia (NA)              | NAD      | Africa/Windhoek                |
-| Mozambique (MZ)           | MZN      | Africa/Maputo                  |
-| Angola (AO)               | AOA      | Africa/Luanda                  |
-| Kazakhstan (KZ)           | KZT      | Asia/Almaty                    |
-| Uzbekistan (UZ)           | UZS      | Asia/Tashkent                  |
-| Mongolia (MN)             | MNT      | Asia/Ulaanbaatar               |
-| Myanmar (Burma) (MM)      | MMK      | Asia/Yangon                    |
-| Cambodia (KH)             | KHR      | Asia/Phnom_Penh                |
-| Laos (LA)                 | LAK      | Asia/Vientiane                 |
-| Brunei (BN)               | BND      | Asia/Brunei                    |
-| Macao SAR China (MO)      | MOP      | Asia/Macau                     |
-| Maldives (MV)             | MVR      | Indian/Maldives                |
-| Bhutan (BT)               | BTN      | Asia/Thimphu                   |
-| Afghanistan (AF)          | AFN      | Asia/Kabul                     |
-| Guatemala (GT)            | GTQ      | America/Guatemala              |
-| Costa Rica (CR)           | CRC      | America/Costa_Rica             |
-| Panama (PA)               | PAB      | America/Panama                 |
-| Dominican Republic (DO)   | DOP      | America/Santo_Domingo          |
-| Honduras (HN)             | HNL      | America/Tegucigalpa            |
-| El Salvador (SV)          | USD      | America/El_Salvador            |
-| Nicaragua (NI)            | NIO      | America/Managua                |
-| Belize (BZ)               | BZD      | America/Belize                 |
-| Jamaica (JM)              | JMD      | America/Jamaica                |
-| Trinidad & Tobago (TT)    | TTD      | America/Port_of_Spain          |
-| Bahamas (BS)              | BSD      | America/Nassau                 |
-| Barbados (BB)             | BBD      | America/Barbados               |
-| Haiti (HT)                | HTG      | America/Port-au-Prince         |
-| Bolivia (BO)              | BOB      | America/La_Paz                 |
-| Ecuador (EC)              | USD      | America/Guayaquil              |
-| Colombia (CO)             | COP      | America/Bogota                 |
-| Peru (PE)                 | PEN      | America/Lima                   |
-| Venezuela (VE)            | VES      | America/Caracas                |
-| Fiji (FJ)                 | FJD      | Pacific/Fiji                   |
-| Papua New Guinea (PG)     | PGK      | Pacific/Port_Moresby           |
+| Country                             | Currency | Default timezone               |
+| ----------------------------------- | -------- | ------------------------------ |
+| India (IN)                          | INR      | Asia/Kolkata                   |
+| Argentina (AR)                      | ARS      | America/Argentina/Buenos_Aires |
+| United States (US)                  | USD      | America/New_York               |
+| Canada (CA)                         | CAD      | America/Toronto                |
+| United Kingdom (GB)                 | GBP      | Europe/London                  |
+| Thailand (TH)                       | THB      | Asia/Bangkok                   |
+| Singapore (SG)                      | SGD      | Asia/Singapore                 |
+| Malaysia (MY)                       | MYR      | Asia/Kuala_Lumpur              |
+| Indonesia (ID)                      | IDR      | Asia/Jakarta                   |
+| Philippines (PH)                    | PHP      | Asia/Manila                    |
+| Vietnam (VN)                        | VND      | Asia/Ho_Chi_Minh               |
+| Australia (AU)                      | AUD      | Australia/Sydney               |
+| New Zealand (NZ)                    | NZD      | Pacific/Auckland               |
+| United Arab Emirates (AE)           | AED      | Asia/Dubai                     |
+| Saudi Arabia (SA)                   | SAR      | Asia/Riyadh                    |
+| South Africa (ZA)                   | ZAR      | Africa/Johannesburg            |
+| Morocco (MA)                        | MAD      | Africa/Casablanca              |
+| Kenya (KE)                          | KES      | Africa/Nairobi                 |
+| Nigeria (NG)                        | NGN      | Africa/Lagos                   |
+| Brazil (BR)                         | BRL      | America/Sao_Paulo              |
+| Mexico (MX)                         | MXN      | America/Mexico_City            |
+| Chile (CL)                          | CLP      | America/Santiago               |
+| Uruguay (UY)                        | UYU      | America/Montevideo             |
+| Paraguay (PY)                       | PYG      | America/Asuncion               |
+| Japan (JP)                          | JPY      | Asia/Tokyo                     |
+| South Korea (KR)                    | KRW      | Asia/Seoul                     |
+| China (CN)                          | CNY      | Asia/Shanghai                  |
+| Hong Kong SAR China (HK)            | HKD      | Asia/Hong_Kong                 |
+| Taiwan (TW)                         | TWD      | Asia/Taipei                    |
+| Pakistan (PK)                       | PKR      | Asia/Karachi                   |
+| Bangladesh (BD)                     | BDT      | Asia/Dhaka                     |
+| Sri Lanka (LK)                      | LKR      | Asia/Colombo                   |
+| Nepal (NP)                          | NPR      | Asia/Kathmandu                 |
+| Egypt (EG)                          | EGP      | Africa/Cairo                   |
+| Israel (IL)                         | ILS      | Asia/Jerusalem                 |
+| Türkiye (TR)                        | TRY      | Europe/Istanbul                |
+| Iran (IR)                           | IRR      | Asia/Tehran                    |
+| Germany (DE)                        | EUR      | Europe/Berlin                  |
+| France (FR)                         | EUR      | Europe/Paris                   |
+| Italy (IT)                          | EUR      | Europe/Rome                    |
+| Spain (ES)                          | EUR      | Europe/Madrid                  |
+| Portugal (PT)                       | EUR      | Europe/Lisbon                  |
+| Netherlands (NL)                    | EUR      | Europe/Amsterdam               |
+| Belgium (BE)                        | EUR      | Europe/Brussels                |
+| Ireland (IE)                        | EUR      | Europe/Dublin                  |
+| Austria (AT)                        | EUR      | Europe/Vienna                  |
+| Greece (GR)                         | EUR      | Europe/Athens                  |
+| Finland (FI)                        | EUR      | Europe/Helsinki                |
+| Luxembourg (LU)                     | EUR      | Europe/Luxembourg              |
+| Malta (MT)                          | EUR      | Europe/Malta                   |
+| Cyprus (CY)                         | EUR      | Asia/Nicosia                   |
+| Slovakia (SK)                       | EUR      | Europe/Bratislava              |
+| Slovenia (SI)                       | EUR      | Europe/Ljubljana               |
+| Estonia (EE)                        | EUR      | Europe/Tallinn                 |
+| Latvia (LV)                         | EUR      | Europe/Riga                    |
+| Lithuania (LT)                      | EUR      | Europe/Vilnius                 |
+| Croatia (HR)                        | EUR      | Europe/Zagreb                  |
+| Andorra (AD)                        | EUR      | Europe/Andorra                 |
+| Åland Islands (AX)                  | EUR      | Europe/Mariehamn               |
+| Monaco (MC)                         | EUR      | Europe/Monaco                  |
+| Montenegro (ME)                     | EUR      | Europe/Podgorica               |
+| San Marino (SM)                     | EUR      | Europe/San_Marino              |
+| Vatican City (VA)                   | EUR      | Europe/Vatican                 |
+| Kosovo (XK)                         | EUR      | Europe/Belgrade                |
+| Switzerland (CH)                    | CHF      | Europe/Zurich                  |
+| Sweden (SE)                         | SEK      | Europe/Stockholm               |
+| Norway (NO)                         | NOK      | Europe/Oslo                    |
+| Denmark (DK)                        | DKK      | Europe/Copenhagen              |
+| Poland (PL)                         | PLN      | Europe/Warsaw                  |
+| Czechia (CZ)                        | CZK      | Europe/Prague                  |
+| Hungary (HU)                        | HUF      | Europe/Budapest                |
+| Romania (RO)                        | RON      | Europe/Bucharest               |
+| Bulgaria (BG)                       | BGN      | Europe/Sofia                   |
+| Iceland (IS)                        | ISK      | Atlantic/Reykjavik             |
+| Serbia (RS)                         | RSD      | Europe/Belgrade                |
+| Ukraine (UA)                        | UAH      | Europe/Kyiv                    |
+| Albania (AL)                        | ALL      | Europe/Tirane                  |
+| North Macedonia (MK)                | MKD      | Europe/Skopje                  |
+| Bosnia & Herzegovina (BA)           | BAM      | Europe/Sarajevo                |
+| Moldova (MD)                        | MDL      | Europe/Chisinau                |
+| Georgia (GE)                        | GEL      | Asia/Tbilisi                   |
+| Armenia (AM)                        | AMD      | Asia/Yerevan                   |
+| Azerbaijan (AZ)                     | AZN      | Asia/Baku                      |
+| Belarus (BY)                        | BYN      | Europe/Minsk                   |
+| Faroe Islands (FO)                  | DKK      | Atlantic/Faroe                 |
+| Guernsey (GG)                       | GBP      | Europe/Guernsey                |
+| Gibraltar (GI)                      | GIP      | Europe/Gibraltar               |
+| Isle of Man (IM)                    | GBP      | Europe/Isle_of_Man             |
+| Jersey (JE)                         | GBP      | Europe/Jersey                  |
+| Liechtenstein (LI)                  | CHF      | Europe/Vaduz                   |
+| Russia (RU)                         | RUB      | Europe/Moscow                  |
+| Svalbard & Jan Mayen (SJ)           | NOK      | Arctic/Longyearbyen            |
+| Qatar (QA)                          | QAR      | Asia/Qatar                     |
+| Kuwait (KW)                         | KWD      | Asia/Kuwait                    |
+| Bahrain (BH)                        | BHD      | Asia/Bahrain                   |
+| Oman (OM)                           | OMR      | Asia/Muscat                    |
+| Jordan (JO)                         | JOD      | Asia/Amman                     |
+| Lebanon (LB)                        | LBP      | Asia/Beirut                    |
+| Syria (SY)                          | SYP      | Asia/Damascus                  |
+| Iraq (IQ)                           | IQD      | Asia/Baghdad                   |
+| Yemen (YE)                          | YER      | Asia/Aden                      |
+| Palestinian Territories (PS)        | ILS      | Asia/Hebron                    |
+| Ghana (GH)                          | GHS      | Africa/Accra                   |
+| Tanzania (TZ)                       | TZS      | Africa/Dar_es_Salaam           |
+| Uganda (UG)                         | UGX      | Africa/Kampala                 |
+| Ethiopia (ET)                       | ETB      | Africa/Addis_Ababa             |
+| Rwanda (RW)                         | RWF      | Africa/Kigali                  |
+| Côte d’Ivoire (CI)                  | XOF      | Africa/Abidjan                 |
+| Senegal (SN)                        | XOF      | Africa/Dakar                   |
+| Cameroon (CM)                       | XAF      | Africa/Douala                  |
+| Zambia (ZM)                         | ZMW      | Africa/Lusaka                  |
+| Mauritius (MU)                      | MUR      | Indian/Mauritius               |
+| Tunisia (TN)                        | TND      | Africa/Tunis                   |
+| Algeria (DZ)                        | DZD      | Africa/Algiers                 |
+| Botswana (BW)                       | BWP      | Africa/Gaborone                |
+| Namibia (NA)                        | NAD      | Africa/Windhoek                |
+| Mozambique (MZ)                     | MZN      | Africa/Maputo                  |
+| Angola (AO)                         | AOA      | Africa/Luanda                  |
+| Ascension Island (AC)               | SHP      | Atlantic/St_Helena             |
+| Burkina Faso (BF)                   | XOF      | Africa/Ouagadougou             |
+| Burundi (BI)                        | BIF      | Africa/Bujumbura               |
+| Benin (BJ)                          | XOF      | Africa/Porto-Novo              |
+| Congo - Kinshasa (CD)               | CDF      | Africa/Kinshasa                |
+| Central African Republic (CF)       | XAF      | Africa/Bangui                  |
+| Congo - Brazzaville (CG)            | XAF      | Africa/Brazzaville             |
+| Cape Verde (CV)                     | CVE      | Atlantic/Cape_Verde            |
+| Djibouti (DJ)                       | DJF      | Africa/Djibouti                |
+| Western Sahara (EH)                 | MAD      | Africa/El_Aaiun                |
+| Eritrea (ER)                        | ERN      | Africa/Asmara                  |
+| Gabon (GA)                          | XAF      | Africa/Libreville              |
+| Gambia (GM)                         | GMD      | Africa/Banjul                  |
+| Guinea (GN)                         | GNF      | Africa/Conakry                 |
+| Equatorial Guinea (GQ)              | XAF      | Africa/Malabo                  |
+| Guinea-Bissau (GW)                  | XOF      | Africa/Bissau                  |
+| Comoros (KM)                        | KMF      | Indian/Comoro                  |
+| Liberia (LR)                        | LRD      | Africa/Monrovia                |
+| Lesotho (LS)                        | LSL      | Africa/Maseru                  |
+| Libya (LY)                          | LYD      | Africa/Tripoli                 |
+| Madagascar (MG)                     | MGA      | Indian/Antananarivo            |
+| Mali (ML)                           | XOF      | Africa/Bamako                  |
+| Mauritania (MR)                     | MRU      | Africa/Nouakchott              |
+| Malawi (MW)                         | MWK      | Africa/Blantyre                |
+| Niger (NE)                          | XOF      | Africa/Niamey                  |
+| Réunion (RE)                        | EUR      | Indian/Reunion                 |
+| Seychelles (SC)                     | SCR      | Indian/Mahe                    |
+| Sudan (SD)                          | SDG      | Africa/Khartoum                |
+| St. Helena (SH)                     | SHP      | Atlantic/St_Helena             |
+| Sierra Leone (SL)                   | SLE      | Africa/Freetown                |
+| Somalia (SO)                        | SOS      | Africa/Mogadishu               |
+| South Sudan (SS)                    | SSP      | Africa/Juba                    |
+| São Tomé & Príncipe (ST)            | STN      | Africa/Sao_Tome                |
+| Eswatini (SZ)                       | SZL      | Africa/Mbabane                 |
+| Tristan da Cunha (TA)               | GBP      | Atlantic/St_Helena             |
+| Chad (TD)                           | XAF      | Africa/Ndjamena                |
+| Togo (TG)                           | XOF      | Africa/Lome                    |
+| Mayotte (YT)                        | EUR      | Indian/Mayotte                 |
+| Zimbabwe (ZW)                       | USD      | Africa/Harare                  |
+| Kazakhstan (KZ)                     | KZT      | Asia/Almaty                    |
+| Uzbekistan (UZ)                     | UZS      | Asia/Tashkent                  |
+| Mongolia (MN)                       | MNT      | Asia/Ulaanbaatar               |
+| Myanmar (Burma) (MM)                | MMK      | Asia/Yangon                    |
+| Cambodia (KH)                       | KHR      | Asia/Phnom_Penh                |
+| Laos (LA)                           | LAK      | Asia/Vientiane                 |
+| Brunei (BN)                         | BND      | Asia/Brunei                    |
+| Macao SAR China (MO)                | MOP      | Asia/Macau                     |
+| Maldives (MV)                       | MVR      | Indian/Maldives                |
+| Bhutan (BT)                         | BTN      | Asia/Thimphu                   |
+| Afghanistan (AF)                    | AFN      | Asia/Kabul                     |
+| Cocos (Keeling) Islands (CC)        | AUD      | Indian/Cocos                   |
+| Christmas Island (CX)               | AUD      | Indian/Christmas               |
+| British Indian Ocean Territory (IO) | USD      | Indian/Chagos                  |
+| Kyrgyzstan (KG)                     | KGS      | Asia/Bishkek                   |
+| North Korea (KP)                    | KPW      | Asia/Pyongyang                 |
+| Tajikistan (TJ)                     | TJS      | Asia/Dushanbe                  |
+| Timor-Leste (TL)                    | USD      | Asia/Dili                      |
+| Turkmenistan (TM)                   | TMT      | Asia/Ashgabat                  |
+| Guatemala (GT)                      | GTQ      | America/Guatemala              |
+| Costa Rica (CR)                     | CRC      | America/Costa_Rica             |
+| Panama (PA)                         | PAB      | America/Panama                 |
+| Dominican Republic (DO)             | DOP      | America/Santo_Domingo          |
+| Honduras (HN)                       | HNL      | America/Tegucigalpa            |
+| El Salvador (SV)                    | USD      | America/El_Salvador            |
+| Nicaragua (NI)                      | NIO      | America/Managua                |
+| Belize (BZ)                         | BZD      | America/Belize                 |
+| Jamaica (JM)                        | JMD      | America/Jamaica                |
+| Trinidad & Tobago (TT)              | TTD      | America/Port_of_Spain          |
+| Bahamas (BS)                        | BSD      | America/Nassau                 |
+| Barbados (BB)                       | BBD      | America/Barbados               |
+| Haiti (HT)                          | HTG      | America/Port-au-Prince         |
+| Bolivia (BO)                        | BOB      | America/La_Paz                 |
+| Ecuador (EC)                        | USD      | America/Guayaquil              |
+| Colombia (CO)                       | COP      | America/Bogota                 |
+| Peru (PE)                           | PEN      | America/Lima                   |
+| Venezuela (VE)                      | VES      | America/Caracas                |
+| Antigua & Barbuda (AG)              | XCD      | America/Antigua                |
+| Anguilla (AI)                       | XCD      | America/Anguilla               |
+| Aruba (AW)                          | AWG      | America/Aruba                  |
+| St. Barthélemy (BL)                 | EUR      | America/St_Barthelemy          |
+| Bermuda (BM)                        | BMD      | Atlantic/Bermuda               |
+| Caribbean Netherlands (BQ)          | USD      | America/Kralendijk             |
+| Cuba (CU)                           | CUP      | America/Havana                 |
+| Curaçao (CW)                        | XCG      | America/Curacao                |
+| Dominica (DM)                       | XCD      | America/Dominica               |
+| Falkland Islands (FK)               | FKP      | Atlantic/Stanley               |
+| Grenada (GD)                        | XCD      | America/Grenada                |
+| French Guiana (GF)                  | EUR      | America/Cayenne                |
+| Greenland (GL)                      | DKK      | America/Nuuk                   |
+| Guadeloupe (GP)                     | EUR      | America/Guadeloupe             |
+| Guyana (GY)                         | GYD      | America/Guyana                 |
+| St. Kitts & Nevis (KN)              | XCD      | America/St_Kitts               |
+| Cayman Islands (KY)                 | KYD      | America/Cayman                 |
+| St. Lucia (LC)                      | XCD      | America/St_Lucia               |
+| St. Martin (MF)                     | EUR      | America/Marigot                |
+| Martinique (MQ)                     | EUR      | America/Martinique             |
+| Montserrat (MS)                     | XCD      | America/Montserrat             |
+| St. Pierre & Miquelon (PM)          | EUR      | America/Miquelon               |
+| Puerto Rico (PR)                    | USD      | America/Puerto_Rico            |
+| Suriname (SR)                       | SRD      | America/Paramaribo             |
+| Sint Maarten (SX)                   | XCG      | America/Lower_Princes          |
+| Turks & Caicos Islands (TC)         | USD      | America/Grand_Turk             |
+| St. Vincent & Grenadines (VC)       | XCD      | America/St_Vincent             |
+| British Virgin Islands (VG)         | USD      | America/Tortola                |
+| U.S. Virgin Islands (VI)            | USD      | America/St_Thomas              |
+| Fiji (FJ)                           | FJD      | Pacific/Fiji                   |
+| Papua New Guinea (PG)               | PGK      | Pacific/Port_Moresby           |
+| American Samoa (AS)                 | USD      | Pacific/Pago_Pago              |
+| Cook Islands (CK)                   | NZD      | Pacific/Rarotonga              |
+| Micronesia (FM)                     | USD      | Pacific/Pohnpei                |
+| Guam (GU)                           | USD      | Pacific/Guam                   |
+| Kiribati (KI)                       | AUD      | Pacific/Tarawa                 |
+| Marshall Islands (MH)               | USD      | Pacific/Majuro                 |
+| Northern Mariana Islands (MP)       | USD      | Pacific/Saipan                 |
+| New Caledonia (NC)                  | XPF      | Pacific/Noumea                 |
+| Norfolk Island (NF)                 | AUD      | Pacific/Norfolk                |
+| Nauru (NR)                          | AUD      | Pacific/Nauru                  |
+| Niue (NU)                           | NZD      | Pacific/Niue                   |
+| French Polynesia (PF)               | XPF      | Pacific/Tahiti                 |
+| Palau (PW)                          | USD      | Pacific/Palau                  |
+| Solomon Islands (SB)                | SBD      | Pacific/Guadalcanal            |
+| Tokelau (TK)                        | NZD      | Pacific/Fakaofo                |
+| Tonga (TO)                          | TOP      | Pacific/Tongatapu              |
+| Tuvalu (TV)                         | AUD      | Pacific/Funafuti               |
+| Vanuatu (VU)                        | VUV      | Pacific/Efate                  |
+| Wallis & Futuna (WF)                | XPF      | Pacific/Wallis                 |
+| Samoa (WS)                          | WST      | Pacific/Apia                   |
 
 </details>
 

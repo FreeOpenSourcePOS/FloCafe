@@ -271,21 +271,31 @@ jobs:
         working-directory: frontend
         # This job is the browser-only layer. The Electron project has its own
         # config and dedicated native job with an explicit display server.
-        run: npx playwright test --config=playwright.config.ts --project=chromium --shard=${{ matrix.shard }}/4 --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale|@ci-tier1|@ci-tier2'
+        run: npx playwright test --config=playwright.config.ts --project=chromium --output=test-results/standard --shard=${{ matrix.shard }}/4 --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale|@ci-tier1|@ci-tier2'
         env:
           CI: true
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/standard
 
       - name: Run verified browser E2E Tier 1 and Tier 2 (shard ${{ matrix.shard }}/4)
         working-directory: frontend
-        run: npx playwright test --config=playwright.config.ts --project=chromium --retries=0 --shard=${{ matrix.shard }}/4 --grep='@ci-tier1|@ci-tier2' --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale'
+        run: npx playwright test --config=playwright.config.ts --project=chromium --retries=0 --output=test-results/tier --shard=${{ matrix.shard }}/4 --grep='@ci-tier1|@ci-tier2' --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale'
         env:
           CI: true
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/tier
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
           path: frontend/playwright-report/
+          retention-days: 10
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() || cancelled()
+        with:
+          name: playwright-test-results-shard-${{ matrix.shard }}
+          path: frontend/test-results/
+          if-no-files-found: ignore
           retention-days: 10
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1395,16 +1395,18 @@ export default function ServerStandalonePage() {
                       }}
                       className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-start transition-all ${
                         isSelected
-                          ? 'border-brand bg-brand-muted ring-2 ring-brand/30'
+                          ? 'border-brand bg-brand-light dark:bg-[var(--color-brand-light)] ring-2 ring-brand/30'
                           : 'border-border hover:border-brand/50 hover:bg-muted/60'
                       }`}
                     >
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand dark:text-indigo-300">
                         <UserRound size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{u.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>
+                        <p className="truncate text-xs text-slate-700 dark:text-slate-300">
+                          {roleLabel}
+                        </p>
                       </div>
                     </button>
                   );

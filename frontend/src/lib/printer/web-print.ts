@@ -139,7 +139,7 @@ export async function printWebBill(
         ? window.open('', '_blank', 'width=800,height=600')
         : null
       : reservedWindow;
-  if (!printWindow) {
+  if (!printWindow && (reservedWindow !== undefined || typeof document === 'undefined')) {
     toast.error('Please allow popups to print bills');
     throw new Error('Popup window was blocked by browser');
   }
@@ -158,8 +158,13 @@ export async function printWebBill(
     }));
     html = generateBillHtml(bill, tenant, { ...opts, languages });
   } catch (error) {
-    if (!printWindow.closed) printWindow.close();
+    if (printWindow && !printWindow.closed) printWindow.close();
     throw error;
+  }
+
+  if (!printWindow) {
+    await printHtmlInHiddenFrame(html);
+    return warnings;
   }
 
   // 3. Write HTML and trigger print
@@ -197,6 +202,9 @@ export async function printWebBill(
           settle(new Error('Print window was closed before receipt could be printed'));
           return;
         }
+        printWindow.addEventListener?.('afterprint', () => {
+          if (!printWindow.closed) printWindow.close();
+        });
         printWindow.print();
         settle();
       } catch (err) {
@@ -235,6 +243,34 @@ export async function printWebBill(
       settle(err instanceof Error ? err : new Error(String(err)));
     }
   }).then(() => warnings);
+}
+
+/** Prints through an off-screen iframe, which the popup blocker does not apply to. */
+function printHtmlInHiddenFrame(html: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    const remove = () => {
+      if (frame.parentNode) frame.parentNode.removeChild(frame);
+    };
+    frame.onload = () => {
+      try {
+        const frameWindow = frame.contentWindow;
+        if (!frameWindow) throw new Error('Print frame is unavailable');
+        frameWindow.addEventListener('afterprint', remove);
+        frameWindow.focus();
+        frameWindow.print();
+        setTimeout(remove, 60_000);
+        resolve();
+      } catch (err) {
+        remove();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    };
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+  });
 }
 
 // Document → HTML rendering

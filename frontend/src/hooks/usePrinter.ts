@@ -409,7 +409,7 @@ export const usePrinterStore = create<PrinterState>()(
           };
 
           const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos') {
+          if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-bill',
@@ -816,7 +816,7 @@ export const usePrinterStore = create<PrinterState>()(
         }
         try {
           const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos') {
+          if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-kot',
@@ -1103,7 +1103,7 @@ export const usePrinterStore = create<PrinterState>()(
             delivery_note: orderForPrint.delivery_note ?? null,
           };
           const hw = initialPrinter;
-          if (hw && get().printMethod === 'escpos') {
+          if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-delivery-slip',
@@ -1291,6 +1291,7 @@ export function usePrinterStatusSync(): void {
       deviceInfo: printerService.deviceInfo,
     });
 
+    printerService.setPrintMode(usePrinterStore.getState().printMethod);
     store.refreshHardwarePrinter();
     // Re-attach to previously authorized WebUSB printer across reloads.
     printerService.tryReconnect();

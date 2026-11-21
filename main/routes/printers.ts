@@ -625,7 +625,12 @@ router.post(
           break;
         case 'webusb':
           // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
-          return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
+          return res.json({
+            success: true,
+            webusb: true,
+            printerName: printer.name,
+            bytes: Array.from(testData),
+          });
       }
 
       // A network printer that answers with a fault that drops bytes did not print.

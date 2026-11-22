@@ -182,6 +182,14 @@ type ReceiptTenant = Pick<
   | 'calendar'
 >;
 
+/**
+ * A LAN terminal browser with its own USB printer prints there instead of on the host's printer.
+ * The desktop app keeps the host route, which owns station routing and the cash drawer pulse.
+ */
+function prefersTerminalUsbPrinter(): boolean {
+  return printerService.isConnected && typeof window !== 'undefined' && !window.electronAPI;
+}
+
 export interface HardwarePrinter {
   id: string;
   name: string;
@@ -346,7 +354,8 @@ export const usePrinterStore = create<PrinterState>()(
           // raster document, and the browser page all render the same bill, so
           // they resolve the configured printer once rather than each guessing.
           const billColumns = columnsForConfiguredPrinter(
-            (get().webusbPrinter ?? get().hardwarePrinter)?.paper_width,
+            (get().webusbPrinter ?? (prefersTerminalUsbPrinter() ? null : get().hardwarePrinter))
+              ?.paper_width,
             configuredPaperWidth,
           );
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
@@ -409,7 +418,7 @@ export const usePrinterStore = create<PrinterState>()(
           };
 
           const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos') {
+          if (hw && get().printMethod === 'escpos' && !prefersTerminalUsbPrinter()) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-bill',
@@ -1103,7 +1112,7 @@ export const usePrinterStore = create<PrinterState>()(
             delivery_note: orderForPrint.delivery_note ?? null,
           };
           const hw = initialPrinter;
-          if (hw && get().printMethod === 'escpos') {
+          if (hw && get().printMethod === 'escpos' && !prefersTerminalUsbPrinter()) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-delivery-slip',
@@ -1291,6 +1300,7 @@ export function usePrinterStatusSync(): void {
       deviceInfo: printerService.deviceInfo,
     });
 
+    printerService.setPrintMode(usePrinterStore.getState().printMethod);
     store.refreshHardwarePrinter();
     // Re-attach to previously authorized WebUSB printer across reloads.
     printerService.tryReconnect();

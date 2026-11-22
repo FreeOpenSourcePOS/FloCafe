@@ -33,6 +33,7 @@ import {
 } from '@/lib/bill-template-picker';
 import { type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { printerService } from '@/lib/printer/PrinterService';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { PrinterTextSize } from '@print/text-size';
@@ -424,13 +425,20 @@ export function PrintersSettingsTab({
 
   const testPrinterHw = async (printer: HwPrinter) => {
     if (!canManagePrinters) return;
-    if (printer.connection_type === 'webusb') {
-      toast(t('webusbTestHint'));
-      return;
-    }
     setTestingPrinterId(printer.id);
     try {
-      await api.post(`/printers/${printer.id}/test`);
+      const response = await api.post<{ webusb?: boolean; bytes?: number[]; printerName?: string }>(
+        `/printers/${printer.id}/test`,
+      );
+      if (response.data.webusb) {
+        if (!Array.isArray(response.data.bytes) || !response.data.printerName) {
+          throw new Error(t('webusbTestHint'));
+        }
+        await printerService.printToConfiguredDevice(
+          Uint8Array.from(response.data.bytes),
+          response.data.printerName,
+        );
+      }
       toast.success(t('testPrintSent'));
     } catch (err) {
       toast.error(printerErrorMessage(err, t('testPrintFailed')));

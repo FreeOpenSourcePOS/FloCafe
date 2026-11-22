@@ -16,6 +16,50 @@ type StatusListener = (status: PrinterStatus, info?: PrinterInfo) => void;
 
 const ESCPOS_USB_CLASS = 0x07;
 const PRINTER_INTERFACE = 0;
+const LAST_PRINTER_KEY = 'flo-last-usb-printer';
+
+interface RememberedPrinter {
+  vendorId: number;
+  productId: number;
+  serialNumber?: string;
+}
+
+function readRememberedPrinter(): RememberedPrinter | null {
+  try {
+    const raw = localStorage.getItem(LAST_PRINTER_KEY);
+    return raw ? (JSON.parse(raw) as RememberedPrinter) : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberPrinter(device: USBDevice): void {
+  try {
+    const value: RememberedPrinter = {
+      vendorId: device.vendorId,
+      productId: device.productId,
+      serialNumber: device.serialNumber ?? undefined,
+    };
+    localStorage.setItem(LAST_PRINTER_KEY, JSON.stringify(value));
+  } catch {
+    // Storage unavailable; reconnect falls back to the only granted device.
+  }
+}
+
+function describeUsbError(err: unknown): string {
+  const error = err as { name?: string; message?: string };
+  const detail = error.message ?? String(err);
+  if (error.name === 'SecurityError' || /access denied/i.test(detail)) {
+    return `Could not connect to printer: access denied. On Windows, install the WinUSB driver for this printer (for example with Zadig) instead of the vendor driver. (${detail})`;
+  }
+  if (error.name === 'NetworkError' || /unable to claim|in use|busy/i.test(detail)) {
+    return `Could not connect to printer: it is in use by another tab or application, or its driver owns the USB interface. Close other apps using it, or switch it to the WinUSB driver. (${detail})`;
+  }
+  if (error.name === 'NotFoundError') {
+    return `Could not connect to printer: the device was unplugged or is no longer available. (${detail})`;
+  }
+  return `Could not connect to printer: ${detail}`;
+}
 
 class PrinterService {
   private device: USBDevice | null = null;
@@ -81,6 +125,10 @@ class PrinterService {
     { vendorId: 0x0922 },
   ];
 
+  private isBrowserMode(): boolean {
+    return this._printMode === 'browser';
+  }
+
   /** Opens (or re-opens) a device and claims its ESC/POS interface. */
   private async openDevice(device: USBDevice): Promise<void> {
     if (this.device) {
@@ -96,6 +144,11 @@ class PrinterService {
 
       if (this.device.configuration === null) {
         await this.device.selectConfiguration(1);
+      }
+
+      if (this.isBrowserMode()) {
+        await this.disconnect();
+        return;
       }
 
       for (const iface of this.device.configurations[0]?.interfaces ?? []) {
@@ -114,6 +167,10 @@ class PrinterService {
       }
 
       if (!this.interfaceClaimed) {
+        if (this.isBrowserMode()) {
+          await this.disconnect();
+          return;
+        }
         await this.device.claimInterface(PRINTER_INTERFACE);
         this.interfaceClaimed = true;
         this.claimedInterface = PRINTER_INTERFACE;
@@ -121,9 +178,15 @@ class PrinterService {
     } catch (err) {
       await this.disconnect();
       this.setStatus('error');
-      throw new Error(`Could not connect to printer: ${(err as Error).message}`);
+      throw new Error(describeUsbError(err));
     }
 
+    if (this.isBrowserMode()) {
+      await this.disconnect();
+      return;
+    }
+
+    rememberPrinter(this.device);
     this.setStatus('connected', this.deviceInfo ?? undefined);
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
   }
@@ -138,8 +201,9 @@ class PrinterService {
   }
 
   private async findUniqueConfiguredDevice(productName: string): Promise<USBDevice | null> {
+    const wanted = productName.trim().toLowerCase();
     const matches = (await navigator.usb!.getDevices()).filter(
-      (device) => device.productName === productName,
+      (device) => (device.productName ?? '').trim().toLowerCase() === wanted,
     );
     return matches.length === 1 ? matches[0] : null;
   }
@@ -161,6 +225,11 @@ class PrinterService {
     }
 
     if (!navigator.usb) {
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        throw new Error(
+          'WebUSB needs a secure connection. Open FloCafe over HTTPS or on localhost, or have an administrator mark this address as secure in Chrome (chrome://flags/#unsafely-treat-insecure-origin-as-secure).',
+        );
+      }
       throw new Error('WebUSB API is not supported in this browser. Use Chrome or Edge 89+.');
     }
 
@@ -196,8 +265,18 @@ class PrinterService {
       if (this.device) return true;
       try {
         const devices = await navigator.usb!.getDevices();
-        const previouslyGranted = devices[0];
-        if (!previouslyGranted) return false;
+        const remembered = readRememberedPrinter();
+        const previouslyGranted = remembered
+          ? devices.find(
+              (d) =>
+                d.vendorId === remembered.vendorId &&
+                d.productId === remembered.productId &&
+                (d.serialNumber ?? undefined) === remembered.serialNumber,
+            )
+          : devices.length === 1
+            ? devices[0]
+            : undefined;
+        if (!previouslyGranted || this._printMode === 'browser') return false;
         this.setStatus('connecting');
         await this.openDevice(previouslyGranted);
         return true;
@@ -378,8 +457,12 @@ class PrinterService {
       ),
     );
     printWindow.document.close();
+    const closeWindow = () => {
+      if (!printWindow.closed) printWindow.close();
+    };
+    printWindow.addEventListener?.('afterprint', closeWindow);
     printWindow.print();
-    printWindow.close();
+    setTimeout(closeWindow, 60_000);
   }
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {
@@ -390,6 +473,14 @@ class PrinterService {
       } catch (error) {
         console.warn('[PrinterService] Status listener failed:', error);
       }
+    });
+  }
+
+  /** Re-attaches the remembered printer when it is plugged back in or powered on. */
+  watchReplug(): void {
+    if (typeof navigator === 'undefined' || !navigator.usb) return;
+    navigator.usb.addEventListener('connect', () => {
+      if (this._printMode === 'escpos' && !this.device) void this.tryReconnect();
     });
   }
 
@@ -405,3 +496,5 @@ class PrinterService {
 }
 
 export const printerService = new PrinterService();
+
+printerService.watchReplug();

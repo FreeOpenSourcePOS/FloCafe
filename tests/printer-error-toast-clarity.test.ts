@@ -406,6 +406,10 @@ async function runTests(): Promise<void> {
       new Promise((_resolve, reject) => {
         rejectKotPost = reject;
       });
+    Object.defineProperty(printerService, 'isConnected', {
+      configurable: true,
+      get: () => false,
+    });
     usePrinterStore.setState({
       printMethod: 'escpos',
       hardwarePrinter: {

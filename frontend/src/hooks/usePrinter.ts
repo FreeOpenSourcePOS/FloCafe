@@ -182,6 +182,14 @@ type ReceiptTenant = Pick<
   | 'calendar'
 >;
 
+/**
+ * A LAN terminal browser with its own USB printer prints there instead of on the host's printer.
+ * The desktop app keeps the host route, which owns station routing and the cash drawer pulse.
+ */
+function prefersTerminalUsbPrinter(): boolean {
+  return printerService.isConnected && typeof window !== 'undefined' && !window.electronAPI;
+}
+
 export interface HardwarePrinter {
   id: string;
   name: string;
@@ -409,7 +417,7 @@ export const usePrinterStore = create<PrinterState>()(
           };
 
           const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
+          if (hw && get().printMethod === 'escpos' && !prefersTerminalUsbPrinter()) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-bill',
@@ -816,7 +824,7 @@ export const usePrinterStore = create<PrinterState>()(
         }
         try {
           const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
+          if (hw && get().printMethod === 'escpos') {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-kot',
@@ -1103,7 +1111,7 @@ export const usePrinterStore = create<PrinterState>()(
             delivery_note: orderForPrint.delivery_note ?? null,
           };
           const hw = initialPrinter;
-          if (hw && get().printMethod === 'escpos' && !printerService.isConnected) {
+          if (hw && get().printMethod === 'escpos' && !prefersTerminalUsbPrinter()) {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-delivery-slip',

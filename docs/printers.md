@@ -243,8 +243,10 @@ or Electron permissions in the desktop app, control physical device access. If m
 USB device is connected at once, the desktop app connects to the first one it finds, so a single USB
 thermal printer per terminal is the supported configuration. In a browser, the last connected
 printer is re-attached on reload and when it is plugged back in; with no remembered printer it
-reconnects only if exactly one granted device exists. A WebUSB printer connected in this browser
-takes priority over the host's configured printer for receipts, kitchen tickets, and delivery slips.
+reconnects only if exactly one granted device exists. In a browser terminal, a WebUSB printer connected
+in that browser takes priority over the host's configured printer for receipts and delivery slips.
+These local prints do not send the cash drawer pulse. Kitchen tickets keep using the host's printers
+and kitchen stations, and the desktop app always uses the host's printers.
 If the printer is not detected after a fresh install or a permissions reset, click **Connect** again
 to re-grant access.
 

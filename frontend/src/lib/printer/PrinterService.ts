@@ -181,6 +181,11 @@ class PrinterService {
       throw new Error(describeUsbError(err));
     }
 
+    if (this.isBrowserMode()) {
+      await this.disconnect();
+      return;
+    }
+
     rememberPrinter(this.device);
     this.setStatus('connected', this.deviceInfo ?? undefined);
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);

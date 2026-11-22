@@ -125,6 +125,10 @@ class PrinterService {
     { vendorId: 0x0922 },
   ];
 
+  private isBrowserMode(): boolean {
+    return this._printMode === 'browser';
+  }
+
   /** Opens (or re-opens) a device and claims its ESC/POS interface. */
   private async openDevice(device: USBDevice): Promise<void> {
     if (this.device) {
@@ -140,6 +144,11 @@ class PrinterService {
 
       if (this.device.configuration === null) {
         await this.device.selectConfiguration(1);
+      }
+
+      if (this.isBrowserMode()) {
+        await this.disconnect();
+        return;
       }
 
       for (const iface of this.device.configurations[0]?.interfaces ?? []) {
@@ -158,6 +167,10 @@ class PrinterService {
       }
 
       if (!this.interfaceClaimed) {
+        if (this.isBrowserMode()) {
+          await this.disconnect();
+          return;
+        }
         await this.device.claimInterface(PRINTER_INTERFACE);
         this.interfaceClaimed = true;
         this.claimedInterface = PRINTER_INTERFACE;
@@ -183,8 +196,9 @@ class PrinterService {
   }
 
   private async findUniqueConfiguredDevice(productName: string): Promise<USBDevice | null> {
+    const wanted = productName.trim().toLowerCase();
     const matches = (await navigator.usb!.getDevices()).filter(
-      (device) => device.productName === productName,
+      (device) => (device.productName ?? '').trim().toLowerCase() === wanted,
     );
     return matches.length === 1 ? matches[0] : null;
   }
@@ -257,7 +271,7 @@ class PrinterService {
           : devices.length === 1
             ? devices[0]
             : undefined;
-        if (!previouslyGranted) return false;
+        if (!previouslyGranted || this._printMode === 'browser') return false;
         this.setStatus('connecting');
         await this.openDevice(previouslyGranted);
         return true;

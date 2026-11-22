@@ -354,7 +354,8 @@ export const usePrinterStore = create<PrinterState>()(
           // raster document, and the browser page all render the same bill, so
           // they resolve the configured printer once rather than each guessing.
           const billColumns = columnsForConfiguredPrinter(
-            (get().webusbPrinter ?? get().hardwarePrinter)?.paper_width,
+            (get().webusbPrinter ?? (prefersTerminalUsbPrinter() ? null : get().hardwarePrinter))
+              ?.paper_width,
             configuredPaperWidth,
           );
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);

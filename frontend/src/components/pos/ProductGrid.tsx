@@ -116,7 +116,9 @@ function CategoryRow({
       >
         {allChip}
         {categoryChips.map((chip) => (
-          <div key={chip.key}>{chip.render()}</div>
+          <div key={chip.key} className="shrink-0">
+            {chip.render()}
+          </div>
         ))}
       </div>
     );

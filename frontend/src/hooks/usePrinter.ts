@@ -190,6 +190,15 @@ function prefersTerminalUsbPrinter(): boolean {
   return printerService.isConnected && typeof window !== 'undefined' && !window.electronAPI;
 }
 
+/** Re-resolves the configured printer when the connected device is not the one the store holds. */
+async function syncWebUsbPrinterToConnectedDevice(): Promise<void> {
+  const connectedName = printerService.deviceInfo?.productName?.trim().toLowerCase();
+  if (!connectedName || !printerService.isConnected) return;
+  const current = usePrinterStore.getState().webusbPrinter;
+  if (current?.name.trim().toLowerCase() === connectedName) return;
+  await usePrinterStore.getState().refreshHardwarePrinter();
+}
+
 export interface HardwarePrinter {
   id: string;
   name: string;
@@ -353,11 +362,13 @@ export const usePrinterStore = create<PrinterState>()(
           // One width for every path this bill can take. The byte encoders, the
           // raster document, and the browser page all render the same bill, so
           // they resolve the configured printer once rather than each guessing.
-          const billColumns = columnsForConfiguredPrinter(
-            (get().webusbPrinter ?? (prefersTerminalUsbPrinter() ? null : get().hardwarePrinter))
-              ?.paper_width,
-            configuredPaperWidth,
-          );
+          const resolveBillColumns = () =>
+            columnsForConfiguredPrinter(
+              (get().webusbPrinter ?? (prefersTerminalUsbPrinter() ? null : get().hardwarePrinter))
+                ?.paper_width,
+              configuredPaperWidth,
+            );
+          let billColumns = resolveBillColumns();
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
 
           const isReprint = opts?.isReprint ?? false;
@@ -470,6 +481,9 @@ export const usePrinterStore = create<PrinterState>()(
           ) {
             return await dispatchBillToHost(hw);
           }
+          await syncWebUsbPrinterToConnectedDevice();
+          throwIfTenantChanged();
+          billColumns = resolveBillColumns();
 
           if (
             get().printMethod === 'browser' ||
@@ -1179,6 +1193,8 @@ export const usePrinterStore = create<PrinterState>()(
             const warnings = await dispatchSlipToHost(hw);
             if (warnings) return warnings;
           }
+          await syncWebUsbPrinterToConnectedDevice();
+          throwIfTenantChanged();
           if (
             (get().printMethod !== 'escpos' || !printerService.isConnected) &&
             (!reservedPopup || reservedPopup.closed)

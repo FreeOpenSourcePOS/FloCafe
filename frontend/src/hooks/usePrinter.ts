@@ -418,7 +418,7 @@ export const usePrinterStore = create<PrinterState>()(
           };
 
           const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos' && !prefersTerminalUsbPrinter()) {
+          const dispatchBillToHost = async (hostPrinter: HardwarePrinter) => {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-bill',
@@ -447,17 +447,29 @@ export const usePrinterStore = create<PrinterState>()(
               }
               throw toPrinterOperationError(err, {
                 kind: 'receipt',
-                connectionType: hw.connection_type,
+                connectionType: hostPrinter.connection_type,
                 stage: 'dispatch',
                 fallbackDetail: 'Print failed',
               });
             }
+          };
+          const terminalUsbPreferred = prefersTerminalUsbPrinter();
+          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
+            return await dispatchBillToHost(hw);
           }
 
           // Await startup silent reconnect before checking isConnected
           // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
           throwIfTenantChanged();
+          if (
+            hw &&
+            get().printMethod === 'escpos' &&
+            terminalUsbPreferred &&
+            !printerService.isConnected
+          ) {
+            return await dispatchBillToHost(hw);
+          }
 
           if (
             get().printMethod === 'browser' ||
@@ -1112,7 +1124,9 @@ export const usePrinterStore = create<PrinterState>()(
             delivery_note: orderForPrint.delivery_note ?? null,
           };
           const hw = initialPrinter;
-          if (hw && get().printMethod === 'escpos' && !prefersTerminalUsbPrinter()) {
+          const dispatchSlipToHost = async (
+            hostPrinter: HardwarePrinter,
+          ): Promise<PrintWarning[] | null> => {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-delivery-slip',
@@ -1140,16 +1154,31 @@ export const usePrinterStore = create<PrinterState>()(
               } else {
                 throw toPrinterOperationError(err, {
                   kind: 'receipt',
-                  connectionType: hw.connection_type,
+                  connectionType: hostPrinter.connection_type,
                   stage: 'dispatch',
                   fallbackDetail: 'Delivery slip print failed',
                 });
               }
             }
+            return null;
+          };
+          const terminalUsbPreferred = prefersTerminalUsbPrinter();
+          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
+            const warnings = await dispatchSlipToHost(hw);
+            if (warnings) return warnings;
           }
 
           await printerService.awaitPendingReconnect();
           throwIfTenantChanged();
+          if (
+            hw &&
+            get().printMethod === 'escpos' &&
+            terminalUsbPreferred &&
+            !printerService.isConnected
+          ) {
+            const warnings = await dispatchSlipToHost(hw);
+            if (warnings) return warnings;
+          }
           if (
             (get().printMethod !== 'escpos' || !printerService.isConnected) &&
             (!reservedPopup || reservedPopup.closed)
@@ -1310,6 +1339,7 @@ export function usePrinterStatusSync(): void {
         status,
         deviceInfo: info ?? printerService.deviceInfo,
       });
+      if (status === 'connected') void usePrinterStore.getState().refreshHardwarePrinter();
     });
 
     return unsub;

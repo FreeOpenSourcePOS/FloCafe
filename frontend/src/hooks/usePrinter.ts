@@ -190,12 +190,16 @@ function prefersTerminalUsbPrinter(): boolean {
   return printerService.isConnected && typeof window !== 'undefined' && !window.electronAPI;
 }
 
-/** Re-resolves the configured printer when the connected device is not the one the store holds. */
+let lastResolvedUsbDevice: string | null = null;
+
+/** Re-resolves the configured printer once per connected device, not on every print. */
 async function syncWebUsbPrinterToConnectedDevice(): Promise<void> {
   const connectedName = printerService.deviceInfo?.productName?.trim().toLowerCase();
   if (!connectedName || !printerService.isConnected) return;
   const current = usePrinterStore.getState().webusbPrinter;
   if (current?.name.trim().toLowerCase() === connectedName) return;
+  if (lastResolvedUsbDevice === connectedName) return;
+  lastResolvedUsbDevice = connectedName;
   await usePrinterStore.getState().refreshHardwarePrinter();
 }
 
@@ -292,7 +296,7 @@ export const usePrinterStore = create<PrinterState>()(
             defaultPrinter: configuredDefault,
           });
         } catch {
-          set({ hardwarePrinter: null, webusbPrinter: null, defaultPrinter: null });
+          // Keep the last known printers: a failed refresh must not drop the host fallback.
         }
       },
 

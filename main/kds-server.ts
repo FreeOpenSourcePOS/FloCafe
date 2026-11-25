@@ -98,6 +98,11 @@ function categoryIdsForRole(role: string, categoryIds: string | null): string[] 
     : expandCategoryIdsWithSubcategories(getDatabase(), parseCategoryIds(categoryIds));
 }
 
+/** The live HTTP listener, so the HTTPS front can reuse its request and upgrade handlers. */
+export function getHttpServer(): http.Server | null {
+  return kdsServer;
+}
+
 export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
 }
@@ -1202,6 +1207,7 @@ export function startKdsServer(): Promise<void> {
           if (attempts >= 10) {
             const errorMsg = `[KDS Server] Failed to bind to any port after 10 attempts starting from ${baseKdsPort}`;
             console.error(errorMsg);
+            if (kdsServer === listeningServer) kdsServer = null;
             reject(new Error(errorMsg));
             return;
           }
@@ -1212,6 +1218,7 @@ export function startKdsServer(): Promise<void> {
           tryListen();
           return;
         }
+        if (kdsServer === listeningServer) kdsServer = null;
         reject(err);
       };
 

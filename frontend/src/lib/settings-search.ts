@@ -64,6 +64,7 @@ export interface SettingsTranslatorMap {
   settings: SettingsTranslateFn;
   pos?: SettingsTranslateFn;
   customerDisplay?: SettingsTranslateFn;
+  secureNetwork?: SettingsTranslateFn;
   tax?: SettingsTranslateFn;
   qrMenu?: SettingsTranslateFn;
   update?: SettingsTranslateFn;
@@ -1283,6 +1284,30 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
       'table ordering',
       'waitstaff',
       'port 3003',
+    ],
+  },
+  {
+    id: 'secure-network',
+    permission: 'isAdmin',
+    tab: 'server-app',
+    groupLabelKey: 'navGroupOperations',
+    tabLabelKey: 'tablesideOrdering',
+    titleKey: 'secureNetwork:title',
+    hintKey: 'secureNetwork:hint',
+    extraKeys: ['secureNetwork:trustTitle'],
+    keywords: [
+      'secure network',
+      'https',
+      'ssl',
+      'certificate',
+      'secure connection',
+      'webusb',
+      'usb printer browser',
+      'trust certificate',
+      'qr code connect device',
+      'flo.local',
+      'lan address',
+      'wifi connect',
     ],
   },
   {

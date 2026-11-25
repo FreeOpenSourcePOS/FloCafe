@@ -33,7 +33,10 @@ continuing, so a quit during startup unwinds instead of half-starting:
    `await`: no optional network service may delay or fail startup.
 4. `await startKdsServer()` - the KDS server on `:3002`.
 5. `await startServerApp()` - the server app on `:3003`.
-6. `startMdns()`, unless `FLO_E2E_SKIP_OPTIONAL_NETWORK` is `1`.
+6. `await startSecureNetwork()`, then `startMdns()`, both unless `FLO_E2E_SKIP_OPTIONAL_NETWORK` is
+   `1`. Secure Network needs the three bound HTTP ports and runs first so the mDNS record can carry
+   the HTTPS endpoints. It never throws: a certificate, port, or encryption failure leaves HTTP
+   serving and is reported in Settings.
 7. `await initPrinter()`.
 8. IPC handler registration.
 9. `runtimeState = 'ready'`, and the relaunch guard is marked recovered.
@@ -41,6 +44,9 @@ continuing, so a quit during startup unwinds instead of half-starting:
     application menu.
 11. On a non-store build, the auto-updater is configured and a delayed update check runs. Store
     builds report a `store-managed` one-shot status instead.
+
+Nothing restarts FloCafe after a Windows restart: HTTPS, like every other surface, is available only
+while the app is running.
 
 If `initDatabase()` throws `SchemaVersionMismatchError`, `initialize()` intercepts it before the
 generic startup-error dialog, quiesces database access, and enters `runDowngradeRecoveryFlow` in
@@ -114,18 +120,22 @@ The steps run in this order, which drains dependents before the things they depe
 | --- | --- | --- |
 | 1 | tray | no |
 | 2 | shared raster renderer surface | no |
-| 3 | Server App | yes |
-| 4 | Main server | yes |
-| 5 | KDS server | yes |
-| 6 | cloud sync | yes |
-| 7 | telemetry | yes |
-| 8 | Google Drive | yes |
-| 9 | WhatsApp | yes |
-| 10 | Bonjour / mDNS | no |
-| 11 | HTTP handler drain | yes |
-| 12 | database admission | yes |
-| 13 | database request drain | yes |
-| 14 | close the database | close step |
+| 3 | Secure Network (HTTPS fronts) | yes |
+| 4 | Server App | yes |
+| 5 | Main server | yes |
+| 6 | KDS server | yes |
+| 7 | cloud sync | yes |
+| 8 | telemetry | yes |
+| 9 | PostHog | yes |
+| 10 | Google Drive | yes |
+| 11 | local backup | yes |
+| 12 | WhatsApp | yes |
+| 13 | shutdown backup | yes |
+| 14 | Bonjour / mDNS | no |
+| 15 | HTTP handler drain | yes |
+| 16 | database admission | yes |
+| 17 | database request drain | yes |
+| 18 | close the database | close step |
 
 Every HTTP listener is stopped before the database so that no handler can begin new database work
 after the drain starts. The close step is skipped if any earlier step that blocks the database
@@ -168,6 +178,7 @@ Everything else that `initialize()` starts is absent:
 | Main API, KDS, Server App, database | yes |
 | cloud sync, telemetry, Google Drive | no |
 | mDNS advertisement | no |
+| Secure Network (HTTPS) | no |
 | Printer initialization | no |
 | Electron windows, tray, menu, auto-updater, power-monitor recovery | no, there is no Electron runtime |
 

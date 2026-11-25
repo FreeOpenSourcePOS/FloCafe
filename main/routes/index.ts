@@ -29,6 +29,7 @@ import { customerDisplayFeedRoutes } from './customer-display-feed';
 import { kdsInfoRoutes } from './kds-info';
 import { posInfoRoutes } from './pos-info';
 import { serverAppInfoRoutes } from './server-app-info';
+import { secureNetworkRoutes } from './secure-network';
 import { moreAppsRoutes } from './more-apps';
 import { printerRoutes } from './printers';
 import { databaseRoutes } from './database';
@@ -140,6 +141,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/kds-info', kdsInfoRoutes);
   app.use('/api/pos-info', posInfoRoutes);
   app.use('/api/server-app-info', serverAppInfoRoutes);
+  app.use('/api/secure-network', secureNetworkRoutes);
   app.use('/api/more-apps', moreAppsRoutes);
   app.use('/api/printers', printerRoutes);
   app.use('/api/db', databaseRoutes);

@@ -479,6 +479,68 @@ async function main() {
     assert.equal(await roService.refresh(), false, 'the applied change is not repeated');
   }
 
+  // A failure part-way through swapping the certificate restores every front and keeps addresses consistent.
+  const pfA = await makeSurface('main');
+  const pfB = await makeSurface('kds');
+  cleanups.push(() => new Promise<void>((r) => pfA.http.close(() => r())));
+  cleanups.push(() => new Promise<void>((r) => pfB.http.close(() => r())));
+  let pfIps = ['192.168.1.40'];
+  const pf = new SecureNetworkService({
+    directory: tempDir(),
+    storage,
+    getLanIPs: () => pfIps,
+    surfaces: [pfA.definition, pfB.definition],
+    bindHost: '127.0.0.1',
+    log: () => {},
+  });
+  await pf.start();
+  cleanups.push(() => pf.stop());
+  const pfFronts = (
+    pf as unknown as { fronts: Map<string, { setCredentials: (c: unknown) => void }> }
+  ).fronts;
+  const secondFront = pfFronts.get('kds')!;
+  const originalSet = secondFront.setCredentials.bind(secondFront);
+  let failNext = true;
+  secondFront.setCredentials = (credentials) => {
+    if (failNext) {
+      failNext = false;
+      throw new Error('context rejected');
+    }
+    originalSet(credentials);
+  };
+  const presentedFor = async (port: number) =>
+    new Promise<crypto.X509Certificate>((resolve, reject) => {
+      const socket = tls.connect(
+        { host: '127.0.0.1', port, ca: pf.getPublicCa()!.pem, servername: 'localhost' },
+        () => {
+          resolve(new crypto.X509Certificate(socket.getPeerCertificate(true).raw));
+          socket.end();
+        },
+      );
+      socket.on('error', reject);
+    });
+  pfIps = ['192.168.1.41'];
+  await assert.rejects(() => pf.refresh(), /context rejected/);
+  assert.deepEqual(
+    pf.getCertifiedLanIps(),
+    ['192.168.1.40'],
+    'published addresses stay on the previous set',
+  );
+  for (const surface of [pfA, pfB]) {
+    assert.ok(
+      (await presentedFor(surface.httpsPort!)).checkIP('192.168.1.40'),
+      'every front still presents the previous certificate',
+    );
+  }
+  assert.equal(await pf.refresh(), true, 'the next refresh retries and succeeds');
+  assert.deepEqual(pf.getCertifiedLanIps(), ['192.168.1.41']);
+  for (const surface of [pfA, pfB]) {
+    assert.ok(
+      (await presentedFor(surface.httpsPort!)).checkIP('192.168.1.41'),
+      'every front presents the new certificate',
+    );
+  }
+
   // A failed CA reset still restarts HTTPS and reports the first failure.
   const flakyStorage: SecretStorage = { ...storage };
   const flakySurface = await makeSurface('main');

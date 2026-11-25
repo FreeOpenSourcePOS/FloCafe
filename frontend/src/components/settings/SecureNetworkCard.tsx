@@ -137,6 +137,7 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
         window.location.assign(`http://${hostname}:${mainHttpPort}${pathname}${search}`);
       } catch {
         toast.error(t('saveFailed'));
+        await load();
       }
       return;
     }

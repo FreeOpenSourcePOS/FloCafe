@@ -48,6 +48,18 @@ export function buildSurfaceAddresses(
   }));
 }
 
+/** Runs `action` once after the response completes or the connection drops, whichever comes first. */
+function afterResponse(res: Response, action: () => Promise<void>): void {
+  let ran = false;
+  const run = () => {
+    if (ran) return;
+    ran = true;
+    void action().catch(logLifecycleFailure);
+  };
+  res.once('finish', run);
+  res.once('close', run);
+}
+
 function logLifecycleFailure(error: unknown): void {
   console.error('[SecureNetwork] Lifecycle action failed:', error);
 }
@@ -141,7 +153,7 @@ router.put(
       return void res.status(500).json({ error: 'Could not save the setting' });
     }
     res.json({ success: true, enabled });
-    res.once('finish', () => void service.applyEnabled().catch(logLifecycleFailure));
+    afterResponse(res, () => service.applyEnabled());
   }),
 );
 
@@ -167,7 +179,7 @@ router.post(
       firewallFixed = await installFirewallRuleElevated(process.execPath);
     }
     res.json({ success: true, firewall_fixed: firewallFixed });
-    res.once('finish', () => void service.repair().catch(logLifecycleFailure));
+    afterResponse(res, () => service.repair());
   }),
 );
 
@@ -190,7 +202,7 @@ router.post(
     const service = getSecureNetwork();
     if (!service) return unavailable(res);
     res.json({ success: true });
-    res.once('finish', () => void service.resetAuthority().catch(logLifecycleFailure));
+    afterResponse(res, () => service.resetAuthority());
   }),
 );
 

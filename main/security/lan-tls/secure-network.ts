@@ -307,15 +307,23 @@ export class SecureNetworkService {
       const renewalDue = this.leaf.notAfter.getTime() - this.now().getTime() < RENEW_LEAF_WITHIN_MS;
       if (sameSet(desired, this.leafIps) && !renewalDue) return false;
       const previous = { leaf: this.leaf, key: this.leafKeyPem, ips: this.leafIps };
+      const previousCredentials = this.credentials();
       try {
         this.issueLeaf();
         const credentials = this.credentials();
         for (const front of this.fronts.values()) front.setCredentials(credentials);
       } catch (error) {
-        // Published addresses must keep matching the certificate the fronts present; retry next tick.
+        // Published addresses must keep matching what every front presents; retry next tick.
         this.leaf = previous.leaf;
         this.leafKeyPem = previous.key;
         this.leafIps = previous.ips;
+        for (const front of this.fronts.values()) {
+          try {
+            front.setCredentials(previousCredentials);
+          } catch (restoreError) {
+            this.log(`Could not restore a front's certificate: ${(restoreError as Error).message}`);
+          }
+        }
         throw error;
       }
       try {

@@ -90,6 +90,16 @@ export function readCaMeta(directory: string): CaMeta | null {
   return readMeta(directory);
 }
 
+/** Forgets that the CA was regenerated, once the owner has acknowledged the notice. */
+export function clearCaRegeneration(directory: string): void {
+  const meta = readMeta(directory);
+  if (!meta?.regeneratedAt) return;
+  writePrivateFile(
+    path.join(directory, CA_META_FILE),
+    JSON.stringify({ createdAt: meta.createdAt } satisfies CaMeta),
+  );
+}
+
 function hostLabel(): string {
   const host = os
     .hostname()

@@ -1,6 +1,5 @@
-; Secure Network: one inbound rule for HTTPS, limited to this program, the Private profile
-; and the local subnet. Needs an elevated installer; when the installer is not elevated netsh
-; fails quietly and the app offers a one-time guided fix in Settings. Rules are removed by name only.
+; Secure Network inbound HTTPS rule. Needs an elevated installer; otherwise netsh fails quietly
+; and Settings offers a one-time fix. Rules are removed by name only.
 
 !macro customInstall
   nsExec::Exec 'netsh advfirewall firewall delete rule name="FloCafe Secure Network"'

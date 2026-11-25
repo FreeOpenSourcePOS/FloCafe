@@ -3810,7 +3810,6 @@
     "ios2": "Apri Impostazioni, Generali, Info, Impostazioni di attendibilità dei certificati, e attiva la piena attendibilità per FloCafe.",
     "mac1": "Apri il file scaricato per aggiungerlo ad Accesso Portachiavi, poi fai doppio clic su di esso.",
     "mac2": "In Affidabilità, imposta Quando si usa questo certificato su Fidati sempre e inserisci la password.",
-    "trustCompare": "Confronta questa impronta con quella sul computer di FloCafe:",
     "trustContinue": "Apri FloCafe in modo sicuro"
   }
 }

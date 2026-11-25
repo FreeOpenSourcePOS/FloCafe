@@ -811,11 +811,12 @@ Router: `main/routes/secure-network.ts`. Full path: `/api/secure-network`. Serve
 | ------ | ---- | ------------- | ---------- | -------- |
 | `GET` | `/ca.cer` | none | none | The public CA certificate as DER (`application/x-x509-ca-cert`). Never a key. |
 | `GET` | `/ca.pem` | none | none | The same certificate as PEM. |
-| `GET` | `/trust-info` | none | none | `{ fingerprint_sha256, fingerprint_sha1, https_port }`. `404` when Secure Network is off. |
+| `GET` | `/trust-info` | none | none | `{ https_port }`. `404` when Secure Network is off. It carries no fingerprint: a value fetched beside the certificate over HTTP would prove nothing. |
 | `GET` | `/status` | `settings.manage` | none | State, certificate status and dates, per-surface HTTPS addresses (`primary_url`, `fallback_urls`), IP-change and CA-regeneration notices, and QR data URLs. |
-| `PUT` | `/enabled` | `settings.manage` | `{ enabled: boolean }` | `{ success, enabled }`. Starts or stops the HTTPS fronts. |
+| `PUT` | `/enabled` | `settings.manage` | `{ enabled: boolean }` | `{ success, enabled }`, sent before the HTTPS fronts restart so a request that arrived over HTTPS is not held open by its own listener. `/repair` and `/reset` behave the same. |
 | `POST` | `/diagnostics` | `settings.manage` | none | `{ checks: [{ id, status, code, surface? }] }` covering address, ports, HTTPS, backend, WebSocket, certificate, and (Windows) firewall and network profile. |
 | `POST` | `/repair` | `settings.manage` | `{ fix_firewall?: boolean }` | Restarts the fronts. `fix_firewall` shows one Windows elevation prompt to create the program-scoped rule. |
+| `POST` | `/acknowledge` | `settings.manage` | none | Clears the address-change and certificate-recreated notices. |
 | `POST` | `/reset` | `settings.manage` and Master PIN | `master_pin` | Creates a new root CA. Every device must trust again. |
 
 ### More apps

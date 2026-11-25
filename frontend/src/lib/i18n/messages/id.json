@@ -3810,7 +3810,6 @@
     "ios2": "Buka Pengaturan, Umum, Tentang, Pengaturan Kepercayaan Sertifikat, lalu aktifkan kepercayaan penuh untuk FloCafe.",
     "mac1": "Buka file yang diunduh untuk menambahkannya ke Akses Rantai Kunci, lalu klik dua kali.",
     "mac2": "Di bagian Percayai, setel Saat menggunakan sertifikat ini ke Selalu Percayai dan masukkan kata sandi Anda.",
-    "trustCompare": "Bandingkan sidik jari ini dengan yang ada di komputer FloCafe:",
     "trustContinue": "Buka FloCafe dengan aman"
   }
 }

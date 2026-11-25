@@ -16,12 +16,13 @@ import {
   setServerAppHttpsPort,
 } from '../server-state';
 
-const HTTPS_PORT_OFFSET = 440;
 const LADDER_LENGTH = 10;
 const PREFERRED_MAIN_HTTPS_PORT = 443;
+const MAIN_LADDER_START = 3441;
 
-function ladder(httpPort: number): number[] {
-  return Array.from({ length: LADDER_LENGTH }, (_, i) => httpPort + HTTPS_PORT_OFFSET + i);
+/** Fixed ranges inside the Windows firewall rule's ports, whatever the HTTP ports are configured to. */
+function ladder(start: number): number[] {
+  return Array.from({ length: LADDER_LENGTH }, (_, i) => start + i);
 }
 
 function productionSurfaces(): SurfaceDefinition[] {
@@ -31,7 +32,7 @@ function productionSurfaces(): SurfaceDefinition[] {
       label: 'POS',
       getHttpServer: getMainHttpServer,
       getHttpPort: getServerPort,
-      getCandidatePorts: () => [PREFERRED_MAIN_HTTPS_PORT, ...ladder(getServerPort())],
+      getCandidatePorts: () => [PREFERRED_MAIN_HTTPS_PORT, ...ladder(MAIN_LADDER_START)],
       setHttpsPort,
     },
     {
@@ -39,7 +40,7 @@ function productionSurfaces(): SurfaceDefinition[] {
       label: 'Kitchen display',
       getHttpServer: getKdsHttpServer,
       getHttpPort: getKdsPort,
-      getCandidatePorts: () => ladder(getKdsPort()),
+      getCandidatePorts: () => ladder(MAIN_LADDER_START + LADDER_LENGTH),
       setHttpsPort: setKdsHttpsPort,
     },
     {
@@ -47,14 +48,14 @@ function productionSurfaces(): SurfaceDefinition[] {
       label: 'Dining room',
       getHttpServer: getServerAppHttpServer,
       getHttpPort: getServerAppPort,
-      getCandidatePorts: () => ladder(getServerAppPort()),
+      getCandidatePorts: () => ladder(MAIN_LADDER_START + 2 * LADDER_LENGTH),
       setHttpsPort: setServerAppHttpsPort,
     },
   ];
 }
 
 /** Starts HTTPS for the LAN surfaces. Never throws: Secure Network is optional and must not block POS startup. */
-export async function startSecureNetwork(): Promise<void> {
+export async function startSecureNetwork(onChange?: () => void): Promise<void> {
   try {
     const service = configureSecureNetwork({
       directory: defaultSecureNetworkDirectory(),
@@ -62,6 +63,7 @@ export async function startSecureNetwork(): Promise<void> {
       getLanIPs: getAllLocalIPs,
       surfaces: productionSurfaces(),
       getFirewallState: readWindowsFirewallState,
+      onChange,
     });
     await service.start();
   } catch (error) {

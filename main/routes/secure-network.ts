@@ -48,6 +48,10 @@ export function buildSurfaceAddresses(
   }));
 }
 
+function logLifecycleFailure(error: unknown): void {
+  console.error('[SecureNetwork] Lifecycle action failed:', error);
+}
+
 function unavailable(res: Response): void {
   res.status(503).json({ error: 'Secure Network is not available in this mode.' });
 }
@@ -71,15 +75,13 @@ router.get('/ca.pem', (_req: Request, res: Response) => {
   res.send(ca.pem);
 });
 
+// No fingerprint here: a value fetched over the same unauthenticated HTTP connection as the
+// certificate proves nothing. The owner compares the device's fingerprint with the host screen.
 router.get('/trust-info', (_req: Request, res: Response) => {
   const ca = getSecureNetwork()?.getPublicCa();
   if (!ca) return void res.status(404).json({ error: 'No certificate available' });
   res.setHeader('Cache-Control', 'no-store');
-  res.json({
-    fingerprint_sha256: ca.fingerprints.sha256,
-    fingerprint_sha1: ca.fingerprints.sha1,
-    https_port: getHttpsPort(),
-  });
+  res.json({ https_port: getHttpsPort() });
 });
 
 // ── Authenticated: settings.manage ─────────────────────────────────────────────────────────────
@@ -94,11 +96,10 @@ router.get(
     const surfaces = buildSurfaceAddresses(status, lanIps);
     const main = surfaces.find((s) => s.id === 'main');
 
-    const fingerprint = status.certificate.ca_fingerprint_sha256?.replace(/:/g, '') ?? null;
     const trustHost = lanIps.find(isPermittedLanIPv4) ?? null;
     const trustUrl =
-      status.enabled && fingerprint && trustHost
-        ? `http://${trustHost}:${getServerPort()}/trust?fp=${fingerprint}`
+      status.enabled && status.certificate.ca_fingerprint_sha256 && trustHost
+        ? `http://${trustHost}:${getServerPort()}/trust`
         : null;
     const accessUrl = main?.fallback_urls[0] ?? main?.primary_url ?? null;
 
@@ -131,8 +132,10 @@ router.put(
     if (typeof req.body?.enabled !== 'boolean') {
       return void res.status(400).json({ error: 'enabled must be a boolean' });
     }
-    await service.setEnabled(req.body.enabled);
-    res.json({ success: true, enabled: service.isEnabled() });
+    // Answer before restarting: a request that arrived over HTTPS would otherwise keep its own front open.
+    const enabled: boolean = req.body.enabled;
+    res.json({ success: true, enabled });
+    res.once('finish', () => void service.setEnabled(enabled).catch(logLifecycleFailure));
   }),
 );
 
@@ -157,9 +160,20 @@ router.post(
     if (req.body?.fix_firewall === true && process.platform === 'win32') {
       firewallFixed = await installFirewallRuleElevated(process.execPath);
     }
-    await service.repair();
     res.json({ success: true, firewall_fixed: firewallFixed });
+    res.once('finish', () => void service.repair().catch(logLifecycleFailure));
   }),
+);
+
+router.post(
+  '/acknowledge',
+  requirePermission('settings.manage'),
+  (_req: Request, res: Response) => {
+    const service = getSecureNetwork();
+    if (!service) return unavailable(res);
+    service.acknowledgeNotices();
+    res.json({ success: true });
+  },
 );
 
 router.post(
@@ -169,8 +183,8 @@ router.post(
   asyncHandler(async (_req: Request, res: Response) => {
     const service = getSecureNetwork();
     if (!service) return unavailable(res);
-    await service.resetAuthority();
     res.json({ success: true });
+    res.once('finish', () => void service.resetAuthority().catch(logLifecycleFailure));
   }),
 );
 

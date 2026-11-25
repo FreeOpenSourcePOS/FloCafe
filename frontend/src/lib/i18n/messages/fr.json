@@ -3810,7 +3810,6 @@
     "ios2": "Ouvrez Réglages, Général, Informations, Réglages des certificats de confiance, et activez la confiance totale pour FloCafe.",
     "mac1": "Ouvrez le fichier téléchargé pour l'ajouter à Trousseau d'accès, puis double-cliquez dessus.",
     "mac2": "Sous Confiance, réglez En utilisant ce certificat sur Toujours faire confiance et saisissez votre mot de passe.",
-    "trustCompare": "Comparez cette empreinte avec celle affichée sur l'ordinateur FloCafe :",
     "trustContinue": "Ouvrir FloCafe en toute sécurité"
   }
 }

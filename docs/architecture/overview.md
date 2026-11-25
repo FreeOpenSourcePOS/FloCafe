@@ -112,14 +112,16 @@ any proxy or helper process.
   certificate ([`x509.ts`](../../main/security/lan-tls/x509.ts)) covers `flo.local`, `localhost`,
   `127.0.0.1`, and the ranked private LAN addresses. It is reissued in memory when the address set
   changes or when renewal is due, without any device trusting again.
-- **Ports.** The main surface prefers `443`, then walks `3441` upward; KDS and the Server App walk
-  upward from their HTTP port plus 440. A busy port falls through the ladder and an HTTPS failure
+- **Ports.** The main surface prefers `443`, then walks `3441` upward; KDS uses `3451` and the Server
+  App `3461` upward. The ranges are fixed, independent of the HTTP ports, so they always sit inside the
+  Windows firewall rule's `443,3441-3470`. A busy port falls through the ladder and an HTTPS failure
   never affects the HTTP listeners.
 - **Host validation.** The fronts answer `421` unless the `Host` is `localhost`, `flo.local`, `[::1]`,
   or a private IPv4 literal.
 - **Trust is never silent.** Each device must approve the CA once. The public certificate is served at
   `/api/secure-network/ca.cer` and walked through at `/trust`; the CA fingerprint is shown on the host
-  for comparison because the first download travels over HTTP.
+  for comparison with what the device shows, because the first download travels over HTTP and anything
+  the guide page displays could be altered with it.
 
 The service is [`main/security/lan-tls/secure-network.ts`](../../main/security/lan-tls/secure-network.ts);
 [`main/services/secure-network-wiring.ts`](../../main/services/secure-network-wiring.ts) binds it to the

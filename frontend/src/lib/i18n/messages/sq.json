@@ -3810,7 +3810,6 @@
     "ios2": "Hapni Cilësimet, Të përgjithshme, Rreth, Cilësimet e besimit të certifikatave, dhe aktivizoni besimin e plotë për FloCafe.",
     "mac1": "Hapni skedarin e shkarkuar për ta shtuar te Keychain Access, pastaj klikojeni dy herë.",
     "mac2": "Te Trust, caktoni When using this certificate si Always Trust dhe futni fjalëkalimin tuaj.",
-    "trustCompare": "Krahasoni këtë gjurmë gishti me atë në kompjuterin e FloCafe:",
     "trustContinue": "Hap FloCafe në mënyrë të sigurt"
   }
 }

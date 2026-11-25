@@ -396,7 +396,11 @@ async function main() {
   // ── Reset replaces the CA ──────────────────────────────────────────────────
   await service.resetAuthority();
   assert.notEqual(service.getPublicCa()!.fingerprints.sha256, caBefore, 'reset issues a new CA');
-  assert.equal(service.getStatus().ca_regenerated?.reason, 'reset');
+  assert.equal(
+    service.getStatus().ca_regenerated,
+    null,
+    'a reset the owner started raises no warning',
+  );
   assert.equal(service.getStatus().state, 'running');
 
   // ── Repair and crash recovery ──────────────────────────────────────────────

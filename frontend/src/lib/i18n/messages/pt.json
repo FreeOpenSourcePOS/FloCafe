@@ -3810,7 +3810,6 @@
     "ios2": "Abra Definições, Geral, Acerca, Definições de Confiança de Certificados, e ative a confiança total para o FloCafe.",
     "mac1": "Abra o ficheiro transferido para o adicionar ao Acesso às Chaves e clique duas vezes nele.",
     "mac2": "Em Confiança, defina Ao usar este certificado como Confiar sempre e introduza a sua palavra-passe.",
-    "trustCompare": "Compare esta impressão digital com a que aparece no computador do FloCafe:",
     "trustContinue": "Abrir o FloCafe em segurança"
   }
 }

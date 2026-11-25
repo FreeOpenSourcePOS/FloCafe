@@ -7,6 +7,8 @@ import {
   buildAddRuleArgs,
   buildDeleteRuleArgs,
   buildElevatedAddRuleScript,
+  buildFirewallRepairScript,
+  buildFirewallRepairScript,
   buildShowRuleArgs,
   parseNetworkProfile,
   parseRulePresent,
@@ -57,9 +59,18 @@ assert.deepEqual(buildShowRuleArgs().slice(-1), [`name=${FIREWALL_RULE_NAME}`]);
 
 // Every port the HTTPS ladders can land on is covered, and 3001-3003 HTTP ports are not widened.
 assert.ok(portAllowed(443), 'port 443 is covered');
-for (let base = 3001; base <= 3003; base++) {
-  for (let i = 0; i < 10; i++)
-    assert.ok(portAllowed(base + 440 + i), `HTTPS ladder port ${base + 440 + i} is covered`);
+// The HTTPS ladders are fixed (443, then 3441-3470), so custom HTTP ports never leave a listener outside the rule.
+const wiring0 = read('main/services/secure-network-wiring.ts');
+assert.ok(
+  !/ladder\(get|get\w+Port\(\)\s*\+/.test(wiring0),
+  'HTTPS candidates do not derive from the HTTP ports',
+);
+const preferredMain = Number(/PREFERRED_MAIN_HTTPS_PORT = (\d+)/.exec(wiring0)![1]);
+const ladderStart = Number(/MAIN_LADDER_START = (\d+)/.exec(wiring0)![1]);
+const ladderLength = Number(/LADDER_LENGTH = (\d+)/.exec(wiring0)![1]);
+assert.ok(portAllowed(preferredMain), 'the preferred main port is covered');
+for (let i = 0; i < 3 * ladderLength; i++) {
+  assert.ok(portAllowed(ladderStart + i), `HTTPS ladder port ${ladderStart + i} is covered`);
 }
 assert.ok(!portAllowed(9100), 'the printer port 9100 is never opened');
 assert.ok(
@@ -72,6 +83,12 @@ assert.equal(
   parseRulePresent(`Rule Name:                            ${FIREWALL_RULE_NAME}\r\n----`, 0),
   true,
 );
+assert.equal(
+  parseRulePresent(`Regelname:                           ${FIREWALL_RULE_NAME}\r\n----`, 0),
+  true,
+  'a localized field label still counts as present',
+);
+assert.equal(parseRulePresent('Es stimmt keine Regel mit den Kriterien überein.', 1), false);
 assert.equal(parseRulePresent('No rules match the specified criteria.', 1), false);
 assert.equal(
   parseRulePresent(`Rule Name: ${FIREWALL_RULE_NAME}`, 1),
@@ -87,14 +104,26 @@ assert.equal(
 assert.equal(parseNetworkProfile('DomainAuthenticated'), 'domain');
 assert.equal(parseNetworkProfile(''), 'unknown');
 
-// Elevated fix: quoted for Start-Process, delete-then-add (idempotent), never persistent beyond the rule.
-const script = buildElevatedAddRuleScript(exe);
-assert.ok(script.includes('-Verb RunAs'), 'elevation is explicit');
+// Elevated fix: one elevated process, delete then add, exit code propagated, quoting via encoding.
+const inner = buildFirewallRepairScript(exe);
 assert.ok(
-  script.indexOf("'delete'") < script.indexOf("'add'"),
+  inner.indexOf("'delete'") < inner.indexOf("'add'"),
   'delete precedes add so upgrades never duplicate the rule',
 );
-assert.ok(script.includes(`"program=${exe}"`), 'a path with spaces is quoted for netsh');
+assert.ok(inner.includes(`'program=${exe}'`), 'a path with spaces is a single argument');
+assert.ok(inner.endsWith('exit $LASTEXITCODE'), 'the add result decides success');
+const outer = buildElevatedAddRuleScript(exe);
+assert.equal((outer.match(/-Verb RunAs/g) ?? []).length, 1, 'exactly one UAC prompt');
+assert.ok(
+  outer.includes('-PassThru') && outer.endsWith('exit $p.ExitCode'),
+  'the elevated exit code is propagated',
+);
+const encoded = /'-EncodedCommand','([^']+)'/.exec(outer)![1];
+assert.equal(
+  Buffer.from(encoded, 'base64').toString('utf16le'),
+  inner,
+  'the elevated command is the inner script',
+);
 
 // NSIS include mirrors the runtime rule and removes only that rule.
 const nsis = read('build/installer.nsh');
@@ -131,7 +160,7 @@ assert.ok(
 
 // Lifecycle ordering in the main process.
 const index = read('main/index.ts');
-const startSecure = index.indexOf('await startSecureNetwork()');
+const startSecure = index.indexOf('await startSecureNetwork(republishMdns)');
 assert.ok(
   startSecure > index.indexOf('await startServerApp()'),
   'HTTPS starts after the three HTTP listeners are bound',
@@ -157,7 +186,7 @@ assert.ok(
 );
 assert.match(
   index,
-  /await startSecureNetwork\(\);\s*\n\s*if \(isShutdownRequested\(\)\) return;/,
+  /await startSecureNetwork\(republishMdns\);\s*\n\s*if \(isShutdownRequested\(\)\) return;/,
   'a quit during HTTPS startup unwinds',
 );
 

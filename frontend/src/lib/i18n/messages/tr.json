@@ -3810,7 +3810,6 @@
     "ios2": "Ayarlar, Genel, Hakkında, Sertifika Güven Ayarları'nı açın ve FloCafe için tam güveni açın.",
     "mac1": "İndirilen dosyayı Anahtar Zinciri Erişimi'ne eklemek için açın ve çift tıklayın.",
     "mac2": "Güven altında Bu sertifikayı kullanırken seçeneğini Her Zaman Güven olarak ayarlayın ve parolanızı girin.",
-    "trustCompare": "Bu parmak izini FloCafe bilgisayarındakiyle karşılaştırın:",
     "trustContinue": "FloCafe'yi güvenle aç"
   }
 }

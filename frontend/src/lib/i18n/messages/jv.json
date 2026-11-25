@@ -3810,7 +3810,6 @@
     "ios2": "Bukak Setelan, Umum, Babagan, Setelan Kapercayan Sertifikat, lan aktifake kapercayan kebak kanggo FloCafe.",
     "mac1": "Bukak berkas sing diundhuh kanggo nambahake menyang Keychain Access, terus klik kaping pindho.",
     "mac2": "Ing Trust, setel When using this certificate dadi Always Trust lan lebokna sandhimu.",
-    "trustCompare": "Bandhingna sidik jari iki karo sing ana ing komputer FloCafe:",
     "trustContinue": "Bukak FloCafe kanthi aman"
   }
 }

@@ -285,8 +285,11 @@ async function main() {
     assert.equal(unauth.status, 401, 'status requires authentication');
     const trustInfo = await fetch(`${publicBase}/api/secure-network/trust-info`);
     assert.equal(trustInfo.status, 200, 'trust-info is reachable without a login');
-    const trustBody = (await trustInfo.json()) as { fingerprint_sha256: string };
-    assert.equal(trustBody.fingerprint_sha256, service.getPublicCa()!.fingerprints.sha256);
+    const trustBody = (await trustInfo.json()) as Record<string, unknown>;
+    assert.ok(
+      !('fingerprint_sha256' in trustBody),
+      'the HTTP trust info never presents a fingerprint as proof',
+    );
     const cer = await fetch(`${publicBase}/api/secure-network/ca.cer`);
     assert.equal(cer.status, 200);
     assert.equal(cer.headers.get('content-type'), 'application/x-x509-ca-cert');

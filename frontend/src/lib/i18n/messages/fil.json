@@ -3810,7 +3810,6 @@
     "ios2": "Buksan ang Settings, General, About, Certificate Trust Settings, at i-on ang buong tiwala para sa FloCafe.",
     "mac1": "Buksan ang na-download na file para idagdag ito sa Keychain Access, pagkatapos i-double-click ito.",
     "mac2": "Sa ilalim ng Trust, itakda ang When using this certificate sa Always Trust at ilagay ang password mo.",
-    "trustCompare": "Ihambing ang fingerprint na ito sa nasa computer ng FloCafe:",
     "trustContinue": "Buksan nang ligtas ang FloCafe"
   }
 }

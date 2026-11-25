@@ -3,13 +3,10 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslations } from 'use-intl';
 import { Download, Lock } from 'lucide-react';
-import { Ltr } from '@/components/layout/Ltr';
 
 type Platform = 'windows' | 'android' | 'ios' | 'mac';
 
 interface TrustInfo {
-  fingerprint_sha256: string;
-  fingerprint_sha1: string;
   https_port: number | null;
 }
 
@@ -121,17 +118,7 @@ export default function TrustPage() {
               ))}
             </ol>
 
-            <div className="rounded-lg border border-border p-3 text-xs space-y-1">
-              <p className="text-muted-foreground">{t('trustCompare')}</p>
-              <p className="text-muted-foreground">{t('fingerprintSha256')}</p>
-              <Ltr>
-                <code className="break-all">{info.fingerprint_sha256}</code>
-              </Ltr>
-              <p className="text-muted-foreground">{t('fingerprintSha1')}</p>
-              <Ltr>
-                <code className="break-all">{info.fingerprint_sha1}</code>
-              </Ltr>
-            </div>
+            <p className="rounded-lg border border-border p-3 text-sm">{t('fingerprintHint')}</p>
 
             {secureUrl && (
               <a href={secureUrl} className="inline-block text-sm font-medium text-brand underline">

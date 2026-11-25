@@ -3810,7 +3810,6 @@
     "ios2": "Mở Cài đặt, Cài đặt chung, Giới thiệu, Cài đặt tin cậy chứng nhận và bật tin cậy hoàn toàn cho FloCafe.",
     "mac1": "Mở tệp đã tải xuống để thêm vào Keychain Access, rồi nhấp đúp vào đó.",
     "mac2": "Trong mục Tin cậy, đặt Khi sử dụng chứng chỉ này thành Luôn tin cậy và nhập mật khẩu của bạn.",
-    "trustCompare": "So sánh dấu vân tay này với dấu vân tay trên máy tính FloCafe:",
     "trustContinue": "Mở FloCafe an toàn"
   }
 }

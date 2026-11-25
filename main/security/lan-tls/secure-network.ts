@@ -4,6 +4,7 @@ import https from 'https';
 import path from 'path';
 import { WebSocket } from 'ws';
 import {
+  clearCaRegeneration,
   loadOrCreateCa,
   readCaMeta,
   resetCa,
@@ -48,6 +49,8 @@ export interface SecureNetworkDeps {
   bindHost?: string;
   now?: () => Date;
   getFirewallState?: () => Promise<FirewallState>;
+  /** Called after enable, disable, repair or reset changes the serving ports or CA. */
+  onChange?: () => void;
   log?: (message: string) => void;
 }
 
@@ -311,35 +314,72 @@ export class SecureNetworkService {
     });
   }
 
+  /** A slow drain must never leave HTTPS down, so a failed stop is logged and the restart still runs. */
+  private async restartFronts(): Promise<void> {
+    try {
+      await this.stopInternal();
+    } catch (error) {
+      this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
+    }
+    this.ca = null;
+    this.leaf = null;
+    await this.startInternal();
+  }
+
+  private notifyChanged(): void {
+    try {
+      this.deps.onChange?.();
+    } catch (error) {
+      this.log(`Change notification failed: ${(error as Error).message}`);
+    }
+  }
+
   setEnabled(enabled: boolean): Promise<void> {
     return this.enqueue(async () => {
       this.writeConfig({ enabled });
-      await this.stopInternal();
-      this.ca = null;
-      this.leaf = null;
-      if (enabled) await this.startInternal();
+      if (enabled) {
+        await this.restartFronts();
+      } else {
+        try {
+          await this.stopInternal();
+        } catch (error) {
+          this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
+        }
+        this.ca = null;
+        this.leaf = null;
+      }
+      this.notifyChanged();
     });
   }
 
   /** Stops and restarts the fronts and reloads the CA; used by Repair Connection. */
   repair(): Promise<void> {
     return this.enqueue(async () => {
-      await this.stopInternal();
-      this.ca = null;
-      this.leaf = null;
-      await this.startInternal();
+      await this.restartFronts();
+      this.notifyChanged();
     });
   }
 
   /** Replaces the root CA. Every device must trust the new certificate again. */
   resetAuthority(): Promise<void> {
     return this.enqueue(async () => {
-      await this.stopInternal();
+      try {
+        await this.stopInternal();
+      } catch (error) {
+        this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
+      }
       resetCa(this.caOptions());
       this.ca = null;
       this.leaf = null;
       await this.startInternal();
+      this.notifyChanged();
     });
+  }
+
+  /** Clears the address-change and certificate-recreated notices once the owner has seen them. */
+  acknowledgeNotices(): void {
+    this.writeConfig({ ipChange: null });
+    clearCaRegeneration(this.deps.directory);
   }
 
   getPublicCa(): { pem: string; der: Buffer; fingerprints: CertificateFingerprints } | null {
@@ -401,8 +441,9 @@ export class SecureNetworkService {
       lan_ips: this.desiredLanIps().filter((ip) => ip !== '127.0.0.1'),
       surfaces,
       ip_change: config.ipChange ?? null,
+      // A reset the owner started needs no warning; an unexpected regeneration does.
       ca_regenerated:
-        meta?.regeneratedAt && meta.regeneratedBecause
+        meta?.regeneratedAt && meta.regeneratedBecause && meta.regeneratedBecause !== 'reset'
           ? { reason: meta.regeneratedBecause, at: meta.regeneratedAt }
           : null,
     };

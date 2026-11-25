@@ -3810,7 +3810,6 @@
     "ios2": "Öffnen Sie Einstellungen, Allgemein, Info, Zertifikatsvertrauenseinstellungen, und aktivieren Sie volles Vertrauen für FloCafe.",
     "mac1": "Öffnen Sie die heruntergeladene Datei, um sie zur Schlüsselbundverwaltung hinzuzufügen, und doppelklicken Sie darauf.",
     "mac2": "Stellen Sie unter Vertrauen die Option Bei Verwendung dieses Zertifikats auf Immer vertrauen und geben Sie Ihr Passwort ein.",
-    "trustCompare": "Vergleichen Sie diesen Fingerabdruck mit dem auf dem FloCafe-Computer:",
     "trustContinue": "FloCafe sicher öffnen"
   }
 }

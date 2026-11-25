@@ -3810,7 +3810,6 @@
     "ios2": "Open Instellingen, Algemeen, Info, Instellingen voor certificaatvertrouwen en schakel volledig vertrouwen in voor FloCafe.",
     "mac1": "Open het gedownloade bestand om het aan Sleutelhangertoegang toe te voegen en dubbelklik erop.",
     "mac2": "Stel onder Vertrouwen Bij gebruik van dit certificaat in op Altijd vertrouwen en voer je wachtwoord in.",
-    "trustCompare": "Vergelijk deze vingerafdruk met die op de FloCafe-computer:",
     "trustContinue": "FloCafe veilig openen"
   }
 }

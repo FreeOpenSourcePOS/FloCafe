@@ -1300,6 +1300,16 @@ function startMdns(): void {
   }
 }
 
+/** Secure Network changed its ports or CA, so the advertised HTTPS endpoints must follow. */
+function republishMdns(): void {
+  if (!bonjour || isShutdownRequested()) return;
+  void stopMdns()
+    .then(() => {
+      if (!isShutdownRequested()) startMdns();
+    })
+    .catch((error) => console.warn('[mDNS] Could not republish:', error));
+}
+
 function stopMdns(): Promise<void> {
   // Capture the instance before clearing the global reference. Bonjour invokes
   // this callback later, after unpublishAll has finished.
@@ -1629,7 +1639,7 @@ async function initialize(): Promise<void> {
       // contend with a developer session or keep the test process alive.
       if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
         console.log('[Flo] Starting Secure Network (HTTPS)...');
-        await startSecureNetwork();
+        await startSecureNetwork(republishMdns);
         if (isShutdownRequested()) return;
         console.log('[Flo] Starting mDNS advertisement...');
         startMdns();

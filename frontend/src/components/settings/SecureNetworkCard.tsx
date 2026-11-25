@@ -54,6 +54,7 @@ const STATE_LABEL_KEYS = {
 
 export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
   const t = useTranslations('secureNetwork');
+  const tCommon = useTranslations('common');
   const { formatDate } = useFormatDate();
   const { confirm, ConfirmDialog } = useConfirm();
   const [status, setStatus] = useState<SecureNetworkStatus | null>(null);
@@ -74,6 +75,7 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
   }, []);
 
   useEffect(() => {
+    if (!canManage) return;
     let cancelled = false;
     api
       .get<SecureNetworkStatus>('/secure-network/status')
@@ -88,13 +90,15 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canManage]);
 
   const run = async (action: () => Promise<unknown>, successMessage?: string) => {
     setBusy(true);
     try {
       await action();
       if (successMessage) toast.success(successMessage);
+      // The server restarts its HTTPS listeners just after answering.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       await load();
     } catch {
       toast.error(t('saveFailed'));
@@ -143,6 +147,7 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
     }
   };
 
+  if (!canManage) return null;
   if (loadFailed) {
     return (
       <div
@@ -222,6 +227,16 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           {t('noticeCaRegenerated')}
         </p>
+      )}
+      {(status.ip_change || status.ca_regenerated) && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => void run(() => api.post('/secure-network/acknowledge', {}))}
+        >
+          {tCommon('done')}
+        </Button>
       )}
 
       {running && (
@@ -435,6 +450,7 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
             await api.post('/secure-network/reset', { master_pin: pin });
             setResetOpen(false);
             toast.success(t('resetDone'));
+            await new Promise((resolve) => setTimeout(resolve, 1500));
             await load();
             return { success: true };
           } catch (error) {

@@ -1,6 +1,9 @@
 import { execFile } from 'child_process';
 import type { FirewallState } from './secure-network';
 
+/** Waiting on a human answering the UAC prompt, so far longer than a normal command. */
+const ELEVATION_TIMEOUT_MS = 180_000;
+
 export const FIREWALL_RULE_NAME = 'FloCafe Secure Network';
 
 /** Every HTTPS port the ladders can land on: 443 for the main surface, then 3441-3470. */
@@ -32,10 +35,12 @@ export function buildShowRuleArgs(): string[] {
   return ['advfirewall', 'firewall', 'show', 'rule', `name=${FIREWALL_RULE_NAME}`];
 }
 
-/** `netsh ... show rule` prints rule fields when present and a "No rules match" line otherwise. */
+/**
+ * `netsh ... show rule` exits non-zero when no rule matches. Its field labels are localized, so
+ * only the exit code and the (untranslated) rule name in the output are used.
+ */
 export function parseRulePresent(output: string, exitCode: number): boolean {
-  if (exitCode !== 0) return false;
-  return new RegExp(`Rule Name:\\s+${FIREWALL_RULE_NAME}`, 'i').test(output);
+  return exitCode === 0 && output.toLowerCase().includes(FIREWALL_RULE_NAME.toLowerCase());
 }
 
 export function parseNetworkProfile(output: string): FirewallState['networkProfile'] {
@@ -49,23 +54,34 @@ export function parseNetworkProfile(output: string): FirewallState['networkProfi
   return 'unknown';
 }
 
-/**
- * PowerShell script that re-runs the rule creation elevated. Only started from an explicit owner
- * action, so Windows shows one UAC prompt per click and never at startup.
- */
-export function buildElevatedAddRuleScript(executablePath: string): string {
-  // Start-Process joins ArgumentList with spaces and does not quote, so tokens with spaces are quoted here.
-  const processToken = (arg: string): string => (/\s/.test(arg) ? `"${arg}"` : arg);
-  const psList = (args: string[]): string =>
-    args.map((arg) => `'${processToken(arg).replace(/'/g, "''")}'`).join(',');
-  const elevated = (args: string[]): string =>
-    `Start-Process -FilePath netsh -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList @(${psList(args)})`;
-  return `${elevated(buildDeleteRuleArgs())};${elevated(buildAddRuleArgs(executablePath))}`;
+/** Inner script: delete then add, exiting with the add's result so a failure is never reported as success. */
+export function buildFirewallRepairScript(executablePath: string): string {
+  const quote = (arg: string): string => `'${arg.replace(/'/g, "''")}'`;
+  const call = (args: string[]): string => `& netsh ${args.map(quote).join(' ')}`;
+  return `${call(buildDeleteRuleArgs())}; ${call(buildAddRuleArgs(executablePath))}; exit $LASTEXITCODE`;
 }
 
-function run(file: string, args: string[]): Promise<{ stdout: string; code: number }> {
+/**
+ * Outer script: one elevated process (one UAC prompt) running the inner script, whose exit code is
+ * propagated. Only started from an explicit owner action, never at startup.
+ */
+export function buildElevatedAddRuleScript(executablePath: string): string {
+  const encoded = Buffer.from(buildFirewallRepairScript(executablePath), 'utf16le').toString(
+    'base64',
+  );
+  return (
+    `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden ` +
+    `-ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}'; exit $p.ExitCode`
+  );
+}
+
+function run(
+  file: string,
+  args: string[],
+  timeoutMs = 15_000,
+): Promise<{ stdout: string; code: number }> {
   return new Promise((resolve) => {
-    execFile(file, args, { windowsHide: true, timeout: 15_000 }, (error, stdout) => {
+    execFile(file, args, { windowsHide: true, timeout: timeoutMs }, (error, stdout) => {
       const exitCode = (error as { code?: unknown } | null)?.code;
       resolve({
         stdout: String(stdout ?? ''),
@@ -96,11 +112,10 @@ export async function readWindowsFirewallState(): Promise<FirewallState> {
 /** Starts the elevated rule creation. Resolves false if the owner declines the UAC prompt. */
 export async function installFirewallRuleElevated(executablePath: string): Promise<boolean> {
   if (process.platform !== 'win32') return false;
-  const result = await run('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    buildElevatedAddRuleScript(executablePath),
-  ]);
+  const result = await run(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', buildElevatedAddRuleScript(executablePath)],
+    ELEVATION_TIMEOUT_MS,
+  );
   return result.code === 0;
 }

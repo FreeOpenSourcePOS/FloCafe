@@ -3759,7 +3759,6 @@
     "trustTitle": "Pitaya FloCafe ing saben piranti",
     "trustHint": "Saben piranti kudu nyetujoni sertifikat FloCafe sepisan. Ora ana sing bisa nindakake iki kanggo sampeyan. Sawise iku, owah-owahan alamat ora butuh persetujuan anyar.",
     "fingerprintSha256": "Sidik jari (SHA-256)",
-    "fingerprintSha1": "Sidik jari Windows (SHA-1)",
     "fingerprintHint": "Sadurunge masang, priksa yen sidik jari sertifikat ing pirantimu cocog karo sing katon ing Setelan FloCafe ing komputer FloCafe. Yen ora cocog, aja dipasang, lan busaken saka sertifikat dipercaya ing piranti yen wis kadung dipasang.",
     "openSetupGuide": "Bukak pandhuan panataan",
     "testConnection": "Tes sambungan",

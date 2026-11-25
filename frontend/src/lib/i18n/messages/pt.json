@@ -3759,7 +3759,6 @@
     "trustTitle": "Confiar no FloCafe em cada dispositivo",
     "trustHint": "Cada dispositivo tem de aprovar o certificado do FloCafe uma vez. Nada pode fazer isso por si. Depois disso, as mudanças de endereço não precisam de nova aprovação.",
     "fingerprintSha256": "Impressão digital (SHA-256)",
-    "fingerprintSha1": "Impressão digital do Windows (SHA-1)",
     "fingerprintHint": "Antes de instalar, confirme que a impressão digital do certificado no seu dispositivo corresponde à mostrada nas definições do FloCafe no computador do FloCafe. Se não corresponder, não o instale e, se já o fez, remova-o dos certificados de confiança do dispositivo.",
     "openSetupGuide": "Abrir guia de configuração",
     "testConnection": "Testar ligação",

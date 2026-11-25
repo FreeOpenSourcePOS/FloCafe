@@ -3759,7 +3759,6 @@
     "trustTitle": "Her cihazda FloCafe'ye güvenin",
     "trustHint": "Her cihazın FloCafe sertifikasını bir kez onaylaması gerekir. Bunu sizin yerinize hiçbir şey yapamaz. Sonrasında adres değişiklikleri yeni onay gerektirmez.",
     "fingerprintSha256": "Parmak izi (SHA-256)",
-    "fingerprintSha1": "Windows parmak izi (SHA-1)",
     "fingerprintHint": "Yüklemeden önce, cihazınızdaki sertifikanın parmak izinin FloCafe bilgisayarındaki FloCafe Ayarları'nda gösterilenle eşleştiğini kontrol edin. Eşleşmiyorsa yüklemeyin; zaten yüklediyseniz cihazınızın güvenilen sertifikalarından kaldırın.",
     "openSetupGuide": "Kurulum kılavuzunu aç",
     "testConnection": "Bağlantıyı sına",

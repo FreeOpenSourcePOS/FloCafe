@@ -157,7 +157,10 @@ async function main() {
     'fingerprints are stable across loads',
   );
   assert.match(fingerprintsOf(ca.certificateDer).sha256, /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
-  assert.match(fingerprintsOf(ca.certificateDer).sha1, /^([0-9A-F]{2}:){19}[0-9A-F]{2}$/);
+  assert.ok(
+    !('sha1' in fingerprintsOf(ca.certificateDer)),
+    'no SHA-1 fingerprint is produced or shown',
+  );
 
   // ── Recovery: unreadable key regenerates rather than failing ───────────────
   const brokenStorage = fakeStorage({

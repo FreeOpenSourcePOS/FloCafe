@@ -79,7 +79,6 @@ export interface SecureNetworkStatus {
     leaf_not_after: string | null;
     ca_not_after: string | null;
     ca_fingerprint_sha256: string | null;
-    ca_fingerprint_sha1: string | null;
   };
   lan_ips: string[];
   surfaces: SurfaceStatus[];
@@ -493,7 +492,6 @@ export class SecureNetworkService {
         leaf_not_after: this.leaf?.notAfter.toISOString() ?? null,
         ca_not_after: this.ca?.notAfter.toISOString() ?? null,
         ca_fingerprint_sha256: this.caFingerprints?.sha256 ?? null,
-        ca_fingerprint_sha1: this.caFingerprints?.sha1 ?? null,
       },
       lan_ips: this.desiredLanIps().filter((ip) => ip !== '127.0.0.1'),
       surfaces,

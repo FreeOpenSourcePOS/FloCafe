@@ -29,7 +29,6 @@ interface SecureNetworkStatus {
     status: 'valid' | 'expiring' | 'attention' | 'missing';
     leaf_not_after: string | null;
     ca_fingerprint_sha256: string | null;
-    ca_fingerprint_sha1: string | null;
   };
   surfaces: SurfaceInfo[];
   ip_change: { previous: string[]; current: string[] } | null;
@@ -352,14 +351,6 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
                 <Ltr>
                   <code className="break-all">{fingerprint}</code>
                 </Ltr>
-                {status.certificate.ca_fingerprint_sha1 && (
-                  <>
-                    <p className="text-muted-foreground">{t('fingerprintSha1')}</p>
-                    <Ltr>
-                      <code className="break-all">{status.certificate.ca_fingerprint_sha1}</code>
-                    </Ltr>
-                  </>
-                )}
                 <p className="text-muted-foreground">{t('fingerprintHint')}</p>
               </div>
             )}

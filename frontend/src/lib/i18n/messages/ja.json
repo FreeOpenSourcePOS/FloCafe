@@ -3759,7 +3759,6 @@
     "trustTitle": "各デバイスで FloCafe を信頼する",
     "trustHint": "各デバイスで FloCafe の証明書を 1 回承認する必要があります。代わりに行うことはできません。その後はアドレスが変わっても再承認は不要です。",
     "fingerprintSha256": "フィンガープリント (SHA-256)",
-    "fingerprintSha1": "Windows の拇印 (SHA-1)",
     "fingerprintHint": "インストールする前に、デバイスに表示される証明書のフィンガープリントが、FloCafe のコンピューターの FloCafe 設定に表示されているものと一致することを確認してください。一致しない場合はインストールせず、すでにインストールした場合はデバイスの信頼された証明書から削除してください。",
     "openSetupGuide": "設定ガイドを開く",
     "testConnection": "接続をテスト",

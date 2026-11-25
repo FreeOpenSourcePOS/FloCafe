@@ -3759,7 +3759,6 @@
     "trustTitle": "Percayai FloCafe di setiap perangkat",
     "trustHint": "Setiap perangkat harus menyetujui sertifikat FloCafe satu kali. Tidak ada yang bisa melakukannya untuk Anda. Setelah itu, perubahan alamat tidak perlu persetujuan baru.",
     "fingerprintSha256": "Sidik jari (SHA-256)",
-    "fingerprintSha1": "Sidik jari Windows (SHA-1)",
     "fingerprintHint": "Sebelum memasang, pastikan sidik jari sertifikat di perangkat Anda cocok dengan yang tampil di Pengaturan FloCafe pada komputer FloCafe. Jika tidak cocok, jangan pasang, dan hapus dari sertifikat tepercaya perangkat jika sudah terlanjur dipasang.",
     "openSetupGuide": "Buka panduan penyiapan",
     "testConnection": "Uji koneksi",

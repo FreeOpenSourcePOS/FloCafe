@@ -3759,7 +3759,6 @@
     "trustTitle": "Ka amince da FloCafe a kowace na'ura",
     "trustHint": "Dole kowace na'ura ta amince da takardar shaidar FloCafe sau ɗaya. Babu abin da zai yi maka haka. Bayan haka, canjin adireshi ba ya buƙatar sabuwar amincewa.",
     "fingerprintSha256": "Sawun yatsa (SHA-256)",
-    "fingerprintSha1": "Sawun yatsa na Windows (SHA-1)",
     "fingerprintHint": "Kafin ka shigar, tabbatar sawun yatsan takardar shaida a na'urarka ya yi daidai da wanda ke nunawa a Saitunan FloCafe a kwamfutar FloCafe. Idan bai yi daidai ba, kar ka shigar da ita, kuma idan ka riga ka shigar, cire ta daga takardun shaida masu amintacce na na'urarka.",
     "openSetupGuide": "Buɗe jagorar saitawa",
     "testConnection": "Gwada haɗin",

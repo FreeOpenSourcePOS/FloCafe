@@ -344,7 +344,6 @@ function extractSubjectDer(certificateDer: Buffer): Buffer {
 
 export interface CertificateFingerprints {
   sha256: string;
-  sha1: string;
 }
 
 function colonHex(digest: Buffer): string {
@@ -354,8 +353,6 @@ function colonHex(digest: Buffer): string {
 export function fingerprintsOf(der: Buffer): CertificateFingerprints {
   return {
     sha256: colonHex(crypto.createHash('sha256').update(der).digest()),
-    // Display-only: Windows shows a SHA-1 thumbprint; trust is verified with the SHA-256 fingerprint.
-    sha1: colonHex(crypto.createHash('sha1').update(der).digest()),
   };
 }
 

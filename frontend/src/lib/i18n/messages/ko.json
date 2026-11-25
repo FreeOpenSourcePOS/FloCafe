@@ -3759,7 +3759,6 @@
     "trustTitle": "각 기기에서 FloCafe 신뢰",
     "trustHint": "모든 기기는 FloCafe 인증서를 한 번 승인해야 합니다. 대신 해 줄 수 있는 방법은 없습니다. 그 후에는 주소가 바뀌어도 다시 승인할 필요가 없습니다.",
     "fingerprintSha256": "지문(SHA-256)",
-    "fingerprintSha1": "Windows 지문(SHA-1)",
     "fingerprintHint": "설치하기 전에 기기에 표시된 인증서 지문이 FloCafe 컴퓨터의 FloCafe 설정에 표시된 지문과 일치하는지 확인하세요. 일치하지 않으면 설치하지 말고, 이미 설치했다면 기기의 신뢰할 수 있는 인증서에서 삭제하세요.",
     "openSetupGuide": "설정 안내 열기",
     "testConnection": "연결 테스트",

@@ -3759,7 +3759,6 @@
     "trustTitle": "Besoji FloCafe në çdo pajisje",
     "trustHint": "Çdo pajisje duhet ta miratojë certifikatën e FloCafe një herë. Asgjë nuk mund ta bëjë këtë për ju. Pas kësaj, ndryshimet e adresës nuk kërkojnë miratim të ri.",
     "fingerprintSha256": "Gjurma e gishtit (SHA-256)",
-    "fingerprintSha1": "Gjurma e Windows (SHA-1)",
     "fingerprintHint": "Para instalimit, kontrolloni që gjurma e gishtit e certifikatës në pajisjen tuaj të përputhet me atë që shfaqet te Cilësimet e FloCafe në kompjuterin e FloCafe. Nëse nuk përputhet, mos e instaloni, dhe hiqeni nga certifikatat e besuara të pajisjes nëse e keni instaluar tashmë.",
     "openSetupGuide": "Hap udhëzuesin e konfigurimit",
     "testConnection": "Provo lidhjen",

@@ -3759,7 +3759,6 @@
     "trustTitle": "Pagkatiwalaan ang FloCafe sa bawat device",
     "trustHint": "Kailangang aprubahan ng bawat device ang certificate ng FloCafe nang isang beses. Walang makakagawa nito para sa iyo. Pagkatapos nito, hindi na kailangan ng bagong pag-apruba kapag nagbago ang address.",
     "fingerprintSha256": "Digital na fingerprint (SHA-256)",
-    "fingerprintSha1": "Thumbprint ng Windows (SHA-1)",
     "fingerprintHint": "Bago mag-install, tiyaking tugma ang fingerprint ng certificate sa device mo sa nakikita sa Settings ng FloCafe sa computer ng FloCafe. Kung hindi, huwag itong i-install, at alisin ito sa mga pinagkakatiwalaang certificate ng device mo kung na-install mo na.",
     "openSetupGuide": "Buksan ang gabay sa pag-set up",
     "testConnection": "Subukan ang koneksyon",

@@ -174,7 +174,7 @@ function nameConstraintsExtension(): Buffer {
 function subjectKeyIdentifier(spkiDer: Buffer): Buffer {
   const spki = crypto.createPublicKey({ key: spkiDer, format: 'der', type: 'spki' });
   const raw = spki.export({ type: 'spki', format: 'der' });
-  return crypto.createHash('sha1').update(raw).digest();
+  return crypto.createHash('sha256').update(raw).digest().subarray(0, 20);
 }
 
 export interface KeyPair {
@@ -354,6 +354,7 @@ function colonHex(digest: Buffer): string {
 export function fingerprintsOf(der: Buffer): CertificateFingerprints {
   return {
     sha256: colonHex(crypto.createHash('sha256').update(der).digest()),
+    // Display-only: Windows shows a SHA-1 thumbprint; trust is verified with the SHA-256 fingerprint.
     sha1: colonHex(crypto.createHash('sha1').update(der).digest()),
   };
 }

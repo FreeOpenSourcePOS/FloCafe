@@ -3760,7 +3760,7 @@
     "trustHint": "Jedes Gerät muss das FloCafe-Zertifikat einmal bestätigen. Das kann Ihnen nichts abnehmen. Danach brauchen Adressänderungen keine neue Bestätigung.",
     "fingerprintSha256": "Fingerabdruck (SHA-256)",
     "fingerprintSha1": "Windows-Fingerabdruck (SHA-1)",
-    "fingerprintHint": "Prüfen Sie nach der Installation, ob das Gerät denselben Fingerabdruck anzeigt. Wenn nicht, brechen Sie ab.",
+    "fingerprintHint": "Prüfen Sie vor der Installation, ob der Fingerabdruck des Zertifikats auf Ihrem Gerät mit dem in den FloCafe-Einstellungen auf dem FloCafe-Computer angezeigten übereinstimmt. Wenn nicht, installieren Sie es nicht.",
     "openSetupGuide": "Einrichtungsanleitung öffnen",
     "testConnection": "Verbindung testen",
     "runDiagnostics": "Diagnose ausführen",

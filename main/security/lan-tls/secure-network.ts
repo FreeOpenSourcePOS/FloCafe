@@ -368,11 +368,17 @@ export class SecureNetworkService {
       } catch (error) {
         this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
       }
-      resetCa(this.caOptions());
+      let resetFailure: unknown = null;
+      try {
+        resetCa(this.caOptions());
+      } catch (error) {
+        resetFailure = error;
+      }
       this.ca = null;
       this.leaf = null;
       await this.startInternal();
       this.notifyChanged();
+      if (resetFailure) throw resetFailure;
     });
   }
 
@@ -380,6 +386,11 @@ export class SecureNetworkService {
   acknowledgeNotices(): void {
     this.writeConfig({ ipChange: null });
     clearCaRegeneration(this.deps.directory);
+  }
+
+  /** LAN addresses the active leaf certificate covers; only these are safe to publish as URLs. */
+  getCertifiedLanIps(): string[] {
+    return this.leafIps.filter((ip) => ip !== '127.0.0.1');
   }
 
   getPublicCa(): { pem: string; der: Buffer; fingerprints: CertificateFingerprints } | null {

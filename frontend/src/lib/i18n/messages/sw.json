@@ -3760,7 +3760,7 @@
     "trustHint": "Kila kifaa lazima kiidhinishe cheti cha FloCafe mara moja. Hakuna kinachoweza kufanya hivi kwa niaba yako. Baada ya hapo, mabadiliko ya anwani hayahitaji idhini mpya.",
     "fingerprintSha256": "Alama ya kidole (SHA-256)",
     "fingerprintSha1": "Alama ya kidole ya Windows (SHA-1)",
-    "fingerprintHint": "Baada ya kusakinisha, hakikisha kifaa kinaonyesha alama ya kidole ileile. Isipolingana, simama.",
+    "fingerprintHint": "Kabla ya kusakinisha, hakikisha alama ya kidole ya cheti kwenye kifaa chako inalingana na ile inayoonyeshwa kwenye Mipangilio ya FloCafe kwenye kompyuta ya FloCafe. Isipolingana, usikisakinishe.",
     "openSetupGuide": "Fungua mwongozo wa kuweka",
     "testConnection": "Jaribu muunganisho",
     "runDiagnostics": "Endesha uchunguzi",

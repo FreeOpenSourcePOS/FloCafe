@@ -3760,7 +3760,7 @@
     "trustHint": "Çdo pajisje duhet ta miratojë certifikatën e FloCafe një herë. Asgjë nuk mund ta bëjë këtë për ju. Pas kësaj, ndryshimet e adresës nuk kërkojnë miratim të ri.",
     "fingerprintSha256": "Gjurma e gishtit (SHA-256)",
     "fingerprintSha1": "Gjurma e Windows (SHA-1)",
-    "fingerprintHint": "Pas instalimit, kontrolloni që pajisja të shfaqë të njëjtën gjurmë gishti. Nëse jo, ndalni.",
+    "fingerprintHint": "Para instalimit, kontrolloni që gjurma e gishtit e certifikatës në pajisjen tuaj të përputhet me atë që shfaqet te Cilësimet e FloCafe në kompjuterin e FloCafe. Nëse nuk përputhet, mos e instaloni.",
     "openSetupGuide": "Hap udhëzuesin e konfigurimit",
     "testConnection": "Provo lidhjen",
     "runDiagnostics": "Ekzekuto diagnostikimin",

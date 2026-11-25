@@ -73,8 +73,9 @@ in every backend decision. Secure Network terminates TLS inside the main process
 decrypted request to the existing handlers on the same socket; nothing sits between the client and the
 API that could present every device as `127.0.0.1`. The CA private key never leaves
 `userData/secure-network/`, is encrypted with `safeStorage`, and is excluded from the database,
-backups, Google Drive, diagnostics, logs, and telemetry. Certificate validation is never disabled, and
-no listener is public.
+backups, Google Drive, diagnostics, logs, and telemetry. Certificate validation is never disabled. The
+HTTPS listeners bind all interfaces like the HTTP ones, so they are reachable only where the host's
+network and firewall allow it; Secure Network adds no port forwarding, UPnP, or public listener.
 
 **Reason:** The initial-setup and password-recovery guard (`isLocalSetupRequest`), the maintenance
 admission ticket header, and the login, Master PIN, and PIN-switch limits all trust the connection's source

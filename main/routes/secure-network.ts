@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/async-handler';
 import { requireMasterPin } from '../middleware/master-pin';
 import { requirePermission } from '../services/authorization';
-import { getAllLocalIPs, getHttpsPort, getServerPort } from '../server-state';
+import { getHttpsPort, getServerPort } from '../server-state';
 import {
   getSecureNetwork,
   type SecureNetworkStatus,
@@ -92,7 +92,7 @@ router.get(
     const service = getSecureNetwork();
     if (!service) return unavailable(res);
     const status = service.getStatus();
-    const lanIps = getAllLocalIPs();
+    const lanIps = service.getCertifiedLanIps();
     const surfaces = buildSurfaceAddresses(status, lanIps);
     const main = surfaces.find((s) => s.id === 'main');
 

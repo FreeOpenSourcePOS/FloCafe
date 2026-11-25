@@ -449,6 +449,7 @@ export function startServer(): Promise<void> {
           if (attempts >= 10) {
             const errorMsg = `[Server] Failed to bind to any port after 10 attempts starting from ${basePort}`;
             console.error(errorMsg);
+            if (server === listeningServer) server = null;
             reject(new Error(errorMsg));
             return;
           }
@@ -457,6 +458,7 @@ export function startServer(): Promise<void> {
           tryListen();
           return;
         }
+        if (server === listeningServer) server = null;
         reject(err);
       };
 

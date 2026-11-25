@@ -3760,7 +3760,7 @@
     "trustHint": "Every device must approve the FloCafe certificate once. Nothing can do this for you. After that, address changes do not need new approval.",
     "fingerprintSha256": "Fingerprint (SHA-256)",
     "fingerprintSha1": "Windows thumbprint (SHA-1)",
-    "fingerprintHint": "After installing, check that the device shows the same fingerprint. If it does not, stop.",
+    "fingerprintHint": "Before installing, check that the certificate's fingerprint on your device matches the one shown in FloCafe Settings on the FloCafe computer. If it does not, do not install it.",
     "openSetupGuide": "Open setup guide",
     "testConnection": "Test connection",
     "runDiagnostics": "Run diagnostics",

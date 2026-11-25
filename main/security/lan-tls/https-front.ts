@@ -87,6 +87,10 @@ export function createHttpsFront(options: HttpsFrontOptions): HttpsFront {
       rejectUpgrade(socket, 503, 'Service Unavailable');
       return;
     }
+    if (target.listenerCount('upgrade') === 0) {
+      rejectUpgrade(socket, 404, 'Not Found');
+      return;
+    }
     upgradedSockets.add(socket);
     socket.once('close', () => upgradedSockets.delete(socket));
     target.emit('upgrade', req, socket, head);

@@ -38,6 +38,19 @@ interface SecureNetworkStatus {
   access_qr_data_url: string | null;
 }
 
+function isSecureNetworkStatus(value: unknown): value is SecureNetworkStatus {
+  const status = value as Partial<SecureNetworkStatus> | null;
+  return (
+    typeof status === 'object' &&
+    status !== null &&
+    typeof status.state === 'string' &&
+    status.state in STATE_LABEL_KEYS &&
+    Array.isArray(status.surfaces) &&
+    typeof status.certificate === 'object' &&
+    status.certificate !== null
+  );
+}
+
 const SURFACE_LABEL_KEYS = {
   main: 'surfacePos',
   kds: 'surfaceKds',
@@ -66,7 +79,10 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get<SecureNetworkStatus>('/secure-network/status');
+      const { data } = await api.get<SecureNetworkStatus>('/secure-network/status', {
+        skipAuthRedirect: true,
+      });
+      if (!isSecureNetworkStatus(data)) throw new Error('unexpected status payload');
       setStatus(data);
       setLoadFailed(false);
     } catch {
@@ -78,9 +94,10 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
     if (!canManage) return;
     let cancelled = false;
     api
-      .get<SecureNetworkStatus>('/secure-network/status')
+      .get<SecureNetworkStatus>('/secure-network/status', { skipAuthRedirect: true })
       .then(({ data }) => {
         if (cancelled) return;
+        if (!isSecureNetworkStatus(data)) throw new Error('unexpected status payload');
         setStatus(data);
         setLoadFailed(false);
       })

@@ -3760,7 +3760,7 @@
     "trustHint": "Mỗi thiết bị phải chấp thuận chứng chỉ FloCafe một lần. Không gì có thể làm việc này thay bạn. Sau đó, khi đổi địa chỉ không cần chấp thuận lại.",
     "fingerprintSha256": "Dấu vân tay (SHA-256)",
     "fingerprintSha1": "Dấu vân tay Windows (SHA-1)",
-    "fingerprintHint": "Sau khi cài đặt, hãy kiểm tra thiết bị hiển thị cùng dấu vân tay. Nếu không khớp, hãy dừng lại.",
+    "fingerprintHint": "Trước khi cài đặt, hãy kiểm tra dấu vân tay của chứng chỉ trên thiết bị khớp với dấu vân tay hiển thị trong Cài đặt FloCafe trên máy tính FloCafe. Nếu không khớp, đừng cài đặt.",
     "openSetupGuide": "Mở hướng dẫn thiết lập",
     "testConnection": "Kiểm tra kết nối",
     "runDiagnostics": "Chạy chẩn đoán",

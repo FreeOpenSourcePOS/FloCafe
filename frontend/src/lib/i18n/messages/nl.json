@@ -3760,7 +3760,7 @@
     "trustHint": "Elk apparaat moet het FloCafe-certificaat één keer goedkeuren. Niets kan dit voor je doen. Daarna is bij adreswijzigingen geen nieuwe goedkeuring nodig.",
     "fingerprintSha256": "Vingerafdruk (SHA-256)",
     "fingerprintSha1": "Windows-vingerafdruk (SHA-1)",
-    "fingerprintHint": "Controleer na de installatie of het apparaat dezelfde vingerafdruk toont. Zo niet, stop dan.",
+    "fingerprintHint": "Controleer vóór het installeren of de vingerafdruk van het certificaat op je apparaat overeenkomt met die in de FloCafe-instellingen op de FloCafe-computer. Zo niet, installeer het dan niet.",
     "openSetupGuide": "Installatiegids openen",
     "testConnection": "Verbinding testen",
     "runDiagnostics": "Diagnose uitvoeren",

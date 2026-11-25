@@ -3760,7 +3760,7 @@
     "trustHint": "Cada dispositivo debe aprobar el certificado de FloCafe una vez. Nada puede hacerlo por ti. Después, los cambios de dirección no requieren una nueva aprobación.",
     "fingerprintSha256": "Huella digital (SHA-256)",
     "fingerprintSha1": "Huella de Windows (SHA-1)",
-    "fingerprintHint": "Tras instalarlo, comprueba que el dispositivo muestre la misma huella. Si no coincide, detente.",
+    "fingerprintHint": "Antes de instalar, comprueba que la huella digital del certificado en tu dispositivo coincida con la que aparece en los ajustes de FloCafe en el equipo de FloCafe. Si no coincide, no lo instales.",
     "openSetupGuide": "Abrir guía de configuración",
     "testConnection": "Probar conexión",
     "runDiagnostics": "Ejecutar diagnóstico",

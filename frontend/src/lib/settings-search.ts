@@ -1288,6 +1288,7 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
   },
   {
     id: 'secure-network',
+    permission: 'isAdmin',
     tab: 'server-app',
     groupLabelKey: 'navGroupOperations',
     tabLabelKey: 'tablesideOrdering',

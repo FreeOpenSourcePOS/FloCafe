@@ -312,6 +312,49 @@ async function main() {
     socket.once('open', () => assert.fail('upgrade with a bad Host must not open'));
   });
 
+  // An upgrade request to a surface with no WebSocket handler is refused, never left hanging.
+  const plain = http.createServer((_req, res) => res.end('ok'));
+  const plainPort = await listen(plain);
+  cleanups.push(() => new Promise<void>((r) => plain.close(() => r())));
+  let plainHttps: number | null = null;
+  const plainService = new SecureNetworkService({
+    directory: tempDir(),
+    storage,
+    getLanIPs: () => [],
+    bindHost: '127.0.0.1',
+    log: () => {},
+    surfaces: [
+      {
+        id: 'serverApp',
+        label: 'plain',
+        getHttpServer: () => plain,
+        getHttpPort: () => plainPort,
+        getCandidatePorts: () => [0],
+        setHttpsPort: (p) => {
+          plainHttps = p;
+        },
+      },
+    ],
+  });
+  await plainService.start();
+  cleanups.push(() => plainService.stop());
+  const refusal = await new Promise<number>((resolve, reject) => {
+    const socket = new WebSocket(`wss://127.0.0.1:${plainHttps}/`, {
+      ca: plainService.getPublicCa()!.pem,
+      handshakeTimeout: 3000,
+    });
+    socket.once('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
+    socket.once('open', () => reject(new Error('must not open')));
+    socket.once('error', reject);
+  });
+  assert.equal(refusal, 404, 'a surface without a WebSocket handler answers upgrades with 404');
+
+  assert.deepEqual(
+    service.getCertifiedLanIps(),
+    ['192.168.1.20'],
+    'only addresses in the active certificate are published',
+  );
+
   // ── Diagnostics ────────────────────────────────────────────────────────────
   const checks = await service.runDiagnostics();
   const failing = checks.filter((c) => c.status === 'fail');

@@ -3800,6 +3800,7 @@
     "trustPageIntro": "Pasang sertifikat FloCafe sepisan supaya piranti iki bisa mbukak FloCafe kanthi aman. Pirantimu bakal njaluk persetujuan.",
     "downloadCertificate": "Undhuh sertifikat",
     "trustLoadFailed": "Sertifikat ora bisa dimuat. Priksa yen piranti iki ana ing Wi-Fi sing padha karo FloCafe.",
+    "windowsVerify": "Sadurunge masang, bukak Command Prompt ing folder berkas sing wis diundhuh banjur jalanake certutil -hashfile FloCafe-Local-CA.cer SHA256. Asile kudu padha karo sidik jari SHA-256 sing katon ing Setelan FloCafe ing komputer FloCafe. Yen beda, aja masang berkas kasebut.",
     "windows1": "Bukak berkas sing diundhuh banjur pilih Install Certificate, terus Current User.",
     "windows2": "Pilih Place all certificates in the following store, terus Trusted Root Certification Authorities.",
     "windows3": "Rampungna lan konfirmasi pesen keamanan Windows. Sawise iku Chrome lan Edge bakal pitados marang FloCafe. Firefox nduweni dhaptar dhewe: aktifake root perusahaan utawa impor berkas ing kana.",

@@ -53,6 +53,7 @@ export default function TrustPage() {
   const steps: Record<
     Platform,
     Array<
+      | 'windowsVerify'
       | 'windows1'
       | 'windows2'
       | 'windows3'
@@ -64,7 +65,7 @@ export default function TrustPage() {
       | 'mac2'
     >
   > = {
-    windows: ['windows1', 'windows2', 'windows3'],
+    windows: ['windowsVerify', 'windows1', 'windows2', 'windows3'],
     android: ['android1', 'android2'],
     ios: ['ios1', 'ios2'],
     mac: ['mac1', 'mac2'],

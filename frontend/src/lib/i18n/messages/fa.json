@@ -3800,6 +3800,7 @@
     "trustPageIntro": "گواهی FloCafe را یک بار نصب کنید تا این دستگاه بتواند FloCafe را با امنیت باز کند. دستگاه شما از شما تأیید می‌خواهد.",
     "downloadCertificate": "دانلود گواهی",
     "trustLoadFailed": "گواهی بارگذاری نشد. بررسی کنید که این دستگاه در همان Wi-Fi مربوط به FloCafe باشد.",
+    "windowsVerify": "پیش از نصب، Command Prompt را در پوشهٔ فایل دانلودشده باز کنید و certutil -hashfile FloCafe-Local-CA.cer SHA256 را اجرا کنید. نتیجه باید با اثر انگشت SHA-256 نمایش‌داده‌شده در تنظیمات FloCafe روی رایانهٔ FloCafe یکسان باشد. اگر متفاوت بود، فایل را نصب نکنید.",
     "windows1": "فایل دانلودشده را باز کنید و Install Certificate و سپس Current User را انتخاب کنید.",
     "windows2": "Place all certificates in the following store و سپس Trusted Root Certification Authorities را انتخاب کنید.",
     "windows3": "کار را تمام کنید و پیام امنیتی ویندوز را تأیید کنید. سپس Chrome و Edge به FloCafe اعتماد می‌کنند. Firefox فهرست خودش را دارد: ریشه‌های سازمانی را روشن کنید یا فایل را در آن وارد کنید.",

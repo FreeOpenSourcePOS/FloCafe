@@ -3800,6 +3800,7 @@
     "trustPageIntro": "FloCafe प्रमाणपत्र एक बार इंस्टॉल करें ताकि यह उपकरण FloCafe को सुरक्षित रूप से खोल सके। आपका उपकरण आपसे मंज़ूरी माँगेगा।",
     "downloadCertificate": "प्रमाणपत्र डाउनलोड करें",
     "trustLoadFailed": "प्रमाणपत्र लोड नहीं हो सका। जाँचें कि यह उपकरण FloCafe वाले Wi-Fi पर है।",
+    "windowsVerify": "इंस्टॉल करने से पहले डाउनलोड की गई फ़ाइल वाले फ़ोल्डर में Command Prompt खोलें और certutil -hashfile FloCafe-Local-CA.cer SHA256 चलाएँ। परिणाम FloCafe कंप्यूटर पर FloCafe सेटिंग्स में दिखाए गए SHA-256 फ़िंगरप्रिंट से मेल खाना चाहिए। अलग हो तो फ़ाइल इंस्टॉल न करें।",
     "windows1": "डाउनलोड की गई फ़ाइल खोलें और Install Certificate चुनें, फिर Current User।",
     "windows2": "Place all certificates in the following store चुनें, फिर Trusted Root Certification Authorities।",
     "windows3": "पूरा करें और Windows की सुरक्षा सूचना की पुष्टि करें। इसके बाद Chrome और Edge FloCafe पर भरोसा करेंगे। Firefox की अपनी सूची होती है: एंटरप्राइज़ रूट चालू करें या फ़ाइल वहाँ इंपोर्ट करें।",

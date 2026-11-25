@@ -93,8 +93,20 @@ function httpsJson(
   });
 }
 
+/** Client-supplied forwarding headers can be forged, so no backend code may read them. */
+function assertNoForwardedHeaderReads(): void {
+  const root = path.join(__dirname, '..', 'main');
+  const offenders = (fs.readdirSync(root, { recursive: true }) as string[]).filter(
+    (file) =>
+      file.endsWith('.ts') &&
+      /x-forwarded-for|x-real-ip/i.test(fs.readFileSync(path.join(root, file), 'utf8')),
+  );
+  assert.deepEqual(offenders, [], 'client addresses come from the socket, never from headers');
+}
+
 async function main() {
   console.log('Secure Network client-address integrity suite');
+  assertNoForwardedHeaderReads();
   const lan = lanAddress();
   if (!lan) {
     console.log('  not run: this machine has no private LAN interface to act as a second device');

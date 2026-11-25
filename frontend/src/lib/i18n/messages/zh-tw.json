@@ -3760,7 +3760,7 @@
     "trustHint": "每台裝置都必須核准一次 FloCafe 憑證，任何程式都無法代您完成。之後變更位址無須再次核准。",
     "fingerprintSha256": "指紋 (SHA-256)",
     "fingerprintSha1": "Windows 指紋 (SHA-1)",
-    "fingerprintHint": "安裝前，請檢查裝置上顯示的憑證指紋是否與 FloCafe 電腦上 FloCafe 設定中顯示的一致。如果不一致，請勿安裝。",
+    "fingerprintHint": "安裝前，請檢查裝置上顯示的憑證指紋是否與 FloCafe 電腦上 FloCafe 設定中顯示的一致。如果不一致，請勿安裝；如果已經安裝，請將其從裝置的信任憑證中移除。",
     "openSetupGuide": "開啟設定指南",
     "testConnection": "測試連線",
     "runDiagnostics": "執行診斷",

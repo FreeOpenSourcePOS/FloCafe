@@ -452,6 +452,64 @@ async function main() {
   await service.repair();
   assert.equal(service.getStatus().state, 'running', 'repair restarts the fronts');
 
+  // A config-write failure while recording an address change must not desync the published addresses.
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    const roDir = tempDir();
+    const roSurface = await makeSurface('main');
+    cleanups.push(() => new Promise<void>((r) => roSurface.http.close(() => r())));
+    let roIps = ['192.168.1.30'];
+    const roService = new SecureNetworkService({
+      directory: roDir,
+      storage,
+      getLanIPs: () => roIps,
+      surfaces: [roSurface.definition],
+      bindHost: '127.0.0.1',
+      log: () => {},
+    });
+    await roService.start();
+    cleanups.push(() => roService.stop());
+    fs.chmodSync(path.join(roDir, 'config.json'), 0o444);
+    roIps = ['192.168.1.31'];
+    assert.equal(await roService.refresh(), true, 'refresh still applies the new certificate');
+    assert.deepEqual(
+      roService.getCertifiedLanIps(),
+      ['192.168.1.31'],
+      'published addresses follow the presented certificate',
+    );
+    assert.equal(await roService.refresh(), false, 'the applied change is not repeated');
+  }
+
+  // A failed CA reset still restarts HTTPS and reports the first failure.
+  const flakyStorage: SecretStorage = { ...storage };
+  const flakySurface = await makeSurface('main');
+  cleanups.push(() => new Promise<void>((r) => flakySurface.http.close(() => r())));
+  const flaky = new SecureNetworkService({
+    directory: tempDir(),
+    storage: flakyStorage,
+    getLanIPs: () => [],
+    surfaces: [flakySurface.definition],
+    bindHost: '127.0.0.1',
+    log: () => {},
+  });
+  await flaky.start();
+  cleanups.push(() => flaky.stop());
+  const caBeforeFailure = flaky.getPublicCa()!.fingerprints.sha256;
+  flakyStorage.encrypt = () => {
+    throw new Error('disk full');
+  };
+  await assert.rejects(
+    () => flaky.resetAuthority(),
+    /disk full/,
+    'the reset failure is the one reported',
+  );
+  flakyStorage.encrypt = storage.encrypt;
+  assert.equal(flaky.getStatus().state, 'running', 'HTTPS is back up after a failed reset');
+  assert.equal(
+    flaky.getPublicCa()!.fingerprints.sha256,
+    caBeforeFailure,
+    'the previous CA keeps serving',
+  );
+
   // ── Port conflicts fall through the ladder ─────────────────────────────────
   const blocker = net.createServer();
   const blockedPort = await listen(blocker, '127.0.0.1');

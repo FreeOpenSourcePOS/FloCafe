@@ -15,6 +15,7 @@ import { SECURE_NETWORK_DIAGNOSTIC_KEYS, type SecureNetworkDiagnostic } from '@/
 
 interface SurfaceInfo {
   id: 'main' | 'kds' | 'serverApp';
+  http_port: number;
   listening: boolean;
   primary_url: string | null;
   fallback_urls: string[];
@@ -126,6 +127,19 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
 
   const toggle = async (enabled: boolean) => {
     if (!enabled && !(await confirm(t('disableConfirm'), { destructive: true }))) return;
+    const mainHttpPort = status?.surfaces.find((surface) => surface.id === 'main')?.http_port;
+    const onHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    if (!enabled && onHttps && mainHttpPort) {
+      // This HTTPS origin is about to close, so move to the HTTP address that stays up.
+      try {
+        await api.put('/secure-network/enabled', { enabled });
+        const { hostname, pathname, search } = window.location;
+        window.location.assign(`http://${hostname}:${mainHttpPort}${pathname}${search}`);
+      } catch {
+        toast.error(t('saveFailed'));
+      }
+      return;
+    }
     await run(() => api.put('/secure-network/enabled', { enabled }));
   };
 

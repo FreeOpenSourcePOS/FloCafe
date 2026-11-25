@@ -3760,7 +3760,7 @@
     "trustHint": "Chaque appareil doit approuver une fois le certificat FloCafe. Rien ne peut le faire à votre place. Ensuite, les changements d'adresse ne demandent pas de nouvelle approbation.",
     "fingerprintSha256": "Empreinte (SHA-256)",
     "fingerprintSha1": "Empreinte Windows (SHA-1)",
-    "fingerprintHint": "Avant d'installer, vérifiez que l'empreinte du certificat sur votre appareil correspond à celle affichée dans les réglages de FloCafe sur l'ordinateur FloCafe. Sinon, ne l'installez pas.",
+    "fingerprintHint": "Avant d'installer, vérifiez que l'empreinte du certificat sur votre appareil correspond à celle affichée dans les réglages de FloCafe sur l'ordinateur FloCafe. Sinon, ne l'installez pas, et supprimez-le des certificats de confiance de votre appareil si vous l'avez déjà fait.",
     "openSetupGuide": "Ouvrir le guide de configuration",
     "testConnection": "Tester la connexion",
     "runDiagnostics": "Lancer le diagnostic",

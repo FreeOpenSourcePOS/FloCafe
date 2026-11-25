@@ -306,10 +306,23 @@ export class SecureNetworkService {
       const desired = this.desiredLanIps();
       const renewalDue = this.leaf.notAfter.getTime() - this.now().getTime() < RENEW_LEAF_WITHIN_MS;
       if (sameSet(desired, this.leafIps) && !renewalDue) return false;
-      this.issueLeaf();
-      this.recordIpChange();
-      const credentials = this.credentials();
-      for (const front of this.fronts.values()) front.setCredentials(credentials);
+      const previous = { leaf: this.leaf, key: this.leafKeyPem, ips: this.leafIps };
+      try {
+        this.issueLeaf();
+        const credentials = this.credentials();
+        for (const front of this.fronts.values()) front.setCredentials(credentials);
+      } catch (error) {
+        // Published addresses must keep matching the certificate the fronts present; retry next tick.
+        this.leaf = previous.leaf;
+        this.leafKeyPem = previous.key;
+        this.leafIps = previous.ips;
+        throw error;
+      }
+      try {
+        this.recordIpChange();
+      } catch (error) {
+        this.log(`Could not record the address change: ${(error as Error).message}`);
+      }
       return true;
     });
   }
@@ -334,9 +347,15 @@ export class SecureNetworkService {
     }
   }
 
-  setEnabled(enabled: boolean): Promise<void> {
+  /** Persists the setting only, so a caller can report a write failure before touching the listeners. */
+  saveEnabled(enabled: boolean): void {
+    this.writeConfig({ enabled });
+  }
+
+  /** Applies the persisted setting by starting or stopping the fronts. */
+  applyEnabled(): Promise<void> {
     return this.enqueue(async () => {
-      this.writeConfig({ enabled });
+      const enabled = this.isEnabled();
       if (enabled) {
         await this.restartFronts();
       } else {
@@ -350,6 +369,11 @@ export class SecureNetworkService {
       }
       this.notifyChanged();
     });
+  }
+
+  setEnabled(enabled: boolean): Promise<void> {
+    this.saveEnabled(enabled);
+    return this.applyEnabled();
   }
 
   /** Stops and restarts the fronts and reloads the CA; used by Repair Connection. */
@@ -376,9 +400,16 @@ export class SecureNetworkService {
       }
       this.ca = null;
       this.leaf = null;
-      await this.startInternal();
+      let startFailure: unknown = null;
+      try {
+        await this.startInternal();
+      } catch (error) {
+        startFailure = error;
+      }
       this.notifyChanged();
+      // The first failure is the root cause, so it is the one reported.
       if (resetFailure) throw resetFailure;
+      if (startFailure) throw startFailure;
     });
   }
 

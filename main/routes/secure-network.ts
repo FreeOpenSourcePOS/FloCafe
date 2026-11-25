@@ -134,8 +134,14 @@ router.put(
     }
     // Answer before restarting: a request that arrived over HTTPS would otherwise keep its own front open.
     const enabled: boolean = req.body.enabled;
+    try {
+      service.saveEnabled(enabled);
+    } catch (error) {
+      logLifecycleFailure(error);
+      return void res.status(500).json({ error: 'Could not save the setting' });
+    }
     res.json({ success: true, enabled });
-    res.once('finish', () => void service.setEnabled(enabled).catch(logLifecycleFailure));
+    res.once('finish', () => void service.applyEnabled().catch(logLifecycleFailure));
   }),
 );
 

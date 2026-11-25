@@ -3760,7 +3760,7 @@
     "trustHint": "每台设备都必须批准一次 FloCafe 证书，任何程序都无法代您完成。之后更换地址无需再次批准。",
     "fingerprintSha256": "指纹 (SHA-256)",
     "fingerprintSha1": "Windows 指纹 (SHA-1)",
-    "fingerprintHint": "安装前，请检查设备上显示的证书指纹是否与 FloCafe 电脑上 FloCafe 设置中显示的一致。如果不一致，请不要安装。",
+    "fingerprintHint": "安装前，请检查设备上显示的证书指纹是否与 FloCafe 电脑上 FloCafe 设置中显示的一致。如果不一致，请不要安装；如果已经安装，请将其从设备的受信任证书中删除。",
     "openSetupGuide": "打开设置指南",
     "testConnection": "测试连接",
     "runDiagnostics": "运行诊断",

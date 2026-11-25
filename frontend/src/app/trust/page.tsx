@@ -88,6 +88,8 @@ export default function TrustPage() {
 
         {info && (
           <>
+            <p className="rounded-lg border border-amber-600 p-3 text-sm">{t('fingerprintHint')}</p>
+
             <button
               type="button"
               onClick={() => window.location.assign('/api/secure-network/ca.cer')}
@@ -117,8 +119,6 @@ export default function TrustPage() {
                 <li key={key}>{t(key)}</li>
               ))}
             </ol>
-
-            <p className="rounded-lg border border-border p-3 text-sm">{t('fingerprintHint')}</p>
 
             {secureUrl && (
               <a href={secureUrl} className="inline-block text-sm font-medium text-brand underline">

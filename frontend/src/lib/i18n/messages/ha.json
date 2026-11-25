@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Shigar da takardar shaidar FloCafe sau ɗaya don wannan na'urar ta iya buɗe FloCafe cikin aminci. Na'urarka za ta nemi ka amince.",
     "downloadCertificate": "Zazzage takardar shaida",
     "trustLoadFailed": "Ba a iya ɗora takardar shaida ba. Tabbatar wannan na'urar tana kan Wi-Fi ɗaya da FloCafe.",
-    "windowsVerify": "Kafin shigarwa, buɗe Command Prompt a babban fayil ɗin da aka sauke kuma ka gudanar da certutil -hashfile FloCafe-Local-CA.cer SHA256. Sakamakon dole ya yi daidai da sawun yatsa na SHA-256 da ke cikin Saitunan FloCafe a kwamfutar FloCafe. Idan ya bambanta, kada ka shigar da fayil ɗin.",
+    "windowsVerify": "Kafin shigarwa, buɗe Command Prompt a babban fayil ɗin da aka sauke kuma ka gudanar da certutil -hashfile FloCafe-Local-CA.cer SHA256. Sakamakon dole ya yi daidai da sawun yatsa na SHA-256 da ke cikin Saitunan FloCafe a kwamfutar FloCafe. Idan ya bambanta, kada ka shigar da fayil ɗin. Lokacin kwatantawa, ka yi watsi da ɗigo biyu da girman haruffa; dole kowane lamba ya yi daidai.",
     "windows1": "Buɗe fayil ɗin da aka zazzage ka zaɓi Install Certificate, sannan Current User.",
     "windows2": "Zaɓi Place all certificates in the following store, sannan Trusted Root Certification Authorities.",
     "windows3": "Kammala ka tabbatar da saƙon tsaro na Windows. Daga nan Chrome da Edge za su amince da FloCafe. Firefox yana da jerinsa na kansa: kunna tushen kamfani ko shigo da fayil ɗin a can.",

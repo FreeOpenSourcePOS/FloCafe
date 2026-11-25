@@ -3800,7 +3800,7 @@
     "trustPageIntro": "I-install nang isang beses ang certificate ng FloCafe para ligtas na mabuksan ng device na ito ang FloCafe. Hihingi ng pag-apruba ang device mo.",
     "downloadCertificate": "I-download ang certificate",
     "trustLoadFailed": "Hindi ma-load ang certificate. Tiyaking nasa parehong Wi-Fi ng FloCafe ang device na ito.",
-    "windowsVerify": "Bago mag-install, buksan ang Command Prompt sa folder ng na-download na file at patakbuhin ang certutil -hashfile FloCafe-Local-CA.cer SHA256. Dapat tumugma ang resulta sa SHA-256 fingerprint na nakikita sa FloCafe Settings sa FloCafe na computer. Kung iba, huwag i-install ang file.",
+    "windowsVerify": "Bago mag-install, buksan ang Command Prompt sa folder ng na-download na file at patakbuhin ang certutil -hashfile FloCafe-Local-CA.cer SHA256. Dapat tumugma ang resulta sa SHA-256 fingerprint na nakikita sa FloCafe Settings sa FloCafe na computer. Kung iba, huwag i-install ang file. Sa pagkukumpara, huwag pansinin ang mga tutuldok at laki ng titik; dapat tumugma ang bawat digit.",
     "windows1": "Buksan ang na-download na file at piliin ang Install Certificate, pagkatapos ang Current User.",
     "windows2": "Piliin ang Place all certificates in the following store, pagkatapos ang Trusted Root Certification Authorities.",
     "windows3": "Tapusin at kumpirmahin ang security prompt ng Windows. Pagkatapos, pagkakatiwalaan na ng Chrome at Edge ang FloCafe. May sariling listahan ang Firefox: i-on ang enterprise roots o i-import doon ang file.",

@@ -2,6 +2,9 @@
 
 FloCafe is an open-source, offline-first Electron desktop POS.
 
+This checkout is the pizza fork. Read [pizza/README.md](pizza/README.md) first: it holds the fork's
+rules, the build plan and the design decisions, and its rules add to the ones below.
+
 ## Orientation & layout
 
 - **Main process (`main/`):** Electron lifecycle and IPC (`main/index.ts`), Express API on `:3001` (`main/server.ts`), standalone KDS server on `:3002` (`main/kds-server.ts`), Server App on `:3003` (`main/server-app.ts`), SQLite database access via `better-sqlite3`, ESC/POS printing, and background services.

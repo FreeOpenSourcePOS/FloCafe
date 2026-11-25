@@ -579,7 +579,7 @@ async function main() {
   await assert.rejects(
     new Promise((resolve, reject) => {
       const socket = tls.connect(
-        { host: '127.0.0.1', port: firstPort, rejectUnauthorized: false },
+        { host: '127.0.0.1', port: firstPort, ca: rb.getPublicCa()!.pem, servername: 'localhost' },
         () => resolve(socket.end()),
       );
       socket.on('error', reject);

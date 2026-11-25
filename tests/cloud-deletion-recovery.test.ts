@@ -25,6 +25,7 @@ async function run() {
   let statusMode: 'valid' | 'pending-missing' | 'unknown' = 'valid';
   try {
     initDatabase();
+    require('../main/db').upsertSettings({ offline_mode: 'false' });
     const db = getDatabase();
     const settings = [
       ['cloud_server_url', 'http://127.0.0.1:39999'],

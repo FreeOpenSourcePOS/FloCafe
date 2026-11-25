@@ -164,6 +164,7 @@ async function main(): Promise<void> {
 
   // ── status shape + settings persistence (needs a real settings table) ─
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
 
   let status = gd.googleDrive.getStatus();
   assert.equal(status.configured, true);

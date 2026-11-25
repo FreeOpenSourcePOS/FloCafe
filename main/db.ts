@@ -11245,6 +11245,8 @@ function seedInstallDefaults(): void {
   // Unified charges & fees engine: JSON array of ChargeDefinition objects.
   // Validated only by the dedicated /settings/charges endpoints.
   insert('custom_charges', '[]');
+  // A new install contacts nothing until the owner switches Offline mode off.
+  insert('offline_mode', 'true');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
   insert('cloud_connected', 'false');
   insert('cloud_sync_enabled', '1');

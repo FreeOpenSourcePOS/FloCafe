@@ -886,6 +886,7 @@ async function main() {
   });
 
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
   assert.equal(readSetting('posthog_project_token'), null, 'no token is seeded');
   assert.equal(readSetting('posthog_host'), null, 'no host is seeded');
   assert.equal(readPostHogConfig(), null, 'a fresh database without a release token sends nothing');

@@ -67,6 +67,7 @@ function isNativeAbiMismatch(error: any): boolean {
 
 try {
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
 } catch (error: any) {
   if (isNativeAbiMismatch(error)) {
     console.log('  ⚠ Skipping: better-sqlite3 is not built for this shell Node ABI.');

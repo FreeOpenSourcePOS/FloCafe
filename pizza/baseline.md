@@ -54,4 +54,6 @@ The flaky test passed on its retry: `e2e/server-app-ordering.spec.ts:364`, "doub
 
 ## Native Electron suite
 
-No baseline yet. It was started on the Mac and stopped after two minutes: with a throwaway `HOME` the app asks macOS for a keychain that is not there. It runs on Linux under Xvfb only.
+Run on Fedora on 2026-11-25 under Xvfb with `scripts/pizza/local-ci.sh`, on the first fork commit: 8 passed, 3 skipped, 36 s. The three skips are upstream's own in `title-bar.electron.spec.ts`: native maximize and minimize are not observable under Xvfb, and one geometry test is always skipped. The same run passed the core suite (257 suites) and both Playwright sets (405 passed and the same flaky test, 71 passed) on Fedora.
+
+It does not run on the Mac: with a throwaway `HOME` the app asks macOS for a keychain that is not there.

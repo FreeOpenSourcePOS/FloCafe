@@ -59,16 +59,29 @@ const realLoad = (Module as any)._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-whatsapp-timeout-'));
 const eventHandlers = new Map<string, (value: any) => void>();
 let presenceStarted!: () => void;
-const presenceStartedPromise = new Promise<void>((resolve) => { presenceStarted = resolve; });
+const presenceStartedPromise = new Promise<void>((resolve) => {
+  presenceStarted = resolve;
+});
 let releasePendingPresence!: () => void;
-const pendingPresence = new Promise<void>((resolve) => { releasePendingPresence = resolve; });
+const pendingPresence = new Promise<void>((resolve) => {
+  releasePendingPresence = resolve;
+});
 let presenceSettled = false;
-void pendingPresence.then(() => { presenceSettled = true; });
+void pendingPresence.then(() => {
+  presenceSettled = true;
+});
 
 const fakeSocket = {
-  ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
+  ev: {
+    on: (event: string, handler: (value: any) => void) => {
+      eventHandlers.set(event, handler);
+    },
+  },
   onWhatsApp: async () => [{ exists: true, jid: '919812345678@s.whatsapp.net' }],
-  presenceSubscribe: async () => { presenceStarted(); return pendingPresence; },
+  presenceSubscribe: async () => {
+    presenceStarted();
+    return pendingPresence;
+  },
   sendPresenceUpdate: async () => {},
   sendMessage: async () => ({ key: { id: 'timeout-test-message' } }),
   end: () => {},
@@ -115,6 +128,7 @@ async function main(): Promise<void> {
   const originalFetch = globalThis.fetch;
   const originalSetTimeout = globalThis.setTimeout;
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
   globalThis.fetch = (() => Promise.reject(new Error('offline test network'))) as typeof fetch;
   try {
     await whatsapp.enable('shutdown-timeout-test-user');
@@ -130,9 +144,15 @@ async function main(): Promise<void> {
       kind: 'manual_reply',
       userId: null,
     });
-    await withDeadline(presenceStartedPromise, 'WhatsApp presence subscribe never started, so no in-flight work is parked');
-    (globalThis as any).setTimeout = ((handler: (...args: any[]) => void, delay?: number, ...args: any[]) =>
-      originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
+    await withDeadline(
+      presenceStartedPromise,
+      'WhatsApp presence subscribe never started, so no in-flight work is parked',
+    );
+    (globalThis as any).setTimeout = ((
+      handler: (...args: any[]) => void,
+      delay?: number,
+      ...args: any[]
+    ) => originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
 
     // The property this branch fixes, asserted directly: the service's own drain reaches
     // its bounded shutdown instead of spinning. This has to be the first shutdown call
@@ -141,8 +161,9 @@ async function main(): Promise<void> {
     // error instead, and the assertion could not tell the two apart.
     await assert.rejects(
       withDeadline(whatsapp.shutdown(), 'WhatsApp drain never reached its own bounded shutdown'),
-      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT'
-        && error?.message === `WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`,
+      (error: any) =>
+        error?.code === 'ERR_SHUTDOWN_TIMEOUT' &&
+        error?.message === `WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`,
     );
 
     // shutdown() memoizes, so this re-observes the rejection above rather than draining
@@ -151,31 +172,69 @@ async function main(): Promise<void> {
     let databaseClosed = false;
     let fatalTimeoutObserved = false;
     await assert.rejects(
-      withDeadline(runShutdownSteps([
-        { name: 'WhatsApp', blocksDatabase: true, run: () => whatsapp.shutdown() },
-        { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
-      ], { onFatalTimeout: () => { fatalTimeoutObserved = true; } }), 'shutdown drain never completed'),
+      withDeadline(
+        runShutdownSteps(
+          [
+            { name: 'WhatsApp', blocksDatabase: true, run: () => whatsapp.shutdown() },
+            {
+              name: 'database',
+              databaseClose: true,
+              run: () => {
+                databaseClosed = true;
+              },
+            },
+          ],
+          {
+            onFatalTimeout: () => {
+              fatalTimeoutObserved = true;
+            },
+          },
+        ),
+        'shutdown drain never completed',
+      ),
       (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
     );
     assert.equal(databaseClosed, false, 'a bounded WhatsApp timeout blocks database closure');
-    assert.equal(fatalTimeoutObserved, true, 'a bounded WhatsApp timeout invokes fatal termination');
-    assert.equal(presenceSettled, false, 'terminal shutdown reports a bounded error while raw WhatsApp work remains pending');
+    assert.equal(
+      fatalTimeoutObserved,
+      true,
+      'a bounded WhatsApp timeout invokes fatal termination',
+    );
+    assert.equal(
+      presenceSettled,
+      false,
+      'terminal shutdown reports a bounded error while raw WhatsApp work remains pending',
+    );
 
     releasePendingPresence();
     await sendPromise;
-    const row = getDatabase().prepare(`
+    const row = getDatabase()
+      .prepare(`
       SELECT status, error, failed_at FROM whatsapp_messages
       WHERE direction = 'outbound' AND body = ?
       ORDER BY id DESC LIMIT 1
-    `).get('shutdown timeout test') as { status: string; error: string | null; failed_at: string | null };
-    assert.equal(row.status, 'failed', 'a drained send still records the shutdown failure once its work settles');
+    `)
+      .get('shutdown timeout test') as {
+      status: string;
+      error: string | null;
+      failed_at: string | null;
+    };
+    assert.equal(
+      row.status,
+      'failed',
+      'a drained send still records the shutdown failure once its work settles',
+    );
     assert.equal(row.error, 'WhatsApp is shutting down.', 'a drained send records why it failed');
     assert.notEqual(row.failed_at, null, 'a drained send records when it failed');
   } finally {
     (globalThis as any).setTimeout = originalSetTimeout;
     globalThis.fetch = originalFetch;
-    try { releasePendingPresence(); } catch { }
-    try { closeDatabase(); } catch { }
+    try {
+      releasePendingPresence();
+    } catch {}
+    try {
+      closeDatabase();
+    } catch {}
     fs.rmSync(testDir, { recursive: true, force: true });
     (Module as any)._load = realLoad;
   }

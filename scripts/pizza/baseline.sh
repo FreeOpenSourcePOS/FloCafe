@@ -4,7 +4,7 @@
 set -u
 WT=$1; OUT=$2; TOOLS=$3
 # Absolute before the cd, so relative arguments keep their meaning.
-mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd); TOOLS=$(cd "$TOOLS" && pwd) || exit 2
+mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd) || exit 2; TOOLS=$(cd "$TOOLS" && pwd) || exit 2
 cd "$WT" || exit 2
 rm -f "$OUT/DONE" "$OUT/steps.tsv"
 step() {

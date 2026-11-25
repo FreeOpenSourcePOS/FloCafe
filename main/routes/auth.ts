@@ -48,6 +48,7 @@ import {
   DEFAULT_CLOUD_SERVER_URL,
   normalizeCloudServerUrl,
 } from '../services/cloud-sync';
+import { isOfflineMode } from '../services/offline-mode';
 import { asyncHandler } from '../middleware/async-handler';
 import { handleRestoreFromPickedFile } from './database';
 import { getHttpRequestSignal } from '../shutdown';
@@ -1690,9 +1691,11 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       email_marketing,
       product_analytics_level,
     } = req.body;
-    // Without a choice the store shares anonymously and the owner is asked after setup.
+    // Without a choice the store shares anonymously and the owner is asked after setup,
+    // unless Offline mode is on: then telemetry stays off until the owner turns it on.
     const analyticsLevel = parseProductAnalyticsLevel(product_analytics_level);
-    const telemetryChoice = analyticsLevel === 'off' ? 'false' : 'true';
+    const telemetryChoice =
+      analyticsLevel === 'off' || (!analyticsLevel && isOfflineMode()) ? 'false' : 'true';
     const email = normalizeEmail(req.body.email);
     // Regional settings come from signup, never from a fallback — see
     // docs/reference/product-invariants.md. There is no default country.
@@ -1783,7 +1786,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid service model' });
     }
 
-    // New installs start with cloud coordination enabled.
+    // New installs ask for cloud coordination; Offline mode overrides it where the setting is written.
     const cloudSyncEnabled = true;
     let normalizedCloudServerUrl: string | undefined;
     if (cloudSyncEnabled) {
@@ -1872,7 +1875,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         split_checks_enabled: 'false',
         // '1'/'0', not 'true'/'false' — mirrors FloAdmin's own `stores` table and
         // matches how cloud-sync.ts reads this key everywhere else.
-        cloud_sync_enabled: cloudSyncEnabled ? '1' : '0',
+        cloud_sync_enabled: cloudSyncEnabled && !isOfflineMode() ? '1' : '0',
         cloud_server_url: normalizedCloudServerUrl || DEFAULT_CLOUD_SERVER_URL,
         email_product_updates: email_product_updates === true ? 'true' : 'false',
         email_marketing: email_marketing === true ? 'true' : 'false',

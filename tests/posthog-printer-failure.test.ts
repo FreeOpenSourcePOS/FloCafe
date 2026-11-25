@@ -79,6 +79,7 @@ async function mainTest(): Promise<void> {
   process.env.FLO_POSTHOG_DEV = '1';
   Object.defineProperty(process, 'type', { value: 'browser', configurable: true });
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
   setSetting('posthog_host', 'https://us.i.posthog.com');
   setSetting('posthog_project_token', 'phc_test');
   // Usage stays off, so only the diagnostics consent can let this event out.

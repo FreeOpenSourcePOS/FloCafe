@@ -89,6 +89,8 @@ async function main() {
 
   try {
     initDatabase();
+    // These cases cover setup of a store that is online.
+    require('../main/db').upsertSettings({ offline_mode: 'false' });
   } catch (error: any) {
     if (isNativeAbiMismatch(error)) {
       console.log('   ⚠ Skipping: better-sqlite3 is not built for this shell Node ABI.');
@@ -502,6 +504,7 @@ async function main() {
   fs.rmSync(testDir, { recursive: true, force: true });
   testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-first-run-cloud-'));
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
 
   const cloudApi = express();
   cloudApi.use(express.json());

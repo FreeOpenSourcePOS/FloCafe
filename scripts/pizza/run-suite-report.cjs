@@ -3,7 +3,8 @@
 // Runs every test:* suite named in package.json's "pretest" and "test" scripts,
 // one after another, without stopping at the first failure, and records the
 // result and time of each. A suite that scripts/run-test.cjs skipped for an ABI
-// mismatch is recorded as "skip", not as a pass. A suite that times out stops
+// mismatch is recorded as "skip", not as a pass ("skip" means at least one of
+// its chained sub-suites skipped). A suite that times out stops
 // the run, because its child processes may still hold ports.
 // Usage: node run-suite-report.cjs <repoDir> <outDir>
 const { spawnSync } = require('node:child_process');

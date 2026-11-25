@@ -87,6 +87,7 @@ function clearCapturedEvents(): void {
 
 async function main() {
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
 
   const originalFetch = globalThis.fetch;
   const originalSetInterval = globalThis.setInterval;

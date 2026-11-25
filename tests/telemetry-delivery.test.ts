@@ -26,6 +26,7 @@ const { telemetry, sendEvent, TELEMETRY_URL } = require('../main/services/teleme
 async function main() {
   process.env.FLO_TELEMETRY_DEV = '1';
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
   const db = getDatabase();
   const set = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)

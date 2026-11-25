@@ -180,7 +180,14 @@ Upstream's setup sets `cloud_sync_enabled` to on unconditionally (`main/routes/a
 
 FloCafe has one switch that stops all of these: the `offline_mode` setting (`main/services/offline-mode.ts`, `docs/architecture/cloud-integrations.md:11-35`). The fork seeds it on at install and makes setup respect it instead of forcing cloud sync on. The owner can switch it off in settings.
 
-`pizza-offline-default` asserts that install and setup make no outbound request.
+`pizza-offline-default` asserts that install and setup make no outbound request, and that switching offline mode off afterwards starts neither cloud registration nor the telemetry collector.
+
+**What this does not cover:**
+
+- A database created before this change has no `offline_mode` row and stays as it was; the default is seeded only when a database is created.
+- Restoring a full-file backup replaces the settings with the backup's. A backup made by upstream FloCafe has no `offline_mode` row, so the store is online after the restore, and it registers if that backup had cloud sync on (`main/db.ts:6489-6505`).
+- The owner picking "anonymous" or "full" sharing in the setup wizard counts as switching telemetry on; it starts sending once offline mode is off.
+- Upstream's tests that exercise cloud, telemetry, Drive and WhatsApp features put the store online first (`tests/helpers/test-setup.ts` and one line in eleven test files).
 
 ## D14. The server knows which products are pizzas
 

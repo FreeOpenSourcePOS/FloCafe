@@ -61,6 +61,7 @@ async function main(): Promise<void> {
   // above) so repeated local runs don't accumulate rows in the shared dev DB.
   const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
   initDatabase();
+  require('../main/db').upsertSettings({ offline_mode: 'false' });
   const db = getDatabase();
   db.pragma('foreign_keys = ON');
 
@@ -107,9 +108,19 @@ async function main(): Promise<void> {
   const validAr = parsePhoneNumber('+5491155671028');
   const validUs = parsePhoneNumber('+12133734253');
   let bogus: unknown = 'sentinel';
-  try { parsePhoneNumber('abc'); } catch { bogus = undefined; }
-  assert(!!validAr && validAr.isValid(), `parsePhoneNumber accepts '+5491155671028' (got ${validAr})`);
-  assert(!!validUs && validUs.isValid(), `parsePhoneNumber accepts '+12133734253' (got ${validUs})`);
+  try {
+    parsePhoneNumber('abc');
+  } catch {
+    bogus = undefined;
+  }
+  assert(
+    !!validAr && validAr.isValid(),
+    `parsePhoneNumber accepts '+5491155671028' (got ${validAr})`,
+  );
+  assert(
+    !!validUs && validUs.isValid(),
+    `parsePhoneNumber accepts '+12133734253' (got ${validUs})`,
+  );
   assert(bogus === undefined, `parsePhoneNumber rejects 'abc' (got ${bogus})`);
 
   // --- Gate 3: blocklist — add a number, then attempt to send ---
@@ -127,7 +138,9 @@ async function main(): Promise<void> {
     INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, queued_at)
     VALUES (?, 'outbound', 'manual_reply', 'sent', 'test body', ?)
   `).run(phone, nowIso);
-  const inserted = db.prepare(`SELECT customer_id FROM whatsapp_messages WHERE phone_e164 = ?`).get(phone) as { customer_id: string | null };
+  const inserted = db
+    .prepare(`SELECT customer_id FROM whatsapp_messages WHERE phone_e164 = ?`)
+    .get(phone) as { customer_id: string | null };
   assert(inserted?.customer_id === null, 'customer_id defaults to NULL');
 
   // --- Gate 5: rate limit counts outbound per hour ---
@@ -135,10 +148,12 @@ async function main(): Promise<void> {
   // send (if it reached the rate check) would still pass (limit is 4).
   // Verify the count query directly.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const count = db.prepare(`
+  const count = db
+    .prepare(`
     SELECT COUNT(*) AS c FROM whatsapp_messages
     WHERE phone_e164 = ? AND direction = 'outbound' AND queued_at >= ?
-  `).get(phone, oneHourAgo) as { c: number };
+  `)
+    .get(phone, oneHourAgo) as { c: number };
   assert(count.c === 1, `rate count: 1 outbound in window (got ${count.c})`);
 
   // --- Gate 6: bill_receipt kind persists with ISO queued_at ---
@@ -146,7 +161,9 @@ async function main(): Promise<void> {
     INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, queued_at)
     VALUES ('+15555550151', 'outbound', 'bill_receipt', 'queued', 'Receipt', ?)
   `).run(nowIso);
-  const billRow = db.prepare(`SELECT kind FROM whatsapp_messages WHERE phone_e164 = ?`).get('+15555550151') as { kind: string };
+  const billRow = db
+    .prepare(`SELECT kind FROM whatsapp_messages WHERE phone_e164 = ?`)
+    .get('+15555550151') as { kind: string };
   assert(billRow.kind === 'bill_receipt', 'bill_receipt kind persists in DB');
 
   // --- Gate 7: kind CHECK rejects unknown values ---
@@ -156,7 +173,9 @@ async function main(): Promise<void> {
       INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body)
       VALUES ('+15555550152', 'outbound', 'marketing_blast', 'sent', 'x')
     `).run();
-  } catch { threw = true; }
+  } catch {
+    threw = true;
+  }
   assert(threw, 'kind CHECK rejects unknown values (e.g. marketing_blast)');
 
   // --- Gate 8: status CHECK rejects unknown values ---
@@ -166,7 +185,9 @@ async function main(): Promise<void> {
       INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body)
       VALUES ('+15555550153', 'outbound', 'manual_reply', 'pending_send', 'x')
     `).run();
-  } catch { threw = true; }
+  } catch {
+    threw = true;
+  }
   assert(threw, 'status CHECK rejects unknown values (e.g. pending_send)');
 
   // --- Cleanup ---

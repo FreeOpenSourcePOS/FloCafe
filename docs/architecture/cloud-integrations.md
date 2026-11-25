@@ -11,14 +11,17 @@ sits on a path between an order and a paid bill.
 ## Offline mode
 
 The owner can switch every optional outbound connection off with the `offline_mode` setting
-(`PUT /api/settings/offline-mode`, permission `offline-mode.manage`, Settings → Privacy). It is off
-by default and is restore-protected across database restore and import.
+(`PUT /api/settings/offline-mode`, permission `offline-mode.manage`, Settings → Privacy). A new
+install has it on: `seedInstallDefaults()` in `main/db.ts` writes `'true'` when the database is
+created, so an existing database keeps its own value and stays online when it has none. The setting
+is restore-protected across database restore and import.
 `main/services/offline-mode.ts` exposes `isOfflineMode()`, which is also true when
 `FLO_MATRIX_OFFLINE` is `1`, and `getOfflineModeAbortSignal()`, which aborts when Offline mode turns
 on. While it is on:
 
 - FloAdmin cloud sync starts no timers (including auto-registration retries) and `trackedFetch`
-  refuses or aborts every request; turning the mode off reloads sync and refreshes registration.
+  refuses or aborts every request; turning the mode off reloads sync and refreshes registration,
+  which registers only when `cloud_sync_enabled` is `'1'`.
 - Google Drive scheduled backups do not run, and connecting, listing, backing up and restoring fail
   with the `offline` error code, and in-flight Drive work is cancelled. Disconnecting retains the
   local tokens and records the revoke as unconfirmed, which blocks further Drive access.
@@ -34,6 +37,12 @@ on. While it is on:
 
 The Express API, KDS and Server App stay bound to `0.0.0.0`, so devices on the local network keep
 working.
+
+First-run setup respects the mode. While it is on, `POST /api/auth/setup/initialize` writes
+`cloud_sync_enabled` as `'0'` and does not register the install, and a request without a sharing
+level writes `telemetry_enabled` and `anonymous_data_consent` as `'false'`. Turning the mode off
+afterwards starts only what the owner switched on: cloud sync through `PUT /api/settings/cloud`, and
+telemetry through the sharing level picked in setup or `PUT /api/settings/product-analytics`.
 
 ## Google Drive backup
 
@@ -97,9 +106,10 @@ with `offline` and serializes them with backup and restore work.
 
 Posts anonymous usage and error events to `https://telemetry.flopos.com/collect`.
 
-**Enabled by** the `telemetry_enabled` setting, read as on when the value is `'true'`. It ships
-**on** for a new install, which writes `telemetry_enabled` as `'true'`. An install that already
-carries an explicit value keeps it, because the `telemetry_default_on_for_new_installs` migration
+**Enabled by** the `telemetry_enabled` setting, read as on when the value is `'true'`. A new
+database is seeded with `'true'`, and first-run setup rewrites the value from the owner's sharing
+level (see **Sharing levels** under PostHog below). An install that already carries an explicit
+value keeps it, because the `telemetry_default_on_for_new_installs` migration
 that flips the default uses `INSERT OR IGNORE`; an install that already ran the earlier
 `seed_telemetry_settings` migration therefore still holds `'false'`.
 
@@ -197,7 +207,8 @@ on an `acct_` id, and `email` and `store_ref` wherever they appear.
 
 Setup asks for the level with two equal options, "Link my email" (`full`) and "Keep it anonymous"
 (`anonymous`), plus "Don't share usage data" (`off`); none is preselected and setup cannot
-continue without one. A setup request without a level stores none. An onboarded store with
+continue without one. A setup request without a level stores none, and writes `telemetry_enabled`
+as `'false'` while Offline mode is on and as `'true'` otherwise. An onboarded store with
 telemetry on and no stored level, such as one upgraded from a release without PostHog, shares
 anonymously and shows `ProductAnalyticsDialog` once to users with `settings.manage`. The dialog
 opens outside POS and KDS, only when `readProductAnalyticsChoice()` reports `choice_pending` (a
@@ -500,9 +511,10 @@ uses and a reason the containing filesystem matters:
 
 Optional synchronisation with the FloAdmin back office, plus account deletion and recovery.
 
-**Enabled by** `cloud_sync_enabled`, which ships **on**: a fresh install writes it as `'1'`. Other
-flags in the same group are `cloud_orders_enabled`, `cloud_reports_enabled`, and
-`cloud_command_polling_enabled`.
+**Enabled by** `cloud_sync_enabled`, read as on when the value is `'1'`. A new database is seeded
+with `'1'`, and first-run setup rewrites it: `'0'` while Offline mode is on, which is how a new
+install starts, and `'1'` otherwise. `PUT /api/settings/cloud` turns it on. Other flags in the same
+group are `cloud_orders_enabled`, `cloud_reports_enabled`, and `cloud_command_polling_enabled`.
 
 **Upgrade behaviour.** Migration 40, `v2_cloud_defaults_and_tax_toggle`, flips a store that had
 `cloud_sync_enabled` set to `'0'` back on, but only when the setting's `updated_at` still lacks a
@@ -510,7 +522,9 @@ flags in the same group are `cloud_orders_enabled`, `cloud_reports_enabled`, and
 changed it. The discriminator is that timestamp shape, and the migration deletes the obsolete
 `cloud_pending_store_id` setting in the same step.
 
-**Registration is zero-touch.** `start()` calls `maybeAutoRegister()` once at boot. The code states
+**Registration is zero-touch.** `start()` calls `maybeAutoRegister()` once at boot, which registers
+only when Offline mode is off, `cloud_sync_enabled` is `'1'`, the owner has not stopped cloud
+services, no deletion is blocking, and setup has written a business name. The code states
 the contract directly: the v2 endpoint creates or finds the live store and returns a working API
 key immediately, so **there is no claim step, no pending state, and no human approval**. The
 `cloud_registration_status` values in use are `unregistered`, `registered`, `registration_failed`,
@@ -656,6 +670,7 @@ For support-ticket correlation, see
 
 ```sh
 npm run test:offline-mode
+npm run test:pizza-offline-default
 npm run test:google-drive
 npm run test:telemetry
 npm run test:support-ticket

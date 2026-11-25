@@ -173,6 +173,8 @@ function initTestDb() {
   }
   const db = getDatabase();
   seedTestRegionalDefaults(db);
+  // A new install starts in Offline mode; suites that use this helper get an online store.
+  db.prepare("UPDATE settings SET value = 'false' WHERE key = 'offline_mode'").run();
   return db;
 }
 

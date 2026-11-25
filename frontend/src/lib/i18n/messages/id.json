@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Hubungi dukungan hanya jika shift sudah dibuka di terminal ini dan kesalahan tetap muncul.",
     "validationClosedBooksGuidance": "Hari bisnis hari ini sudah ditutup dan tidak dapat dibuka kembali. Pesanan baru dan transaksi tunai dilanjutkan pada hari bisnis berikutnya.",
     "validationClosedBooksEvidenceHint": "Hubungi dukungan hanya jika hari bisnis hari ini tampak tertutup pada tanggal atau zona waktu toko yang salah.",
-    "validationGenericEvidenceHint": "Hubungi dukungan hanya jika Anda yakin pemeriksaan validasi ini menolak permintaan yang sah."
+    "validationGenericEvidenceHint": "Hubungi dukungan hanya jika Anda yakin pemeriksaan validasi ini menolak permintaan yang sah.",
+    "readyMadeNoKitchen": "Siap jual, tanpa dapur"
   },
   "printTest": {
     "amt": "Jml",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Varian ini akan dinonaktifkan saat disimpan dan tidak dapat dipulihkan dari layar ini.",
     "variantRemoveAllConfirm": "Mematikannya akan menonaktifkan semua varian produk ini. Pesanan lama tetap menyimpannya.",
     "parentCategory": "Kategori Induk",
-    "parentCategoryNone": "Tidak ada (Tingkat atas)"
+    "parentCategoryNone": "Tidak ada (Tingkat atas)",
+    "fieldGoesToKitchen": "Masuk ke dapur",
+    "fieldGoesToKitchenHint": "Matikan untuk barang siap jual seperti minuman botol. Barang tetap dijual, dikenai pajak, dan dicetak struk seperti biasa, tetapi tidak muncul di layar atau tiket dapur."
   },
   "productAnalytics": {
     "title": "Bantu kami memutuskan apa yang dibuat berikutnya",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 jam",
     "refundWindow4h": "4 jam",
     "refundWindowSameDay": "Hari kerja yang sama",
-    "refundOwnerUnlimitedNote": "Pemilik selalu dapat menyetujui pengembalian dana untuk pesanan lama mana pun dengan PIN Persetujuan Staf mereka."
+    "refundOwnerUnlimitedNote": "Pemilik selalu dapat menyetujui pengembalian dana untuk pesanan lama mana pun dengan PIN Persetujuan Staf mereka.",
+    "serviceModel": "Model layanan",
+    "serviceModelQsr": "Layanan cepat",
+    "serviceModelFinedine": "Restoran mewah",
+    "serviceModelHybridHint": "Pesanan konter dan bawa pulang dibayar di awal, pesanan meja setelah layanan. Meja hanya wajib untuk pesanan makan di tempat.",
+    "serviceModelHybrid": "Layanan cepat + fine dining"
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Saya menyetujui FloPOS",
     "timezoneHint": "Terisi awal dari negara Anda. Toko di negara dengan lebih dari satu zona waktu dapat memilih zona waktu setempat yang sebenarnya.",
     "timezoneLabel": "Zona waktu",
-    "welcome": "Selamat Datang di FloCafe"
+    "welcome": "Selamat Datang di FloCafe",
+    "hybridLabel": "Layanan cepat + fine dining",
+    "hybridDesc": "Konter dan ruang makan sekaligus",
+    "hybridDetails": "Paling cocok untuk tempat yang menjual barang siap saji di konter sekaligus melayani tamu di meja. Pesanan konter dan bawa pulang dibayar di awal; pesanan meja dibayar setelah layanan."
   },
   "staff": {
     "addButton": "Tambah Staf",

@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "この端末でシフトがすでに開始されているのにエラーが続く場合のみサポートへご連絡ください。",
     "validationClosedBooksGuidance": "本日の営業日は締め処理済みのため再開できません。新規注文および現金取引は翌営業日に再開されます。",
     "validationClosedBooksEvidenceHint": "店舗の日付またはタイムゾーンが誤っていて本日の営業日が締められている場合のみサポートへご連絡ください。",
-    "validationGenericEvidenceHint": "この入力確認によって正しい操作が拒否されたと思われる場合のみサポートへご連絡ください。"
+    "validationGenericEvidenceHint": "この入力確認によって正しい操作が拒否されたと思われる場合のみサポートへご連絡ください。",
+    "readyMadeNoKitchen": "既製品・厨房不要"
   },
   "printTest": {
     "amt": "金額",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "保存するとこのバリアントは無効になり、この画面から復元できません。",
     "variantRemoveAllConfirm": "オフにするとこの商品のすべてのバリアントが無効になります。過去の注文には残ります。",
     "parentCategory": "親カテゴリー",
-    "parentCategoryNone": "なし（最上位）"
+    "parentCategoryNone": "なし（最上位）",
+    "fieldGoesToKitchen": "キッチンに送る",
+    "fieldGoesToKitchenHint": "瓶入り飲料などの既製品はオフにしてください。通常どおり販売・課税・レシート発行されますが、キッチンディスプレイや厨房伝票には表示されません。"
   },
   "productAnalytics": {
     "title": "次に何を作るか、一緒に決めてください",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2時間",
     "refundWindow4h": "4時間",
     "refundWindowSameDay": "同一営業日内",
-    "refundOwnerUnlimitedNote": "オーナーはスタッフ承認PINを使用して、過去のどの注文の返金でも常に承認できます。"
+    "refundOwnerUnlimitedNote": "オーナーはスタッフ承認PINを使用して、過去のどの注文の返金でも常に承認できます。",
+    "serviceModel": "サービス形態",
+    "serviceModelQsr": "クイックサービス",
+    "serviceModelFinedine": "ファインダイニング",
+    "serviceModelHybridHint": "カウンターとテイクアウトの注文は先払い、テーブルの注文はサービス後に支払います。テーブルが必要なのは店内飲食の注文のみです。",
+    "serviceModelHybrid": "クイックサービス＋ファインダイニング"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "FloPOSに同意します",
     "timezoneHint": "国から事前入力されます。複数のタイムゾーンがある国の店舗では、実際の現地タイムゾーンを選択できます。",
     "timezoneLabel": "タイムゾーン",
-    "welcome": "FloCafeへようこそ"
+    "welcome": "FloCafeへようこそ",
+    "hybridLabel": "クイックサービス＋ファインダイニング",
+    "hybridDesc": "カウンターとダイニングを併用",
+    "hybridDetails": "カウンターで既製品を販売しつつ、テーブル席でも接客する店舗に最適です。カウンターとテイクアウトの注文は先払い、テーブルの注文はサービス後の支払いです。"
   },
   "staff": {
     "addButton": "スタッフを追加",

@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Hubungi dhukungan mung yen shift wis dibukak ing terminal iki nanging masalah iki isih ana.",
     "validationClosedBooksGuidance": "Dina bisnis dina iki wis ditutup lan ora bisa dibukak maneh. Pesenan anyar lan transaksi tunai bakal dilanjutake ing dina bisnis sabanjure.",
     "validationClosedBooksEvidenceHint": "Hubungi dhukungan mung yen dina bisnis dina iki katon ditutup ing tanggal utawa zona wektu toko sing salah.",
-    "validationGenericEvidenceHint": "Hubungi dhukungan mung yen sampeyan yakin pamriksan validasi iki nolak panjalukan sing bener."
+    "validationGenericEvidenceHint": "Hubungi dhukungan mung yen sampeyan yakin pamriksan validasi iki nolak panjalukan sing bener.",
+    "readyMadeNoKitchen": "Siap adol, tanpa pawon"
   },
   "printTest": {
     "amt": "Gng",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Varian iki bakal dipateni nalika disimpen lan ora bisa dipulihake saka layar iki.",
     "variantRemoveAllConfirm": "Mateni iku bakal mateni kabeh varian produk iki. Pesenan lawas tetep nyimpen iku.",
     "parentCategory": "Kategori Babon",
-    "parentCategoryNone": "Ora ana (Tataran dhuwur)"
+    "parentCategoryNone": "Ora ana (Tataran dhuwur)",
+    "fieldGoesToKitchen": "Menyang pawon",
+    "fieldGoesToKitchenHint": "Pateni kanggo barang siap adol kaya omben-omben botol. Tetep didol, dipajegi, lan dicithak struk kaya biasane, nanging ora tau metu ing layar utawa tiket pawon."
   },
   "productAnalytics": {
     "title": "Bantu kita nemtokake apa sing digawe sabanjure",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 jam",
     "refundWindow4h": "4 jam",
     "refundWindowSameDay": "Dina kerja sing padha",
-    "refundOwnerUnlimitedNote": "Sing duwe toko tansah bisa nyetujoni bali dhuwit kanggo pesanan lawas apa wae nganggo PIN Persetujuan Staf dheweke."
+    "refundOwnerUnlimitedNote": "Sing duwe toko tansah bisa nyetujoni bali dhuwit kanggo pesanan lawas apa wae nganggo PIN Persetujuan Staf dheweke.",
+    "serviceModel": "Model layanan",
+    "serviceModelQsr": "Layanan cepet",
+    "serviceModelFinedine": "Restoran mewah",
+    "serviceModelHybridHint": "Pesenan konter lan gawa mulih dibayar luwih dhisik, pesenan meja sawise layanan. Meja mung dibutuhake kanggo pesenan mangan ing panggonan.",
+    "serviceModelHybrid": "Layanan cepet + fine dining"
   },
   "setup": {
     "alreadyCompleted": "Pangaturan wiwitan wis rampung ditindakake ing pamasangan iki. Ngalihake menyang layar mlebu…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Aku nyarujuki FloPOS",
     "timezoneHint": "Kaisi wiwitan saka negara Panjenengan. Warung ing negara kanthi luwih saka siji zona wektu bisa milih zona wektu lokal sing sajatine.",
     "timezoneLabel": "Zona wektu",
-    "welcome": "Sugeng Teka ing FloCafe"
+    "welcome": "Sugeng Teka ing FloCafe",
+    "hybridLabel": "Layanan cepet + fine dining",
+    "hybridDesc": "Konter lan ruang makan bareng",
+    "hybridDetails": "Paling cocok kanggo panggonan sing adol barang siap konter lan uga nglayani tamu ing meja. Pesenan konter lan gawa mulih dibayar luwih dhisik; pesenan meja dibayar sawise layanan."
   },
   "staff": {
     "addButton": "Tambah Staf",

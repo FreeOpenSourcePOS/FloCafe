@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Yalnızca bu terminalde zaten açık bir vardiya varsa ve hata devam ediyorsa destekle iletişime geçin.",
     "validationClosedBooksGuidance": "Bugünün iş günü kapatılmıştır ve yeniden açılamaz. Yeni siparişler ve nakit işlemleri bir sonraki iş gününde devam eder.",
     "validationClosedBooksEvidenceHint": "Yalnızca bugünün iş günü yanlış mağaza tarihi veya saat diliminde kapalı görünüyorsa destekle iletişime geçin.",
-    "validationGenericEvidenceHint": "Yalnızca bu doğrulama kontrolünün geçerli bir isteği reddettiğini düşünüyorsanız destekle iletişime geçin."
+    "validationGenericEvidenceHint": "Yalnızca bu doğrulama kontrolünün geçerli bir isteği reddettiğini düşünüyorsanız destekle iletişime geçin.",
+    "readyMadeNoKitchen": "Hazır, mutfak yok"
   },
   "printTest": {
     "amt": "Tutar",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Bu varyant kaydedildiğinde devre dışı bırakılır ve bu ekrandan geri alınamaz.",
     "variantRemoveAllConfirm": "Bunu kapatırsanız bu ürünün tüm varyantları devre dışı bırakılır. Eski siparişler korunur.",
     "parentCategory": "Üst Kategori",
-    "parentCategoryNone": "Yok (Üst düzey)"
+    "parentCategoryNone": "Yok (Üst düzey)",
+    "fieldGoesToKitchen": "Mutfağa gider",
+    "fieldGoesToKitchenHint": "Şişelenmiş içecek gibi hazır ürünler için kapatın. Her zamanki gibi satılır, vergilendirilir ve fişlenir, ancak mutfak ekranında veya mutfak fişlerinde görünmez."
   },
   "productAnalytics": {
     "title": "Sırada ne yapacağımıza karar vermemize yardım edin",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 saat",
     "refundWindow4h": "4 saat",
     "refundWindowSameDay": "Aynı iş günü",
-    "refundOwnerUnlimitedNote": "İşletme sahipleri geçmiş herhangi bir siparişin iadesini kendi Personel Onay PIN kodlarıyla her zaman onaylayabilir."
+    "refundOwnerUnlimitedNote": "İşletme sahipleri geçmiş herhangi bir siparişin iadesini kendi Personel Onay PIN kodlarıyla her zaman onaylayabilir.",
+    "serviceModel": "Servis modeli",
+    "serviceModelQsr": "Hızlı servis",
+    "serviceModelFinedine": "Şık restoran",
+    "serviceModelHybridHint": "Tezgâh ve paket siparişler önceden, masa siparişleri servisten sonra ödenir. Masa yalnızca yerinde yeme siparişleri için gereklidir.",
+    "serviceModelHybrid": "Hızlı servis + fine dining"
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "FloPOS kullanım koşullarını kabul ediyorum",
     "timezoneHint": "Ülkenize göre otomatik seçildi. Birden çok saat dilimi olan ülkelerde yerel saat diliminizi belirleyebilirsiniz.",
     "timezoneLabel": "Saat Dilimi",
-    "welcome": "FloCafe'ye Hoş Geldiniz"
+    "welcome": "FloCafe'ye Hoş Geldiniz",
+    "hybridLabel": "Hızlı servis + fine dining",
+    "hybridDesc": "Tezgâh ve yemek salonu birlikte",
+    "hybridDetails": "Tezgâhta hazır ürün satan ve masada misafir ağırlayan işletmeler için idealdir. Tezgâh ve paket siparişler önceden, masa siparişleri servisten sonra ödenir."
   },
   "staff": {
     "addButton": "Personel Ekle",

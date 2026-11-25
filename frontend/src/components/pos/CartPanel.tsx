@@ -28,7 +28,7 @@ import type { CustomPaymentMethod } from '@/lib/payment-methods';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
-import { usePosSettingsStore } from '@/store/pos-settings';
+import { isPrepaidBilling, usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
@@ -254,6 +254,7 @@ export default function CartPanel({
     return () => onModalOpenChange?.(false);
   }, [priceOverrideOpen, effectiveDetailsDrawerOpen, onModalOpenChange]);
   const billingType = usePosSettingsStore((s) => s.billingType);
+  const serviceModel = usePosSettingsStore((s) => s.serviceModel);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
@@ -396,7 +397,7 @@ export default function CartPanel({
     cart.orderType === 'dine_in' &&
     cart.tableId &&
     cart.items.length > 0 &&
-    billingType === 'postpaid';
+    !isPrepaidBilling(billingType, serviceModel, cart.orderType);
 
   const isDeliveryOrder = cart.orderType === 'delivery';
   const [customPaymentMethods, setCustomPaymentMethods] = useState<CustomPaymentMethod[]>([]);
@@ -952,6 +953,11 @@ export default function CartPanel({
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <div className="min-w-0 flex-1">
+                      {item.product.requires_kitchen === false && (
+                        <p className="text-xs text-muted-foreground leading-snug">
+                          {t('readyMadeNoKitchen')}
+                        </p>
+                      )}
                       {item.price_override && (
                         <p className="text-xs text-amber-600 dark:text-amber-400 leading-snug break-words">
                           {tOrders('priceOverriddenMenu', {

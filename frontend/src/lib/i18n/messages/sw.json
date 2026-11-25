@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Wasiliana na usaidizi tu ikiwa zamu tayari imefunguliwa kwenye kifaa hiki na hitilafu hii inaendelea.",
     "validationClosedBooksGuidance": "Siku ya biashara ya leo imefungwa na haiwezi kufunguliwa tena. Oda mpya na shughuli za pesa taslimu zitaendelea siku inayofuata ya biashara.",
     "validationClosedBooksEvidenceHint": "Wasiliana na usaidizi tu ikiwa siku ya biashara ya leo inaonekana imefungwa kwa tarehe au saa za eneo zisizo sahihi za duka.",
-    "validationGenericEvidenceHint": "Wasiliana na usaidizi tu ikiwa unaamini ukaguzi huu umekataa ombi halali."
+    "validationGenericEvidenceHint": "Wasiliana na usaidizi tu ikiwa unaamini ukaguzi huu umekataa ombi halali.",
+    "readyMadeNoKitchen": "Tayari, bila jikoni"
   },
   "printTest": {
     "amt": "Kiasi",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Aina hii itazimwa wakati wa kuhifadhi na haiwezi kurejeshwa kutoka kwenye skrini hii.",
     "variantRemoveAllConfirm": "Kuzima hii kunazima kila aina ya bidhaa hii. Oda za kihistoria zitaendelea kuzihifadhi.",
     "parentCategory": "Kategoria Kuu",
-    "parentCategoryNone": "Hakuna (Kiwango cha juu)"
+    "parentCategoryNone": "Hakuna (Kiwango cha juu)",
+    "fieldGoesToKitchen": "Huenda jikoni",
+    "fieldGoesToKitchenHint": "Zima kwa bidhaa zilizo tayari kama vinywaji vya chupa. Huuzwa, hutozwa kodi na kupewa risiti kama kawaida, lakini hazionekani kwenye skrini wala tiketi za jikoni."
   },
   "productAnalytics": {
     "title": "Tusaidie kuamua cha kujenga kinachofuata",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "Saa 2",
     "refundWindow4h": "Saa 4",
     "refundWindowSameDay": "Siku hiyo hiyo ya biashara",
-    "refundOwnerUnlimitedNote": "Wamiliki wanaweza kuidhinisha marejesho ya pesa kwa oda yoyote ya zamani wakati wowote kwa kutumia PIN yao ya Uidhinishaji."
+    "refundOwnerUnlimitedNote": "Wamiliki wanaweza kuidhinisha marejesho ya pesa kwa oda yoyote ya zamani wakati wowote kwa kutumia PIN yao ya Uidhinishaji.",
+    "serviceModel": "Mfumo wa huduma",
+    "serviceModelQsr": "Huduma ya haraka",
+    "serviceModelFinedine": "Mgahawa wa hadhi",
+    "serviceModelHybridHint": "Oda za kaunta na za kuchukua hulipwa kwanza, oda za meza baada ya huduma. Meza inahitajika kwa oda za kula hapo tu.",
+    "serviceModelHybrid": "Huduma ya haraka + mgahawa wa hadhi"
   },
   "setup": {
     "alreadyCompleted": "Usanidi tayari umekamilishwa kwenye usakinishaji huu. Inaelekeza kwenye kuingia…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Ninakubaliana na FloPOS",
     "timezoneHint": "Imejaziwa awali kutoka kwenye nchi yako. Maduka katika nchi zenye saa za maeneo mengi yanaweza kuchagua saa za eneo lao halisi.",
     "timezoneLabel": "Saa za Eneo",
-    "welcome": "Karibu FloCafe"
+    "welcome": "Karibu FloCafe",
+    "hybridLabel": "Huduma ya haraka + mgahawa wa hadhi",
+    "hybridDesc": "Kaunta na ukumbi wa chakula pamoja",
+    "hybridDetails": "Inafaa zaidi kwa maeneo yanayouza bidhaa zilizo tayari kaunta na pia kuwahudumia wageni mezani. Oda za kaunta na za kuchukua hulipwa kwanza; oda za meza hulipwa baada ya huduma."
   },
   "staff": {
     "addButton": "Ongeza Mfanyakazi",

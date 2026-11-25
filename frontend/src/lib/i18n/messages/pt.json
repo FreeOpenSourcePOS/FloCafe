@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Entre em contato com o suporte apenas se já houver um turno aberto neste terminal e o erro persistir.",
     "validationClosedBooksGuidance": "O dia comercial de hoje está fechado e não pode ser reaberto. Novos pedidos e movimentações em dinheiro retornam no próximo dia comercial.",
     "validationClosedBooksEvidenceHint": "Entre em contato com o suporte apenas se o dia comercial de hoje parecer fechado na data ou fuso horário incorretos da loja.",
-    "validationGenericEvidenceHint": "Entre em contato com o suporte apenas se acreditar que esta validação recusou uma solicitação válida."
+    "validationGenericEvidenceHint": "Entre em contato com o suporte apenas se acreditar que esta validação recusou uma solicitação válida.",
+    "readyMadeNoKitchen": "Pronto, sem cozinha"
   },
   "printTest": {
     "amt": "Total",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Esta variante será desativada ao salvar e não poderá ser restaurada a partir desta tela.",
     "variantRemoveAllConfirm": "Ao desligar, todas as variantes deste produto serão desativadas. Os pedidos anteriores as mantêm.",
     "parentCategory": "Categoria principal",
-    "parentCategoryNone": "Nenhuma (nível principal)"
+    "parentCategoryNone": "Nenhuma (nível principal)",
+    "fieldGoesToKitchen": "Vai para a cozinha",
+    "fieldGoesToKitchenHint": "Desative para produtos prontos, como bebidas engarrafadas. Eles são vendidos, tributados e emitem recibo como sempre, mas nunca aparecem no monitor nem nas comandas da cozinha."
   },
   "productAnalytics": {
     "title": "Ajude-nos a decidir o que construir a seguir",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 horas",
     "refundWindow4h": "4 horas",
     "refundWindowSameDay": "Mesmo dia comercial",
-    "refundOwnerUnlimitedNote": "Os proprietários podem sempre aprovar reembolsos de qualquer pedido anterior com seu PIN de aprovação."
+    "refundOwnerUnlimitedNote": "Os proprietários podem sempre aprovar reembolsos de qualquer pedido anterior com seu PIN de aprovação.",
+    "serviceModel": "Modelo de serviço",
+    "serviceModelQsr": "Serviço rápido",
+    "serviceModelFinedine": "Restaurante",
+    "serviceModelHybridHint": "Pedidos de balcão e para viagem são pagos antes, os de mesa após o serviço. A mesa só é obrigatória em pedidos para consumo no local.",
+    "serviceModelHybrid": "Serviço rápido + restaurante"
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Eu concordo com o FloPOS",
     "timezoneHint": "Pré-preenchido pelo seu país. Lojas em países com vários fusos horários podem escolher seu fuso horário real.",
     "timezoneLabel": "Fuso horário",
-    "welcome": "Bem-vindo ao FloCafe"
+    "welcome": "Bem-vindo ao FloCafe",
+    "hybridLabel": "Serviço rápido + restaurante",
+    "hybridDesc": "Balcão e salão juntos",
+    "hybridDetails": "Ideal para locais que vendem produtos prontos no balcão e também atendem mesas. Pedidos de balcão e para viagem são pagos antes; os de mesa, após o serviço."
   },
   "staff": {
     "addButton": "Adicionar Funcionário",

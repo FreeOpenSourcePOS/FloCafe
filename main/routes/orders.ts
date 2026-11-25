@@ -84,6 +84,7 @@ import {
   type PriceOverrideInput,
 } from '../services/item-price-override';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
+import { isOrderPrepaid } from '../services/service-model';
 import { cloudSync } from '../services/cloud-sync';
 import {
   validateOrderNotes,
@@ -1031,7 +1032,12 @@ type ProductRow = TaxProductRow & {
   name: string;
   sku: string | null;
   price: string | number;
+  requires_kitchen?: number | null;
 };
+
+function productRequiresKitchen(product: { requires_kitchen?: number | null }): boolean {
+  return product.requires_kitchen !== 0;
+}
 
 interface OrderItemInput {
   product_id: string;
@@ -1083,8 +1089,8 @@ function insertOrderItems(
   const insertItem = db.prepare(`
   INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id, inventory_variant_id,
     subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-    modifier_selection, special_instructions, recipe_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    modifier_selection, special_instructions, recipe_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at, requires_kitchen)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
   const insertedItemIds: (number | bigint)[] = [];
@@ -1225,9 +1231,10 @@ function insertOrderItems(
       recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
       ingredientCost,
       ingredientCostKnown,
-      initialStatus,
+      productRequiresKitchen(product) ? initialStatus : 'served',
       itemCreatedAt,
       itemCreatedAt,
+      productRequiresKitchen(product) ? 1 : 0,
     );
     insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
     insertedItemIds.push(insertItemResult.lastInsertRowid);
@@ -2419,8 +2426,8 @@ router.post(
         const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id, inventory_variant_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, recipe_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          modifier_selection, special_instructions, recipe_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at, requires_kitchen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
         const validatedItems: Array<{
@@ -2625,8 +2632,10 @@ router.post(
             recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
             ingredientCost,
             ingredientCostKnown,
+            productRequiresKitchen(product) ? 'pending' : 'served',
             itemCreatedAt,
             itemCreatedAt,
+            productRequiresKitchen(product) ? 1 : 0,
           );
           insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
           if (priceOverride) {
@@ -3808,13 +3817,10 @@ router.patch(
         const kdsEnabled = db
           .prepare("SELECT value FROM settings WHERE key = 'kds_enabled'")
           .get() as { value: string } | undefined;
-        const billingType = db
-          .prepare("SELECT value FROM settings WHERE key = 'billing_type'")
-          .get() as { value: string } | undefined;
         const kitchenPolicyApplies =
           requireKitchenDelivered?.value === 'true' &&
           kdsEnabled?.value !== 'false' &&
-          billingType?.value !== 'prepaid';
+          !isOrderPrepaid(db, currentOrder.type);
         const undeliveredKitchenItems =
           status === 'completed' && kitchenPolicyApplies
             ? (db
@@ -7276,10 +7282,9 @@ router.patch(
         }
 
         // Restore - mark as pending
-        db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?").run(
-          now(),
-          itemId,
-        );
+        db.prepare(
+          "UPDATE order_items SET status = CASE WHEN requires_kitchen = 0 THEN 'served' ELSE 'pending' END, updated_at = ? WHERE id = ?",
+        ).run(now(), itemId);
 
         // Recalculate order totals
         const orderTotals = calculateOrderTotals(db, orderId);

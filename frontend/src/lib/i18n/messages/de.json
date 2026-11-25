@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Kontaktieren Sie den Support nur, wenn an diesem Terminal bereits eine Schicht geöffnet ist und dieser Fehler weiterhin auftritt.",
     "validationClosedBooksGuidance": "Der heutige Geschäftstag ist abgeschlossen und kann nicht wieder geöffnet werden. Neue Bestellungen und Bargeldbewegungen sind am nächsten Geschäftstag wieder möglich.",
     "validationClosedBooksEvidenceHint": "Kontaktieren Sie den Support nur, wenn der heutige Geschäftstag zum falschen Geschäftsdatum oder in der falschen Zeitzone als geschlossen angezeigt wird.",
-    "validationGenericEvidenceHint": "Kontaktieren Sie den Support nur, wenn diese Prüfung Ihrer Ansicht nach eine gültige Anfrage abgelehnt hat."
+    "validationGenericEvidenceHint": "Kontaktieren Sie den Support nur, wenn diese Prüfung Ihrer Ansicht nach eine gültige Anfrage abgelehnt hat.",
+    "readyMadeNoKitchen": "Fertigprodukt, keine Küche"
   },
   "printTest": {
     "amt": "Betrag",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Diese Variante wird beim Speichern deaktiviert und kann auf diesem Bildschirm nicht wiederhergestellt werden.",
     "variantRemoveAllConfirm": "Wenn Sie dies abschalten, werden alle Varianten dieses Produkts deaktiviert. Frühere Bestellungen behalten sie.",
     "parentCategory": "Übergeordnete Kategorie",
-    "parentCategoryNone": "Keine (Hauptkategorie)"
+    "parentCategoryNone": "Keine (Hauptkategorie)",
+    "fieldGoesToKitchen": "Geht in die Küche",
+    "fieldGoesToKitchenHint": "Für Fertigprodukte wie Flaschengetränke ausschalten. Sie werden wie gewohnt verkauft, versteuert und quittiert, erscheinen aber weder auf dem Küchenmonitor noch auf Küchenbons."
   },
   "productAnalytics": {
     "title": "Hilf uns zu entscheiden, was wir als Nächstes bauen",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 Stunden",
     "refundWindow4h": "4 Stunden",
     "refundWindowSameDay": "Gleicher Geschäftstag",
-    "refundOwnerUnlimitedNote": "Inhaber können Rückerstattungen für jede vergangene Bestellung jederzeit mit ihrer Personal-Genehmigungs-PIN genehmigen."
+    "refundOwnerUnlimitedNote": "Inhaber können Rückerstattungen für jede vergangene Bestellung jederzeit mit ihrer Personal-Genehmigungs-PIN genehmigen.",
+    "serviceModel": "Servicemodell",
+    "serviceModelQsr": "Schnellservice",
+    "serviceModelFinedine": "Gehobene Gastronomie",
+    "serviceModelHybridHint": "Theken- und Außer-Haus-Bestellungen werden vorab bezahlt, Tischbestellungen nach dem Service. Ein Tisch ist nur für Bestellungen vor Ort nötig.",
+    "serviceModelHybrid": "Schnellservice + gehobene Gastronomie"
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Ich stimme den Nutzungsbedingungen von FloPOS zu",
     "timezoneHint": "Aus Ihrem Land vorausgefüllt. Geschäfte in Ländern mit mehreren Zeitzonen können ihre tatsächliche lokale Zeitzone auswählen.",
     "timezoneLabel": "Zeitzone",
-    "welcome": "Willkommen"
+    "welcome": "Willkommen",
+    "hybridLabel": "Schnellservice + gehobene Gastronomie",
+    "hybridDesc": "Theke und Gastraum zusammen",
+    "hybridDetails": "Ideal für Betriebe, die an der Theke Fertigprodukte verkaufen und zusätzlich Gäste bedienen. Theken- und Außer-Haus-Bestellungen werden vorab bezahlt, Tischbestellungen nach dem Service."
   },
   "staff": {
     "addButton": "Personal hinzufügen",

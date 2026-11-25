@@ -492,6 +492,9 @@ function serializeProduct(product: any): any {
     is_active: toBoolean(product.is_active),
     track_inventory: toBoolean(product.track_inventory),
     allow_fractional_quantity: toBoolean(product.allow_fractional_quantity),
+    ...(product.requires_kitchen !== undefined && {
+      requires_kitchen: product.requires_kitchen !== 0 && product.requires_kitchen !== false,
+    }),
     has_image: toBoolean(product.has_image),
     dietary_tags: parseTags(product.dietary_tags),
     category: serializeCategory(product.category),
@@ -1204,7 +1207,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const activeOnly = req.query.active === 'true' || req.query.active === '1';
     const ctePrefix = activeOnly ? `WITH RECURSIVE ${ACTIVE_CATEGORIES_CTE_CLAUSES} ` : '';
     let query = `${ctePrefix}SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
-      p.sale_unit, p.allow_fractional_quantity, p.weight_precision,
+      p.sale_unit, p.allow_fractional_quantity, p.weight_precision, p.requires_kitchen,
       p.inventory_product_id, p.inventory_deduction_quantity,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
       p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.dietary_tags, p.deleted_at, p.created_at, p.updated_at,
@@ -1550,6 +1553,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
       cost_price,
       sale_unit,
       allow_fractional_quantity,
+      requires_kitchen,
       weight_precision,
       inventory_product_id,
       inventory_deduction_quantity,
@@ -1568,6 +1572,9 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
       addon_group_ids,
       reason,
     } = req.body;
+    if (requires_kitchen !== undefined && typeof requires_kitchen !== 'boolean') {
+      return res.status(400).json({ error: 'requires_kitchen must be a boolean' });
+    }
     const normalizedBarcode = normalizeBarcode(barcode);
     const productName = normalizeRequiredName(name);
 
@@ -1678,11 +1685,11 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     const insertProduct = db.transaction(() => {
       db.prepare(`
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
-          sale_unit, allow_fractional_quantity, weight_precision,
+          sale_unit, allow_fractional_quantity, requires_kitchen, weight_precision,
           inventory_product_id, inventory_deduction_quantity,
           tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity, low_stock_threshold,
           is_active, image_url, sort_order, cb_percent, tags, dietary_tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         normalizeNullableString(category_id),
@@ -1694,6 +1701,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
         cost_price || 0,
         normalizeSaleUnit(sale_unit),
         allow_fractional_quantity ? 1 : 0,
+        requires_kitchen === false ? 0 : 1,
         weight_precision ?? 3,
         inventory_product_id || null,
         inventory_product_id
@@ -1798,6 +1806,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       cost_price,
       sale_unit,
       allow_fractional_quantity,
+      requires_kitchen,
       weight_precision,
       inventory_product_id,
       inventory_deduction_quantity,
@@ -1815,6 +1824,9 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       variants,
       addon_group_ids,
     } = req.body;
+    if (requires_kitchen !== undefined && typeof requires_kitchen !== 'boolean') {
+      return res.status(400).json({ error: 'requires_kitchen must be a boolean' });
+    }
     const normalizedBarcode = normalizeBarcode(barcode);
     const hasName = hasOwn(req.body, 'name');
     const productName = hasName ? normalizeRequiredName(name) : null;
@@ -1954,6 +1966,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     const hasDietaryTags = hasOwn(req.body, 'dietary_tags');
     const hasSaleUnit = hasOwn(req.body, 'sale_unit');
     const hasAllowFractionalQuantity = hasOwn(req.body, 'allow_fractional_quantity');
+    const hasRequiresKitchen = hasOwn(req.body, 'requires_kitchen');
     const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
     const hasInventoryProductId = hasOwn(req.body, 'inventory_product_id');
     const hasInventoryDeductionQuantity = hasOwn(req.body, 'inventory_deduction_quantity');
@@ -1995,6 +2008,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
           barcode = CASE WHEN @has_barcode = 1 THEN @barcode ELSE barcode END,
           sale_unit = CASE WHEN @has_sale_unit = 1 THEN @sale_unit ELSE sale_unit END,
           allow_fractional_quantity = CASE WHEN @has_allow_fractional_quantity = 1 THEN @allow_fractional_quantity ELSE allow_fractional_quantity END,
+          requires_kitchen = CASE WHEN @has_requires_kitchen = 1 THEN @requires_kitchen ELSE requires_kitchen END,
           weight_precision = CASE WHEN @has_weight_precision = 1 THEN @weight_precision ELSE weight_precision END,
           inventory_product_id = CASE WHEN @has_inventory_product_id = 1 THEN @inventory_product_id ELSE inventory_product_id END,
           inventory_deduction_quantity = CASE WHEN @has_inventory_deduction_quantity = 1 THEN @inventory_deduction_quantity ELSE inventory_deduction_quantity END,
@@ -2028,6 +2042,8 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
         sale_unit: normalizeSaleUnit(sale_unit),
         has_allow_fractional_quantity: hasAllowFractionalQuantity ? 1 : 0,
         allow_fractional_quantity: allow_fractional_quantity ? 1 : 0,
+        has_requires_kitchen: hasRequiresKitchen ? 1 : 0,
+        requires_kitchen: requires_kitchen === false ? 0 : 1,
         has_weight_precision: hasWeightPrecision ? 1 : 0,
         weight_precision: weight_precision ?? null,
         has_inventory_product_id: hasInventoryProductId ? 1 : 0,

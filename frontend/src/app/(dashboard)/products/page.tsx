@@ -200,6 +200,7 @@ export default function ProductsPage() {
     barcode: '',
     sale_unit: 'each' as Product['sale_unit'],
     allow_fractional_quantity: false,
+    requires_kitchen: true,
     weight_precision: '3',
     inventory_product_id: '',
     inventory_deduction_quantity: '1',
@@ -419,6 +420,7 @@ export default function ProductsPage() {
       barcode: '',
       sale_unit: 'each',
       allow_fractional_quantity: false,
+      requires_kitchen: true,
       weight_precision: '3',
       inventory_product_id: '',
       inventory_deduction_quantity: '1',
@@ -482,6 +484,7 @@ export default function ProductsPage() {
       barcode: product.barcode || '',
       sale_unit: product.sale_unit || 'each',
       allow_fractional_quantity: !!product.allow_fractional_quantity,
+      requires_kitchen: product.requires_kitchen !== false,
       weight_precision: String(product.weight_precision ?? 3),
       inventory_product_id: product.inventory_product_id || '',
       inventory_deduction_quantity: String(product.inventory_deduction_quantity ?? 1),
@@ -596,6 +599,7 @@ export default function ProductsPage() {
         barcode: form.barcode || null,
         sale_unit: form.sale_unit,
         allow_fractional_quantity: form.allow_fractional_quantity,
+        requires_kitchen: form.requires_kitchen,
         weight_precision: Number(form.weight_precision),
         ...(form.inventory_product_id
           ? {
@@ -1579,6 +1583,24 @@ export default function ProductsPage() {
                       />
                       <p className="text-xs text-gray-400 mt-1">{t('fieldBarcodeHint')}</p>
                     </div>
+                    {isRestaurant && (
+                      <div>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={form.requires_kitchen}
+                            onChange={(e) =>
+                              setForm({ ...form, requires_kitchen: e.target.checked })
+                            }
+                            className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                          />
+                          <span className="text-sm font-medium text-foreground">
+                            {t('fieldGoesToKitchen')}
+                          </span>
+                        </label>
+                        <p className="text-xs text-gray-400 mt-1">{t('fieldGoesToKitchenHint')}</p>
+                      </div>
+                    )}
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">

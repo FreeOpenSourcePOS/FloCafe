@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import { getSessionBoundaryEpoch } from '@/store/session-events';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
-import { usePosSettingsStore } from '@/store/pos-settings';
+import { isPrepaidBilling, normalizeServiceModel, usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
@@ -286,9 +286,11 @@ export default function POSPage() {
     autoPrintKot,
     autoPrintBill,
     billingType,
+    serviceModel,
     tablesRequired,
     kotPrintingEnabled,
     setBillingType,
+    setServiceModel,
     setTablesRequired,
     setKotPrintingEnabled,
     setAutoPrintKot,
@@ -1226,7 +1228,7 @@ export default function POSPage() {
     getCountryByCode(currentTenant?.country ?? '')?.locale,
   );
   const { printBill, printKot } = usePrinterStore();
-  const billingIsPrepaid = billingType === 'prepaid';
+  const billingIsPrepaid = isPrepaidBilling(billingType, serviceModel, cart.orderType);
   const shouldTakePaymentNow = billingIsPrepaid;
 
   const printKotIfEnabled = async (order: Order, originContext?: SupportErrorContextSnapshot) => {
@@ -1617,6 +1619,7 @@ export default function POSPage() {
           setStoreTimezone(d.timezone.trim());
         }
         setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
+        setServiceModel(normalizeServiceModel(d.service_model));
         const isTablesRequired = typeof d.tables_required === 'boolean' ? d.tables_required : true;
         setTablesRequired(isTablesRequired);
 
@@ -1694,6 +1697,7 @@ export default function POSPage() {
   }, [
     isRestaurant,
     setBillingType,
+    setServiceModel,
     setTablesRequired,
     setKotPrintingEnabled,
     setAutoPrintKot,
@@ -3952,7 +3956,7 @@ export default function POSPage() {
           cart.orderType === 'dine_in' &&
           cart.tableId &&
           cart.items.length > 0 &&
-          billingType === 'postpaid'
+          !billingIsPrepaid
         ) {
           const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
           heldOrders

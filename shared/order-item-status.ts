@@ -30,6 +30,12 @@ export type CustomerDisplayProjectedStatus = 'pending' | 'preparing' | 'ready';
 export interface OrderItemStatusLike {
   status?: unknown;
   quantity?: unknown;
+  requires_kitchen?: unknown;
+}
+
+/** Lines that never reach the kitchen (ready-made items) carry `requires_kitchen = 0`. */
+export function isKitchenItem(item: { requires_kitchen?: unknown } | null | undefined): boolean {
+  return item != null && Number(item.requires_kitchen ?? 1) !== 0;
 }
 
 const DELIVERED_ITEM_STATUSES = new Set(['served', 'completed']);
@@ -42,7 +48,11 @@ export function deriveOrderStatusFromItems(
   if (!Array.isArray(items) || items.length === 0) return null;
 
   const liveItems = items.filter(
-    (item) => item != null && !isTerminalItemStatus(item.status) && Number(item.quantity) > 0,
+    (item) =>
+      item != null &&
+      isKitchenItem(item) &&
+      !isTerminalItemStatus(item.status) &&
+      Number(item.quantity) > 0,
   );
   if (liveItems.length === 0) return null;
 

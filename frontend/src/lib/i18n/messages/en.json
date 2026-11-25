@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Only contact support if a shift is already open on this terminal and this error continues.",
     "validationClosedBooksGuidance": "Today's business day is closed and cannot be reopened. New orders and cash activity resume on the next business day.",
     "validationClosedBooksEvidenceHint": "Only contact support if today's business day appears closed at the wrong store date or timezone.",
-    "validationGenericEvidenceHint": "Only contact support if you believe this validation check rejected a valid request."
+    "validationGenericEvidenceHint": "Only contact support if you believe this validation check rejected a valid request.",
+    "readyMadeNoKitchen": "Ready-made, no kitchen"
   },
   "printTest": {
     "amt": "Amt",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "This variant is deactivated on save and cannot be restored from this screen.",
     "variantRemoveAllConfirm": "Turning this off deactivates every variant of this product. Historical orders keep them.",
     "parentCategory": "Parent Category",
-    "parentCategoryNone": "None (Top-level)"
+    "parentCategoryNone": "None (Top-level)",
+    "fieldGoesToKitchen": "Goes to kitchen",
+    "fieldGoesToKitchenHint": "Turn off for ready-made items like bottled drinks. They are sold, taxed and receipted as usual but never appear on the kitchen display or kitchen tickets."
   },
   "productAnalytics": {
     "title": "Help us decide what to build next",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 hours",
     "refundWindow4h": "4 hours",
     "refundWindowSameDay": "Same business day",
-    "refundOwnerUnlimitedNote": "Owners can always approve refunds for any past order with their Staff Approval PIN."
+    "refundOwnerUnlimitedNote": "Owners can always approve refunds for any past order with their Staff Approval PIN.",
+    "serviceModel": "Service model",
+    "serviceModelQsr": "Quick service",
+    "serviceModelFinedine": "Fine dining",
+    "serviceModelHybridHint": "Counter and takeaway orders are paid first, table orders after service. A table is required only for dine-in orders.",
+    "serviceModelHybrid": "Quick service + fine dining"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "I agree to the FloPOS",
     "timezoneHint": "Pre-filled from your country. Stores in multi-timezone countries can choose their actual local timezone.",
     "timezoneLabel": "Timezone",
-    "welcome": "Welcome to FloCafe"
+    "welcome": "Welcome to FloCafe",
+    "hybridLabel": "Quick service + fine dining",
+    "hybridDesc": "Counter and dining room together",
+    "hybridDetails": "Best for venues that sell ready-made items at a counter and also seat guests. Counter and takeaway orders are paid first; table orders are paid after service."
   },
   "staff": {
     "addButton": "Add Staff",

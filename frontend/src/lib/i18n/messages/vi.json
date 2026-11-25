@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Chỉ liên hệ hỗ trợ nếu thiết bị này đã mở ca nhưng lỗi vẫn tiếp diễn.",
     "validationClosedBooksGuidance": "Ngày kinh doanh hôm nay đã chốt và không thể mở lại. Đơn hàng mới và giao dịch tiền mặt sẽ tiếp tục vào ngày kinh doanh tiếp theo.",
     "validationClosedBooksEvidenceHint": "Chỉ liên hệ hỗ trợ nếu ngày kinh doanh hôm nay hiển thị đã chốt sai ngày hoặc sai múi giờ của cửa hàng.",
-    "validationGenericEvidenceHint": "Chỉ liên hệ hỗ trợ nếu bạn cho rằng bước kiểm tra này đã từ chối một yêu cầu hợp lệ."
+    "validationGenericEvidenceHint": "Chỉ liên hệ hỗ trợ nếu bạn cho rằng bước kiểm tra này đã từ chối một yêu cầu hợp lệ.",
+    "readyMadeNoKitchen": "Làm sẵn, không qua bếp"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Biến thể này sẽ bị vô hiệu hóa khi lưu và không thể khôi phục từ màn hình này.",
     "variantRemoveAllConfirm": "Tắt mục này sẽ vô hiệu hóa mọi biến thể của sản phẩm này. Các đơn hàng cũ vẫn giữ chúng.",
     "parentCategory": "Danh mục cha",
-    "parentCategoryNone": "Không có (Cấp cao nhất)"
+    "parentCategoryNone": "Không có (Cấp cao nhất)",
+    "fieldGoesToKitchen": "Chuyển vào bếp",
+    "fieldGoesToKitchenHint": "Tắt với hàng làm sẵn như đồ uống đóng chai. Hàng vẫn được bán, tính thuế và in hóa đơn như thường, nhưng không hiện trên màn hình hay phiếu bếp."
   },
   "productAnalytics": {
     "title": "Giúp chúng tôi quyết định nên làm gì tiếp theo",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 giờ",
     "refundWindow4h": "4 giờ",
     "refundWindowSameDay": "Cùng ngày kinh doanh",
-    "refundOwnerUnlimitedNote": "Chủ quán luôn có thể phê duyệt hoàn tiền cho bất kỳ đơn hàng cũ nào bằng mã PIN phê duyệt của mình."
+    "refundOwnerUnlimitedNote": "Chủ quán luôn có thể phê duyệt hoàn tiền cho bất kỳ đơn hàng cũ nào bằng mã PIN phê duyệt của mình.",
+    "serviceModel": "Mô hình phục vụ",
+    "serviceModelQsr": "Phục vụ nhanh",
+    "serviceModelFinedine": "Nhà hàng cao cấp",
+    "serviceModelHybridHint": "Đơn tại quầy và mang đi trả tiền trước, đơn tại bàn trả sau khi phục vụ. Chỉ đơn ăn tại chỗ mới cần chọn bàn.",
+    "serviceModelHybrid": "Phục vụ nhanh + nhà hàng cao cấp"
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Tôi đồng ý với FloPOS",
     "timezoneHint": "Tự động điền theo quốc gia. Cửa hàng tại quốc gia có nhiều múi giờ có thể chọn múi giờ địa phương thực tế.",
     "timezoneLabel": "Múi giờ",
-    "welcome": "Chào mừng đến với FloCafe"
+    "welcome": "Chào mừng đến với FloCafe",
+    "hybridLabel": "Phục vụ nhanh + nhà hàng cao cấp",
+    "hybridDesc": "Quầy và phòng ăn cùng lúc",
+    "hybridDetails": "Phù hợp với nơi bán đồ làm sẵn tại quầy và còn phục vụ khách ngồi bàn. Đơn tại quầy và mang đi trả tiền trước; đơn tại bàn trả sau khi phục vụ."
   },
   "staff": {
     "addButton": "Thêm nhân viên",

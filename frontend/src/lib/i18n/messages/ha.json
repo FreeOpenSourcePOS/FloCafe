@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Tuntuɓi tallafi kawai idan an riga an buɗe shift a wannan na'urar kuma wannan kuskuren ya ci gaba.",
     "validationClosedBooksGuidance": "An rufe ranar kasuwanci ta yau kuma ba za a iya sake buɗe ta ba. Sabbin ododi da hada-hadar tsabar kuɗi za su ci gaba a ranar kasuwanci ta gaba.",
     "validationClosedBooksEvidenceHint": "Tuntuɓi tallafi kawai idan ranar kasuwanci ta yau ta nuna a rufe a kwanan wata ko yankin lokaci marar daidai.",
-    "validationGenericEvidenceHint": "Tuntuɓi tallafi kawai idan kuna ganin wannan tantancewar ta ƙi amsar ingantacciyar buƙata."
+    "validationGenericEvidenceHint": "Tuntuɓi tallafi kawai idan kuna ganin wannan tantancewar ta ƙi amsar ingantacciyar buƙata.",
+    "readyMadeNoKitchen": "An shirya, babu kicin"
   },
   "printTest": {
     "amt": "Kuɗi",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Za a kashe wannan nau'in idan an adana kuma ba za a iya maido da shi daga wannan allon ba.",
     "variantRemoveAllConfirm": "Kashe wannan yana kashe kowane nau'i na wannan samfurin. Ododin baya za su ci gaba da riƙe su.",
     "parentCategory": "Babban Rukuni",
-    "parentCategoryNone": "Babu (Matakin farko)"
+    "parentCategoryNone": "Babu (Matakin farko)",
+    "fieldGoesToKitchen": "Yana zuwa kicin",
+    "fieldGoesToKitchenHint": "Kashe wannan ga kayan da aka riga aka shirya kamar abin sha na kwalba. Ana sayar da su, a ƙaddamar da haraji da rasit kamar yadda aka saba, amma ba sa fitowa a allon kicin ko takardun kicin."
   },
   "productAnalytics": {
     "title": "Taimaka mana mu yanke shawarar abin da za mu gina na gaba",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "Awanni 2",
     "refundWindow4h": "Awanni 4",
     "refundWindowSameDay": "Rana ɗaya ta kasuwanci",
-    "refundOwnerUnlimitedNote": "Masu shago za su iya amincewa da mayar da kuɗi a kowane lokaci don kowace tsohuwar oda da PIN ɗinsu na amincewa."
+    "refundOwnerUnlimitedNote": "Masu shago za su iya amincewa da mayar da kuɗi a kowane lokaci don kowace tsohuwar oda da PIN ɗinsu na amincewa.",
+    "serviceModel": "Tsarin sabis",
+    "serviceModelQsr": "Sabis mai sauri",
+    "serviceModelFinedine": "Cin abinci mai daraja",
+    "serviceModelHybridHint": "Ana biyan odar kanta da ta ɗauka tukuna, odar tebur kuma bayan hidima. Ana buƙatar tebur ne kawai ga odar cin abinci a wurin.",
+    "serviceModelHybrid": "Sabis mai sauri + cin abinci mai daraja"
   },
   "setup": {
     "alreadyCompleted": "An riga an kammala saitin farko a wannan manhajar da aka girka. Ana turawa zuwa shafin shiga…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Na amince da na FloPOS",
     "timezoneHint": "An cika tun farko daga ƙasarka. Shaguna a ƙasashe masu yankunan lokaci da yawa suna iya zaɓar ainihin yankin lokacinsu.",
     "timezoneLabel": "Yankin lokaci",
-    "welcome": "Barka da zuwa FloCafe"
+    "welcome": "Barka da zuwa FloCafe",
+    "hybridLabel": "Sabis mai sauri + cin abinci mai daraja",
+    "hybridDesc": "Kanta da dakin cin abinci tare",
+    "hybridDetails": "Ya fi dacewa da wuraren da ke sayar da kayan da aka riga aka shirya a kanta kuma suna zaunar da baƙi. Ana biyan odar kanta da ta ɗauka tukuna; ana biyan odar tebur bayan hidima."
   },
   "staff": {
     "addButton": "Ƙara Ma'aikaci",

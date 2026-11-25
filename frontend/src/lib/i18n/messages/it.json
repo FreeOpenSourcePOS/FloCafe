@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Contatta il supporto solo se un turno è già aperto su questo terminale e l'errore persiste.",
     "validationClosedBooksGuidance": "La giornata lavorativa di oggi è chiusa e non può essere riaperta. I nuovi ordini e i movimenti di cassa riprenderanno il prossimo giorno lavorativo.",
     "validationClosedBooksEvidenceHint": "Contatta il supporto solo se la giornata lavorativa di oggi risulta chiusa con data o fuso orario del punto vendita errati.",
-    "validationGenericEvidenceHint": "Contatta il supporto solo se ritieni che questo controllo di convalida abbia rifiutato una richiesta valida."
+    "validationGenericEvidenceHint": "Contatta il supporto solo se ritieni che questo controllo di convalida abbia rifiutato una richiesta valida.",
+    "readyMadeNoKitchen": "Pronto, senza cucina"
   },
   "printTest": {
     "amt": "Importo",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Questa variante verrà disattivata al salvataggio e non potrà essere ripristinata da questa schermata.",
     "variantRemoveAllConfirm": "Disattivandolo verranno disattivate tutte le varianti di questo prodotto. Gli ordini passati le conservano.",
     "parentCategory": "Categoria principale",
-    "parentCategoryNone": "Nessuna (livello principale)"
+    "parentCategoryNone": "Nessuna (livello principale)",
+    "fieldGoesToKitchen": "Va in cucina",
+    "fieldGoesToKitchenHint": "Disattiva per i prodotti pronti, come le bevande in bottiglia. Si vendono, tassano e scontrinano come sempre, ma non compaiono mai sul display né sulle comande di cucina."
   },
   "productAnalytics": {
     "title": "Aiutaci a decidere cosa costruire dopo",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 ore",
     "refundWindow4h": "4 ore",
     "refundWindowSameDay": "Stesso giorno lavorativo",
-    "refundOwnerUnlimitedNote": "I titolari possono sempre approvare i rimborsi per qualsiasi ordine passato con il proprio PIN di approvazione."
+    "refundOwnerUnlimitedNote": "I titolari possono sempre approvare i rimborsi per qualsiasi ordine passato con il proprio PIN di approvazione.",
+    "serviceModel": "Modello di servizio",
+    "serviceModelQsr": "Servizio rapido",
+    "serviceModelFinedine": "Ristorazione",
+    "serviceModelHybridHint": "Gli ordini al banco e da asporto si pagano subito, quelli ai tavoli dopo il servizio. Il tavolo serve solo per gli ordini da consumare sul posto.",
+    "serviceModelHybrid": "Servizio rapido + ristorazione"
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Accetto il FloPOS",
     "timezoneHint": "Precompilato dal tuo paese. I negozio in paesi con più fusi orari possono scegliere il loro fuso orario locale effettivo.",
     "timezoneLabel": "Fuso orario",
-    "welcome": "Benvenuto in FloCafe"
+    "welcome": "Benvenuto in FloCafe",
+    "hybridLabel": "Servizio rapido + ristorazione",
+    "hybridDesc": "Banco e sala insieme",
+    "hybridDetails": "Ideale per locali che vendono prodotti pronti al banco e servono anche ai tavoli. Gli ordini al banco e da asporto si pagano subito; quelli ai tavoli dopo il servizio."
   },
   "staff": {
     "addButton": "Aggiungi personale",

@@ -376,8 +376,12 @@ export function reconcileActiveOrderStatusFromItems(
   }
   if (order.status === 'completed') {
     const items = db
-      .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
-      .all(orderId) as Array<{ status: string | null; quantity: number | null }>;
+      .prepare('SELECT status, quantity, requires_kitchen FROM order_items WHERE order_id = ?')
+      .all(orderId) as Array<{
+      status: string | null;
+      quantity: number | null;
+      requires_kitchen: number | null;
+    }>;
     const derived: DerivedOrderKdsStatus | null = deriveOrderStatusFromItems(items);
     if (derived === null) {
       return { changed: false, previousStatus: order.status, status: order.status };
@@ -419,8 +423,12 @@ export function reconcileActiveOrderStatusFromItems(
   }
 
   const items = db
-    .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
-    .all(orderId) as Array<{ status: string | null; quantity: number | null }>;
+    .prepare('SELECT status, quantity, requires_kitchen FROM order_items WHERE order_id = ?')
+    .all(orderId) as Array<{
+    status: string | null;
+    quantity: number | null;
+    requires_kitchen: number | null;
+  }>;
   const derived: DerivedOrderKdsStatus | null = deriveOrderStatusFromItems(items);
   if (derived === null) {
     return { changed: false, previousStatus: order.status, status: order.status };

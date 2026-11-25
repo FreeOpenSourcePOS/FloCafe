@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Makipag-ugnayan lang sa support kung may bukas nang shift sa terminal na ito at nagpapatuloy pa rin ang error.",
     "validationClosedBooksGuidance": "Sarado na ang araw ng negosyo ngayon at hindi na maaaring buksan muli. Magpapatuloy ang mga bagong order at galaw ng pera sa susunod na araw ng negosyo.",
     "validationClosedBooksEvidenceHint": "Makipag-ugnayan lang sa support kung lumalabas na sarado ang araw ng negosyo sa maling petsa o timezone ng tindahan.",
-    "validationGenericEvidenceHint": "Makipag-ugnayan lang sa support kung naniniwala kang tinanggihan ng pagsusuring ito ang isang wastong kahilingan."
+    "validationGenericEvidenceHint": "Makipag-ugnayan lang sa support kung naniniwala kang tinanggihan ng pagsusuring ito ang isang wastong kahilingan.",
+    "readyMadeNoKitchen": "Handa na, walang kusina"
   },
   "printTest": {
     "amt": "Halaga",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "I-deactivate ang variant na ito kapag nai-save at hindi ito maibabalik mula sa screen na ito.",
     "variantRemoveAllConfirm": "Kapag pinatay ito, made-deactivate ang lahat ng variant ng produktong ito. Nananatili ang dating mga order.",
     "parentCategory": "Pangunahing Kategorya",
-    "parentCategoryNone": "Wala (Nangungunang antas)"
+    "parentCategoryNone": "Wala (Nangungunang antas)",
+    "fieldGoesToKitchen": "Pupunta sa kusina",
+    "fieldGoesToKitchenHint": "I-off para sa handa nang produkto tulad ng nakabotelyang inumin. Ibinebenta, binubuwisan at nire-resibo ito gaya ng dati, pero hindi lalabas sa display o ticket ng kusina."
   },
   "productAnalytics": {
     "title": "Tulungan kaming magpasya kung ano ang susunod naming gagawin",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 oras",
     "refundWindow4h": "4 na oras",
     "refundWindowSameDay": "Parehong araw ng negosyo",
-    "refundOwnerUnlimitedNote": "Maaaring aprubahan palagi ng mga may-ari ang refund para sa anumang nakaraang order gamit ang kanilang Staff Approval PIN."
+    "refundOwnerUnlimitedNote": "Maaaring aprubahan palagi ng mga may-ari ang refund para sa anumang nakaraang order gamit ang kanilang Staff Approval PIN.",
+    "serviceModel": "Modelo ng serbisyo",
+    "serviceModelQsr": "Mabilis na serbisyo",
+    "serviceModelFinedine": "Mataas na uri ng kainan",
+    "serviceModelHybridHint": "Binabayaran muna ang counter at takeaway na order, pagkatapos ng serbisyo ang order sa mesa. Kailangan lang ng mesa sa dine-in na order.",
+    "serviceModelHybrid": "Mabilis na serbisyo + fine dining"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Sumasang-ayon ako sa FloPOS",
     "timezoneHint": "Kusang napunan mula sa iyong bansa.",
     "timezoneLabel": "Timezone",
-    "welcome": "Maligayang Pagdating sa FloCafe"
+    "welcome": "Maligayang Pagdating sa FloCafe",
+    "hybridLabel": "Mabilis na serbisyo + fine dining",
+    "hybridDesc": "Counter at dining room nang magkasama",
+    "hybridDetails": "Pinakamainam para sa mga lugar na nagbebenta ng handa nang produkto sa counter at may pinaupo ring bisita. Binabayaran muna ang counter at takeaway na order; pagkatapos ng serbisyo ang order sa mesa."
   },
   "staff": {
     "addButton": "Magdagdag ng Staff",

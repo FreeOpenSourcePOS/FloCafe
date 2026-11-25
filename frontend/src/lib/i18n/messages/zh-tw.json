@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "僅在此終端機已開啟班次但錯誤持續發生時才聯繫支援。",
     "validationClosedBooksGuidance": "今日營業日已關帳且無法重新開啟。新訂單與現金作業將於下一個營業日恢復。",
     "validationClosedBooksEvidenceHint": "僅在今日營業日因門市日期或時區錯誤而顯示為已關帳時才聯繫支援。",
-    "validationGenericEvidenceHint": "僅在您認為此驗證檢查拒絕了有效請求時才聯繫支援。"
+    "validationGenericEvidenceHint": "僅在您認為此驗證檢查拒絕了有效請求時才聯繫支援。",
+    "readyMadeNoKitchen": "現成品，無需廚房"
   },
   "printTest": {
     "amt": "金額",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "該變體儲存後將被停用，且無法在此頁面還原。",
     "variantRemoveAllConfirm": "關閉後將停用該商品的所有變體，歷史訂單仍會保留。",
     "parentCategory": "父類別",
-    "parentCategoryNone": "無（頂層類別）"
+    "parentCategoryNone": "無（頂層類別）",
+    "fieldGoesToKitchen": "送至廚房",
+    "fieldGoesToKitchenHint": "瓶裝飲料等現成商品請關閉。它們仍照常銷售、課稅並開立收據，但不會出現在廚房顯示器或廚房單據上。"
   },
   "productAnalytics": {
     "title": "幫我們決定下一步要做什麼",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 小時",
     "refundWindow4h": "4 小時",
     "refundWindowSameDay": "同一營業日",
-    "refundOwnerUnlimitedNote": "店主始終可以使用其員工核准 PIN 碼核准任何歷史訂單的退款。"
+    "refundOwnerUnlimitedNote": "店主始終可以使用其員工核准 PIN 碼核准任何歷史訂單的退款。",
+    "serviceModel": "服務模式",
+    "serviceModelQsr": "快速服務",
+    "serviceModelFinedine": "精緻餐飲",
+    "serviceModelHybridHint": "櫃檯與外帶訂單先付款，桌邊訂單於服務後付款。僅內用訂單需要指定桌位。",
+    "serviceModelHybrid": "快速服務＋精緻餐飲"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "我同意 FloPOS 的",
     "timezoneHint": "根據您的國家/地區預填。多時區國家/地區的店家可選擇實際本機時區。",
     "timezoneLabel": "時區",
-    "welcome": "歡迎使用 FloCafe"
+    "welcome": "歡迎使用 FloCafe",
+    "hybridLabel": "快速服務＋精緻餐飲",
+    "hybridDesc": "櫃檯與用餐區並行",
+    "hybridDetails": "適合在櫃檯販售現成商品、同時也提供桌邊服務的店家。櫃檯與外帶訂單先付款，桌邊訂單於服務後付款。"
   },
   "staff": {
     "addButton": "新增員工",

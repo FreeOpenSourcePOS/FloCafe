@@ -614,6 +614,11 @@ export default function ProductGrid({
                 <h3 className="font-medium text-foreground text-sm line-clamp-2 leading-snug">
                   {product.name}
                 </h3>
+                {product.requires_kitchen === false && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {t('readyMadeNoKitchen')}
+                  </p>
+                )}
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-brand font-bold">{fmt(Number(product.price))}</p>
                   <div className="flex items-center gap-1 shrink-0">

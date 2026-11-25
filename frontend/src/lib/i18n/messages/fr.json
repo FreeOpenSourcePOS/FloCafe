@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Contactez l'assistance uniquement si un poste est déjà ouvert sur ce terminal et que cette erreur persiste.",
     "validationClosedBooksGuidance": "La journée comptable d'aujourd'hui est clôturée et ne peut pas être rouverte. Les nouvelles commandes et opérations espèces reprendront à la prochaine journée comptable.",
     "validationClosedBooksEvidenceHint": "Contactez l'assistance uniquement si la journée d'aujourd'hui apparaît clôturée à une date ou un fuseau horaire erronés.",
-    "validationGenericEvidenceHint": "Contactez l'assistance uniquement si vous pensez que ce contrôle de validation a rejeté une demande valide."
+    "validationGenericEvidenceHint": "Contactez l'assistance uniquement si vous pensez que ce contrôle de validation a rejeté une demande valide.",
+    "readyMadeNoKitchen": "Prêt, sans cuisine"
   },
   "printTest": {
     "amt": "Montant",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Cette variante sera désactivée à l’enregistrement et ne pourra pas être restaurée depuis cet écran.",
     "variantRemoveAllConfirm": "Si vous le désactivez, toutes les variantes de ce produit seront désactivées. Les commandes passées les conservent.",
     "parentCategory": "Catégorie parente",
-    "parentCategoryNone": "Aucune (niveau principal)"
+    "parentCategoryNone": "Aucune (niveau principal)",
+    "fieldGoesToKitchen": "Va en cuisine",
+    "fieldGoesToKitchenHint": "Désactivez pour les produits prêts comme les boissons en bouteille. Ils sont vendus, taxés et ticketés comme d'habitude, mais n'apparaissent jamais sur l'écran ni sur les bons de cuisine."
   },
   "productAnalytics": {
     "title": "Aidez-nous à décider quoi construire ensuite",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 heures",
     "refundWindow4h": "4 heures",
     "refundWindowSameDay": "Même journée commerciale",
-    "refundOwnerUnlimitedNote": "Les propriétaires peuvent toujours approuver les remboursements de toute commande passée avec leur code PIN d’approbation."
+    "refundOwnerUnlimitedNote": "Les propriétaires peuvent toujours approuver les remboursements de toute commande passée avec leur code PIN d’approbation.",
+    "serviceModel": "Modèle de service",
+    "serviceModelQsr": "Service rapide",
+    "serviceModelFinedine": "Restauration gastronomique",
+    "serviceModelHybridHint": "Les commandes au comptoir et à emporter sont payées d'abord, celles des tables après le service. Une table n'est requise que pour les commandes sur place.",
+    "serviceModelHybrid": "Service rapide + restauration gastronomique"
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",
@@ -2892,7 +2900,10 @@
     "termsIntro": "J’accepte les documents FloPOS suivants :",
     "timezoneHint": "Prérempli à partir de votre pays. Les établissements situés dans un pays couvrant plusieurs fuseaux horaires peuvent choisir leur fuseau local réel.",
     "timezoneLabel": "Fuseau horaire",
-    "welcome": "Bienvenue dans FloCafe"
+    "welcome": "Bienvenue dans FloCafe",
+    "hybridLabel": "Service rapide + restauration gastronomique",
+    "hybridDesc": "Comptoir et salle ensemble",
+    "hybridDetails": "Idéal pour les établissements qui vendent des produits prêts au comptoir et accueillent aussi des convives. Les commandes au comptoir et à emporter sont payées d'abord, celles des tables après le service."
   },
   "staff": {
     "addButton": "Ajouter un employé",

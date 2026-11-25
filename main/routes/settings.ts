@@ -89,6 +89,7 @@ import {
   validateLanguagePolicySetting,
 } from '../lib/print-language-settings';
 import { isThemeMode } from '../title-bar-theme';
+import { VALID_SERVICE_MODELS } from '../services/service-model';
 import {
   ChargeValidationError,
   CUSTOM_CHARGES_SETTING_KEY,
@@ -283,6 +284,7 @@ function businessShape(s: Record<string, string>) {
     business_phone: s.business_phone || '',
     instagram_handle: s.instagram_handle || '',
     billing_type: s.billing_type || 'postpaid',
+    service_model: s.service_model || 'finedine',
     tables_required: s.tables_required !== 'false',
     tax_registered: s.tax_registered === 'true' || s.tax_registered === '1',
     bill_show_name: s.bill_show_name !== 'false',
@@ -376,6 +378,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       business_phone,
       instagram_handle,
       billing_type,
+      service_model,
       tables_required,
       tax_registered,
       bill_show_name,
@@ -403,6 +406,10 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
             .trim()
             .slice(0, 100)
         : undefined;
+
+    if (service_model !== undefined && !VALID_SERVICE_MODELS.has(service_model)) {
+      return res.status(400).json({ error: 'Invalid service model' });
+    }
 
     let normalizedReceiptLogo: string | undefined = undefined;
     if (receipt_logo !== undefined) {
@@ -525,7 +532,8 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
       instagram_handle: normalizedInstagramHandle,
       billing_type,
-      tables_required,
+      service_model,
+      tables_required: service_model === 'hybrid' ? true : tables_required,
       tax_registered,
       bill_show_name,
       bill_show_address,

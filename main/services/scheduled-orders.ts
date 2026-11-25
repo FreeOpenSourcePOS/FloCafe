@@ -544,7 +544,7 @@ export async function releaseScheduledOrder(
              recipe_snapshot = ?,
              ingredient_cost = ?,
              ingredient_cost_known = ?,
-             status = 'pending',
+             status = CASE WHEN requires_kitchen = 0 THEN 'served' ELSE 'pending' END,
              updated_at = ?
          WHERE id = ?`,
       );

@@ -69,6 +69,7 @@ export interface BusinessForm {
   numberDigits: DigitMode;
   calendar: CalendarMode;
   billingType: 'postpaid' | 'prepaid';
+  serviceModel: 'qsr' | 'finedine' | 'hybrid';
   tablesRequired: boolean;
   taxRegistered: boolean;
   taxRegistrationNumber: string;
@@ -371,45 +372,87 @@ export function GeneralSettingsTab({
             }}
           />
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">{t('billingType')}</label>
+            <label className="block text-sm text-muted-foreground mb-1">{t('serviceModel')}</label>
             {isAdmin ? (
               <select
-                value={form.billingType}
+                value={form.serviceModel}
                 onChange={(e) => {
-                  markHydrationTouched('billingType');
-                  setForm((p) => ({ ...p, billingType: e.target.value as 'postpaid' | 'prepaid' }));
+                  markHydrationTouched('serviceModel');
+                  setForm((p) => ({
+                    ...p,
+                    serviceModel: e.target.value as BusinessForm['serviceModel'],
+                  }));
                 }}
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
               >
-                <option value="postpaid">{t('billingTypePostpaid')}</option>
-                <option value="prepaid">{t('billingTypePrepaid')}</option>
-              </select>
-            ) : (
-              <p className="font-medium text-foreground capitalize">{form.billingType}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm text-muted-foreground mb-1">
-              {t('tablesRequired')}
-            </label>
-            {isAdmin ? (
-              <select
-                value={form.tablesRequired ? 'yes' : 'no'}
-                onChange={(e) => {
-                  markHydrationTouched('tablesRequired');
-                  setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' }));
-                }}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
-              >
-                <option value="yes">{t('tablesRequiredYes')}</option>
-                <option value="no">{t('tablesRequiredNo')}</option>
+                <option value="qsr">{t('serviceModelQsr')}</option>
+                <option value="finedine">{t('serviceModelFinedine')}</option>
+                <option value="hybrid">{t('serviceModelHybrid')}</option>
               </select>
             ) : (
               <p className="font-medium text-foreground">
-                {form.tablesRequired ? t('yes') : t('no')}
+                {t(
+                  form.serviceModel === 'qsr'
+                    ? 'serviceModelQsr'
+                    : form.serviceModel === 'hybrid'
+                      ? 'serviceModelHybrid'
+                      : 'serviceModelFinedine',
+                )}
               </p>
             )}
+            {form.serviceModel === 'hybrid' && (
+              <p className="text-xs text-muted-foreground mt-1">{t('serviceModelHybridHint')}</p>
+            )}
           </div>
+          {form.serviceModel !== 'hybrid' && (
+            <>
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">
+                  {t('billingType')}
+                </label>
+                {isAdmin ? (
+                  <select
+                    value={form.billingType}
+                    onChange={(e) => {
+                      markHydrationTouched('billingType');
+                      setForm((p) => ({
+                        ...p,
+                        billingType: e.target.value as 'postpaid' | 'prepaid',
+                      }));
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                  >
+                    <option value="postpaid">{t('billingTypePostpaid')}</option>
+                    <option value="prepaid">{t('billingTypePrepaid')}</option>
+                  </select>
+                ) : (
+                  <p className="font-medium text-foreground capitalize">{form.billingType}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">
+                  {t('tablesRequired')}
+                </label>
+                {isAdmin ? (
+                  <select
+                    value={form.tablesRequired ? 'yes' : 'no'}
+                    onChange={(e) => {
+                      markHydrationTouched('tablesRequired');
+                      setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' }));
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                  >
+                    <option value="yes">{t('tablesRequiredYes')}</option>
+                    <option value="no">{t('tablesRequiredNo')}</option>
+                  </select>
+                ) : (
+                  <p className="font-medium text-foreground">
+                    {form.tablesRequired ? t('yes') : t('no')}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
           <div data-setting-section="store-tax-id" className="rounded-lg">
             <label className="block text-sm text-muted-foreground mb-1">{t('taxRegistered')}</label>
             {isAdmin ? (

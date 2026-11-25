@@ -41,7 +41,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { RESTORE_FROM_FILE_EVENT } from '@/components/layout/MenuActionHandler';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
-type ServiceModel = 'qsr' | 'finedine';
+type ServiceModel = 'qsr' | 'finedine' | 'hybrid';
 
 const SETUP_PROFILES: Array<{ value: SetupProfile; badge?: 'express' | null }> = [
   { value: 'empty' },
@@ -49,7 +49,11 @@ const SETUP_PROFILES: Array<{ value: SetupProfile; badge?: 'express' | null }> =
   { value: 'demo' },
 ];
 
-const SERVICE_MODELS: Array<{ value: ServiceModel }> = [{ value: 'qsr' }, { value: 'finedine' }];
+const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
+  { value: 'qsr' },
+  { value: 'finedine' },
+  { value: 'hybrid' },
+];
 
 // Typed message keys for setup profile and service model cards.
 type SetupKey = keyof AppConfig['Messages']['setup'];
@@ -63,6 +67,7 @@ const SETUP_PROFILE_KEYS = {
 const SERVICE_MODEL_KEYS = {
   qsr: { label: 'qsrLabel', desc: 'qsrDesc', details: 'qsrDetails' },
   finedine: { label: 'finedineLabel', desc: 'finedineDesc', details: 'finedineDetails' },
+  hybrid: { label: 'hybridLabel', desc: 'hybridDesc', details: 'hybridDetails' },
 } as const satisfies Record<ServiceModel, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
 
 // Registry-derived selectable languages (derived from LANGUAGES registry where selectable: true).
@@ -1182,7 +1187,7 @@ export default function SetupPage() {
                   <p className="text-muted-foreground text-sm">{t('flowSubtitle')}</p>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   {SERVICE_MODELS.map((item) => {
                     const selected = serviceModel === item.value;
                     return (

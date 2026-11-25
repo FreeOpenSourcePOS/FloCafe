@@ -1436,6 +1436,68 @@ function main() {
   console.log('   ✓ v125 adds printers.profile_id and preserves existing printers with NULL');
   closeDatabase();
 
+  // ── v126: add_requires_kitchen on products and order_items ────────────────
+  const requiresKitchenMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_requires_kitchen',
+  );
+  assert.ok(requiresKitchenMigrationIndex > 0, 'the add_requires_kitchen migration is registered');
+  assert.equal(
+    MIGRATIONS[requiresKitchenMigrationIndex].version,
+    126,
+    'the add_requires_kitchen migration is v126',
+  );
+  const v125SnapDb = buildIdealSchemaDb(125);
+  try {
+    const preV126ProductCols = (
+      v125SnapDb.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>
+    ).map((col) => col.name);
+    assert.ok(
+      !preV126ProductCols.includes('requires_kitchen'),
+      'v125 products schema must not include requires_kitchen',
+    );
+    v125SnapDb
+      .prepare(
+        `INSERT INTO products (id, name, price, created_at, updated_at)
+         VALUES ('prod-pre-v126', 'Legacy Dish', 9.5, '2026-11-01 09:00:00', '2026-11-01 09:00:00')`,
+      )
+      .run();
+    fs.writeFileSync(upgradeDbPath, v125SnapDb.serialize());
+  } finally {
+    v125SnapDb.close();
+  }
+
+  initDatabase();
+  const postRequiresKitchenDb = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  for (const table of ['products', 'order_items']) {
+    const columns = postRequiresKitchenDb.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+      dflt_value: string | null;
+      notnull: number;
+    }>;
+    const column = columns.find((col) => col.name === 'requires_kitchen');
+    assert.ok(column, `v126 adds ${table}.requires_kitchen during upgrade from v125`);
+    assert.equal(column?.notnull, 1, `${table}.requires_kitchen is NOT NULL`);
+    assert.equal(String(column?.dflt_value), '1', `${table}.requires_kitchen defaults to 1`);
+  }
+  const migratedProduct = postRequiresKitchenDb
+    .prepare(`SELECT id, requires_kitchen FROM products WHERE id = 'prod-pre-v126'`)
+    .get();
+  assert.deepEqual(
+    migratedProduct,
+    { id: 'prod-pre-v126', requires_kitchen: 1 },
+    'existing pre-v126 products keep going to the kitchen',
+  );
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v126',
+  );
+  console.log(
+    '   ✓ v126 adds requires_kitchen and keeps every existing product on the kitchen path',
+  );
+  closeDatabase();
+
   console.log('='.repeat(60));
   console.log('✅ Upgrade-path regression test passed');
 }

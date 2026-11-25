@@ -1336,7 +1336,8 @@
     "validationShiftEvidenceHint": "Kontaktoni mbështetjen vetëm nëse një turn është tashmë i hapur në këtë terminal dhe ky gabim vazhdon.",
     "validationClosedBooksGuidance": "Dita e sotme e punës është mbyllur dhe nuk mund të rihapet. Porositë e reja dhe veprimet me para në dorë rifillojnë ditën tjetër të punës.",
     "validationClosedBooksEvidenceHint": "Kontaktoni mbështetjen vetëm nëse dita e sotme e punës shfaqet e mbyllur në datën ose zonën kohore të gabuar të dyqanit.",
-    "validationGenericEvidenceHint": "Kontaktoni mbështetjen vetëm nëse mendoni se ky kontroll verifikimi refuzoi një kërkesë të vlefshme."
+    "validationGenericEvidenceHint": "Kontaktoni mbështetjen vetëm nëse mendoni se ky kontroll verifikimi refuzoi një kërkesë të vlefshme.",
+    "readyMadeNoKitchen": "Gati, pa kuzhinë"
   },
   "printTest": {
     "amt": "Shuma",
@@ -1740,7 +1741,9 @@
     "variantDeactivateConfirm": "Ky variant do të çaktivizohet kur ruhet dhe nuk mund të rikthehet nga ky ekran.",
     "variantRemoveAllConfirm": "Nëse e çaktivizoni, do të çaktivizohen të gjitha variantet e këtij produkti. Porositë e vjetra i ruajnë.",
     "parentCategory": "Kategoria prind",
-    "parentCategoryNone": "Asnjë (niveli kryesor)"
+    "parentCategoryNone": "Asnjë (niveli kryesor)",
+    "fieldGoesToKitchen": "Shkon në kuzhinë",
+    "fieldGoesToKitchenHint": "Çaktivizoje për produkte të gatshme si pijet në shishe. Shiten, tatohen dhe faturohen si zakonisht, por nuk shfaqen kurrë në ekranin ose biletat e kuzhinës."
   },
   "productAnalytics": {
     "title": "Na ndihmoni të vendosim çfarë të ndërtojmë më pas",
@@ -2795,7 +2798,12 @@
     "refundWindow2h": "2 orë",
     "refundWindow4h": "4 orë",
     "refundWindowSameDay": "E njëjta ditë pune",
-    "refundOwnerUnlimitedNote": "Pronarët mund të miratojnë gjithmonë rimbursime për çdo porosi të kaluar me PIN-in e tyre të miratimit të stafit."
+    "refundOwnerUnlimitedNote": "Pronarët mund të miratojnë gjithmonë rimbursime për çdo porosi të kaluar me PIN-in e tyre të miratimit të stafit.",
+    "serviceModel": "Modeli i shërbimit",
+    "serviceModelQsr": "Shërbim i shpejtë",
+    "serviceModelFinedine": "Restorant",
+    "serviceModelHybridHint": "Porositë në banak dhe për marrje paguhen më parë, ato të tavolinës pas shërbimit. Tavolina kërkohet vetëm për porositë për t'u ngrënë aty.",
+    "serviceModelHybrid": "Shërbim i shpejtë + restorant"
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",
@@ -2892,7 +2900,10 @@
     "termsIntro": "Jam dakord me FloPOS",
     "timezoneHint": "E mbushur paraprakisht nga vendi juaj. Dyqanet në vendet me shumë zona kohore mund të zgjedhin zonën e tyre aktuale lokale kohore.",
     "timezoneLabel": "Zona kohore",
-    "welcome": "Mirë se vini në FloCafe"
+    "welcome": "Mirë se vini në FloCafe",
+    "hybridLabel": "Shërbim i shpejtë + restorant",
+    "hybridDesc": "Banaku dhe salla së bashku",
+    "hybridDetails": "Ideale për vende që shesin produkte të gatshme në banak dhe presin edhe mysafirë në tavolina. Porositë në banak dhe për marrje paguhen më parë; ato të tavolinës pas shërbimit."
   },
   "staff": {
     "addButton": "Shto staf",

@@ -326,7 +326,12 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
     };
   }
   if (reqName === '@/store/pos-settings') {
-    return { usePosSettingsStore: mockPosSettingsStoreFn };
+    return {
+      usePosSettingsStore: mockPosSettingsStoreFn,
+      isPrepaidBilling: (billingType: string) => billingType === 'prepaid',
+      normalizeServiceModel: (value: unknown) =>
+        value === 'qsr' || value === 'hybrid' ? value : 'finedine',
+    };
   }
   if (reqName === '@/components/pos/PrepaidCheckoutModal') {
     return { __esModule: true, default: PrepaidCheckoutModalStub };

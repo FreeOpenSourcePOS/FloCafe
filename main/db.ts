@@ -10393,6 +10393,18 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 126,
+    name: 'add_requires_kitchen',
+    up: () => {
+      if (!getColumns(db, 'products').includes('requires_kitchen')) {
+        db.exec('ALTER TABLE products ADD COLUMN requires_kitchen INTEGER NOT NULL DEFAULT 1');
+      }
+      if (!getColumns(db, 'order_items').includes('requires_kitchen')) {
+        db.exec('ALTER TABLE order_items ADD COLUMN requires_kitchen INTEGER NOT NULL DEFAULT 1');
+      }
+    },
+  },
 ];
 
 export function backfillWhatsAppMessageAttempts(
@@ -11771,9 +11783,18 @@ export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boo
   return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
 }
 
+/** An order made only of ready-made lines has no kitchen work and never appears on kitchen boards. */
+export function orderHasKitchenWorkSql(orderAlias: string): string {
+  return `(
+      EXISTS (SELECT 1 FROM order_items kitchen_oi WHERE kitchen_oi.order_id = ${orderAlias}.id AND kitchen_oi.requires_kitchen = 1)
+      OR NOT EXISTS (SELECT 1 FROM order_items ready_oi WHERE ready_oi.order_id = ${orderAlias}.id AND ready_oi.requires_kitchen = 0)
+    )`;
+}
+
 export const ACTIVE_RELEASED_KDS_ORDER_IDS_SQL = `
   SELECT id FROM orders
   WHERE release_status = 'released' AND status IN ('pending', 'preparing', 'ready', 'served')
+    AND ${orderHasKitchenWorkSql('orders')}
   UNION
   SELECT active_o.id FROM orders active_o
   JOIN order_items active_oi ON active_oi.order_id = active_o.id

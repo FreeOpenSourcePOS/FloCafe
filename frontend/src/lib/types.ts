@@ -18,7 +18,7 @@ export interface Tenant {
   slug: string;
   database_name: string;
   business_type: 'restaurant';
-  service_model?: 'qsr' | 'finedine';
+  service_model?: 'qsr' | 'finedine' | 'hybrid';
   country: string;
   currency: string;
   timezone: string;
@@ -100,6 +100,8 @@ export interface Product {
   barcode: string | null;
   sale_unit: 'each' | 'kg' | 'g' | 'lb' | 'ml' | 'cl' | 'l' | 'fl oz' | 'oz';
   allow_fractional_quantity: boolean;
+  /** False for ready-made items that never reach the kitchen. Absent on older payloads, meaning true. */
+  requires_kitchen?: boolean;
   weight_precision: number;
   inventory_product_id?: string | null;
   inventory_deduction_quantity?: number | null;

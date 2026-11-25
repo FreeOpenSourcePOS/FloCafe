@@ -541,6 +541,58 @@ async function main() {
     );
   }
 
+  // If restoring an earlier front also fails, that front is stopped rather than left mismatched.
+  const rbA = await makeSurface('main');
+  const rbB = await makeSurface('kds');
+  cleanups.push(() => new Promise<void>((r) => rbA.http.close(() => r())));
+  cleanups.push(() => new Promise<void>((r) => rbB.http.close(() => r())));
+  let rbIps = ['192.168.1.50'];
+  const rb = new SecureNetworkService({
+    directory: tempDir(),
+    storage,
+    getLanIPs: () => rbIps,
+    surfaces: [rbA.definition, rbB.definition],
+    bindHost: '127.0.0.1',
+    log: () => {},
+  });
+  await rb.start();
+  cleanups.push(() => rb.stop());
+  const rbFronts = (
+    rb as unknown as { fronts: Map<string, { setCredentials: (c: unknown) => void }> }
+  ).fronts;
+  const rbFirst = rbFronts.get('main')!;
+  const rbSecond = rbFronts.get('kds')!;
+  const firstSet = rbFirst.setCredentials.bind(rbFirst);
+  let firstCalls = 0;
+  rbFirst.setCredentials = (credentials) => {
+    firstCalls += 1;
+    if (firstCalls === 2) throw new Error('restore rejected');
+    firstSet(credentials);
+  };
+  rbSecond.setCredentials = () => {
+    throw new Error('update rejected');
+  };
+  const firstPort = rbA.httpsPort!;
+  rbIps = ['192.168.1.51'];
+  await assert.rejects(() => rb.refresh(), /update rejected/);
+  assert.equal(rbA.httpsPort, null, 'the front that could not be restored is unpublished');
+  await assert.rejects(
+    new Promise((resolve, reject) => {
+      const socket = tls.connect(
+        { host: '127.0.0.1', port: firstPort, rejectUnauthorized: false },
+        () => resolve(socket.end()),
+      );
+      socket.on('error', reject);
+    }),
+    'the unrestorable front no longer accepts connections',
+  );
+  assert.deepEqual(
+    rb.getCertifiedLanIps(),
+    ['192.168.1.50'],
+    'published addresses stay on the previous set',
+  );
+  assert.equal(rb.getStatus().surfaces.find((s) => s.id === 'main')?.listening, false);
+
   // A failed CA reset still restarts HTTPS and reports the first failure.
   const flakyStorage: SecretStorage = { ...storage };
   const flakySurface = await makeSurface('main');

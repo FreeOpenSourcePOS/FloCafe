@@ -317,11 +317,18 @@ export class SecureNetworkService {
         this.leaf = previous.leaf;
         this.leafKeyPem = previous.key;
         this.leafIps = previous.ips;
-        for (const front of this.fronts.values()) {
+        for (const [id, front] of [...this.fronts.entries()]) {
           try {
             front.setCredentials(previousCredentials);
           } catch (restoreError) {
-            this.log(`Could not restore a front's certificate: ${(restoreError as Error).message}`);
+            // A front that cannot be restored must not keep presenting a certificate the published addresses do not match.
+            this.log(
+              `Stopping a front that could not be restored: ${(restoreError as Error).message}`,
+            );
+            this.fronts.delete(id);
+            this.surfaceErrors.set(id, 'certificate_failed');
+            this.deps.surfaces.find((surface) => surface.id === id)?.setHttpsPort(null);
+            void front.stop().catch(() => undefined);
           }
         }
         throw error;

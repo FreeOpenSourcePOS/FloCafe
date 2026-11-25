@@ -5529,11 +5529,7 @@ router.patch(
         });
       }
 
-      const clientIp =
-        req.ip ||
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        'unknown';
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       const canonicalIp = normalizeIpForRateLimit(clientIp);
       const rateLimitKey = `pin:${canonicalIp}:payment-method-correction`;
       if (isPinRateLimited(rateLimitKey)) {

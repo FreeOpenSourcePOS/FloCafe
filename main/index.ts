@@ -56,6 +56,9 @@ import {
 } from './status-window';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
+import { startSecureNetwork, stopSecureNetwork } from './services/secure-network-wiring';
+import { getHttpsPort, getKdsHttpsPort, getServerAppHttpsPort } from './server-state';
+import { getSecureNetwork } from './security/lan-tls/secure-network';
 import { initPrinter } from './printers/thermal';
 import { destroySharedRasterRenderer } from './printers/raster-renderer';
 import { registerIpcHandlers } from './ipc';
@@ -1247,6 +1250,21 @@ function createTray(): void {
   }
 }
 
+/** HTTPS endpoints and CA fingerprint for the mDNS TXT record; empty when Secure Network is not serving. */
+function secureNetworkTxt(): Record<string, string> {
+  const httpsPort = getHttpsPort();
+  if (!httpsPort) return {};
+  const kdsPort = getKdsHttpsPort();
+  const serverAppPort = getServerAppHttpsPort();
+  const fingerprint = getSecureNetwork()?.getPublicCa()?.fingerprints.sha256.replace(/:/g, '');
+  return {
+    https_port: String(httpsPort),
+    ...(kdsPort ? { https_kds_port: String(kdsPort) } : {}),
+    ...(serverAppPort ? { https_server_app_port: String(serverAppPort) } : {}),
+    ...(fingerprint ? { ca_sha256: fingerprint } : {}),
+  };
+}
+
 function startMdns(): void {
   try {
     bonjour = new Bonjour();
@@ -1261,6 +1279,7 @@ function startMdns(): void {
         kds_port: String(getKdsPort()),
         server_app: '/server-standalone',
         server_app_port: String(getServerAppPort()),
+        ...secureNetworkTxt(),
       },
     });
     const ip = getLocalIP();
@@ -1273,6 +1292,9 @@ function startMdns(): void {
     console.log(
       `[mDNS] Server App available at http://flo.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`,
     );
+    if (getHttpsPort()) {
+      console.log(`[mDNS] Secure POS available at https://flo.local:${getHttpsPort()}`);
+    }
   } catch (err) {
     console.warn('[mDNS] Could not start Bonjour:', err);
   }
@@ -1606,6 +1628,9 @@ async function initialize(): Promise<void> {
       // Native E2E owns an offline fixture; optional LAN discovery must not
       // contend with a developer session or keep the test process alive.
       if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+        console.log('[Flo] Starting Secure Network (HTTPS)...');
+        await startSecureNetwork();
+        if (isShutdownRequested()) return;
         console.log('[Flo] Starting mDNS advertisement...');
         startMdns();
       }
@@ -1909,6 +1934,8 @@ const cleanupCoordinator = createShutdownCoordinator(
       },
     },
     { name: 'raster surface', run: () => destroySharedRasterRenderer() },
+    // HTTPS fronts forward to the HTTP listeners, so they drain first.
+    { name: 'Secure Network', run: () => stopSecureNetwork(), blocksDatabase: true },
     // Drain Server App before shutting down main API.
     { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
     { name: 'Main server', run: () => stopServer(), blocksDatabase: true },

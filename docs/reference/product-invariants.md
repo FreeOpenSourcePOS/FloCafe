@@ -66,6 +66,43 @@ authenticated user is subject to the same review as a change to this entry.
 
 ---
 
+## HTTPS keeps the real client address
+
+**Rule:** A LAN device that reaches FloCafe over HTTPS or `wss` is seen with its own source address
+in every backend decision. Secure Network terminates TLS inside the main process and passes the
+decrypted request to the existing handlers on the same socket; nothing sits between the client and the
+API that could present every device as `127.0.0.1`. The CA private key never leaves
+`userData/secure-network/`, is encrypted with `safeStorage`, and is excluded from the database,
+backups, Google Drive, diagnostics, logs, and telemetry. Certificate validation is never disabled, and
+no listener is public.
+
+**Reason:** The initial-setup and password-recovery guard (`isLocalSetupRequest`), the maintenance
+admission ticket header, and the login, Master PIN, and PIN-switch limits all trust the connection's source
+address. A same-machine reverse proxy would let any LAN device pass the "POS computer only" guards and
+would put every tablet in one lockout bucket.
+
+**Enforced by:** `main/security/lan-tls/https-front.ts` and
+`main/services/secure-network-wiring.ts`. Routes such as `isLocalSetupRequest` read
+`req.socket.remoteAddress` and must keep doing so.
+
+**How to verify:**
+
+```sh
+npm run test:secure-network-lan-integrity
+npm run test:secure-network-service
+```
+
+The first boots the real POS, KDS, and Server App listeners behind HTTPS and shows that a LAN source
+is refused by the local-only guard, cannot consume the loopback-only maintenance admission ticket, and is rate limited
+separately from the POS computer. It is reported as not run on a machine with no private LAN interface.
+
+**Change policy:** a reverse proxy or any layer that changes the apparent source address requires a
+single trusted derivation used by all rate-limit, guard, and audit call sites, and proxy-aware
+versions of these tests. Do not add HSTS or `upgrade-insecure-requests` globally: plain HTTP on
+localhost and the LAN must keep working.
+
+---
+
 ## A selected backup is authoritative during restore
 
 **Rule:** Restoring a valid, supported backup replaces the store state with that backup. FloCafe

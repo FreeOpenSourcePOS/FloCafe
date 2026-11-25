@@ -105,6 +105,19 @@ write` and `organization read` scopes.
 To check a release, open a served chunk in the packaged app and look for a `//# chunkId=` comment,
 then confirm the symbol sets under Error tracking settings in PostHog.
 
+## Windows firewall rule for Secure Network
+
+The NSIS installer includes [`build/installer.nsh`](../../build/installer.nsh), wired through
+`build.nsis.include`. On install it deletes and recreates one inbound rule named
+`FloCafe Secure Network`, scoped to the installed program, TCP ports `443,3441-3470`, the Private
+profile, and the local subnet; on uninstall it deletes only that rule. The rule needs an elevated
+installer. When the installer is not elevated, `netsh` fails quietly and Settings offers a one-time
+**Allow other devices in Windows Firewall** action that shows a single Windows elevation prompt. The
+installer and uninstaller never touch certificate stores, so a device's trust in the FloCafe CA is
+never removed silently. The APPX packages do not run installer scripts and create no firewall rule.
+`tests/secure-network-windows.test.ts` pins the rule's scope and keeps the installer and the app's
+port range in agreement.
+
 ## Artifact naming
 
 Every published release must carry this exact inventory.
@@ -189,6 +202,10 @@ browser their device has. Before promoting a stable release, check it on:
 - **Safari on iOS**, current major version.
 - **An older Android WebView**, the default in-app browser on a device that has not been updated to
   the current Chrome or WebView release.
+
+On a Windows build with Secure Network on, also open the HTTPS address from a second computer and a
+phone on the same Wi-Fi, install the certificate by following `/trust`, confirm the fingerprint
+matches the host, and connect a USB receipt printer through the browser.
 
 Check that the page loads and renders the store's regional currency and timezone rather than
 fallback values, that order creation and the payment flow complete, and that live updates do not

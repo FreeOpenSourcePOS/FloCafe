@@ -83,6 +83,11 @@ function normalizeEmail(email: unknown): string {
     .toLowerCase();
 }
 
+/** The live HTTP listener, so the HTTPS front can reuse its request and upgrade handlers. */
+export function getHttpServer(): http.Server | null {
+  return serverApp;
+}
+
 export function isServerAppRunning(): boolean {
   return serverApp !== null;
 }

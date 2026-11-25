@@ -20,6 +20,7 @@ import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { usePosSortPreference } from '@/hooks/usePosSort';
 import { POS_CATEGORY_SORTS, POS_ITEM_SORTS } from '@/lib/pos-sort';
 import { CustomerDisplayCard } from '@/components/settings/CustomerDisplayCard';
+import { SecureNetworkCard } from '@/components/settings/SecureNetworkCard';
 import type {
   KotLanguagePolicy,
   PrimaryLanguageSelection,
@@ -430,6 +431,7 @@ export default function SettingsPage() {
   const tUpdate = useTranslations('update');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const tCustomerDisplay = useTranslations('customerDisplay');
+  const tSecureNetwork = useTranslations('secureNetwork');
   const tTax = useTranslations('tax');
   const tQrMenu = useTranslations('qrMenu');
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
@@ -704,6 +706,7 @@ export default function SettingsPage() {
           settings: t,
           pos: tPos,
           customerDisplay: tCustomerDisplay,
+          secureNetwork: tSecureNetwork,
           tax: tTax,
           qrMenu: tQrMenu,
           update: tUpdate,
@@ -6039,6 +6042,8 @@ export default function SettingsPage() {
 
           <TabsContent value="server-app">
             <SettingsTabShell>
+              <SecureNetworkCard canManage={isAdmin} />
+
               <div
                 data-setting-section="server-app-enable"
                 className="bg-card rounded-xl border border-border p-6"

@@ -29,6 +29,10 @@ Base URLs:
 - KDS: `http://flo.local:3002`
 - Server App: `http://flo.local:3003`
 
+When Secure Network is on, each server is also reachable over HTTPS (and `wss` for `/kds`) at the
+addresses shown in Settings. The HTTPS fronts serve the same routes with the same authentication and
+authorization; there is no HTTPS-only or HTTP-only API.
+
 ## Authentication
 
 All three servers authenticate with a bearer JWT. Send it as `Authorization: Bearer <token>`. Each
@@ -797,6 +801,22 @@ Router: `main/routes/server-app-info.ts`. Full path: `/api/server-app-info`.
 | Method | Path | Authorization          | Parameters | Response |
 | ------ | ---- | ---------------------- | ---------- | -------- |
 | `GET`  | `/`  | any authenticated role | none       | -        |
+
+### Secure Network
+
+Router: `main/routes/secure-network.ts`. Full path: `/api/secure-network`. Served on the main API
+(`:3001` and its HTTPS front) only.
+
+| Method | Path | Authorization | Parameters | Response |
+| ------ | ---- | ------------- | ---------- | -------- |
+| `GET` | `/ca.cer` | none | none | The public CA certificate as DER (`application/x-x509-ca-cert`). Never a key. |
+| `GET` | `/ca.pem` | none | none | The same certificate as PEM. |
+| `GET` | `/trust-info` | none | none | `{ fingerprint_sha256, fingerprint_sha1, https_port }`. `404` when Secure Network is off. |
+| `GET` | `/status` | `settings.manage` | none | State, certificate status and dates, per-surface HTTPS addresses (`primary_url`, `fallback_urls`), IP-change and CA-regeneration notices, and QR data URLs. |
+| `PUT` | `/enabled` | `settings.manage` | `{ enabled: boolean }` | `{ success, enabled }`. Starts or stops the HTTPS fronts. |
+| `POST` | `/diagnostics` | `settings.manage` | none | `{ checks: [{ id, status, code, surface? }] }` covering address, ports, HTTPS, backend, WebSocket, certificate, and (Windows) firewall and network profile. |
+| `POST` | `/repair` | `settings.manage` | `{ fix_firewall?: boolean }` | Restarts the fronts. `fix_firewall` shows one Windows elevation prompt to create the program-scoped rule. |
+| `POST` | `/reset` | `settings.manage` and Master PIN | `master_pin` | Creates a new root CA. Every device must trust again. |
 
 ### More apps
 

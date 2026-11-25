@@ -405,11 +405,21 @@ depletion instead of guessing at quantities.
 These are deliberate product decisions, not gaps that were overlooked. Each one is a place where
 FloCafe relies on the deployment environment rather than on the application.
 
-**LAN traffic is unencrypted.** The API server binds `0.0.0.0` and speaks HTTP and unencrypted
-WebSocket. The CORS origin check restricts which browser origins may call the API, and CORS is not
-transport security: it does not stop an attacker on the same network from reading a bearer token
-from the wire. The deployment rule is to treat the LAN as trusted. Do not expose the API or KDS
-port to a guest or shared network.
+**Plain-HTTP LAN traffic is unencrypted.** The API servers bind `0.0.0.0` and answer HTTP and
+unencrypted WebSocket. The CORS origin check restricts which browser origins may call the API, and
+CORS is not transport security: it does not stop an attacker on the same network from reading a
+bearer token from the wire. Secure Network adds HTTPS and `wss` listeners for LAN devices (see
+[system overview](overview.md#secure-network-https-for-lan-devices)), but it does not close the HTTP
+listeners, so the deployment rule is unchanged: treat the LAN as trusted and do not expose the API,
+KDS, or HTTPS ports to a guest or shared network. Secure Network never opens a public listener, adds
+no port forwarding or UPnP, and does not change authentication: every request, over either scheme, is
+authorized by the backend.
+
+**HTTPS keeps the real client address.** The HTTPS fronts terminate TLS inside the process and hand
+the same socket to the same handlers, so the loopback-only checks (initial setup and password
+recovery in `main/routes/auth.ts`, the `x-flo-maintenance-handoff` admission ticket in `main/db.ts`) and the
+per-IP login, Master PIN, and PIN-switch limits see the LAN device's own address. Nothing in front of
+the API may rewrite the source address; `docs/reference/product-invariants.md` records this rule.
 
 **The GPU process sandbox is relaxed on Windows.** The Windows build appends Chromium's
 `disable-gpu-sandbox` switch as a compatibility workaround. The main window itself runs with

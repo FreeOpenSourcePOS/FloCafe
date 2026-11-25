@@ -98,6 +98,11 @@ function categoryIdsForRole(role: string, categoryIds: string | null): string[] 
     : expandCategoryIdsWithSubcategories(getDatabase(), parseCategoryIds(categoryIds));
 }
 
+/** The live HTTP listener, so the HTTPS front can reuse its request and upgrade handlers. */
+export function getHttpServer(): http.Server | null {
+  return kdsServer;
+}
+
 export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
 }

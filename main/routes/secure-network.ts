@@ -1,0 +1,177 @@
+import { Router, Request, Response } from 'express';
+import QRCode from 'qrcode';
+import { asyncHandler } from '../middleware/async-handler';
+import { requireMasterPin } from '../middleware/master-pin';
+import { requirePermission } from '../services/authorization';
+import { getAllLocalIPs, getHttpsPort, getServerPort } from '../server-state';
+import {
+  getSecureNetwork,
+  type SecureNetworkStatus,
+  type SurfaceId,
+} from '../security/lan-tls/secure-network';
+import { isPermittedLanIPv4 } from '../security/lan-tls/x509';
+import { installFirewallRuleElevated } from '../security/lan-tls/windows-firewall';
+
+const router = Router();
+
+const MDNS_HOST = 'flo.local';
+
+function withPort(host: string, port: number): string {
+  return port === 443 ? `https://${host}` : `https://${host}:${port}`;
+}
+
+interface SurfaceAddresses {
+  id: SurfaceId;
+  label: string;
+  listening: boolean;
+  https_port: number | null;
+  primary_url: string | null;
+  fallback_urls: string[];
+  error_code: string | null;
+}
+
+export function buildSurfaceAddresses(
+  status: SecureNetworkStatus,
+  lanIps: string[],
+): SurfaceAddresses[] {
+  const ips = lanIps.filter(isPermittedLanIPv4);
+  return status.surfaces.map((surface) => ({
+    id: surface.id,
+    label: surface.label,
+    listening: surface.listening,
+    https_port: surface.https_port,
+    primary_url: surface.https_port ? withPort(MDNS_HOST, surface.https_port) : null,
+    fallback_urls: surface.https_port
+      ? ips.map((ip) => withPort(ip, surface.https_port as number))
+      : [],
+    error_code: surface.error_code,
+  }));
+}
+
+function unavailable(res: Response): void {
+  res.status(503).json({ error: 'Secure Network is not available in this mode.' });
+}
+
+// ── Public: only ever the public CA certificate and its fingerprints ───────────────────────────
+router.get('/ca.cer', (_req: Request, res: Response) => {
+  const ca = getSecureNetwork()?.getPublicCa();
+  if (!ca) return void res.status(404).json({ error: 'No certificate available' });
+  res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+  res.setHeader('Content-Disposition', 'attachment; filename="FloCafe-Local-CA.cer"');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(ca.der);
+});
+
+router.get('/ca.pem', (_req: Request, res: Response) => {
+  const ca = getSecureNetwork()?.getPublicCa();
+  if (!ca) return void res.status(404).json({ error: 'No certificate available' });
+  res.setHeader('Content-Type', 'application/x-pem-file');
+  res.setHeader('Content-Disposition', 'attachment; filename="FloCafe-Local-CA.pem"');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(ca.pem);
+});
+
+router.get('/trust-info', (_req: Request, res: Response) => {
+  const ca = getSecureNetwork()?.getPublicCa();
+  if (!ca) return void res.status(404).json({ error: 'No certificate available' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    fingerprint_sha256: ca.fingerprints.sha256,
+    fingerprint_sha1: ca.fingerprints.sha1,
+    https_port: getHttpsPort(),
+  });
+});
+
+// ── Authenticated: settings.manage ─────────────────────────────────────────────────────────────
+router.get(
+  '/status',
+  requirePermission('settings.manage'),
+  asyncHandler(async (_req: Request, res: Response) => {
+    const service = getSecureNetwork();
+    if (!service) return unavailable(res);
+    const status = service.getStatus();
+    const lanIps = getAllLocalIPs();
+    const surfaces = buildSurfaceAddresses(status, lanIps);
+    const main = surfaces.find((s) => s.id === 'main');
+
+    const fingerprint = status.certificate.ca_fingerprint_sha256?.replace(/:/g, '') ?? null;
+    const trustHost = lanIps.find(isPermittedLanIPv4) ?? null;
+    const trustUrl =
+      status.enabled && fingerprint && trustHost
+        ? `http://${trustHost}:${getServerPort()}/trust?fp=${fingerprint}`
+        : null;
+    const accessUrl = main?.fallback_urls[0] ?? main?.primary_url ?? null;
+
+    const toQr = async (value: string | null): Promise<string | null> => {
+      if (!value) return null;
+      try {
+        return await QRCode.toDataURL(value, { errorCorrectionLevel: 'M', width: 256 });
+      } catch {
+        return null;
+      }
+    };
+
+    res.json({
+      ...status,
+      surfaces,
+      trust_url: trustUrl,
+      trust_qr_data_url: await toQr(trustUrl),
+      access_url: accessUrl,
+      access_qr_data_url: await toQr(accessUrl),
+    });
+  }),
+);
+
+router.put(
+  '/enabled',
+  requirePermission('settings.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const service = getSecureNetwork();
+    if (!service) return unavailable(res);
+    if (typeof req.body?.enabled !== 'boolean') {
+      return void res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+    await service.setEnabled(req.body.enabled);
+    res.json({ success: true, enabled: service.isEnabled() });
+  }),
+);
+
+router.post(
+  '/diagnostics',
+  requirePermission('settings.manage'),
+  asyncHandler(async (_req: Request, res: Response) => {
+    const service = getSecureNetwork();
+    if (!service) return unavailable(res);
+    res.json({ checks: await service.runDiagnostics() });
+  }),
+);
+
+router.post(
+  '/repair',
+  requirePermission('settings.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const service = getSecureNetwork();
+    if (!service) return unavailable(res);
+    let firewallFixed: boolean | null = null;
+    // Elevation is only ever requested by an explicit click, never at startup.
+    if (req.body?.fix_firewall === true && process.platform === 'win32') {
+      firewallFixed = await installFirewallRuleElevated(process.execPath);
+    }
+    await service.repair();
+    res.json({ success: true, firewall_fixed: firewallFixed });
+  }),
+);
+
+router.post(
+  '/reset',
+  requirePermission('settings.manage'),
+  requireMasterPin,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const service = getSecureNetwork();
+    if (!service) return unavailable(res);
+    await service.resetAuthority();
+    res.json({ success: true });
+  }),
+);
+
+export const secureNetworkRoutes = router;

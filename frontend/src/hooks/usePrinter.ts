@@ -296,7 +296,7 @@ export const usePrinterStore = create<PrinterState>()(
             defaultPrinter: configuredDefault,
           });
         } catch {
-          set({ hardwarePrinter: null, webusbPrinter: null, defaultPrinter: null });
+          // Keep the last known printers: a failed refresh must not drop the host fallback.
         }
       },
 

@@ -3811,7 +3811,7 @@
     "trustPageIntro": "請安裝一次 FloCafe 憑證，這台裝置即可安全開啟 FloCafe。裝置會要求您核准。",
     "downloadCertificate": "下載憑證",
     "trustLoadFailed": "無法載入憑證。請確認此裝置與 FloCafe 在同一個 Wi-Fi 中。",
-    "windowsVerify": "安裝前，請在已下載檔案的資料夾中開啟命令提示字元，執行 certutil -hashfile FloCafe-Local-CA.cer SHA256。結果必須與 FloCafe 電腦上 FloCafe 設定所顯示的 SHA-256 指紋相符。若不同，請勿安裝該檔案。",
+    "windowsVerify": "安裝前，請在已下載檔案的資料夾中開啟命令提示字元，執行 certutil -hashfile FloCafe-Local-CA.cer SHA256。結果必須與 FloCafe 電腦上 FloCafe 設定所顯示的 SHA-256 指紋相符。若不同，請勿安裝該檔案。 比對時請忽略冒號與大小寫，每個字元都必須相符。",
     "windows1": "開啟下載的檔案，選擇「安裝憑證」，然後選擇「目前使用者」。",
     "windows2": "選擇「將所有憑證放入以下的存放區」，然後選擇「受信任的根憑證授權單位」。",
     "windows3": "完成並確認 Windows 安全性提示。之後 Chrome 和 Edge 會信任 FloCafe。Firefox 有自己的清單：請啟用企業根憑證，或在其中匯入該檔案。",

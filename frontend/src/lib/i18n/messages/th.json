@@ -3811,7 +3811,7 @@
     "trustPageIntro": "ติดตั้งใบรับรอง FloCafe หนึ่งครั้งเพื่อให้อุปกรณ์นี้เปิด FloCafe ได้อย่างปลอดภัย อุปกรณ์ของคุณจะขอให้คุณอนุมัติ",
     "downloadCertificate": "ดาวน์โหลดใบรับรอง",
     "trustLoadFailed": "โหลดใบรับรองไม่ได้ ตรวจสอบว่าอุปกรณ์นี้อยู่ใน Wi-Fi เดียวกับ FloCafe",
-    "windowsVerify": "ก่อนติดตั้ง ให้เปิด Command Prompt ในโฟลเดอร์ของไฟล์ที่ดาวน์โหลดแล้วรัน certutil -hashfile FloCafe-Local-CA.cer SHA256 ผลลัพธ์ต้องตรงกับลายนิ้วมือ SHA-256 ที่แสดงในการตั้งค่า FloCafe บนคอมพิวเตอร์ FloCafe หากต่างกัน อย่าติดตั้งไฟล์นี้",
+    "windowsVerify": "ก่อนติดตั้ง ให้เปิด Command Prompt ในโฟลเดอร์ของไฟล์ที่ดาวน์โหลดแล้วรัน certutil -hashfile FloCafe-Local-CA.cer SHA256 ผลลัพธ์ต้องตรงกับลายนิ้วมือ SHA-256 ที่แสดงในการตั้งค่า FloCafe บนคอมพิวเตอร์ FloCafe หากต่างกัน อย่าติดตั้งไฟล์นี้ เมื่อเปรียบเทียบ ให้ไม่ต้องสนใจเครื่องหมายทวิภาคและตัวพิมพ์ใหญ่เล็ก ทุกหลักต้องตรงกัน",
     "windows1": "เปิดไฟล์ที่ดาวน์โหลด แล้วเลือก Install Certificate จากนั้นเลือก Current User",
     "windows2": "เลือก Place all certificates in the following store จากนั้นเลือก Trusted Root Certification Authorities",
     "windows3": "ทำให้เสร็จและยืนยันข้อความความปลอดภัยของ Windows จากนั้น Chrome และ Edge จะเชื่อถือ FloCafe ส่วน Firefox มีรายการของตัวเอง ให้เปิดใช้รูทขององค์กรหรือนำเข้าไฟล์ที่นั่น",

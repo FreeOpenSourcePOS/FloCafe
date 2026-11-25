@@ -3811,7 +3811,7 @@
     "trustPageIntro": "Installa il certificato di FloCafe una sola volta così questo dispositivo potrà aprire FloCafe in modo sicuro. Il dispositivo ti chiederà di approvarlo.",
     "downloadCertificate": "Scarica il certificato",
     "trustLoadFailed": "Impossibile caricare il certificato. Verifica che questo dispositivo sia sullo stesso Wi-Fi di FloCafe.",
-    "windowsVerify": "Prima di installare, aprite il Prompt dei comandi nella cartella del file scaricato ed eseguite certutil -hashfile FloCafe-Local-CA.cer SHA256. Il risultato deve coincidere con l'impronta SHA-256 mostrata nelle impostazioni di FloCafe sul computer FloCafe. Se è diverso, non installate il file.",
+    "windowsVerify": "Prima di installare, aprite il Prompt dei comandi nella cartella del file scaricato ed eseguite certutil -hashfile FloCafe-Local-CA.cer SHA256. Il risultato deve coincidere con l'impronta SHA-256 mostrata nelle impostazioni di FloCafe sul computer FloCafe. Se è diverso, non installate il file. Nel confronto ignorate i due punti e le maiuscole; ogni cifra deve coincidere.",
     "windows1": "Apri il file scaricato e scegli Installa certificato, poi Utente corrente.",
     "windows2": "Scegli Colloca tutti i certificati nel seguente archivio, poi Autorità di certificazione radice attendibili.",
     "windows3": "Termina e conferma l'avviso di sicurezza di Windows. Chrome ed Edge si fideranno quindi di FloCafe. Firefox ha un proprio elenco: attiva le radici aziendali o importa il file lì.",

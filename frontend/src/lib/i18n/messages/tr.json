@@ -3811,7 +3811,7 @@
     "trustPageIntro": "Bu cihazın FloCafe'yi güvenle açabilmesi için FloCafe sertifikasını bir kez yükleyin. Cihazınız onay vermenizi isteyecek.",
     "downloadCertificate": "Sertifikayı indir",
     "trustLoadFailed": "Sertifika yüklenemedi. Bu cihazın FloCafe ile aynı Wi-Fi ağında olduğunu kontrol edin.",
-    "windowsVerify": "Kurmadan önce indirilen dosyanın klasöründe Komut İstemi'ni açın ve certutil -hashfile FloCafe-Local-CA.cer SHA256 komutunu çalıştırın. Sonuç, FloCafe bilgisayarındaki FloCafe Ayarları'nda gösterilen SHA-256 parmak iziyle eşleşmelidir. Farklıysa dosyayı kurmayın.",
+    "windowsVerify": "Kurmadan önce indirilen dosyanın klasöründe Komut İstemi'ni açın ve certutil -hashfile FloCafe-Local-CA.cer SHA256 komutunu çalıştırın. Sonuç, FloCafe bilgisayarındaki FloCafe Ayarları'nda gösterilen SHA-256 parmak iziyle eşleşmelidir. Farklıysa dosyayı kurmayın. Karşılaştırırken iki nokta üst üste işaretlerini ve harf büyüklüğünü yok sayın; her hane eşleşmelidir.",
     "windows1": "İndirilen dosyayı açın ve Sertifika Yükle'yi, ardından Geçerli Kullanıcı'yı seçin.",
     "windows2": "Tüm sertifikaları aşağıdaki depoya yerleştir'i, ardından Güvenilen Kök Sertifika Yetkilileri'ni seçin.",
     "windows3": "Bitirin ve Windows güvenlik istemini onaylayın. Chrome ve Edge bundan sonra FloCafe'ye güvenir. Firefox kendi listesini tutar: kurumsal kökleri açın veya dosyayı orada içe aktarın.",

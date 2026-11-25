@@ -3811,7 +3811,7 @@
     "trustPageIntro": "이 기기가 FloCafe를 안전하게 열 수 있도록 FloCafe 인증서를 한 번 설치하세요. 기기에서 승인을 요청합니다.",
     "downloadCertificate": "인증서 다운로드",
     "trustLoadFailed": "인증서를 불러올 수 없습니다. 이 기기가 FloCafe와 같은 Wi-Fi에 있는지 확인하세요.",
-    "windowsVerify": "설치하기 전에 다운로드한 파일이 있는 폴더에서 명령 프롬프트를 열고 certutil -hashfile FloCafe-Local-CA.cer SHA256 를 실행하세요. 결과는 FloCafe 컴퓨터의 FloCafe 설정에 표시된 SHA-256 지문과 일치해야 합니다. 다르면 파일을 설치하지 마세요.",
+    "windowsVerify": "설치하기 전에 다운로드한 파일이 있는 폴더에서 명령 프롬프트를 열고 certutil -hashfile FloCafe-Local-CA.cer SHA256 를 실행하세요. 결과는 FloCafe 컴퓨터의 FloCafe 설정에 표시된 SHA-256 지문과 일치해야 합니다. 다르면 파일을 설치하지 마세요. 비교할 때 콜론과 대소문자는 무시하세요. 모든 자리가 일치해야 합니다.",
     "windows1": "다운로드한 파일을 열고 인증서 설치, 현재 사용자를 차례로 선택하세요.",
     "windows2": "모든 인증서를 다음 저장소에 저장을 선택한 다음 신뢰할 수 있는 루트 인증 기관을 선택하세요.",
     "windows3": "마치고 Windows 보안 창을 확인하세요. 그러면 Chrome과 Edge가 FloCafe를 신뢰합니다. Firefox는 자체 목록을 사용하므로 엔터프라이즈 루트를 켜거나 그곳에서 파일을 가져오세요.",

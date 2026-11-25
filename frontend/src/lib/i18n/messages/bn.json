@@ -3811,7 +3811,7 @@
     "trustPageIntro": "এই ডিভাইস যাতে FloCafe নিরাপদে খুলতে পারে সেজন্য FloCafe সার্টিফিকেট একবার ইনস্টল করুন। আপনার ডিভাইস অনুমোদন চাইবে।",
     "downloadCertificate": "সার্টিফিকেট ডাউনলোড করুন",
     "trustLoadFailed": "সার্টিফিকেট লোড করা যায়নি। এই ডিভাইসটি FloCafe-এর সঙ্গে একই Wi-Fi-তে আছে কিনা দেখুন।",
-    "windowsVerify": "ইনস্টল করার আগে ডাউনলোড করা ফাইলের ফোল্ডারে Command Prompt খুলে certutil -hashfile FloCafe-Local-CA.cer SHA256 চালান। ফলাফল FloCafe কম্পিউটারের FloCafe সেটিংসে দেখানো SHA-256 ফিঙ্গারপ্রিন্টের সাথে মিলতে হবে। না মিললে ফাইলটি ইনস্টল করবেন না।",
+    "windowsVerify": "ইনস্টল করার আগে ডাউনলোড করা ফাইলের ফোল্ডারে Command Prompt খুলে certutil -hashfile FloCafe-Local-CA.cer SHA256 চালান। ফলাফল FloCafe কম্পিউটারের FloCafe সেটিংসে দেখানো SHA-256 ফিঙ্গারপ্রিন্টের সাথে মিলতে হবে। না মিললে ফাইলটি ইনস্টল করবেন না। তুলনার সময় কোলন ও অক্ষরের বড়-ছোট ভেদ উপেক্ষা করুন; প্রতিটি অঙ্ক মিলতে হবে।",
     "windows1": "ডাউনলোড করা ফাইলটি খুলুন এবং Install Certificate, তারপর Current User বেছে নিন।",
     "windows2": "Place all certificates in the following store বেছে নিন, তারপর Trusted Root Certification Authorities।",
     "windows3": "শেষ করুন এবং Windows-এর নিরাপত্তা বার্তা নিশ্চিত করুন। এরপর Chrome ও Edge FloCafe-কে বিশ্বাস করবে। Firefox-এর নিজস্ব তালিকা আছে: এন্টারপ্রাইজ রুট চালু করুন বা সেখানে ফাইলটি ইমপোর্ট করুন।",

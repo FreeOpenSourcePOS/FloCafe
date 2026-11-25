@@ -3811,7 +3811,7 @@
     "trustPageIntro": "Installeer het FloCafe-certificaat één keer zodat dit apparaat FloCafe veilig kan openen. Je apparaat vraagt je om het goed te keuren.",
     "downloadCertificate": "Certificaat downloaden",
     "trustLoadFailed": "Het certificaat kon niet worden geladen. Controleer of dit apparaat op hetzelfde wifi zit als FloCafe.",
-    "windowsVerify": "Open vóór de installatie de opdrachtprompt in de map van het gedownloade bestand en voer certutil -hashfile FloCafe-Local-CA.cer SHA256 uit. Het resultaat moet overeenkomen met de SHA-256-vingerafdruk in de FloCafe-instellingen op de FloCafe-computer. Wijkt het af, installeer het bestand dan niet.",
+    "windowsVerify": "Open vóór de installatie de opdrachtprompt in de map van het gedownloade bestand en voer certutil -hashfile FloCafe-Local-CA.cer SHA256 uit. Het resultaat moet overeenkomen met de SHA-256-vingerafdruk in de FloCafe-instellingen op de FloCafe-computer. Wijkt het af, installeer het bestand dan niet. Negeer bij het vergelijken de dubbele punten en hoofdletters; elk cijfer moet overeenkomen.",
     "windows1": "Open het gedownloade bestand en kies Certificaat installeren, daarna Huidige gebruiker.",
     "windows2": "Kies Alle certificaten in het volgende archief opslaan, daarna Vertrouwde basiscertificeringsinstanties.",
     "windows3": "Rond af en bevestig de Windows-beveiligingsmelding. Chrome en Edge vertrouwen FloCafe dan. Firefox heeft een eigen lijst: schakel bedrijfsroots in of importeer het bestand daar.",

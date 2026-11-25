@@ -52,7 +52,7 @@ Recipe rules:
 - A deal recipe has one pizza recipe per pizza pick, each with the deal's size; its pops add up to the pick's count; a `choice` deal has either `pops` or `twoLitre`, never both.
 - A recipe never changes the price. A pizza costs its size price, a half and half costs the size price, a deal costs the deal price.
 - Order is kept, not sorted, wherever the ticket shows it: `halves[0]` is the first half and `halves[1]` the second, so `[A, B]` and `[B, A]` are different recipes with different keys. `DealRecipe.pizzas[i]` answers the i-th pizza of `dealPickCount(deal).pizzas`, in pick order.
-- Inside a part, `removed` is sorted and de-duplicated. In `pops`, zero entries are dropped and keys are sorted. These are the only reorderings.
+- Inside a part, `removed` is sorted and de-duplicated. In `pops`, zero entries are dropped and keys are sorted, so a `pops` holding only zeros counts as absent. These are the only reorderings.
 - A deal with a wing-flavour pick needs `wingFlavour`; a deal without one must not have it. The same holds for `pops` and `twoLitre` against the deal's drink pick.
 
 Ticket text, at 42 and 48 columns. The print layer indents every detail line by 3 and re-wraps on whitespace anything wider than `columns - 3`, which would lose the nesting below. So `ticketLines` keeps every detail line at `columns - 3` display cells or fewer, wrapping at commas itself; an item still too wide (a long name with no comma) wraps on spaces; a continuation line starts at the same indent as the line it continues. The heading is not under this budget: the print layer wraps headings. No line ends in a lone `NO`. Text is upper-cased as written; a letter such as `Ñ` is kept, and the print layer decides how a printer shows it.

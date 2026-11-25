@@ -54,6 +54,8 @@ export interface PosSettingsState {
   billDeliveryShowCustomerPhoneAlways: boolean;
   billShowTableNumber: boolean;
   billShowLargeOrderNumber: boolean;
+  /** Kitchen tickets print the customer's phone, delivery address and delivery note. */
+  kotShowCustomerContact: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
   // Printer firmware Arabic/Persian shaping; disabled by default for generic hardware.
@@ -138,6 +140,7 @@ export interface ReceiptSettingsHydrationData {
   billShowTableNumber?: boolean | string | null;
   bill_show_large_order_number?: boolean | string | null;
   billShowLargeOrderNumber?: boolean | string | null;
+  kot_show_customer_contact?: boolean | string | null;
   receipt_logo?: string | null;
   receiptLogo?: string | null;
   receipt_logo_raster?: string | null;
@@ -195,6 +198,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billDeliveryShowCustomerPhoneAlways: true,
       billShowTableNumber: true,
       billShowLargeOrderNumber: true,
+      kotShowCustomerContact: false,
       printerUseUnicode: false,
       printerArabicShaping: false,
       printerTrimDecimals: false,
@@ -302,6 +306,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           if (showLargeOrderNum !== undefined && showLargeOrderNum !== null) {
             updates.billShowLargeOrderNumber =
               showLargeOrderNum !== false && showLargeOrderNum !== 'false';
+          }
+          if (d.kot_show_customer_contact !== undefined && d.kot_show_customer_contact !== null) {
+            updates.kotShowCustomerContact =
+              d.kot_show_customer_contact === true || d.kot_show_customer_contact === 'true';
           }
           const logo = d.receipt_logo ?? d.receiptLogo;
           if (logo !== undefined) {

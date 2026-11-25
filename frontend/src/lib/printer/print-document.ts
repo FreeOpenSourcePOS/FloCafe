@@ -29,6 +29,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@countries';
 import { resolveTaxComponents } from './tax-components';
 import { shouldShowCustomerNumber } from '@print/document';
+import { readDetailLines } from '@print/detail-lines';
+import { kotContactLines } from '@print/kot-contact';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { formatItemHeading } from './item-heading';
 import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
@@ -205,6 +207,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
           };
         }),
         specialInstructions: String(item?.special_instructions ?? ''),
+        detailLines: readDetailLines(item),
       })),
     },
     bill: {
@@ -323,6 +326,7 @@ export function buildFrontendKotDocument(
     language: string;
     timezone?: string;
     showLargeOrderNumber?: boolean;
+    showCustomerContact?: boolean;
   },
 ): KotDocument {
   const orderShape = order as Order & {
@@ -380,6 +384,7 @@ export function buildFrontendKotDocument(
         orderShape.orderNotes,
         orderShape.notes,
       ).trim(),
+      contactLines: kotContactLines(order, opts.showCustomerContact === true),
     },
     items: items
       .filter((item) => isKotItemPending(item.status))
@@ -395,6 +400,7 @@ export function buildFrontendKotDocument(
             : {}),
         })),
         specialInstructions: String(item.special_instructions ?? ''),
+        detailLines: readDetailLines(item),
       })),
   };
   const printContext: PrintContext = {

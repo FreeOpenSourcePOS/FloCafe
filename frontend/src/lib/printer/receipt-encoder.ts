@@ -60,6 +60,7 @@ import {
   paymentDisplayRows,
 } from '@print/document';
 import { layoutStyledUnit } from '@print/layout';
+import { detailLineRows } from '@print/detail-lines';
 import type { ResolvedPrintLanguages } from '@print/types';
 import { getLogoRasterBands } from '@print/image-raster';
 import { concatBytes, encodeGsV0Band, rasterCapabilityEnabled } from '@print/raster';
@@ -809,6 +810,15 @@ export function buildClassicReceiptBytes(
       ).newline();
     }
 
+    for (const detail of row.detailLines ?? []) {
+      for (const detailRow of detailLineRows(
+        normalizeThermalText(detail.text, opts.capabilities),
+        cols,
+      )) {
+        safePrinterText(enc, detailRow, warnings, false, arabicShaping).newline();
+      }
+    }
+
     // Addons (extended amount arrives as printed truth in the document).
     for (const addon of row.addons) {
       const addonQty = addon.quantity ?? 1;
@@ -1359,6 +1369,15 @@ export function buildCompactReceiptBytes(
         .newline()
         .size('normal')
         .align('left');
+    }
+
+    for (const detail of row.detailLines ?? []) {
+      for (const detailRow of detailLineRows(
+        normalizeThermalText(detail.text, opts.capabilities),
+        cols,
+      )) {
+        safePrinterText(enc, detailRow, warnings, false, arabicShaping).newline();
+      }
     }
 
     // Compact keeps the same add-on and instruction semantics as the other

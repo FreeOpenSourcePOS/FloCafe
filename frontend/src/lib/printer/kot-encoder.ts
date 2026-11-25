@@ -25,6 +25,8 @@ import {
 } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
+import { detailLineRows, readDetailLines } from '@print/detail-lines';
+import { kotContactLines } from '@print/kot-contact';
 import { layoutStyledUnit } from '@print/layout';
 import { formatItemHeading } from './item-heading';
 
@@ -45,6 +47,8 @@ export interface KotOptions {
   timezone?: string;
   /** Print the Order Number in a large bold callout banner on KOT. Default: true */
   showLargeOrderNumber?: boolean;
+  /** Print the customer's phone, delivery address and delivery note. Default: false */
+  showCustomerContact?: boolean;
   /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
   capabilities?: ThermalPrinterCapabilities;
 }
@@ -246,6 +250,13 @@ export function buildKotBytes(
       `Customer: ${thermalSafeMetadataValue(customerName, language, arabicShaping, opts.capabilities)}`,
     );
   }
+  for (const contact of kotContactLines(order, opts.showCustomerContact === true)) {
+    const contactText = normalizeThermalText(
+      `${label(contact.concept)}: ${contact.text}`,
+      thermalCapabilities,
+    );
+    for (const row of wrapPrinterText(contactText, cols)) writeKotHeaderText(row, row);
+  }
 
   enc.bold(false);
   const time = formatTime(
@@ -351,6 +362,21 @@ export function buildKotBytes(
       });
     }
     enc.bold(false);
+
+    for (const detail of readDetailLines(item)) {
+      for (const row of detailLineRows(normalizeThermalText(detail, thermalCapabilities), cols)) {
+        safePrinterText(
+          enc,
+          row,
+          warnings,
+          false,
+          arabicShaping,
+          undefined,
+          undefined,
+          language,
+        ).newline();
+      }
+    }
 
     // Addons can come from older/API paths as a JSON string. Normalize before
     // iterating so a stored string cannot abort KOT printing.

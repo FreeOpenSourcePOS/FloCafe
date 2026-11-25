@@ -21,6 +21,7 @@ import {
   padToDisplayCells,
   truncateToDisplayCells,
 } from '../../shared/print/width';
+import { DETAIL_LINE_INDENT, detailLineRows } from '../../shared/print/detail-lines';
 import {
   addonRows,
   appendPoweredByFooter,
@@ -35,6 +36,7 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
+  safePrinterText,
   taxBreakdownRows,
   truncate,
   truncateShapedLine,
@@ -426,6 +428,14 @@ export function renderBillDocumentToCompactLines(
         },
       ];
       const financialSourceLines = [true];
+      for (const detail of row.detailLines ?? []) {
+        const detailRows = detailLineRows(normalize(safePrinterText(detail.text)), cols);
+        lines.push(...detailRows);
+        sourceLines.push(DETAIL_LINE_INDENT + detail.text);
+        sourceControlLines.push(detailRows[0]);
+        sourceLayouts.push(undefined);
+        financialSourceLines.push(false);
+      }
       for (const addon of row.addons) {
         const addonLines = addonRows(
           { name: addon.name.text, price: addon.price, quantity: addon.quantity },

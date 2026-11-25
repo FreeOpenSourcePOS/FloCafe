@@ -33,6 +33,7 @@ import type { BilingualLabel } from './bilingual';
 import type { DirectionSpec } from './direction';
 import { resolveDirectionSpec, resolveValueDirection } from './direction';
 import { graphemeSegments } from './width';
+import type { KotContactLine } from './kot-contact';
 import type { PrintLanguageCode, ResolvedPrintLanguages, TextDirection } from './types';
 
 // ---------------------------------------------------------------------------
@@ -107,6 +108,8 @@ export interface OrderItemSnapshot {
   readonly total: number;
   readonly addons: readonly ItemAddonSnapshot[];
   readonly specialInstructions: string;
+  /** Ready-formatted lines printed under the item, before add-ons. */
+  readonly detailLines?: readonly string[];
 }
 
 /** The order behind the bill, as printed truth. */
@@ -320,6 +323,7 @@ export interface ItemTableRow {
   readonly amount: number;
   readonly addons: readonly ItemAddonValue[];
   readonly specialInstructions: DirectionalText | null;
+  readonly detailLines?: readonly DirectionalText[];
 }
 
 /** Column-header labels for the item table (concepts + resolved strings). */
@@ -516,6 +520,15 @@ function optionalDirectional(
   return directionalText(String(text), base);
 }
 
+/** The optional `detailLines` row field: present only when the item carries lines. */
+function detailLinesField(
+  lines: readonly string[] | undefined,
+  base: TextDirection,
+): { readonly detailLines?: readonly DirectionalText[] } {
+  if (!Array.isArray(lines) || lines.length === 0) return {};
+  return { detailLines: Object.freeze(lines.map((line) => directionalText(String(line), base))) };
+}
+
 function toFiniteNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -687,6 +700,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
             ),
           ),
           specialInstructions: optionalDirectional(item.specialInstructions, base),
+          ...detailLinesField(item.detailLines, base),
         }),
       ),
     ),
@@ -866,6 +880,8 @@ export interface KotItemSnapshot {
   readonly quantity: number;
   readonly addons: readonly KotAddonSnapshot[];
   readonly specialInstructions: string;
+  /** Ready-formatted lines printed under the heading, before add-ons. */
+  readonly detailLines?: readonly string[];
 }
 
 /** The order behind the ticket (order number, canonical timestamp, table, type, optional customer). */
@@ -878,6 +894,8 @@ export interface KotOrderSnapshot {
   readonly customerName?: string;
   /** Order-level notes (allergy alerts, packing instructions), when present. */
   readonly orderNotes?: string;
+  /** Customer contact lines, when the merchant prints them on the ticket. */
+  readonly contactLines?: readonly KotContactLine[];
 }
 
 /**
@@ -910,6 +928,11 @@ export interface KotHeaderBlock {
     readonly code: string;
   } | null;
   readonly customer: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
+  /** Customer phone, delivery address and delivery note, printed after the customer name. */
+  readonly contactLines?: readonly {
+    readonly label: SemanticLabel;
+    readonly text: DirectionalText;
+  }[];
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -931,6 +954,7 @@ export interface KotItemsBlock {
     readonly name: DirectionalText;
     readonly addons: readonly KotAddonValue[];
     readonly specialInstructions: DirectionalText | null;
+    readonly detailLines?: readonly DirectionalText[];
   }[];
 }
 
@@ -1365,6 +1389,10 @@ function isOptionalDirectionalText(value: unknown): value is DirectionalText | n
   return value === null || isDirectionalText(value);
 }
 
+function isOptionalDetailLines(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every(isDirectionalText));
+}
+
 function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
   if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string')
     return false;
@@ -1432,7 +1460,8 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
                 isFiniteNumber(addon.price) &&
                 (addon.quantity === undefined || isFiniteNumber(addon.quantity)),
             ) &&
-            isOptionalDirectionalText(row.specialInstructions),
+            isOptionalDirectionalText(row.specialInstructions) &&
+            isOptionalDetailLines(row.detailLines),
         )
       );
     case 'tax-breakdown':
@@ -1558,6 +1587,11 @@ function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
         (isRecord(value.customer) &&
           isSemanticLabel(value.customer.label) &&
           isDirectionalText(value.customer.name))) &&
+      (value.contactLines === undefined ||
+        (Array.isArray(value.contactLines) &&
+          value.contactLines.every(
+            (line) => isRecord(line) && isSemanticLabel(line.label) && isDirectionalText(line.text),
+          ))) &&
       isSemanticLabel(value.timeLabel) &&
       isDirectionalText(value.timestamp) &&
       (value.orderNotes === undefined ||
@@ -1580,7 +1614,8 @@ function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
           isDirectionalText(addon) &&
           (addon.quantity === undefined || isFiniteNumber(addon.quantity)),
       ) &&
-      isOptionalDirectionalText(row.specialInstructions),
+      isOptionalDirectionalText(row.specialInstructions) &&
+      isOptionalDetailLines(row.detailLines),
   );
 }
 
@@ -1646,6 +1681,18 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
             name: directionalText(printData.order.customerName, base),
           })
         : null,
+    ...(printData.order?.contactLines?.length
+      ? {
+          contactLines: Object.freeze(
+            printData.order.contactLines.map((line) =>
+              Object.freeze({
+                label: resolveSemanticLabel(labels, line.concept),
+                text: directionalText(line.text, base),
+              }),
+            ),
+          ),
+        }
+      : {}),
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
     orderNotes:
@@ -1684,6 +1731,7 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
               ),
           ),
           specialInstructions: optionalDirectional(item?.specialInstructions, base),
+          ...detailLinesField(item?.detailLines, base),
         }),
       ),
     ),

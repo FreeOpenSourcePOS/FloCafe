@@ -44,6 +44,8 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 | `policy.ts` | `parsePrintLanguagePolicy`, `parseKotLanguagePolicy`, and the language resolvers. |
 | `bilingual.ts` | `BilingualLabel` and width-fit strategies. |
 | `width.ts` | Grapheme- and display-cell-aware measurement and truncation. |
+| `detail-lines.ts` | `readDetailLines` and `detailLineRows`: the ready-formatted lines an order item prints under its heading, with their indent and wrap rule. |
+| `kot-contact.ts` | `kotContactLines`: the customer phone, delivery address, and delivery note a kitchen ticket header prints when `kot_show_customer_contact` is on. |
 | `thermal-capabilities.ts` | Capability shape, code pages, representability, and warning policy. |
 | `merchant-template.ts` | Merchant template payload validation and canonical serialization. |
 | `raster.ts`, `raster-canvas.ts`, `image-raster.ts` | Raster band construction, shared canvas painter (`paintRasterRequest`), ESC/POS raster encoding, and 1-bit logo trimming, contrast normalization, dithering, and packing. |
@@ -55,11 +57,13 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 `PrintDocument` v1 is a renderer-independent receipt: an ordered list of blocks, each carrying its
 own resolved direction, plus the ordered languages the labels were resolved in. The block
 vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax-breakdown`,
-`totals`, `payments`, and `message`.
+`totals`, `payments`, and `message`. An `item-table` row carries an optional `detailLines` list;
+see [item detail lines](#item-detail-lines).
 
 `KotDocument` v1 is the same shape for a kitchen ticket, with a reduced block vocabulary:
 `kot-header` (carrying station and order metadata, an optional large bold order number callout banner,
-plus an optional order-level notes banner) and `kot-items`.
+optional [customer contact lines](#customer-contact-on-kitchen-tickets), plus an optional
+order-level notes banner) and `kot-items`, whose rows carry the same optional `detailLines` list.
 
 `DeliverySlipDocument` v1 is a courier handout: `delivery-slip-header`,
 `delivery-slip-contact`, optional `delivery-slip-notes` and
@@ -73,9 +77,11 @@ carries an `expected_payment_method_id`, the stored name is the historical snaps
 method and prints literally instead of resolving through a builtin or sentinel label, so a configured
 method named Pending or Unknown keeps its own meaning on the slip even when the method is later
 renamed or deactivated. The notes block
-carries the courier-only `delivery_note` beside the order note; neither the delivery note nor the
-expected method is printed on a kitchen ticket or receipt. It is a **separate kind, not a receipt
-template**, and that is load-bearing. It carries the delivery address and the full customer number
+carries the courier-only `delivery_note` beside the order note. The expected method is printed on
+neither a kitchen ticket nor a receipt. The delivery note is never printed on a receipt, and reaches
+a kitchen ticket only when
+[customer contact on kitchen tickets](#customer-contact-on-kitchen-tickets) is on. It is a
+**separate kind, not a receipt template**, and that is load-bearing. It carries the delivery address and the full customer number
 when the caller's visibility rule permits it. The API route and browser/WebUSB hook include the
 number when either `bill_delivery_show_customer_phone_always` or `bill_show_customer_phone` is on,
 and omit it only when both are off; see [product invariants](../reference/product-invariants.md).
@@ -210,6 +216,67 @@ merchant, browser HTML, and WebUSB/tax-bill paths), the banner renders centered,
 narrow or enlarged paper profiles (such as 16-column extra-large KOT), the line layout wraps without
 dropping sequence digits. Signed compliance pack receipts (`pluginReceiptLines`) intentionally omit
 the callout banner.
+
+### Item detail lines
+
+An order item can carry `detailLines`: a list of ready-formatted text lines, such as the halves and
+toppings of a pizza. `readDetailLines()` in `shared/print/detail-lines.ts` reads the list from a raw
+item and keeps its non-blank strings. The data builders (`buildKotPrintData`, both
+`buildBillPrintData` functions, and `buildFrontendKotDocument`) copy it onto the document row; the
+browser kitchen-ticket encoder and HTML renderer read it from the raw item. An item with no lines
+produces a row without a `detailLines` field and prints nothing extra.
+
+These paths print the lines under the item heading and before the add-ons:
+
+| Document | Paths |
+| --- | --- |
+| Kitchen ticket | `main/printers/document-kot.ts` (also the target of the raster path, which sends the document built by `buildFrontendKotDocument`), `frontend/src/lib/printer/kot-encoder.ts`, and `frontend/src/lib/printer/kot-web-print.ts`. |
+| Classic and compact receipts | `main/printers/document-classic.ts`, `main/printers/document-compact.ts`, and `buildClassicReceiptBytes` and `buildCompactReceiptBytes` in `frontend/src/lib/printer/receipt-encoder.ts`. |
+
+`detailLineRows()` owns the layout on the ESC/POS paths. Every row starts with a three-space
+indent. A line no wider than the columns left after the indent prints exactly as given, runs of
+spaces included, so the caller that formats the lines controls their alignment. A wider line is
+wrapped with `wrapToDisplayCells()`, which breaks on whitespace and rejoins words with single
+spaces; no text is dropped or truncated. The backend renderers pass each line through
+`safePrinterText()` first, so a line that spells an ESC/POS line token such as `{CUT}` prints as
+text. The HTML ticket renders each line with `white-space: pre-wrap`.
+
+The detailed receipt (`buildDetailedReceiptBytes`), the tax bill, compliance line templates, the
+browser HTML receipt (`web-print.ts`), the delivery slip, the payment ticket slip, and the kitchen
+display do not print detail lines. `tests/pizza-print-detail-lines.test.ts` covers the paths that
+do.
+
+### Customer contact on kitchen tickets
+
+The setting `kot_show_customer_contact` adds customer contact lines to the kitchen ticket header,
+directly after the customer name. It is off unless its stored value is `true`. `kotContactLines()`
+in `shared/print/kot-contact.ts` is the one rule every path applies:
+
+- The customer's phone number as stored, when the order's customer has one.
+- The order's `delivery_address` and `delivery_note`, only when the order type is `delivery`.
+- A value that is empty prints no line.
+
+The lines reuse the print concepts `print.numberShort`, `print.deliverySlip.address`, and
+`print.deliverySlip.deliveryNote`. A line wider than the paper wraps; nothing is truncated.
+
+The setting reaches the four kitchen ticket paths in two ways:
+
+- **Backend ESC/POS.** `printKOT()` merges `kotCustomerContactFields()`
+  (`main/pizza/kot-customer-contact.ts`) into the order. It reads the setting and loads the
+  customer's phone, which the print routes do not select. `buildKotPrintData`
+  turns the resulting `show_customer_contact` flag into `KotOrderSnapshot.contactLines`.
+- **Browser ESC/POS, raster, and HTML.** `GET /api/settings/business` returns the flag,
+  `hydrateReceiptSettings()` stores it as `kotShowCustomerContact`, and `printKot` in
+  `frontend/src/hooks/usePrinter.ts` passes `showCustomerContact` to `buildKotBytes`,
+  `buildFrontendKotDocument`, and `generateKotHtml`. These paths read the phone from the `customer`
+  object on the order they are given. That route needs `settings.view` or a bill permission, so a
+  role with neither keeps the flag off in the browser and its browser tickets omit the contact lines.
+
+The number prints in full, and this setting alone decides it: `bill_show_customer_phone` and
+`bill_delivery_show_customer_phone_always` govern receipts and delivery slips, not kitchen tickets.
+No Settings screen exposes the setting; it is written with
+`PUT /api/settings/kot_show_customer_contact`. `tests/pizza-kot-customer-contact.test.ts` covers
+the rule and the route from the stored setting to the printed ticket.
 
 ## Transports
 

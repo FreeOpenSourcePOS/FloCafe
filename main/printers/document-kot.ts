@@ -9,9 +9,11 @@ import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
   formatVariantItemHeading,
+  normalizeThermalText,
   parseVariantSelection,
   pushWrapped,
   pushWrappedShapedLine,
+  safePrinterText,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -25,6 +27,12 @@ import {
 } from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
 import { displayCellWidth } from '../../shared/print/width';
+import {
+  DETAIL_LINE_INDENT,
+  detailLineRows,
+  readDetailLines,
+} from '../../shared/print/detail-lines';
+import { kotContactLines } from '../../shared/print/kot-contact';
 import {
   buildKotDocument,
   isKotItemPending,
@@ -61,6 +69,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
         [order?.special_instructions, order?.order_notes, order?.orderNotes, order?.notes]
           .find((val: unknown) => typeof val === 'string' && val.trim().length > 0)
           ?.trim() ?? '',
+      contactLines: kotContactLines(order, order?.show_customer_contact === true),
     },
     items: ticketItems.map((item: any) => ({
       productName: formatVariantItemHeading(
@@ -77,6 +86,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
           : {}),
       })),
       specialInstructions: String(item?.special_instructions ?? ''),
+      detailLines: readDetailLines(item),
     })),
   };
 }
@@ -397,6 +407,19 @@ function kotHeaderLines(
     sourceLines?.push(`${labelOf(header.customer.label)}: ${header.customer.name.text}`);
     sourceControlLines?.push(lines.at(-1) ?? '');
   }
+  for (const contact of header.contactLines ?? []) {
+    const wrapped: string[] = [];
+    pushWrapped(
+      wrapped,
+      `${labelOf(contact.label)}: ${safePrinterText(contact.text.text)}`,
+      cols,
+      options.language,
+      options.capabilities,
+    );
+    lines.push(...wrapped);
+    sourceLines?.push(...wrapped);
+    sourceControlLines?.push(...wrapped);
+  }
   lines.push(
     truncateShapedLine(
       timeLine,
@@ -461,6 +484,15 @@ function kotItemLines(
   );
   sourceLines?.push(`${row.quantity}x  ${row.name.text}`);
   sourceControlLines?.push(lines[nameStart] ?? '');
+  for (const detail of row.detailLines ?? []) {
+    const detailRows = detailLineRows(
+      normalizeThermalText(safePrinterText(detail.text), capabilities),
+      cols,
+    );
+    lines.push(...detailRows);
+    sourceLines?.push(DETAIL_LINE_INDENT + detail.text);
+    sourceControlLines?.push(detailRows[0]);
+  }
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';

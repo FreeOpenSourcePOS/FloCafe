@@ -7,6 +7,8 @@ import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/langu
 import { awaitPrintPolicyBootstrap } from '@/lib/print-policy-bootstrap';
 import { defaultPrintLanguagePolicy, resolveKotLanguage } from '@print/policy';
 import { directionalText, isKotItemPending, type DirectionalText } from '@print/document';
+import { readDetailLines } from '@print/detail-lines';
+import { kotContactLines } from '@print/kot-contact';
 import { containsRtlScript } from '@print/direction';
 import { normalizePrinterTextSize, type PrinterTextSize } from '@print/text-size';
 import type { TextDirection } from '@print/types';
@@ -29,6 +31,8 @@ export interface KotWebPrintOptions {
   timezone?: string;
   /** Print the Order Number in a large bold callout banner on KOT. Default: true */
   showLargeOrderNumber?: boolean;
+  /** Print the customer's phone, delivery address and delivery note. Default: false */
+  showCustomerContact?: boolean;
 }
 
 /** Resolve the KOT ticket language: fixed policy language or the UI language. */
@@ -216,11 +220,19 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
         base,
       ),
       quantity: Number(item.quantity) || 0,
+      detailLines: readDetailLines(item),
       addons: (Array.isArray(item.addons) ? item.addons : []).filter((addon) => addon?.name),
       specialInstructions: item.special_instructions
         ? directionalText(String(item.special_instructions), base)
         : null,
     }));
+
+  const contactRows = kotContactLines(order, opts.showCustomerContact === true)
+    .map(
+      (line) =>
+        `<p style="margin:2px 0;">${escapeHtml(tr(line.concept))}: ${directionalValue(directionalText(line.text, base), base)}</p>`,
+    )
+    .join('');
 
   const itemRows =
     items.length > 0
@@ -228,7 +240,12 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
           .map(
             (item) => `
         <div style="margin:${padding} 0;">
-          <div style="font-weight:bold;line-height:1.4;">${escapeHtml(item.quantity)}x ${directionalValue(item.name, base)}</div>
+          <div style="font-weight:bold;line-height:1.4;">${escapeHtml(item.quantity)}x ${directionalValue(item.name, base)}</div>${item.detailLines
+            .map(
+              (line) =>
+                `<div style="padding-inline-start:1em;margin-top:2px;line-height:1.4;white-space:pre-wrap;">${escapeHtml(line)}</div>`,
+            )
+            .join('')}
           ${item.addons
             .map((addon) => {
               const qty =
@@ -252,7 +269,7 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}
       ${orderType ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.type'))}: ${escapeHtml(orderType)}</p>` : ''}
-      ${order.customer?.name ? `<p style="margin:2px 0;">${escapeHtml(tr('pos.customer'))}: ${directionalValue(directionalText(String(order.customer.name), base), base)}</p>` : ''}
+      ${order.customer?.name ? `<p style="margin:2px 0;">${escapeHtml(tr('pos.customer'))}: ${directionalValue(directionalText(String(order.customer.name), base), base)}</p>` : ''}${contactRows}
       <p style="margin:2px 0;">${escapeHtml(`${tr('print.time')}: ${formatTime(createdAt, locale, timezone ? { timeZone: timezone } : undefined)}`)}</p>
       ${orderNotes ? `<p style="margin:${padding} 0 2px 0;font-weight:bold;">!! ${escapeHtml(tr('print.note'))}: ${directionalValue(directionalText(orderNotes, base), base)}</p>` : ''}
       <hr style="border:1px dashed #000;margin:${padding} 0;">

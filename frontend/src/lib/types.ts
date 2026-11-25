@@ -253,6 +253,8 @@ export interface OrderItem {
   product_sku: string | null;
   variant_id?: string | null;
   variant_selection?: { id: string; name: string; price: number; sku?: string | null } | null;
+  /** Ready-formatted lines every ticket and receipt prints under the item heading. */
+  detailLines?: string[];
   unit_price: number;
   quantity: number;
   subtotal: number;

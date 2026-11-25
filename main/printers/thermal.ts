@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
+import { kotCustomerContactFields } from '../pizza/kot-customer-contact';
 import { getKdsPort, getServerPort } from '../server-state';
 import { getServerAppPort } from '../server-app-state';
 import {
@@ -1239,7 +1240,11 @@ export async function printKOT(
       typeof order?.show_large_order_number === 'boolean'
         ? order.show_large_order_number
         : getSettingValue('bill_show_large_order_number') !== 'false';
-    const kotOrder = { ...order, show_large_order_number: showLargeOrderNumber };
+    const kotOrder = {
+      ...order,
+      show_large_order_number: showLargeOrderNumber,
+      ...kotCustomerContactFields(order),
+    };
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
       const documentResult = renderKotViaDocument(kotOrder, items, stationName, {

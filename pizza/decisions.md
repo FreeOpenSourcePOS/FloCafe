@@ -185,9 +185,9 @@ FloCafe has one switch that stops all of these: the `offline_mode` setting (`mai
 **What this does not cover:**
 
 - A database created before this change has no `offline_mode` row and stays as it was; the default is seeded only when a database is created.
-- Restoring a full-file backup replaces the settings with the backup's. A backup made by upstream FloCafe has no `offline_mode` row, so the store is online after the restore, and it registers if that backup had cloud sync on (`main/db.ts:6489-6505`).
+- Restoring a full-file backup replaces the settings with the backup's. A backup made by upstream FloCafe has no `offline_mode` row, so the store is online after the restore (`restoreBackup` in `main/db.ts` copies the backup file whole), and it registers if that backup had cloud sync on.
 - The owner picking "anonymous" or "full" sharing in the setup wizard counts as switching telemetry on; it starts sending once offline mode is off.
-- Upstream's tests that exercise cloud, telemetry, Drive and WhatsApp features put the store online first (`tests/helpers/test-setup.ts` and one line in eleven test files).
+- Upstream's tests that exercise cloud, telemetry, Drive and WhatsApp features put the store online first (`tests/helpers/test-setup.ts`, and one line after each `initDatabase()` call in twelve test files).
 
 ## D14. The server knows which products are pizzas
 

@@ -29,6 +29,11 @@ import {
   truncateToDisplayCells,
 } from '../../shared/print/width';
 import {
+  DETAIL_LINE_INDENT,
+  detailLineRows,
+  readDetailLines,
+} from '../../shared/print/detail-lines';
+import {
   addonRows,
   appendPoweredByFooter,
   buildEscPos,
@@ -45,6 +50,7 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
+  safePrinterText,
   taxBreakdownRows,
   truncate,
   truncateShapedLine,
@@ -159,6 +165,7 @@ export function buildBillPrintData(
           };
         }),
         specialInstructions: String(item?.special_instructions ?? ''),
+        detailLines: readDetailLines(item),
       })),
     },
     bill: {
@@ -806,6 +813,14 @@ export function renderBillDocumentToClassicLines(
             },
           ];
           const financialSourceLines = [true];
+          for (const detail of row.detailLines ?? []) {
+            const detailRows = detailLineRows(normalize(safePrinterText(detail.text)), cols);
+            segment.main.push(...detailRows);
+            sourceLines.push(DETAIL_LINE_INDENT + detail.text);
+            sourceControlLines.push(detailRows[0]);
+            sourceLayouts.push(undefined);
+            financialSourceLines.push(false);
+          }
           for (const addon of row.addons) {
             const addonStart = segment.main.length;
             const addonLines = addonRows(

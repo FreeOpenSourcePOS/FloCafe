@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Installieren Sie das FloCafe-Zertifikat einmalig, damit dieses Gerät FloCafe sicher öffnen kann. Ihr Gerät bittet Sie um Bestätigung.",
     "downloadCertificate": "Zertifikat herunterladen",
     "trustLoadFailed": "Das Zertifikat konnte nicht geladen werden. Prüfen Sie, ob dieses Gerät im selben WLAN wie FloCafe ist.",
-    "windowsVerify": "Öffnen Sie vor der Installation die Eingabeaufforderung im Ordner der heruntergeladenen Datei und führen Sie certutil -hashfile FloCafe-Local-CA.cer SHA256 aus. Das Ergebnis muss mit dem SHA-256-Fingerabdruck übereinstimmen, der in den FloCafe-Einstellungen auf dem FloCafe-Computer angezeigt wird. Weicht er ab, installieren Sie die Datei nicht.",
+    "windowsVerify": "Öffnen Sie vor der Installation die Eingabeaufforderung im Ordner der heruntergeladenen Datei und führen Sie certutil -hashfile FloCafe-Local-CA.cer SHA256 aus. Das Ergebnis muss mit dem SHA-256-Fingerabdruck übereinstimmen, der in den FloCafe-Einstellungen auf dem FloCafe-Computer angezeigt wird. Weicht er ab, installieren Sie die Datei nicht. Ignorieren Sie beim Vergleich die Doppelpunkte und die Groß- und Kleinschreibung; jede Ziffer muss übereinstimmen.",
     "windows1": "Öffnen Sie die heruntergeladene Datei und wählen Sie Zertifikat installieren, dann Aktueller Benutzer.",
     "windows2": "Wählen Sie Alle Zertifikate in folgendem Speicher speichern, dann Vertrauenswürdige Stammzertifizierungsstellen.",
     "windows3": "Schließen Sie ab und bestätigen Sie die Windows-Sicherheitsabfrage. Chrome und Edge vertrauen FloCafe dann. Firefox hat eine eigene Liste: Aktivieren Sie Unternehmens-Stammzertifikate oder importieren Sie die Datei dort.",

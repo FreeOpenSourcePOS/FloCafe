@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Pasang sertifikat FloCafe satu kali agar perangkat ini dapat membuka FloCafe dengan aman. Perangkat Anda akan meminta persetujuan.",
     "downloadCertificate": "Unduh sertifikat",
     "trustLoadFailed": "Tidak dapat memuat sertifikat. Pastikan perangkat ini berada di Wi-Fi yang sama dengan FloCafe.",
-    "windowsVerify": "Sebelum memasang, buka Command Prompt di folder berkas yang diunduh lalu jalankan certutil -hashfile FloCafe-Local-CA.cer SHA256. Hasilnya harus sama dengan sidik jari SHA-256 yang ditampilkan di Pengaturan FloCafe pada komputer FloCafe. Jika berbeda, jangan pasang berkas tersebut.",
+    "windowsVerify": "Sebelum memasang, buka Command Prompt di folder berkas yang diunduh lalu jalankan certutil -hashfile FloCafe-Local-CA.cer SHA256. Hasilnya harus sama dengan sidik jari SHA-256 yang ditampilkan di Pengaturan FloCafe pada komputer FloCafe. Jika berbeda, jangan pasang berkas tersebut. Saat membandingkan, abaikan titik dua dan huruf besar-kecil; setiap digit harus cocok.",
     "windows1": "Buka file yang diunduh lalu pilih Install Certificate, kemudian Current User.",
     "windows2": "Pilih Place all certificates in the following store, lalu Trusted Root Certification Authorities.",
     "windows3": "Selesaikan dan konfirmasi perintah keamanan Windows. Chrome dan Edge kemudian memercayai FloCafe. Firefox punya daftar sendiri: aktifkan root perusahaan atau impor file di sana.",

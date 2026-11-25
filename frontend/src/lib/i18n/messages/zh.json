@@ -3800,7 +3800,7 @@
     "trustPageIntro": "请安装一次 FloCafe 证书，这台设备即可安全打开 FloCafe。设备会要求您批准。",
     "downloadCertificate": "下载证书",
     "trustLoadFailed": "无法加载证书。请确认此设备与 FloCafe 在同一个 Wi-Fi 中。",
-    "windowsVerify": "安装前，请在已下载文件所在的文件夹中打开命令提示符，运行 certutil -hashfile FloCafe-Local-CA.cer SHA256。结果必须与 FloCafe 电脑上 FloCafe 设置中显示的 SHA-256 指纹一致。若不一致，请勿安装该文件。",
+    "windowsVerify": "安装前，请在已下载文件所在的文件夹中打开命令提示符，运行 certutil -hashfile FloCafe-Local-CA.cer SHA256。结果必须与 FloCafe 电脑上 FloCafe 设置中显示的 SHA-256 指纹一致。若不一致，请勿安装该文件。 比对时请忽略冒号和大小写，每个字符都必须一致。",
     "windows1": "打开下载的文件，选择“安装证书”，然后选择“当前用户”。",
     "windows2": "选择“将所有的证书放入下列存储”，然后选择“受信任的根证书颁发机构”。",
     "windows3": "完成并确认 Windows 安全提示。之后 Chrome 和 Edge 会信任 FloCafe。Firefox 有自己的列表：请启用企业根证书，或在其中导入该文件。",

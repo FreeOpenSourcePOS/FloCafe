@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Instaloni certifikatën e FloCafe një herë që kjo pajisje ta hapë FloCafe në mënyrë të sigurt. Pajisja juaj do t'ju kërkojë ta miratoni.",
     "downloadCertificate": "Shkarko certifikatën",
     "trustLoadFailed": "Certifikata nuk u ngarkua dot. Kontrolloni që kjo pajisje të jetë në të njëjtin Wi-Fi me FloCafe.",
-    "windowsVerify": "Para instalimit, hapni Command Prompt në dosjen e skedarit të shkarkuar dhe ekzekutoni certutil -hashfile FloCafe-Local-CA.cer SHA256. Rezultati duhet të përputhet me shenjën e gishtit SHA-256 të shfaqur te Cilësimet e FloCafe në kompjuterin e FloCafe. Nëse ndryshon, mos e instaloni skedarin.",
+    "windowsVerify": "Para instalimit, hapni Command Prompt në dosjen e skedarit të shkarkuar dhe ekzekutoni certutil -hashfile FloCafe-Local-CA.cer SHA256. Rezultati duhet të përputhet me shenjën e gishtit SHA-256 të shfaqur te Cilësimet e FloCafe në kompjuterin e FloCafe. Nëse ndryshon, mos e instaloni skedarin. Gjatë krahasimit, injoroni dy pikat dhe shkronjat e mëdha e të vogla; çdo shifër duhet të përputhet.",
     "windows1": "Hapni skedarin e shkarkuar dhe zgjidhni Install Certificate, pastaj Current User.",
     "windows2": "Zgjidhni Place all certificates in the following store, pastaj Trusted Root Certification Authorities.",
     "windows3": "Përfundoni dhe konfirmoni njoftimin e sigurisë së Windows. Pas kësaj Chrome dhe Edge do t'i besojnë FloCafe. Firefox ka listën e vet: aktivizoni rrënjët e ndërmarrjes ose importoni skedarin atje.",

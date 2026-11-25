@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Install the FloCafe certificate once so this device can open FloCafe securely. Your device will ask you to approve it.",
     "downloadCertificate": "Download certificate",
     "trustLoadFailed": "Could not load the certificate. Check that this device is on the same Wi-Fi as FloCafe.",
-    "windowsVerify": "Before installing, open Command Prompt in the folder with the downloaded file and run certutil -hashfile FloCafe-Local-CA.cer SHA256. The result must match the SHA-256 fingerprint shown in FloCafe Settings on the FloCafe computer. If it differs, do not install the file.",
+    "windowsVerify": "Before installing, open Command Prompt in the folder with the downloaded file and run certutil -hashfile FloCafe-Local-CA.cer SHA256. The result must match the SHA-256 fingerprint shown in FloCafe Settings on the FloCafe computer. If it differs, do not install the file. When comparing, ignore the colons and letter case; every digit must match.",
     "windows1": "Open the downloaded file and choose Install Certificate, then Current User.",
     "windows2": "Choose Place all certificates in the following store, then Trusted Root Certification Authorities.",
     "windows3": "Finish and confirm the Windows security prompt. Chrome and Edge then trust FloCafe. Firefox keeps its own list: turn on enterprise roots or import the file there.",

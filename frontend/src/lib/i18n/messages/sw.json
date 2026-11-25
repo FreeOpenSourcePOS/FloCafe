@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Sakinisha cheti cha FloCafe mara moja ili kifaa hiki kifungue FloCafe kwa usalama. Kifaa chako kitakuomba uidhinishe.",
     "downloadCertificate": "Pakua cheti",
     "trustLoadFailed": "Imeshindwa kupakia cheti. Hakikisha kifaa hiki kiko kwenye Wi-Fi ileile na FloCafe.",
-    "windowsVerify": "Kabla ya kusakinisha, fungua Command Prompt kwenye folda ya faili iliyopakuliwa na uendeshe certutil -hashfile FloCafe-Local-CA.cer SHA256. Matokeo lazima yalingane na alama ya vidole ya SHA-256 inayoonyeshwa kwenye Mipangilio ya FloCafe kwenye kompyuta ya FloCafe. Yakitofautiana, usisakinishe faili.",
+    "windowsVerify": "Kabla ya kusakinisha, fungua Command Prompt kwenye folda ya faili iliyopakuliwa na uendeshe certutil -hashfile FloCafe-Local-CA.cer SHA256. Matokeo lazima yalingane na alama ya vidole ya SHA-256 inayoonyeshwa kwenye Mipangilio ya FloCafe kwenye kompyuta ya FloCafe. Yakitofautiana, usisakinishe faili. Unapolinganisha, puuza nukta pacha na herufi kubwa au ndogo; kila tarakimu lazima ilingane.",
     "windows1": "Fungua faili iliyopakuliwa kisha uchague Install Certificate, halafu Current User.",
     "windows2": "Chagua Place all certificates in the following store, halafu Trusted Root Certification Authorities.",
     "windows3": "Maliza na uthibitishe ujumbe wa usalama wa Windows. Kisha Chrome na Edge zitaiamini FloCafe. Firefox ina orodha yake: washa mizizi ya biashara au ingiza faili huko.",

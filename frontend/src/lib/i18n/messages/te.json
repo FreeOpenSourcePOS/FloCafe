@@ -3800,7 +3800,7 @@
     "trustPageIntro": "ఈ పరికరం FloCafe ను సురక్షితంగా తెరవడానికి FloCafe సర్టిఫికెట్ను ఒకసారి ఇన్స్టాల్ చేయండి. మీ పరికరం ఆమోదం అడుగుతుంది.",
     "downloadCertificate": "సర్టిఫికెట్ డౌన్లోడ్ చేయండి",
     "trustLoadFailed": "సర్టిఫికెట్ను లోడ్ చేయలేకపోయాం. ఈ పరికరం FloCafe ఉన్న Wi-Fi లోనే ఉందో లేదో తనిఖీ చేయండి.",
-    "windowsVerify": "ఇన్స్టాల్ చేసే ముందు డౌన్లోడ్ చేసిన ఫైల్ ఉన్న ఫోల్డర్లో Command Prompt తెరిచి certutil -hashfile FloCafe-Local-CA.cer SHA256 నడపండి. ఫలితం FloCafe కంప్యూటర్లోని FloCafe సెట్టింగ్స్లో చూపిన SHA-256 వేలిముద్రతో సరిపోలాలి. భిన్నంగా ఉంటే ఫైల్ను ఇన్స్టాల్ చేయవద్దు.",
+    "windowsVerify": "ఇన్స్టాల్ చేసే ముందు డౌన్లోడ్ చేసిన ఫైల్ ఉన్న ఫోల్డర్లో Command Prompt తెరిచి certutil -hashfile FloCafe-Local-CA.cer SHA256 నడపండి. ఫలితం FloCafe కంప్యూటర్లోని FloCafe సెట్టింగ్స్లో చూపిన SHA-256 వేలిముద్రతో సరిపోలాలి. భిన్నంగా ఉంటే ఫైల్ను ఇన్స్టాల్ చేయవద్దు. పోల్చేటప్పుడు కోలన్లు మరియు అక్షరాల పెద్ద-చిన్న రూపాన్ని విస్మరించండి; ప్రతి అంకె సరిపోలాలి.",
     "windows1": "డౌన్లోడ్ చేసిన ఫైల్ను తెరిచి Install Certificate, తర్వాత Current User ఎంచుకోండి.",
     "windows2": "Place all certificates in the following store ఎంచుకుని, తర్వాత Trusted Root Certification Authorities ఎంచుకోండి.",
     "windows3": "పూర్తి చేసి Windows భద్రతా సందేశాన్ని నిర్ధారించండి. ఆ తర్వాత Chrome మరియు Edge FloCafe ను విశ్వసిస్తాయి. Firefox కు సొంత జాబితా ఉంటుంది: ఎంటర్ప్రైజ్ రూట్లను ఆన్ చేయండి లేదా ఫైల్ను అక్కడ ఇంపోర్ట్ చేయండి.",

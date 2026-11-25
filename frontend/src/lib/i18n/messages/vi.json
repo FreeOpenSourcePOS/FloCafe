@@ -3800,7 +3800,7 @@
     "trustPageIntro": "Cài chứng chỉ FloCafe một lần để thiết bị này mở FloCafe an toàn. Thiết bị sẽ yêu cầu bạn chấp thuận.",
     "downloadCertificate": "Tải chứng chỉ xuống",
     "trustLoadFailed": "Không thể tải chứng chỉ. Hãy kiểm tra thiết bị này đang dùng cùng Wi-Fi với FloCafe.",
-    "windowsVerify": "Trước khi cài đặt, mở Command Prompt trong thư mục chứa tệp đã tải và chạy certutil -hashfile FloCafe-Local-CA.cer SHA256. Kết quả phải khớp với dấu vân tay SHA-256 hiển thị trong Cài đặt FloCafe trên máy tính FloCafe. Nếu khác, đừng cài tệp.",
+    "windowsVerify": "Trước khi cài đặt, mở Command Prompt trong thư mục chứa tệp đã tải và chạy certutil -hashfile FloCafe-Local-CA.cer SHA256. Kết quả phải khớp với dấu vân tay SHA-256 hiển thị trong Cài đặt FloCafe trên máy tính FloCafe. Nếu khác, đừng cài tệp. Khi so sánh, bỏ qua dấu hai chấm và chữ hoa chữ thường; mọi chữ số phải khớp.",
     "windows1": "Mở tệp đã tải xuống rồi chọn Install Certificate, sau đó Current User.",
     "windows2": "Chọn Place all certificates in the following store, rồi Trusted Root Certification Authorities.",
     "windows3": "Hoàn tất và xác nhận cảnh báo bảo mật của Windows. Khi đó Chrome và Edge sẽ tin cậy FloCafe. Firefox có danh sách riêng: bật gốc doanh nghiệp hoặc nhập tệp tại đó.",

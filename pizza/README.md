@@ -1,12 +1,13 @@
 # Pizza fork
 
-This repository is a fork of [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe) that adds a pizza-shop layer: a shared pizza core, a pizza mode for the POS, and a customer menu site.
+This repository is a fork of [FloCafe](https://github.com/FreeOpenSourcePOS/FloCafe) that adds a pizza-shop layer: a shared pizza core and a pizza mode for the POS. The shop's customer site is a separate project.
 
 Everything specific to the fork's process lives in this folder. Upstream's `docs/` tree describes the running system and its checker rejects plans and decision notes, so they stay out of it.
 
 | Page | What it holds |
 | :--- | :--- |
-| [plan.md](plan.md) | What is being built, the tests, the pull requests, the waves, the deploy steps, the open questions |
+| [plan.md](plan.md) | What is being built, the tests, the pull requests, how the work is run, the open questions |
+| [contract.md](contract.md) | The menu format, function signatures, tables, and which lane owns which files |
 | [decisions.md](decisions.md) | Design decisions and the spike evidence behind each |
 | [gap-analysis.md](gap-analysis.md) | Every required feature marked as existing, needing a setting, partly there, or to build |
 | [baseline.md](baseline.md) | Upstream's install, build and test results on our machines before any change |
@@ -19,7 +20,6 @@ Everything specific to the fork's process lives in this folder. Upstream's `docs
 | Backend pizza code | `main/pizza/` |
 | POS pizza screens | `frontend/src/components/pos/pizza/` |
 | Pizza screen text (English only) | `frontend/src/lib/i18n/messages-pizza/en.json` |
-| Menu site | `web/` |
 | Tests | `tests/pizza-*.test.ts`, each with a `test:pizza-*` script chained into `npm test` |
 | Fork tools | `scripts/pizza/` |
 
@@ -36,12 +36,15 @@ Upstream files get one-line hooks, not rewrites. A change to `main/db.ts`, `main
 7. Run the full suite only under the machine lock, and only when a gate calls for it:
    `python3 scripts/pizza/with-suite-lock.py node scripts/pizza/run-suite-report.cjs . <report folder>`.
    Unlike `npm test`, it does not stop at the first failure and it writes one result line and one log per suite.
-8. GitHub Actions is not enabled on this fork. The checks of `.github/workflows/ci.yml` run on a
-   developer machine instead: `python3 scripts/pizza/with-suite-lock.py scripts/pizza/local-ci.sh <report folder>`.
+8. GitHub Actions is not enabled on this fork. The checks of `.github/workflows/ci.yml` run on
+   developer machines instead: `python3 scripts/pizza/with-suite-lock.py scripts/pizza/local-ci.sh <report folder> origin/main a`
+   on the Mac and the same with `b` on Fedora (`all`, the default, runs everything on one machine).
 9. Do not launch the Electron app or the native Electron tests on macOS with a throwaway home. The app
    asks macOS for a keychain that is not there, and a system dialog offers to reset the user's keychain.
    Those tests run on Linux under Xvfb; `local-ci.sh` skips them on macOS.
-10. If something fails, stop and report it with the output. No workarounds.
+10. No real shop's name, address, phone number, items or prices in this repository. Tests and examples use
+    `tests/fixtures/pizza-sample-menu.json`.
+11. If something fails, stop and report it with the output. No workarounds.
 
 ## Running the backend without Electron
 

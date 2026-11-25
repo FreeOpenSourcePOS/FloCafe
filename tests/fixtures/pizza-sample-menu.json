@@ -1,0 +1,120 @@
+{
+  "source": "Made-up menu for tests. Same shape as a real shop's menu file; no real shop's items or prices.",
+  "restaurant": {
+    "name": "Sample Pizza Co.",
+    "address": "1 Example Street, Sampletown",
+    "phone": "+16045550100"
+  },
+  "tax": {
+    "GST": 0.05,
+    "PST": 0.07,
+    "rules": "GST on every item. PST only on drinks."
+  },
+  "sizes": {
+    "pizza": [
+      { "id": "small", "label": "Small", "price": 15.0 },
+      { "id": "medium", "label": "Medium", "price": 19.0 },
+      { "id": "large", "label": "Large", "price": 23.0 }
+    ]
+  },
+  "categories": [
+    {
+      "id": "pizzas",
+      "name": "Our Pizzas",
+      "items": [
+        { "id": "garden", "number": 1, "name": "Garden", "description": "Mushrooms, olives, onions, green peppers, cheese & tomato sauce", "sizes": "pizza", "image": null },
+        { "id": "island", "number": 2, "name": "Island", "description": "Ham, pineapple, cheese & tomato sauce", "sizes": "pizza", "image": null },
+        { "id": "classic", "number": 3, "name": "Classic Pepperoni", "description": "Pepperoni, cheese & tomato sauce", "sizes": "pizza", "image": null },
+        { "id": "smokehouse", "number": 4, "name": "Smokehouse Chicken", "description": "Roasted chicken, red onions, jalapeño pepper, cheddar & BBQ sauce", "sizes": "pizza", "image": null },
+        { "id": "plain", "number": 5, "name": "Plain Cheese", "description": "", "sizes": "pizza", "image": null }
+      ]
+    },
+    {
+      "id": "sides",
+      "name": "Side Orders",
+      "items": [
+        {
+          "id": "wings",
+          "name": "Wings (8 pcs.)",
+          "price": 12.25,
+          "image": null,
+          "modifiers": [
+            { "id": "flavour", "label": "Flavour", "required": true, "choose": 1, "options": [{ "id": "hot", "label": "Hot" }, { "id": "sweet-chili", "label": "Sweet Chili" }] }
+          ]
+        },
+        { "id": "green-salad", "name": "Green Salad", "price": 5.49, "image": null },
+        { "id": "garlic-toast", "name": "Garlic Toast", "price": 2.5, "image": null },
+        {
+          "id": "dip",
+          "name": "Dip",
+          "price": 1.25,
+          "image": null,
+          "modifiers": [
+            { "id": "dip-type", "label": "Dip", "required": true, "choose": 1, "options": [{ "id": "ranch", "label": "Ranch" }, { "id": "garlic", "label": "Garlic" }] }
+          ]
+        },
+        {
+          "id": "pasta",
+          "name": "Baked Pasta",
+          "price": 11.0,
+          "image": null,
+          "modifiers": [
+            { "id": "pasta-type", "label": "Pasta", "required": true, "choose": 1, "options": [{ "id": "lasagna", "label": "Lasagna" }, { "id": "spaghetti", "label": "Spaghetti" }] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drinks",
+      "name": "Drinks",
+      "pst": true,
+      "variants": [{ "id": "can", "label": "Can", "price": 1.75 }, { "id": "2l", "label": "2L Bottle", "price": 4.5 }],
+      "items": [
+        { "id": "cola", "name": "Cola", "image": null },
+        { "id": "ginger-ale", "name": "Ginger Ale", "image": null },
+        { "id": "lemon-lime", "name": "Lemon Lime", "image": null }
+      ]
+    },
+    {
+      "id": "deals",
+      "name": "Deals",
+      "items": [
+        {
+          "id": "large-combo",
+          "name": "Large Pizza Combo",
+          "price": 35.5,
+          "description": "1 large pizza, 1 pasta, 2 pops, 1 garlic toast",
+          "picks": [{ "type": "pizza", "size": "large", "count": 1 }, { "type": "pop", "count": 2 }],
+          "image": null
+        },
+        {
+          "id": "three-large-wings",
+          "name": "Large Pizzas & Wings",
+          "price": 71.25,
+          "description": "Any 3 large pizzas & 12 wings",
+          "picks": [{ "type": "pizza", "size": "large", "count": 3 }, { "type": "wing-flavour", "count": 1 }],
+          "image": null
+        },
+        {
+          "id": "party",
+          "name": "Party Pack",
+          "price": 118.4,
+          "description": "Any 6 large pizzas & 4 can pops or a 2L bottle",
+          "picks": [
+            { "type": "pizza", "size": "large", "count": 6 },
+            { "type": "choice", "options": [{ "type": "pop", "count": 4 }, { "type": "2l", "count": 1 }] }
+          ],
+          "image": null
+        },
+        {
+          "id": "pasta-night",
+          "name": "Pasta Night",
+          "price": 29.99,
+          "description": "3 pasta, 3 garlic toasts & 3 pops",
+          "picks": [{ "type": "pop", "count": 3 }],
+          "image": null
+        }
+      ]
+    }
+  ]
+}

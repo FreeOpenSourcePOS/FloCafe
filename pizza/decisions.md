@@ -10,6 +10,8 @@ Not checked by a spike: nothing here is new to the codebase.
 
 ## D2. A pizza is a normal order line; the server prices it
 
+**Revised by D18.** The shop's menu has one price per size and no paid toppings, so FloCafe's own variant and add-on prices are the pizza's price and no pricing hook is needed. The recipe is still stored and validated as described here, and the three price sites below matter again only if paid toppings are added later.
+
 The recipe is JSON in `order_items.modifier_selection` with `kind: "pizza"` and a format version. The price goes in `unit_price`.
 
 **Checked.** `tests/spike-pizza-modifier-selection.test.ts` on `spike/pizza-db` posts real orders over HTTP: the recipe is stored byte for byte and returned parsed on create, on read, on adding items and on a quantity edit, and a client-sent `unit_price` of 0.01 is ignored.
@@ -64,11 +66,11 @@ The change to `main/db.ts` in the spike is 14 lines: an import, a rename of the 
 | File backups | `createBackupUnlocked` (`main/db.ts:2973`) | No: whole file |
 | Factory reset | `resetDatabaseWithBackupUnlocked` (`main/db.ts:3137`) | No: the file is recreated, so pizza tables come back empty and the menu is imported again |
 
-## D4. The menu file is the master copy
+## D4. A shop's menu is one file, loaded into the POS
 
-`shared/pizza/menu/shop-menu.json` holds sizes, crusts, sauces, toppings, specialty pizzas, combos, other items and the pricing rules. The POS imports it into SQLite; the menu site reads it at build time. Import is idempotent and keyed by stable ids.
+**Revised.** The menu file has the shape of `tests/fixtures/pizza-sample-menu.json` (type `MenuFile` in `shared/pizza/types.ts`). It is the same file the shop's customer ordering app reads, so the two cannot disagree on a price. The POS loads it and maps it onto FloCafe's own catalogue: sizes become variants, dips and flavours become add-on groups, deals become fixed-price products ([contract.md](contract.md)). Loading is idempotent and keyed by ids derived from the menu's ids.
 
-Limit: a price changed only inside the POS does not reach the site until the file is updated and the site rebuilt.
+A price changed only inside the POS back office is overwritten by the next load of the file. The file is the master.
 
 ## D5. One ticket formatter, printed on every path
 
@@ -154,9 +156,13 @@ Category colours are stored as names (`red`, `orange`), not hex; upstream's own 
 
 ## D9. The menu site
 
+**Withdrawn by D16.** The text below is kept for the record only.
+
 A new app in `web/`: Next.js App Router with the same Next, React and Tailwind versions as `frontend/`, statically rendered, no database, no secrets. It imports `shared/pizza` and the menu file. The Vercel project's root is `web/` with files outside the root included.
 
 ## D10. Tests
+
+**Revised by D16.** The `web/` package and the shared price-cases fixture are withdrawn; the rest stands.
 
 Upstream's pattern for the core, backend and POS: plain scripts with the `assert*OrThrow` helpers from `tests/helpers/test-setup.ts`, one `test:<name>` script per file, chained into `npm test` (the `test:script-coverage` gate fails otherwise). `web/` is a new package and uses Vitest with Testing Library and Playwright. `tests/fixtures/pizza-price-cases.json` is read by the core, the server, the POS cart and the site.
 
@@ -191,7 +197,7 @@ FloCafe has one switch that stops all of these: the `offline_mode` setting (`mai
 
 ## D14. The server knows which products are pizzas
 
-A pizza table, `pizza_products(product_id, kind)`, marks specialty and build-your-own pizzas; no column is added to upstream's `products` table. For a product listed there, the server refuses an order line without a valid recipe, and refuses ordinary add-ons on that line. This closes every entry path at once, including the ones in D6 that bypass the POS page.
+**Revised.** A pizza table, `pizza_products(product_id, kind, ...)`, marks pizzas, the half-and-half product and deals; no column is added to upstream's `products` table. A plain pizza needs no recipe: it is the product, its size variant and its dips. The half-and-half product and every deal product require a valid recipe, and the server refuses the line without one. This closes every entry path at once, including the ones in D6 that bypass the POS page. Dips stay ordinary add-ons and are allowed on a pizza line.
 
 ## D15. Running headless
 
@@ -204,3 +210,25 @@ Upstream's full suite passes on Fedora with plain Node 22 ([baseline.md](baselin
 **Does not start in this mode** (`main/standalone-startup.ts` against `initialize()` in `main/index.ts`): daily, startup and shutdown backups (`index.ts:1613-1628, 1911-1918`); schema self-repair (`index.ts:1609`); LAN HTTPS and mDNS (`index.ts:1640-1645`); cloud sync, telemetry and Drive. Restore over HTTP needs a token from a native file dialog (`main/routes/database.ts:865, 884`). Raster printing and PDF need an Electron window. On a taken port the server moves to the next one silently (`main/server.ts:446-459`).
 
 The headless kit therefore adds scheduled backups, a restore procedure, a fixed-port check and a network ESC/POS print test.
+
+## D16. The customer site is a separate project
+
+The shop already has a customer ordering app, built and owned outside this repository, with its own hosting. This repository builds no customer site and deploys nothing to Vercel. The link between the two is the menu file (D4).
+
+Decided by the owner on 2026-11-25. It withdraws D9, the site tests in D10, and the deploy stage of the first plan.
+
+## D17. No real shop's data in this repository
+
+The repository is public. It carries a made-up sample menu, `tests/fixtures/pizza-sample-menu.json`, in the real format. A shop's name, address, phone number, items and prices stay in the shop's own file, which is loaded at install. Tests, examples and documents use the sample only.
+
+Decided by the owner on 2026-11-25.
+
+## D18. The first builder does what the menu supports
+
+The shop's menu has one price per size for every pizza, dips at one price, and fixed-price deals. It has no topping prices, no crust choices and no build-your-own pizza.
+
+So the first version offers: size, dips, a note, removing an ingredient at no charge, half and half of any two menu pizzas at the size price, cook and cut notes, deals with each pizza changed separately, and quick buttons. None of these changes a price, which is why D2 needs no pricing hook. The ingredient list a cashier removes from is parsed from each pizza's description.
+
+Paid extra toppings, crusts and build-your-own are added when the shop supplies prices. At that point the per-size topping prices go into the menu format and the pricing hook in D2 is built.
+
+Decided by the owner on 2026-11-25.

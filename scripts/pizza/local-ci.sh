@@ -40,6 +40,12 @@ OS=$(uname -s)
 XVFB=()
 if [ "$OS" = "Linux" ]; then
   XVFB=(xvfb-run -a --server-args='-screen 0 1280x800x24')
+  # Keep test browsers off the session bus of whoever is logged in. On it,
+  # Electron and Chromium register a scope with that user's service manager
+  # for every launch. CI has no session bus either.
+  export DBUS_SESSION_BUS_ADDRESS=disabled:
+  mkdir -p "$OUT/xdg-runtime" && chmod 700 "$OUT/xdg-runtime"
+  export XDG_RUNTIME_DIR="$OUT/xdg-runtime"
 fi
 
 FAILED=0

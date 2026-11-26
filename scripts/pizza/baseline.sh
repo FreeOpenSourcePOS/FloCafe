@@ -30,6 +30,10 @@ mkdir -p "$OUT/home"
 XVFB=()
 if [ "$(uname -s)" = "Linux" ]; then
   XVFB=(xvfb-run -a --server-args='-screen 0 1280x800x24')
+  # Keep test browsers off the session bus of whoever is logged in (see local-ci.sh).
+  export DBUS_SESSION_BUS_ADDRESS=disabled:
+  mkdir -p "$OUT/xdg-runtime" && chmod 700 "$OUT/xdg-runtime"
+  export XDG_RUNTIME_DIR="$OUT/xdg-runtime"
 fi
 step suite python3 "$TOOLS/with-suite-lock.py" ${XVFB[@]+"${XVFB[@]}"} env HOME="$OUT/home" node "$TOOLS/run-suite-report.cjs" "$WT" "$OUT"
 finish "complete"

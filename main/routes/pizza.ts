@@ -1,6 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
 import { importMenu, MenuImportError } from '../pizza/menu-import';
+import {
+  deleteQuickButton,
+  findQuickButton,
+  listQuickButtons,
+  type QuickButtonRow,
+  saveQuickButton,
+} from '../pizza/quick-buttons';
 import { requirePermission } from '../services/authorization';
 import { MenuError, parseMenuFile } from '../../shared/pizza/menu';
 
@@ -38,5 +45,69 @@ router.get('/catalog', requirePermission('catalog.view'), (_req: Request, res: R
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+/** Answers a refusal with its own status and message; anything else is a 500. */
+function fail(res: Response, error: unknown): void {
+  const { statusCode, message } = error as { statusCode?: number; message?: string };
+  if (statusCode) {
+    res.status(statusCode).json({ error: message });
+    return;
+  }
+  res.locals.postHogError = error;
+  console.error('[API] Internal error:', error);
+  res.status(500).json({ error: 'Internal server error' });
+}
+
+/** A customer's button is kept by whoever takes orders; a shop-wide one is part of the menu. */
+const mayKeepButton = (customerId: unknown) =>
+  requirePermission(customerId ? 'orders.create' : 'catalog.manage');
+
+router.get('/quick-buttons', requirePermission('catalog.view'), (req: Request, res: Response) => {
+  try {
+    const { customer_id: customerId } = req.query;
+    res.json({
+      buttons: listQuickButtons(
+        getDatabase(),
+        typeof customerId === 'string' ? customerId : undefined,
+      ),
+    });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.post('/quick-buttons', (req: Request, res: Response) =>
+  mayKeepButton(req.body?.customer_id)(req, res, () => {
+    try {
+      res.status(201).json({ button: saveQuickButton(getDatabase(), req.body ?? {}) });
+    } catch (error) {
+      fail(res, error);
+    }
+  }),
+);
+
+/** Runs `change` on the stored button when there is one and the user may keep it. */
+function withStoredButton(req: Request, res: Response, change: (row: QuickButtonRow) => void) {
+  try {
+    const row = findQuickButton(getDatabase(), String(req.params.id));
+    if (!row) return res.status(404).json({ error: 'That button is no longer saved' });
+    mayKeepButton(row.customer_id)(req, res, () => change(row));
+  } catch (error) {
+    fail(res, error);
+  }
+}
+
+router.put('/quick-buttons/:id', (req: Request, res: Response) =>
+  withStoredButton(req, res, (row) =>
+    res.json({ button: saveQuickButton(getDatabase(), req.body ?? {}, row) }),
+  ),
+);
+
+router.delete('/quick-buttons/:id', (req: Request, res: Response) =>
+  withStoredButton(req, res, (row) => {
+    deleteQuickButton(getDatabase(), row.id);
+    res.json({ success: true });
+  }),
+);
 
 export { router as pizzaRoutes };

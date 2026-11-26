@@ -729,6 +729,75 @@ as a product or a variant added by hand, are never touched.
 | `POST` | `/menu/import` | `catalog.import-export` | body: the menu file (`tax`, `sizes`, `categories`) | `{ created, updated, unchanged, deactivated, untaxed }`, counting rows. `parseMenuFile()` validates the whole file before anything is written; a file it rejects answers `400` with `{ error, path }`, where `path` names the bad entry, and writes nothing. A menu in which two entries derive the same id, or that would move a stored variant or add-on to another product or group, answers the same way with `path: 'menu'`. A store currency that is not counted in hundredths, or an unreadable `pizza_menu.owned_rows`, answers `400` with `{ error }` and writes nothing. |
 | `GET`  | `/catalog`     | `catalog.view`          | none                                               | The catalogue parsed from the last menu file loaded (`PizzaCatalog` in `shared/pizza/types.ts`, money in whole cents). `404` when no menu has been loaded.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
+### Pizza quick buttons
+
+Router: `main/routes/pizza.ts`. Full path: `/api/pizza`. Logic: `main/pizza/quick-buttons.ts`.
+
+A quick button is one saved cart line under a label, kept in `pizza_quick_buttons` for the whole
+shop (`customer_id` is `null`) or for one customer. The API returns a button as:
+
+```json
+{
+  "id": "…",
+  "label": "Half Island / Classic",
+  "color": "red",
+  "customer_id": null,
+  "product_id": "pz-half-and-half",
+  "variant_id": "pz-half-and-half-large",
+  "recipe": {
+    "kind": "pizza",
+    "v": 1,
+    "sizeId": "large",
+    "halves": [
+      { "pizzaId": "island", "removed": ["Pineapple"] },
+      { "pizzaId": "classic", "removed": [] }
+    ]
+  },
+  "addons": [{ "id": "ad-dips-ranch", "quantity": 2 }],
+  "note": null,
+  "sort_order": 0,
+  "created_at": "…",
+  "updated_at": "…",
+  "usable": true,
+  "reason": null
+}
+```
+
+No price is stored or returned: a button costs what its product, variant and add-ons cost when it
+is tapped. An add-on is kept as its `id` and `quantity`; any other field sent with it is dropped.
+
+Saving checks a button the way an order line is checked, in this order, and a refusal carries a
+message for the cashier:
+
+- `label` is required, trimmed, and at most 24 characters. `color` is required and is one of the
+  colour names the POS gives categories (`QUICK_BUTTON_COLORS`). `note` is trimmed and at most 140
+  characters; an empty note is stored as `null`.
+- The product exists, is active and is not deleted.
+- The variant goes through `resolveOrderItemVariant()`: a product with active variants needs one,
+  and it must be an active variant of that product.
+- The recipe goes through `checkLineRecipe()`, the check order lines use, and is stored
+  normalised. The half-and-half product and a deal need one; an item that is not a pizza or a deal
+  takes none.
+- The add-ons go through `resolveItemAddons()`: each exists, is active, belongs to a group linked
+  to the product or its category, and the group's required and maximum selections hold. Stock is
+  not checked. An add-on whose row no longer exists is refused without naming its id.
+- A `customer_id` names an active customer.
+
+A new button gets the `sort_order` after the last button of the same owner unless the body sends
+one.
+
+Nothing rewrites a stored button when the menu changes. Each time a button is returned, the same
+checks run against the current menu: `usable` is `true` when they pass, and otherwise `reason` is
+the refusal's message. When the recipe names a pizza the menu no longer has, or removes an
+ingredient its pizza no longer has, `reason` names that pizza or ingredient.
+
+| Method   | Path                 | Authorization                                                                                | Parameters                                                                                                           | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------- | -------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/quick-buttons`     | `catalog.view`                                                                               | query: `customer_id` (optional)                                                                                      | `{ buttons }`: the shop-wide buttons in `sort_order`, then the buttons of `customer_id` in theirs. A customer's button has that customer's id in `customer_id`; a shop-wide button has `null`. A customer that does not exist or is not active adds none. A button that can no longer be added is still listed, with `usable: false` and a `reason`.                                                                                                                                                                                                                                                                      |
+| `POST`   | `/quick-buttons`     | `orders.create` when the body has a `customer_id`; `catalog.manage` otherwise                | body: `label`, `color`, `product_id`; optional `customer_id`, `variant_id`, `recipe`, `addons`, `note`, `sort_order` | `201` with `{ button }`, normalised as stored. A button the checks above refuse answers `400` with `{ error }` and writes nothing. A pizza or deal button with a recipe, saved while the stored menu cannot be read, answers `503`.                                                                                                                                                                                                                                                                                                                                                                                       |
+| `PUT`    | `/quick-buttons/:id` | By the stored button: `orders.create` for a customer's; `catalog.manage` for a shop-wide one | path: `id`; body: any of `label`, `color`, `sort_order`, `note`, `product_id`, `variant_id`, `recipe`, `addons`      | `{ button }`. Only the fields the body names change, and `customer_id` never does. When the body names any of `product_id`, `variant_id`, `recipe` or `addons`, the four are checked together as on `POST`, the stored values standing in for the ones left out, so changing the size of a button that has a recipe sends the new `variant_id` and the recipe in that size together; sent alone, the new size is refused because the stored recipe is for the old one. Otherwise the contents are not checked, so a stale button can be renamed or moved. `400` and `503` as on `POST`; `404` when no button has that id. |
+| `DELETE` | `/quick-buttons/:id` | As `PUT`                                                                                     | path: `id`                                                                                                           | `{ success: true }`. `404` when no button has that id.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
 ### Settings
 
 Router: `main/routes/settings.ts`. Full path: `/api/settings`.

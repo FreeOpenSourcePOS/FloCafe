@@ -117,8 +117,7 @@ under the second fail-closed rule and the value is left as it is.
 A currency reset recreates the database, so `capturePizzaMenu` and `restorePizzaMenu` carry the
 pizza side of the menu across with the rest of it: `pizza_products` rows whose product survives,
 and the `pizza_menu` catalogue with every `priceCents` set to 0, because those amounts are in the
-old currency. `pizza_quick_buttons` is not carried, shop-wide buttons included: a button stores
-add-on prices, and those are in the old currency.
+old currency. `pizza_quick_buttons` is not carried, shop-wide buttons included.
 
 ## The two fail-closed rules
 

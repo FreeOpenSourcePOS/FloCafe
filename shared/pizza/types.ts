@@ -184,6 +184,48 @@ export interface DealRecipe {
 
 export type OrderLineRecipe = PizzaRecipe | DealRecipe;
 
+/* ---------------- quick buttons ---------------- */
+
+/** What the API takes to save a quick button: one cart line, a label and a colour. */
+export interface QuickButtonInput {
+  /** Trimmed; 1 to 24 characters. */
+  label: string;
+  /** One of the colour names the POS gives categories. */
+  color: string;
+  product_id: string;
+  variant_id?: string | null;
+  recipe?: OrderLineRecipe | null;
+  /** The cart's add-on shape; any other field is dropped. */
+  addons?: { id: string; quantity: number }[];
+  /** Trimmed; at most 140 characters. */
+  note?: string | null;
+  /** Absent or null: a shop-wide button. */
+  customer_id?: string | null;
+  /** By default, after the last button of the same owner. */
+  sort_order?: number;
+}
+
+/** A saved quick button as the API returns it. It has no price: it costs what its items cost when tapped. */
+export interface QuickButton {
+  id: string;
+  label: string;
+  color: string;
+  /** Null: a shop-wide button. Otherwise the customer it belongs to. */
+  customer_id: string | null;
+  product_id: string;
+  variant_id: string | null;
+  recipe: OrderLineRecipe | null;
+  addons: { id: string; quantity: number }[];
+  note: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  /** False when the menu no longer has what the button holds, so it cannot be added right now. */
+  usable: boolean;
+  /** Why it is not usable, in words for the cashier; null when it is. */
+  reason: string | null;
+}
+
 /** Heading and ready-wrapped detail lines for one order line on a ticket or receipt. */
 export interface TicketLines {
   heading: string;

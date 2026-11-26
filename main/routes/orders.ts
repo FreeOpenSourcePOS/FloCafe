@@ -550,7 +550,7 @@ function orderItemAddonStockLines(
 }
 
 /** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
-function resolveItemAddons(
+export function resolveItemAddons(
   db: ReturnType<typeof getDatabase>,
   productId: string,
   addons: any[] | null | undefined,

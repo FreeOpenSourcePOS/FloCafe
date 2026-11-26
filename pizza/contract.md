@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS pizza_quick_buttons (
   product_id  TEXT NOT NULL,
   variant_id  TEXT,
   recipe      TEXT,            -- JSON OrderLineRecipe
-  addons      TEXT,            -- JSON, the cart's add-on shape
+  addons      TEXT,            -- JSON, the cart's add-on shape: [{ id, quantity }]
   note        TEXT,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL,
@@ -170,6 +170,29 @@ CREATE TABLE IF NOT EXISTS pizza_quick_buttons (
 - A restricted kitchen display station gets `modifier_selection` only when it is a recipe, and `null` otherwise.
 - Print data gets `detailLines` from `ticketLines`, called with the printer's layout column count. The item heading stays FloCafe's own product and variant name.
 
+## Quick buttons (lane G, `main/pizza/quick-buttons.ts`)
+
+A quick button is one cart line saved under a label, for the whole shop or for one customer. The routes are in `main/routes/pizza.ts`, under `/api/pizza`.
+
+| Route | Permission | Body | Answer |
+| :--- | :--- | :--- | :--- |
+| `GET /quick-buttons` | `catalog.view` | none; query `customer_id` is optional | `200 { buttons: QuickButton[] }` |
+| `POST /quick-buttons` | `orders.create` with a `customer_id`, `catalog.manage` without | `QuickButtonInput` | `201 { button: QuickButton }` |
+| `PUT /quick-buttons/:id` | by the stored button: `orders.create` for a customer's, `catalog.manage` for a shop-wide one | any fields of `QuickButtonInput` except `customer_id` | `200 { button: QuickButton }` |
+| `DELETE /quick-buttons/:id` | as `PUT` | none | `200 { success: true }` |
+
+`QuickButtonInput` and `QuickButton` are in `shared/pizza/types.ts`. A `QuickButton` has, in this order: `id`, `label`, `color`, `customer_id` (null on a shop-wide button), `product_id`, `variant_id`, `recipe` (normalised, or null), `addons` (`[{ id, quantity }]`, empty when there are none), `note`, `sort_order`, `created_at`, `updated_at`, `usable` and `reason` (null when usable).
+
+Rules:
+
+- `label` is required, trimmed, 1 to 24 characters. `color` is required and is one of `QUICK_BUTTON_COLORS`, the colour names the POS gives categories. `note` is trimmed, at most 140 characters, and stored as null when empty.
+- The list has the shop-wide buttons first, in `sort_order`, then the customer's in theirs. Buttons of a customer who does not exist or is not active are not listed.
+- Saving checks the button as an order line is checked: the product is active, the variant is resolved by `resolveOrderItemVariant`, the recipe by `checkLineRecipe` (the half-and-half product and deals need one), the add-ons by `resolveItemAddons` without the stock check. A refusal answers `400 { error }` with a message for the cashier and writes nothing; a recipe checked while `pizza_menu` cannot be read answers 503.
+- A `PUT` changes only the fields it names. Naming any of `product_id`, `variant_id`, `recipe` or `addons` checks all four together, the stored values standing in for the ones left out. A button never moves to another customer.
+- No price is stored or returned.
+- A stored button is never rewritten by a menu change. `usable` and `reason` are worked out each time a button is returned, by running the save checks against the current menu. `reason` is the refusal's message; when the recipe names a pizza the menu no longer has, or removes an ingredient its pizza no longer has, it names that pizza or ingredient.
+- A missing id answers `404 { error }`.
+
 ## Lanes and file ownership
 
 | Lane | Builds | Owns |
@@ -180,5 +203,6 @@ CREATE TABLE IF NOT EXISTS pizza_quick_buttons (
 | B2, import | `importMenu` and its route | `main/pizza/menu-import.ts`, `main/routes/pizza.ts` and its one-line mount in the server's route index; `tests/pizza-menu-import.test.ts` |
 | E, order lines | Recipe validation at the API, print wiring, kitchen display | `main/pizza/order-recipe.ts`; hooks in `main/routes/orders.ts`, the print data builders and the kitchen display views; `tests/pizza-order-recipe.test.ts`, `tests/pizza-order-print.test.ts` |
 | F, POS screens | Pizza sheet, deal configurator, quick buttons, "Customize 1", category popups | `frontend/src/components/pos/pizza/`; hooks in the POS page and cart files; `tests/pizza-cart-store.test.ts`, the Playwright `pizza-*.spec.ts` files |
+| G, quick buttons | The quick-button routes, the save checks and the staleness answer | `main/pizza/quick-buttons.ts`; the routes in `main/routes/pizza.ts`; one-word exports in `main/pizza/order-recipe.ts` (`readCatalog`) and `main/routes/orders.ts` (`resolveItemAddons`); `tests/pizza-quick-buttons.test.ts` |
 
 Every lane adds its `test:pizza-*` scripts at the end of the `"test"` chain in `package.json`; whoever merges second resolves that one-line conflict by keeping both.

@@ -24,7 +24,7 @@ function recipeOf(line: Line): OrderLineRecipe | undefined {
   return kind === 'pizza' || kind === 'deal' ? (value as OrderLineRecipe) : undefined;
 }
 
-function readCatalog(db: Database.Database): PizzaCatalog {
+export function readCatalog(db: Database.Database): PizzaCatalog {
   try {
     const row = db.prepare('SELECT catalog FROM pizza_menu WHERE id = 1').get();
     const catalog = JSON.parse((row as { catalog: string }).catalog);

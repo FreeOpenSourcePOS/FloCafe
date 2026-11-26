@@ -44,7 +44,7 @@ To change a setting, or after pulling new code, run `install.sh` again with the 
 
 The Node path is fixed in the units at install time. After upgrading Node, run `npm rebuild better-sqlite3` (or `npm ci`) and then `install.sh` again. After moving the repository, run `install.sh` again from its new place.
 
-The first time the POS runs, open `http://<pc address>:<PORT>` from a tablet and finish setup there. A new install starts in offline mode (decision D13 in [decisions.md](decisions.md)).
+The first time the POS runs, open `http://127.0.0.1:<PORT>` on the PC and set the shop up. The setup route accepts requests from the PC only, so from another machine open an SSH tunnel first (`ssh -L <PORT>:127.0.0.1:<PORT> <pc>`) and use the same address. A new install opens on the one-screen pizza setup (shop name, owner, password, manager PIN); upstream's full wizard is one link below it. A new install starts in offline mode (decision D13 in [decisions.md](decisions.md)).
 
 To load the shop's menu, sign in as the owner or a manager, open **Pizza menu** in the sidebar, choose the shop's menu file (`.json`) and confirm. Load the file again whenever it changes: the file is the master copy, so names, prices and what is on sale follow it, and anything it no longer has is switched off.
 

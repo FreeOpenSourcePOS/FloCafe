@@ -6,6 +6,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { getLandingPage, resolveSafeRedirect } from '@/components/layout/AuthGuard';
 import { useAuthStore, StorageUnavailableError } from '@/store/auth';
 import { parseLoginFailure } from '@/lib/login-errors';
+import { FIRST_RUN_SETUP_PATH } from '@/lib/pizza/quick-setup';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -89,7 +90,7 @@ function LoginContent() {
           return r.json();
         })
         .then((data) => {
-          if (active && data?.needsSetup) router.replace('/setup');
+          if (active && data?.needsSetup) router.replace(FIRST_RUN_SETUP_PATH);
         })
         .catch((err) => {
           if (

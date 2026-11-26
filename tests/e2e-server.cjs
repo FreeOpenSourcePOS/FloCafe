@@ -374,12 +374,15 @@ async function stop(exitCode = 0) {
   );
   await startStandaloneServers({
     initializeDatabase: initDatabase,
-    prepare: () => {
-      seedUser('e2e-owner', 'owner@flo.local', 'owner');
-      seedUser('e2e-manager', 'manager@flo.local', 'manager');
-      seedUser('e2e-server', 'server@flo.local', 'server');
-      seedPosFixture();
-    },
+    // A spec that tests first-run setup asks for an install nobody has set up yet.
+    prepare: process.env.E2E_FRESH_INSTALL
+      ? undefined
+      : () => {
+          seedUser('e2e-owner', 'owner@flo.local', 'owner');
+          seedUser('e2e-manager', 'manager@flo.local', 'manager');
+          seedUser('e2e-server', 'server@flo.local', 'server');
+          seedPosFixture();
+        },
     startServer,
     startKdsServer,
     startServerApp,

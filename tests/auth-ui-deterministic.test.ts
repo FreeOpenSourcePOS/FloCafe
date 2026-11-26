@@ -1256,7 +1256,7 @@ async function run() {
 
       assert.equal(setupStatusCalls, 1, 'AuthGuard makes initial /auth/setup/status request');
       assert.equal(
-        pushedRoutes.includes('/setup'),
+        pushedRoutes.some((route) => route.startsWith('/setup')),
         false,
         'AuthGuard does not redirect to /setup after a single /auth/setup/status error',
       );
@@ -1308,7 +1308,7 @@ async function run() {
         'AuthGuard attempts initial call plus bounded retries before fallback',
       );
       assert.equal(
-        pushedRoutes.includes('/setup'),
+        pushedRoutes.some((route) => route.startsWith('/setup')),
         false,
         'AuthGuard never routes to /setup when /auth/setup/status fails across all retries',
       );
@@ -1341,8 +1341,9 @@ async function run() {
       );
       assert.deepEqual(
         pushedRoutes,
-        ['/setup'],
-        'AuthGuard still routes to /setup when server explicitly reports needsSetup: true',
+        // Pizza fork: a fresh install opens on the one-screen pizza setup.
+        ['/setup/pizza'],
+        'AuthGuard still routes to setup when server explicitly reports needsSetup: true',
       );
 
       // Subcase 3: SetupPage mount check retries transient /auth/setup/status failure and redirects when needsSetup: false
@@ -1702,8 +1703,8 @@ async function run() {
         );
         assert.deepEqual(
           pushedRoutes,
-          ['/setup'],
-          'LoginPage redirects to /setup when retry confirms needsSetup: true',
+          ['/setup/pizza'],
+          'LoginPage redirects to setup when retry confirms needsSetup: true',
         );
 
         // Subcase 4b: LoginPage honors safe ?redirect=/customer-display after login and falls back to getLandingPage(currentTenant) for unsafe redirects (#1514)

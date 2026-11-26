@@ -9,6 +9,7 @@ import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 import { tenantCan } from '@/lib/permissions';
 import { clearStaleBodyPointerEvents, normalizePathname } from '@/lib/utils';
 import type { Tenant } from '@/lib/types';
+import { FIRST_RUN_SETUP_PATH } from '@/lib/pizza/quick-setup';
 
 export const LANDING_PAGE_CANDIDATES = [
   ['pos.use', '/pos'],
@@ -208,7 +209,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (needsSetup && !isSetupPath) {
-      router.push('/setup');
+      router.push(FIRST_RUN_SETUP_PATH);
       return;
     }
 

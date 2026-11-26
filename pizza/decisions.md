@@ -155,6 +155,8 @@ A new profile `pizza` next to `empty`, `express` and `demo` (`main/routes/auth.t
 
 The profile seeds no menu, printers, kitchen stations or permission overrides.
 
+`pos_order_types` is also how the POS tells the pizza setup: setup stores `setup_profile`, but no settings route returns it to the browser. While `pos_order_types` names any type, a new delivery order shows a phone number box under its delivery details and is not placed without a number, because the delivery slip prints the customer's phone. The number attaches the customer who has it, or makes one from it and an optional name (`frontend/src/components/pos/pizza/DeliveryPhone.tsx`). Any other store is unchanged.
+
 The settings are written when the profile is applied, at setup. A store set up before a setting joined the table keeps what it has; the owner writes the new value with `PUT /api/settings/<key>`.
 
 The sidebar needs no setting of its own. With the profile it shows POS, Dashboard, Orders, Products, Pizza menu, Inventory, Expenses, Customers, Staff and Settings: Tables is hidden by `tables_required`, KDS by `kds_enabled`, and WhatsApp while WhatsApp is not switched on. Upstream has no switch for Inventory or Expenses; they show to whoever holds `inventory.view` and `expenses.view`.

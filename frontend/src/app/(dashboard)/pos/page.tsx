@@ -30,6 +30,7 @@ import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
 import { usePizzaPos } from '@/components/pos/pizza/usePizzaPos';
 import { usePriceGuard } from '@/components/pos/pizza/usePriceGuard';
+import { useDeliveryPhoneGate } from '@/components/pos/pizza/DeliveryPhone';
 import { cartExpectedSubtotal, giveBackAppend, isPricesChanged } from '@/lib/pizza/price-guard';
 import {
   appendBody,
@@ -1962,6 +1963,7 @@ export default function POSPage() {
   );
 
   const pizza = usePizzaPos(products, categories, setSelectedCategory, setProducts, setCategories);
+  const deliveryPhoneHolds = useDeliveryPhoneGate(() => void handlePlaceOrder(), !!pendingOrder);
   const pricesChanged = usePriceGuard(products);
   /** A refused append must not stay stored: a reload would send it again, at the new prices. */
   const dropAppendAttempt = () => {
@@ -2153,7 +2155,7 @@ export default function POSPage() {
     buildCartFingerprint(cart, orderItems);
 
   const handlePlaceOrder = async () => {
-    if (!validateOrderPreflight()) return;
+    if (!validateOrderPreflight() || deliveryPhoneHolds()) return;
 
     const cartFingerprint = buildCurrentCartFingerprint();
     // Prepaid stores collect payment before finishing the order.

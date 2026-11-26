@@ -413,6 +413,7 @@ test.describe('a sent pizza and a sent deal', () => {
     const item = itemOf(stored.items, 'dl-large-combo');
     expect(recipeOf(item)).toEqual({
       ...COMBO_RECIPE,
+      includes: COMBO.description,
       pizzas: [{ ...COMBO_RECIPE.pizzas[0], whole: { pizzaId: 'island', removed: [] } }],
     });
     expect(Number(item.unit_price)).toBe(COMBO.price);

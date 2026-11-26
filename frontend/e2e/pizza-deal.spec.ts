@@ -445,7 +445,7 @@ test.describe('the deal configurator', () => {
       typeof item.modifier_selection === 'string'
         ? JSON.parse(item.modifier_selection)
         : item.modifier_selection,
-    ).toEqual(THREE_RECIPE);
+    ).toEqual({ ...THREE_RECIPE, includes: THREE.description });
   });
 
   test('the six-pizza deal fits iPad landscape and every control is 48 px', async ({ page }) => {

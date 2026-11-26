@@ -355,6 +355,8 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === '@/components/pos/pizza/usePizzaPos') return { usePizzaPos: () => null };
   if (reqName === '@/components/pos/pizza/usePriceGuard')
     return { usePriceGuard: () => () => false };
+  if (reqName === '@/components/pos/pizza/DeliveryPhone')
+    return { useDeliveryPhoneGate: () => () => false };
   if (reqName.startsWith('@/components/')) return () => null;
   if (reqName === '@/lib/cart-identity') {
     return originalLoad.call(

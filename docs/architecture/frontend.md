@@ -600,8 +600,37 @@ a new cart is moved only by what the store's settings say on this visit, never b
 an earlier one. A sign-out or a change of store empties it (`useReceiptSettingsSync.ts`), so the
 next store starts with every type offered until its own settings arrive.
 
-The setting changes only the switch. The order routes accept every type whatever it holds, and no
-Settings screen exposes it. `tests/pizza-order-types.test.ts` covers the rule.
+The setting changes only the switch, and the phone number box below. The order routes accept every
+type whatever it holds, and no Settings screen exposes it. `tests/pizza-order-types.test.ts` covers
+the rule.
+
+### The phone number on a delivery order
+
+A store whose `posOrderTypes` is not empty, which only the pizza setup profile writes, asks for a
+phone number on a new delivery order, so the delivery slip has one to print. `DeliveryPhone` in
+`frontend/src/components/pos/pizza/DeliveryPhone.tsx` sits under the delivery details of the cart
+panel: a "Phone number" box (`type="tel"`, `inputMode="tel"`, the store's dial code as its
+placeholder) and an optional "Name" box. The number is read by `deliveryPhone()` in
+`frontend/src/lib/pizza/delivery-phone.ts`, which is `parsePhone()` with the store's country, so
+the cashier types a local number. A takeaway order, an order being added to, and a store without the
+setting show no box and need no number (`phoneRequired()`).
+
+- A number that reads as a phone number is looked up through `GET /api/crm/lookup` (`findByPhone()`).
+  An active customer with it is attached to the cart, their name shows in place of the Name box, and
+  their saved address fills the delivery address while that is empty.
+- A customer attached from the customer search fills the box with their number. Typing another
+  number detaches them, and the look-up attaches the customer of the new number, if any.
+- The POS page calls the gate `useDeliveryPhoneGate()` returns at the top of `handlePlaceOrder`, after
+  its own checks. With no number, or text that is not one, it shows "Add the customer's phone number
+  for a delivery." under the box, puts the focus in the box and sends nothing. With a number and no
+  matching customer attached, it calls `deliveryCustomer()`: the customer the look-up finds, or one
+  made with `POST /api/customers` from the number and the typed name, named by the number when no
+  name was typed. Once the customer is on the cart the order is placed again, so the request built,
+  stored for a retry and replayed carries `customer_id`.
+- Leaving Delivery, which clearing the cart after an order does, empties both boxes.
+
+`tests/pizza-delivery-phone.test.ts` covers the rule and the requests, and
+`e2e/pizza-delivery-phone.spec.ts` the screen.
 
 ### Pizza screens
 

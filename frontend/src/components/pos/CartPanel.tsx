@@ -51,6 +51,7 @@ import type { PizzaPos } from './pizza/usePizzaPos';
 import { OffSaleMark } from './pizza/usePriceGuard';
 import { cartPricedOnline } from '@/lib/pizza/price-guard';
 import { QuickButtonLineAction } from './pizza/useQuickButtons';
+import { DeliveryPhone } from './pizza/DeliveryPhone';
 
 interface Props {
   tables: Table[];
@@ -843,6 +844,7 @@ export default function CartPanel({
                 </button>
               </div>
             </div>
+            <DeliveryPhone />
           </div>
         )}
 

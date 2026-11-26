@@ -31,6 +31,8 @@ import AddonModal from '@/components/pos/AddonModal';
 import { usePizzaPos } from '@/components/pos/pizza/usePizzaPos';
 import { usePriceGuard } from '@/components/pos/pizza/usePriceGuard';
 import { cartExpectedSubtotal } from '@/lib/pizza/price-guard';
+import { printKotWithRefresh } from '@/lib/pizza/kot-refresh';
+import { menuListsCurrentSince } from '@/lib/pizza/catalog';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
@@ -1243,8 +1245,12 @@ export default function POSPage() {
     if (!autoPrintKot) return;
 
     try {
-      const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
-      showPrintWarningsToast(printWarnings);
+      const printWarnings = await printKotWithRefresh(
+        order,
+        (current) => printKot(current, current.items ? { items: current.items } : undefined),
+        async (id) => (await api.get<{ order: Order }>(`/orders/${id}`)).data.order,
+      );
+      if (printWarnings) showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (isPrintCancelledOnTenantChangeError(err)) return;
       if (!checkSessionCurrent(origin)) return;
@@ -1665,6 +1671,7 @@ export default function POSPage() {
           .catch(() => {});
 
         // 2. Fetch other menu data
+        const listsCurrent = menuListsCurrentSince();
         const requests: Promise<{ data: Record<string, unknown> }>[] = [
           api.get('/categories?active=1'),
           api.get('/products?active=1'),
@@ -1675,8 +1682,10 @@ export default function POSPage() {
         }
 
         const [catRes, prodRes, tableRes] = await Promise.all(requests);
-        setCategories((catRes.data.categories as Category[]) || []);
-        setProducts((prodRes.data.products as Product[]) || []);
+        if (listsCurrent()) {
+          setCategories((catRes.data.categories as Category[]) || []);
+          setProducts((prodRes.data.products as Product[]) || []);
+        }
 
         if (tableRes) {
           setTables((tableRes.data.tables as Table[]) || []);

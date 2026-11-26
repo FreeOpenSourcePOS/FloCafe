@@ -50,6 +50,7 @@ function agreedRecipe(
   productId: string,
   variantId: string | undefined,
   raw: unknown,
+  sold: Line | null | undefined,
 ): unknown {
   const product = db
     .prepare('SELECT menu_id, kind FROM pizza_products WHERE product_id = ?')
@@ -72,6 +73,14 @@ function agreedRecipe(
   if (recipe.kind === 'deal') {
     if (product.kind !== 'deal' || recipe.dealId !== product.menu_id)
       throw new RecipeError(WRONG_ITEM);
+    const soldDeal = sold === undefined ? undefined : recipeOf(sold);
+    const includes =
+      sold === undefined
+        ? (catalog().deals.find((deal) => deal.id === recipe.dealId)?.description ?? '')
+        : soldDeal?.kind === 'deal'
+          ? soldDeal.includes
+          : undefined;
+    if (includes !== undefined) recipe.includes = includes;
     return recipe;
   }
   if (product.kind === 'deal') throw new RecipeError(WRONG_ITEM);
@@ -114,12 +123,15 @@ const requestCatalogs = new WeakMap<object, PizzaCatalog>();
  * answered with 400; a menu that cannot be read answers 503. A product that is not a pizza or a
  * deal keeps what it sent. `lines` is the request's list: its lines share one read of the menu.
  * The line's `addons`, as sent or as resolved, must charge the toppings the recipe has.
+ * A deal keeps its menu description as `includes`: the menu's now for a new sale, the one `sold`
+ * was sold with for a line sold before, and none when `sold` is null, as on a quick button.
  */
 export function checkLineRecipe(
   db: Database.Database,
   lines: object,
   line: { product_id: string; modifier_selection?: unknown; addons?: unknown },
   variantId: string | undefined,
+  sold?: Line | null,
 ): void {
   const catalog = () => {
     if (!requestCatalogs.has(lines)) requestCatalogs.set(lines, readCatalog(db));
@@ -132,6 +144,7 @@ export function checkLineRecipe(
       line.product_id,
       variantId,
       line.modifier_selection,
+      sold,
     );
     assertToppingsCharged(line);
   } catch (error) {

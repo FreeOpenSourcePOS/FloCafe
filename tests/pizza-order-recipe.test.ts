@@ -176,6 +176,14 @@ async function main() {
       const items = response.data.order.items;
       assertEqualOrThrow(items.length, sent.length, 'every line is on the order');
       assertEqualOrThrow(menuReads, 1, 'the stored menu is read once for the whole request');
+      // A deal is stored with its menu description at the time of sale.
+      const asSold = (recipe: any) =>
+        recipe.kind === 'deal'
+          ? {
+              ...recipe,
+              includes: catalog.deals.find((entry: any) => entry.id === recipe.dealId).description,
+            }
+          : recipe;
 
       assertEqualOrThrow(
         row(items[0].id).modifier_selection,
@@ -189,29 +197,31 @@ async function main() {
       );
       assertEqualOrThrow(
         row(items[2].id).modifier_selection,
-        stored(deal('large-combo', [gardenStored], { pops: { cola: 1, 'lemon-lime': 1 } })),
+        stored(asSold(deal('large-combo', [gardenStored], { pops: { cola: 1, 'lemon-lime': 1 } }))),
         'combo deal: pops are sorted and the zero count is gone',
       );
       assertEqualOrThrow(
         row(items[3].id).modifier_selection,
         stored(
-          deal('three-large-wings', [gardenStored, halfStored, whole('classic')], {
-            wingFlavour: 'sweet-chili',
-          }),
+          asSold(
+            deal('three-large-wings', [gardenStored, halfStored, whole('classic')], {
+              wingFlavour: 'sweet-chili',
+            }),
+          ),
         ),
         'three-pizza deal: every pizza is normalised, the wing flavour is kept',
       );
       assertEqualOrThrow(
         row(items[5].id).modifier_selection,
-        stored(deal('party', sixLarge, { pops: { cola: 1, 'ginger-ale': 3 } })),
+        stored(asSold(deal('party', sixLarge, { pops: { cola: 1, 'ginger-ale': 3 } }))),
         'party deal with cans: pops are sorted',
       );
       sent.forEach((line: any, index) => {
-        const normalised = validateRecipe(catalog, line.modifier_selection);
+        const normalised = asSold(validateRecipe(catalog, line.modifier_selection));
         assertEqualOrThrow(
           row(items[index].id).modifier_selection,
           stored(normalised),
-          `line ${index + 1}: the stored text is the core's normalised recipe`,
+          `line ${index + 1}: the stored text is the core's normalised recipe, as sold`,
         );
         assertEqualOrThrow(
           JSON.stringify(items[index].modifier_selection),
@@ -500,8 +510,13 @@ async function main() {
       assertEqualOrThrow(dealKept.status, 200, 'deal: an absent field is accepted');
       assertEqualOrThrow(
         lineOf('dl-pasta-night').modifier_selection,
-        stored(deal('pasta-night', [], { pops: { cola: 3 } })),
-        'deal: an absent field keeps the recipe',
+        stored(
+          deal('pasta-night', [], {
+            pops: { cola: 3 },
+            includes: '3 pasta, 3 garlic toasts & 3 pops',
+          }),
+        ),
+        'deal: an absent field keeps the recipe, with the description it is sold at',
       );
 
       // A line that is not a pizza behaves as upstream: a replacement stores what it sends.
@@ -679,6 +694,100 @@ async function main() {
           );
         } finally {
           reprice(-2);
+        }
+      },
+
+    'Case 6j: a deal keeps the description it was sold with through a menu reload and its edits':
+      async () => {
+        const threeLarge = (first: string[] = []) =>
+          deal('three-large-wings', [whole('garden', first), whole('island'), whole('classic')], {
+            wingFlavour: 'sweet-chili',
+          });
+        const SOLD = 'Any 3 large pizzas & 12 wings';
+        const includesOf = (line: any) => JSON.parse(line.modifier_selection).includes;
+        const created = await createOrder([
+          dealLine('three-large-wings', {
+            modifier_selection: { ...threeLarge(), includes: 'A free car' },
+          }),
+        ]);
+        assertEqualOrThrow(created.status, 201, 'the deal is sold');
+        const order = created.data.order;
+        const live = () => liveRows(order.id)[0];
+        assertEqualOrThrow(includesOf(live()), SOLD, 'sale: the menu description is stored');
+        assertEqualOrThrow(
+          JSON.stringify(created.data.order.items[0].modifier_selection.includes),
+          JSON.stringify(SOLD),
+          'sale: the order answer carries it for the sent-line view',
+        );
+
+        const changed = JSON.parse(JSON.stringify(catalog));
+        changed.deals.find((entry: any) => entry.id === 'three-large-wings').description =
+          'Any 3 large pizzas & 6 wings';
+        writePizzaMenu(db, JSON.stringify(changed));
+        try {
+          const recipeOnly = await edit(order.id, live().id, {
+            replacement: dealLine('three-large-wings', {
+              modifier_selection: { ...threeLarge(['Olives']), includes: 'A free car' },
+            }),
+          });
+          assertEqualOrThrow(recipeOnly.status, 200, 'recipe-only edit: accepted');
+          assertEqualOrThrow(
+            JSON.stringify([
+              JSON.parse(live().modifier_selection).pizzas[0].whole.removed,
+              includesOf(live()),
+            ]),
+            JSON.stringify([['Olives'], SOLD]),
+            'recipe-only edit: the new recipe, with the description it was sold with',
+          );
+
+          const note = await edit(order.id, live().id, {
+            replacement: dealLine('three-large-wings', {
+              modifier_selection: threeLarge(['Olives']),
+              special_instructions: 'Extra napkins',
+            }),
+          });
+          assertEqualOrThrow(note.status, 200, 'note edit: accepted');
+          assertEqualOrThrow(includesOf(live()), SOLD, 'note edit: the description stays');
+
+          const two = await edit(order.id, live().id, { quantity: 2 });
+          assertEqualOrThrow(two.status, 200, 'quantity increase: accepted');
+          assertEqualOrThrow(
+            JSON.stringify([live().quantity, includesOf(live())]),
+            JSON.stringify([2, SOLD]),
+            'quantity increase: the description stays',
+          );
+
+          const fresh = await createOrder([
+            dealLine('three-large-wings', { modifier_selection: threeLarge() }),
+          ]);
+          assertEqualOrThrow(
+            includesOf(liveRows(fresh.data.order.id)[0]),
+            'Any 3 large pizzas & 6 wings',
+            'a sale after the reload stores the new description',
+          );
+
+          // A line stored before descriptions travelled with the recipe keeps having none.
+          db.prepare('UPDATE order_items SET modifier_selection = ? WHERE id = ?').run(
+            JSON.stringify(threeLarge(['Olives'])),
+            live().id,
+          );
+          const legacy = await edit(order.id, live().id, {
+            replacement: dealLine('three-large-wings', {
+              quantity: 2,
+              modifier_selection: threeLarge(['Onions']),
+            }),
+          });
+          assertEqualOrThrow(legacy.status, 200, 'legacy recipe-only edit: accepted');
+          assertEqualOrThrow(
+            JSON.stringify([
+              JSON.parse(live().modifier_selection).pizzas[0].whole.removed,
+              includesOf(live()),
+            ]),
+            JSON.stringify([['Onions'], undefined]),
+            'legacy recipe-only edit: still no stored description, so the menu prints',
+          );
+        } finally {
+          writePizzaMenu(db, JSON.stringify(catalog));
         }
       },
 

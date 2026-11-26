@@ -266,6 +266,23 @@ runCases('pizza-sent-line', {
     );
   },
 
+  'Case 9b: a sent deal shows the description it was sold with, and sends nothing untouched':
+    () => {
+      const changed = JSON.parse(JSON.stringify(catalog));
+      changed.deals.find((deal: any) => deal.id === 'large-combo').description = '1 pizza only';
+      const sold = item({
+        ...DEAL,
+        modifier_selection: { ...COMBO, includes: '1 pasta' },
+      });
+      same(
+        lines(changed, sold).slice(-1),
+        ['INCLUDES: 1 PASTA'],
+        'the sold description, not the menu held now',
+      );
+      same(lines(changed, DEAL).slice(-1), ['INCLUDES: 1 PIZZA ONLY'], 'an older line: the menu');
+      assertEqualOrThrow(dealEdit(sold), null, 'an untouched deal sends no edit');
+    },
+
   'Case 10: a stored note with outer spaces does not make an untouched line a change': () => {
     const spaced = item({ ...HALF_AND_HALF, special_instructions: '  Ring the bell ' });
     assertEqualOrThrow(sheetEdit(spaced), null, 'saved as it was, nothing is sent');

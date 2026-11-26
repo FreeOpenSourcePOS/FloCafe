@@ -290,6 +290,54 @@ runCases('Pizza ticket', {
     }
   },
 
+  'Case 3c: a deal prints what came with it when it was sold, not what the menu says now': () => {
+    const { recipeKey, validateRecipe } = require('../shared/pizza/recipe');
+    const pasta = deal('pasta-night', [], { pops: { cola: 3 } });
+    const changed = catalog();
+    changed.deals.find((entry: { id: string }) => entry.id === 'pasta-night').description =
+      '1 pasta & 1 pop';
+    const sold = { ...pasta, includes: '3 pasta,  3 garlic toasts & 3 pops' };
+    for (const columns of COLUMNS) {
+      prints(
+        sold,
+        columns,
+        'PASTA NIGHT',
+        ['POP: 3 COLA', ...INCLUDES['pasta-night'][columns]],
+        'the description stored with the recipe prints',
+        changed,
+      );
+      prints(
+        { ...pasta, includes: '' },
+        columns,
+        'PASTA NIGHT',
+        ['POP: 3 COLA'],
+        'a deal sold with no description prints none',
+        changed,
+      );
+      prints(
+        pasta,
+        columns,
+        'PASTA NIGHT',
+        ['POP: 3 COLA', 'INCLUDES: 1 PASTA & 1 POP'],
+        'a recipe stored without one prints the menu in force',
+        changed,
+      );
+      prints(
+        { ...sold, dealId: 'retired-deal' },
+        columns,
+        'RETIRED-DEAL',
+        ['POP: 3 COLA', ...INCLUDES['pasta-night'][columns]],
+        'a deal the menu no longer has prints what it was sold with',
+      );
+    }
+    assertEqualOrThrow(recipeKey(sold), recipeKey(pasta), 'the key ignores the description');
+    assertEqualOrThrow(
+      JSON.stringify(validateRecipe(catalog(), { ...pasta, includes: 'A free car' })),
+      recipeKey(pasta),
+      'a description sent with a recipe is dropped by validation',
+    );
+  },
+
   'Case 4: a long removal list wraps at commas': () => {
     prints(
       whole('garden', EVERYTHING_OFF),

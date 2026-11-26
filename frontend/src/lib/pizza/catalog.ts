@@ -38,6 +38,8 @@ let waiting: Waiting | null = null;
 let companion: Companion | null = null;
 let companionRetryMs = 3000;
 const listeners = new Set<Listener>();
+/** How many times a menu has gone on screen with its lists. */
+let swaps = 0;
 
 /** Whose menu this is: the tenant of the session, as the POS page scopes its own data. */
 const scope = (): Scope => useAuthStore.getState().currentTenant?.id ?? null;
@@ -75,8 +77,18 @@ export function onPizzaCatalogChange(listener: Listener): () => void {
 function publish(tenant: Scope, answer: PizzaCatalog | null, apply?: () => void): void {
   const known = held?.scope === tenant;
   held = { scope: tenant, catalog: answer };
+  if (apply) swaps += 1;
   apply?.();
   for (const listener of listeners) listener(known);
+}
+
+/**
+ * A check that stays true until a menu next goes on screen with its lists: a screen that began
+ * loading those lists itself before then holds older ones, and drops them.
+ */
+export function menuListsCurrentSince(): () => boolean {
+  const at = swaps;
+  return () => swaps === at;
 }
 
 /** Forgets the menu that waits, and the retry it may have pending. */

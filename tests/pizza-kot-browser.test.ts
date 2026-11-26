@@ -472,4 +472,39 @@ runCases('pizza-kot-browser', {
     assertOrThrow(printed.includes(INDENT + '1ST: RETIRED'), 'the first half prints its id');
     assertOrThrow(printed.includes(INDENT + '2ND: GARDEN'), 'the second half prints its name');
   },
+
+  'Case 11: a deal prints the description it was sold with, not the menu held now': async () => {
+    const changed = JSON.parse(JSON.stringify(catalog));
+    changed.deals.find((deal: any) => deal.id === 'three-large-wings').description =
+      'Any 3 large pizzas & 6 wings';
+    const hold = async (held: unknown) => {
+      const originalGet = frontend.api.get;
+      frontend.api.get = async () => ({ data: held });
+      try {
+        await pizzaCatalog().reloadPizzaCatalog();
+      } finally {
+        frontend.api.get = originalGet;
+      }
+      assertEqualOrThrow(pizzaCatalog().getPizzaCatalog(), held, 'the browser holds that menu');
+    };
+    await hold(changed);
+    try {
+      const sold = orderWith([
+        item(1, 'Large Pizzas & Wings', {
+          modifier_selection: { ...THREE_PIZZA_DEAL, includes: 'Any 3 large pizzas & 12 wings' },
+        }),
+      ]);
+      const printed = {
+        'browser ESC/POS': rows(browserKot(sold, 42)),
+        'browser HTML': [htmlKot(sold)],
+        'browser classic': rows(receipts['browser classic'](sold, 42)),
+      };
+      for (const [name, text] of Object.entries(printed)) {
+        assertOrThrow(text.join('\n').includes('12 WINGS'), `${name}: the sold description prints`);
+        assertOrThrow(!text.join('\n').includes('6 WINGS'), `${name}: the held one does not`);
+      }
+    } finally {
+      await hold(catalog);
+    }
+  },
 });

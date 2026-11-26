@@ -1491,10 +1491,18 @@ router.post(
         !sample && Array.isArray(items)
           ? new Set(items.map((item: any) => String(item?.id)))
           : null;
+      const printable = (item: { status?: unknown }) =>
+        isKotItemPending(item.status) && !isTerminalItemStatus(item.status);
       const kotSourceItems = orderItems.filter(
-        (item: any) =>
-          (!requestedIds || requestedIds.has(String(item.id))) && isKotItemPending(item.status),
+        (item: any) => (!requestedIds || requestedIds.has(String(item.id))) && printable(item),
       );
+      // The lines asked for were replaced or cancelled elsewhere while others still wait.
+      if (requestedIds && kotSourceItems.length === 0 && orderItems.some(printable)) {
+        return res.status(409).json({
+          error: 'The order changed on another device. Refresh it and print the ticket again.',
+          code: 'KOT_ITEMS_CHANGED',
+        });
+      }
 
       if (stationName) {
         const station = stationName || 'Kitchen';

@@ -374,6 +374,24 @@ async function main() {
       }
     },
 
+    'Case 3b: after a menu reload the deal shows what it was sold with': async () => {
+      const changed = JSON.parse(JSON.stringify(catalog));
+      changed.deals.find((deal: any) => deal.id === 'three-large-wings').description =
+        'Any 3 large pizzas & 6 wings';
+      writePizzaMenu(db, JSON.stringify(changed));
+      try {
+        await onEveryPath(recipeOrderId, everyone, (items, label) => {
+          assertEqualOrThrow(
+            linesOf(lineOf(items, 'dl-three-large-wings', true)),
+            JSON.stringify(DEAL_LINES),
+            `${label}: the deal still says 12 wings`,
+          );
+        });
+      } finally {
+        writePizzaMenu(db, JSON.stringify(catalog));
+      }
+    },
+
     'Case 4: the route that returns the recipe as text carries the lines as a list': async () => {
       const payload = await PATHS['main API, GET /api/kds/orders'](
         everyone['an owner'],

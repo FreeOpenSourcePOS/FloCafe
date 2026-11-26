@@ -264,7 +264,11 @@ through `withRecipeDetailLines(items, columns)` in `main/pizza/order-recipe.ts` 
 print data. The compliance template prints the lines under the item row, before add-ons, whatever
 its layout's `detailLines` setting selects. `POST /api/printers/print-kot` prints the order's saved
 lines: the `items` in a request only choose lines by `id`, so a recipe always comes from the
-database. The print test page's hardware ticket sends `sample: true` instead, and the route prints
+database. A cancelled, voided, void-adjustment or refunded line never prints. When the ids chosen
+give no line to print while the order still has lines for the kitchen, as when another device
+replaced the line first, the route answers `409` with `code: "KOT_ITEMS_CHANGED"` and prints
+nothing; the POS reads the order again and asks once more for its pending lines from the first one
+it asked for on (`printKotWithRefresh` in `frontend/src/lib/pizza/kot-refresh.ts`). The print test page's hardware ticket sends `sample: true` instead, and the route prints
 `sampleKotOrder()` from `main/printers/sample-kot.ts` without reading an order. It reads the catalogue from `pizza_menu` once per call and, for each item that holds a
 recipe, sets `detailLines` to `ticketLines(catalog, recipe, columns).detailLines`
 (`shared/pizza/ticket.ts`), replacing any lines the item carried. `columns` is the renderer's own layout width, the value `resolvePrinterContext()`
@@ -272,8 +276,11 @@ returns after [text size](#text-size) is applied, so an extra large printer gets
 half the paper's characters. `ticketLines` keeps every line within that width less the three-space
 indent, so `detailLineRows()` prints each one as given and the nesting of halves and deal pizzas
 survives. A deal's lines end with what comes with it whatever is chosen: the deal's description
-in the stored menu, upper-cased, after `INCLUDES:` and a space, wrapped as the other lines are. A deal with no
-description has no such line. The item heading stays the product name and variant. An item with no recipe keeps the
+when it was sold, upper-cased, after `INCLUDES:` and a space, wrapped as the other lines are. The
+order routes store that description in the recipe as `includes` when they sell the deal, so a
+menu reload does not change what an order already sold tells the kitchen; a recipe stored before
+then has none and prints the description in the stored menu. A deal sold with no description has
+no such line. The item heading stays the product name and variant. An item with no recipe keeps the
 `detailLines` it carried.
 
 An extra of an ingredient and an added topping are named by the detail lines, under the pizza or

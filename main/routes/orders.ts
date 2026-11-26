@@ -1127,7 +1127,8 @@ function insertOrderItems(
       allowInactive: !!context.preserveSelections,
       allowUnselected: !!context.preserveSelections,
     });
-    if (!context.preserveSelections) checkLineRecipe(db, items, item, variant?.id);
+    if (!context.preserveSelections)
+      checkLineRecipe(db, items, item, variant?.id, context.preserveUnitPrice ? item : undefined);
     let unitPrice = context.preserveUnitPrice
       ? Number(item.unit_price)
       : variant
@@ -1344,7 +1345,7 @@ function resolveOrderLevelDiscountAmount(
       ? configuredValue
       : existingDiscountAmount;
   if (flatDiscount <= 0) return 0;
-  return Math.min(subtotal, Number(flatDiscount.toFixed(decimals)));
+  return discountOn(subtotal, 'amount', flatDiscount, decimals);
 }
 
 interface OrderItemRow {

@@ -75,7 +75,7 @@ function checkedContents(db: Database.Database, lines: object, button: Fields) {
   const variant = resolveOrderItemVariant(db, product, button, false);
 
   const line = { product_id: product.id, modifier_selection: button.recipe, addons: button.addons };
-  checkLineRecipe(db, lines, line, variant?.id);
+  checkLineRecipe(db, lines, line, variant?.id, null);
   const recipe = (line.modifier_selection || null) as OrderLineRecipe | null;
   // An item that is not a pizza or a deal keeps what it was sent; a button keeps only a recipe.
   if (recipe && recipe.kind !== 'pizza' && recipe.kind !== 'deal')

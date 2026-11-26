@@ -188,6 +188,11 @@ export interface DealRecipe {
   twoLitre?: string;
   /** Option id of the wing flavour. */
   wingFlavour?: string;
+  /**
+   * The deal's menu description when it was sold, written by the server; absent on a recipe
+   * stored before it was kept, and never part of the recipe's identity (`recipeKey`).
+   */
+  includes?: string;
 }
 
 export type OrderLineRecipe = PizzaRecipe | DealRecipe;

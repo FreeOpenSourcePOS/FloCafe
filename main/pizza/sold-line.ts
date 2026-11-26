@@ -84,7 +84,7 @@ export function carrySoldLine(
   if (sameSelection(line.modifier_selection ?? null, soldRecipe)) {
     line.modifier_selection = soldRecipe;
   } else {
-    checkLineRecipe(db, [line], line, (sold.variant_id as string | null) ?? undefined);
+    checkLineRecipe(db, [line], line, (sold.variant_id as string | null) ?? undefined, sold);
     // A plain pizza may drop its recipe without a look at the menu, so a retired one is stopped here.
     assertProductOnMenu(
       (db

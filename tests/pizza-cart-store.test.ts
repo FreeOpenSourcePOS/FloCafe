@@ -1096,6 +1096,48 @@ runCases('pizza-cart-store', {
     }
   },
 
+  'Case 10k: lists loaded across a menu swap are older than the swap and are not applied':
+    async () => {
+      const { reloadPizzaCatalog, setPizzaMenuCompanion, menuListsCurrentSince } = pizzaCatalog();
+      const { notifySessionBoundary } = require('../frontend/src/store/session-events');
+      const { useAuthStore } = frontend.auth;
+      const tenant = (id: number | null) =>
+        useAuthStore.setState({ currentTenant: id === null ? null : ({ id } as any) });
+      const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+      let server = 1;
+      const menuAt = (v: number) => ({
+        ...catalog,
+        sizes: catalog.sizes.map((size: any) => ({ ...size, priceCents: size.priceCents + v })),
+      });
+      const route = stubCatalogRoute(async () => ({ data: menuAt(server) }));
+      try {
+        tenant(1);
+        // The page starts its own load of products, categories and tables.
+        const pageLoad = menuListsCurrentSince();
+        await reloadPizzaCatalog();
+        setPizzaMenuCompanion(async () => () => {}, 5);
+        assertEqualOrThrow(
+          pageLoad(),
+          true,
+          'the first menu brings no lists: the page applies its own',
+        );
+        await reloadPizzaCatalog();
+        assertEqualOrThrow(pageLoad(), true, 'an unchanged menu swaps nothing');
+
+        // A slow tables request: a changed menu and its lists land before the page's answers.
+        server = 2;
+        await reloadPizzaCatalog();
+        await tick();
+        assertEqualOrThrow(pageLoad(), false, 'after the swap the page load is older: discarded');
+        assertEqualOrThrow(menuListsCurrentSince()(), true, 'a load begun after it is current');
+      } finally {
+        setPizzaMenuCompanion(null);
+        route.restore();
+        tenant(null);
+        notifySessionBoundary('logout');
+      }
+    },
+
   'Case 10i: opening a sheet, a configurator, a dialog or a sent line holds the menu at once':
     async () => {
       const { getPizzaCatalog, holdPizzaCatalog, reloadPizzaCatalog } = pizzaCatalog();

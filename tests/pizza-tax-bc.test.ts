@@ -29,6 +29,7 @@ const {
   createApp,
   startServer,
   api,
+  assertEqual,
   assertEqualOrThrow,
   getResults,
   resetCounters,
@@ -657,6 +658,103 @@ async function main() {
         });
         assertEqualOrThrow(billDiscount.status, 200, 'bill discount: applied');
         assertEqualOrThrow(stored('bills', bill.data.bill.id), asFresh, 'bill discount: 1.61 too');
+      },
+    );
+
+    await testCase(
+      '14. A flat discount of 1.005 stays 1.01 through every later change',
+      async () => {
+        // 1.005 is just under 1.005 in binary, so toFixed(2) gives 1.00; discountOn gives 1.01.
+        const db = getDatabase();
+        db.prepare(
+          `INSERT INTO settings (key, value, updated_at) VALUES ('discount_mode', 'both', datetime('now'))
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        ).run();
+        const created = await order('Sample side');
+        const applied = await api(baseUrl, `/api/orders/${created.id}/discount`, {
+          method: 'POST',
+          headers,
+          body: { discount_type: 'amount', discount_value: 1.005 },
+        });
+        assertEqualOrThrow(applied.status, 200, 'the flat discount is applied');
+        const discount = () =>
+          JSON.stringify(
+            db
+              .prepare('SELECT discount_amount, discount_value FROM orders WHERE id = ?')
+              .get(created.id),
+          );
+        const kept = JSON.stringify({ discount_amount: 1.01, discount_value: 1.005 });
+        assertEqualOrThrow(discount(), kept, 'applied: 1.01 off, 1.005 configured');
+
+        let edits = 0;
+        const edit = async (itemId: number, body: object) => {
+          const version = (
+            db
+              .prepare(
+                'SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?',
+              )
+              .get(created.id, itemId) as any
+          ).v;
+          return api(baseUrl, `/api/orders/${created.id}/items/${itemId}/edit`, {
+            method: 'PATCH',
+            headers: { ...headers, 'Idempotency-Key': `pizza-tax-bc-flat-${++edits}` },
+            body: { expected_edit_version: version, ...body },
+          });
+        };
+        const liveSide = () =>
+          (
+            db
+              .prepare(
+                "SELECT id FROM order_items WHERE order_id = ? AND status = 'pending' AND product_id = ?",
+              )
+              .get(created.id, productIds['Sample side']) as any
+          ).id;
+
+        const added = await api(baseUrl, `/api/orders/${created.id}/items`, {
+          method: 'POST',
+          headers,
+          body: { items: [{ product_id: productIds['Sample gift card'], quantity: 1 }] },
+        });
+        assertEqualOrThrow(added.status, 200, 'append: an item is added');
+        assertEqual(discount(), kept, 'append: still 1.01 off');
+
+        const noted = await edit(liveSide(), {
+          replacement: {
+            product_id: productIds['Sample side'],
+            quantity: 1,
+            special_instructions: 'No napkins',
+          },
+        });
+        assertEqualOrThrow(noted.status, 200, 'note edit: accepted');
+        assertEqual(discount(), kept, 'note edit: still 1.01 off');
+
+        const two = await edit(liveSide(), { quantity: 2 });
+        assertEqualOrThrow(two.status, 200, 'quantity change: accepted');
+        assertEqual(discount(), kept, 'quantity change: still 1.01 off');
+
+        const cancelled = await api(
+          baseUrl,
+          `/api/orders/${created.id}/items/${added.data.added_item_ids[0]}/cancel`,
+          {
+            method: 'PATCH',
+            headers: { ...headers, 'Idempotency-Key': 'pizza-tax-bc-flat-cancel' },
+            body: {},
+          },
+        );
+        assertEqualOrThrow(cancelled.status, 200, 'cancel: the added item is taken off');
+        assertEqual(discount(), kept, 'cancel: still 1.01 off');
+        // Two sides at 10.70 less 1.01 is 20.39; GST 1.07 prorated by 20.39 / 21.40 is 1.02.
+        assertEqualOrThrow(
+          JSON.stringify(
+            db
+              .prepare(
+                'SELECT subtotal, discount_amount, tax_amount, total FROM orders WHERE id = ?',
+              )
+              .get(created.id),
+          ),
+          JSON.stringify({ subtotal: 21.4, discount_amount: 1.01, tax_amount: 1.02, total: 21.41 }),
+          'the amount owed counts 1.01 off',
+        );
       },
     );
 

@@ -122,6 +122,7 @@ async function startCapturePrinter() {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
+    jobs,
     printer: {
       id: 'capture',
       name: 'Capture',
@@ -621,6 +622,99 @@ async function main() {
         );
       },
 
+    'Case 4d: a ticket asked for a line another terminal replaced is a conflict, not a success':
+      async () => {
+        usePrinter(PRINTERS[0]);
+        const placed = await placedOrder([
+          {
+            product_id: 'pz-garden',
+            variant_id: 'pz-garden-large',
+            quantity: 1,
+            modifier_selection: whole('garden', ['Olives']),
+          },
+        ]);
+        const [first] = placed.order.items;
+        const version = (
+          db
+            .prepare(
+              'SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?',
+            )
+            .get(placed.order.id, first.id) as any
+        ).v;
+        const replaced = await api(
+          baseUrl,
+          `/api/orders/${placed.order.id}/items/${first.id}/edit`,
+          {
+            method: 'PATCH',
+            headers: { ...owner.authHeader, 'Idempotency-Key': 'pizza-print-replaced' },
+            body: {
+              expected_edit_version: version,
+              replacement: {
+                product_id: 'pz-garden',
+                variant_id: 'pz-garden-large',
+                quantity: 1,
+                modifier_selection: whole('garden', ['Onions']),
+              },
+            },
+          },
+        );
+        assertEqualOrThrow(replaced.status, 200, 'another terminal replaces the only line');
+        const jobs = capture.jobs.length;
+        const stale = await post('/api/printers/print-kot', {
+          orderId: placed.order.id,
+          stationName: 'Kitchen',
+          items: [first],
+        });
+        assertEqualOrThrow(stale.status, 409, 'the superseded line: answered with a conflict');
+        assertEqualOrThrow(stale.data.code, 'KOT_ITEMS_CHANGED', 'with a code the caller can test');
+        assertEqualOrThrow(capture.jobs.length, jobs, 'and nothing is printed');
+
+        // The POS reads the order again and asks once more, as the browser's printKot would.
+        const { printKotWithRefresh } = require('../frontend/src/lib/pizza/kot-refresh');
+        const asked: number[][] = [];
+        const printed = await printKotWithRefresh(
+          { ...placed.order, items: [first] },
+          async (order: any) => {
+            asked.push(order.items.map((item: any) => item.id));
+            const sent = await post('/api/printers/print-kot', {
+              orderId: order.id,
+              stationName: 'Kitchen',
+              items: order.items,
+            });
+            if (sent.status !== 200) throw { status: sent.status, code: sent.data.code };
+            return sent.data;
+          },
+          async (orderId: number) =>
+            (await api(baseUrl, `/api/orders/${orderId}`, { headers: owner.authHeader })).data
+              .order,
+        );
+        assertEqualOrThrow(printed?.success, true, 'the POS: printed on the second ask');
+        assertEqualOrThrow(
+          JSON.stringify(asked),
+          JSON.stringify([[first.id], [replaced.data.order.items.at(-1).id]]),
+          'the POS: asked twice, the second time for the replacement only',
+        );
+        assertOrThrow(
+          (await capture.lastJob()).join('\n').includes(`${INDENT}NO ONIONS`),
+          'the replacement is on the ticket',
+        );
+
+        // Nothing waits for the kitchen: the old answer stands.
+        db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(
+          placed.order.id,
+        );
+        const done = await post('/api/printers/print-kot', {
+          orderId: placed.order.id,
+          stationName: 'Kitchen',
+          items: [{ id: 987654 }],
+        });
+        assertEqualOrThrow(
+          JSON.stringify([done.status, done.data.success]),
+          '[200,true]',
+          'no line waits: success, as before',
+        );
+      },
+
     'Case 4c: the print test gets a sample ticket the server owns, never an order': async () => {
       usePrinter(PRINTERS[0]);
       const placed = await placedOrder([
@@ -703,6 +797,42 @@ async function main() {
         writePizzaMenu(db, JSON.stringify(catalog));
       }
     },
+
+    'Case 5b: a deal prints what it was sold with after a menu reload, on every renderer':
+      async () => {
+        const placed = await placedOrder([
+          { product_id: 'dl-three-large-wings', quantity: 1, modifier_selection: threeLarge },
+        ]);
+        const changed = JSON.parse(JSON.stringify(catalog));
+        changed.deals.find((deal: any) => deal.id === 'three-large-wings').description =
+          'Any 3 large pizzas & 6 wings';
+        writePizzaMenu(db, JSON.stringify(changed));
+        try {
+          for (const printer of [PRINTERS[0], PRINTERS[1]]) {
+            for (const [name, printed] of Object.entries(await printAll(placed, printer))) {
+              assertDetailRows(printed, DEAL_LINES, `${name}, ${printer.label}`);
+              assertOrThrow(
+                !printed.join('\n').includes('6 WINGS'),
+                `${name}, ${printer.label}: the reloaded description does not print`,
+              );
+            }
+          }
+          // A recipe stored before the description travelled with it prints the menu in force.
+          const legacy = { ...placed.order };
+          legacy.items = placed.order.items.map((item: any) => ({
+            ...item,
+            modifier_selection: JSON.stringify(threeLarge),
+          }));
+          const documents = await printAll({ order: legacy, bill: placed.bill }, PRINTERS[0]);
+          assertDetailRows(
+            documents['kitchen ticket'],
+            [...DEAL_LINES.slice(0, -1), 'INCLUDES: ANY 3 LARGE PIZZAS & 6 WINGS'],
+            'a legacy recipe',
+          );
+        } finally {
+          writePizzaMenu(db, JSON.stringify(catalog));
+        }
+      },
   });
 }
 

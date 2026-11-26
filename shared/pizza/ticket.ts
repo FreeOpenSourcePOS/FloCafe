@@ -96,8 +96,8 @@ export function ticketLines(
     add(0, `WINGS: ${flavour?.label ?? recipe.wingFlavour}`);
   }
   const deal = catalog.deals.find((entry) => entry.id === recipe.dealId);
-  // What comes with the deal whatever is chosen. A stored deal with no description gets no line.
-  const includes = String(deal?.description ?? '')
+  // What comes with the deal whatever is chosen, as sold; an older recipe reads the menu in force.
+  const includes = String(recipe.includes ?? deal?.description ?? '')
     .trim()
     .replace(/\s+/g, ' ');
   if (includes) add(0, `INCLUDES: ${includes}`);

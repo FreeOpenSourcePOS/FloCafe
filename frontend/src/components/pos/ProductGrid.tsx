@@ -23,6 +23,7 @@ import {
   type PosItemSort,
 } from '@/lib/pos-sort';
 import CollapsiblePosChoices from './CollapsiblePosChoices';
+import type { PizzaPos } from './pizza/usePizzaPos';
 
 /** The category chip shared by both category row modes. */
 function CategoryChip({
@@ -281,7 +282,7 @@ const CATEGORY_COLORS: Record<
   },
 };
 
-function getCategoryColorClasses(color: string | null | undefined) {
+export function getCategoryColorClasses(color: string | null | undefined) {
   if (!color) return null;
   return CATEGORY_COLORS[color.toLowerCase()] || null;
 }
@@ -310,6 +311,8 @@ interface Props {
   collapseCategories?: boolean;
   categorySort?: PosCategorySort;
   itemSort?: PosItemSort;
+  /** The pizza home: category blocks and pizza tiles, when a pizza menu is loaded. */
+  pizza?: PizzaPos | null;
 }
 
 export default function ProductGrid({
@@ -332,7 +335,9 @@ export default function ProductGrid({
   collapseCategories = false,
   categorySort = 'saved',
   itemSort = 'saved',
+  pizza,
 }: Props) {
+  const Categories = pizza?.Categories ?? CategoryRow;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
   const { showProductImages: showProductImagesSetting } = usePosSettingsStore();
@@ -496,7 +501,7 @@ export default function ProductGrid({
             </kbd>
           )}
         </div>
-        <CategoryRow
+        <Categories
           className="pb-1"
           collapse={collapseCategories}
           categories={sortedCategories}
@@ -541,10 +546,12 @@ export default function ProductGrid({
         className="flex-1 min-h-0 overflow-y-auto pb-20 md:pb-0"
       >
         <div
-          className={`grid gap-3 ${gridClassName ?? (sidebarOpen ? 'grid-cols-4' : 'grid-cols-5')}`}
+          className={`grid gap-3 ${gridClassName ?? pizza?.gridClassName ?? (sidebarOpen ? 'grid-cols-4' : 'grid-cols-5')}`}
         >
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
+            const pizzaTile = pizza?.tile(product, inCartQty, disabled, fmt);
+            if (pizzaTile) return pizzaTile;
 
             return (
               <button

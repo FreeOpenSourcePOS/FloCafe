@@ -16,6 +16,14 @@ export function getPizzaCatalog(): PizzaCatalog | null {
 }
 
 /**
+ * True when `held`, by default the catalogue held now, has at least one pizza.
+ * A stored menu with no pizzas counts as no menu: the pizza screens stay off.
+ */
+export function hasPizzaMenu(held: PizzaCatalog | null = catalog): held is PizzaCatalog {
+  return (held?.pizzas?.length ?? 0) > 0;
+}
+
+/**
  * Fetches the catalogue again. A 404 means no pizza menu is loaded, and answers
  * null. Only the latest fetch changes what is held, whatever order answers arrive in.
  */

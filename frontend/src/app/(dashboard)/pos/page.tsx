@@ -28,6 +28,7 @@ import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
 import ProductGrid from '@/components/pos/ProductGrid';
 import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
+import { usePizzaPos } from '@/components/pos/pizza/usePizzaPos';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
@@ -1937,7 +1938,10 @@ export default function POSPage() {
     [t],
   );
 
+  const pizza = usePizzaPos(products, categories, setSelectedCategory);
+
   const handleProductClick = (product: Product, quantity = 1) => {
+    if (pizza?.open(product, quantity)) return;
     if (!productNeedsCustomizer(product)) {
       cart.addItem(product, quantity);
       return;
@@ -1983,6 +1987,7 @@ export default function POSPage() {
   const anyOtherModalOpenExcludingPaymentQueue =
     !!addonProduct ||
     !!editingCartItem ||
+    !!pizza?.sheet ||
     !!checkoutTable ||
     !!paymentBill ||
     showCustomerPrompt ||
@@ -3860,7 +3865,8 @@ export default function POSPage() {
     counterRole: activeCounter?.role || null,
     multiCounterEnabled,
     scheduledOrdersEnabled,
-    onEditItem: setEditingCartItem,
+    onEditItem: (item: CartItem) => pizza?.edit(item) || setEditingCartItem(item),
+    pizza,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
     storeTimezone,
@@ -4500,6 +4506,7 @@ export default function POSPage() {
             categorySort={categorySort}
             itemSort={itemSort}
             collapseCategories
+            pizza={pizza}
           />
         </div>
 
@@ -4565,6 +4572,8 @@ export default function POSPage() {
           }}
         />
       )}
+
+      {pizza?.sheet}
 
       {editingCartItem && (
         <AddonModal

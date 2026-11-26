@@ -359,6 +359,24 @@ runCases('pizza-cart-store', {
     );
   },
 
+  'Case 6b: a line the sheet saves keeps its add-ons that are not dips': () => {
+    const { sheetAddons } = cartLines();
+    const extra: any = {
+      id: 'ad-extras-cheese',
+      addon_group_id: 'ag-extras',
+      name: 'Extra cheese',
+      price: 2,
+      quantity: 2,
+    };
+    same(
+      sheetAddons([dip(), extra, ranch(1)], [ranch(3)]),
+      [extra, ranch(3)],
+      "another group's add-on stays as it was, and the dips are the sheet's",
+    );
+    same(sheetAddons([extra], []), [extra], 'taking every dip off keeps the rest');
+    same(sheetAddons([], [dip()]), [dip()], "a new pizza has only the sheet's dips");
+  },
+
   'Case 7: restoring a saved cart keeps two different pizzas apart': () => {
     const saved = JSON.parse(
       json([

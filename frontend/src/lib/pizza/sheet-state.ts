@@ -65,7 +65,8 @@ export interface SheetLine {
   message: string | null;
 }
 
-const DIP_PREFIX = 'ad-dips-';
+/** Add-on ids of the dips start with this. */
+export const DIP_PREFIX = 'ad-dips-';
 
 const wholeCount = (value: number, least: number) => Math.max(least, Math.floor(value) || 0);
 

@@ -44,6 +44,8 @@ import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
+import { PizzaLineActions, PizzaLineDetails } from './pizza/PizzaCartLine';
+import type { PizzaPos } from './pizza/usePizzaPos';
 
 interface Props {
   tables: Table[];
@@ -56,6 +58,8 @@ interface Props {
   multiCounterEnabled?: boolean;
   scheduledOrdersEnabled?: boolean;
   onEditItem?: (item: CartItem) => void;
+  /** The pizza screens, when a pizza menu is loaded: a pizza line gets its own action row. */
+  pizza?: PizzaPos | null;
   onModalOpenChange?: (open: boolean) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
@@ -221,6 +225,7 @@ export default function CartPanel({
   multiCounterEnabled = false,
   scheduledOrdersEnabled = false,
   onEditItem,
+  pizza,
   onModalOpenChange,
   variant = 'sidebar',
   existingOrder,
@@ -921,6 +926,7 @@ export default function CartPanel({
               const effectiveUnitPrice = unitPrice + addonUnitTotal;
               const lineTotal = effectiveUnitPrice * item.quantity;
               const hasSubtext = item.addons.length > 0 || Boolean(item.special_instructions);
+              const pizzaLine = Boolean(pizza?.isPizzaLine(item));
               return (
                 <div key={item.id} data-testid="cart-item" className="py-1.5 first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-2">
@@ -952,6 +958,7 @@ export default function CartPanel({
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <div className="min-w-0 flex-1">
+                      {pizza && <PizzaLineDetails item={item} />}
                       {item.price_override && (
                         <p className="text-xs text-amber-600 dark:text-amber-400 leading-snug break-words">
                           {tOrders('priceOverriddenMenu', {
@@ -992,7 +999,7 @@ export default function CartPanel({
                           <Tag size={13} />
                         </button>
                       )}
-                      {onEditItem && (
+                      {onEditItem && !pizzaLine && (
                         <button
                           type="button"
                           onClick={() => onEditItem(item)}
@@ -1003,11 +1010,20 @@ export default function CartPanel({
                           <SquarePen size={13} />
                         </button>
                       )}
-                      <div className="inline-flex items-center rounded-full border border-border bg-muted/50 p-0.5">
-                        <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
-                      </div>
+                      {!pizzaLine && (
+                        <div className="inline-flex items-center rounded-full border border-border bg-muted/50 p-0.5">
+                          <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
+                        </div>
+                      )}
                     </div>
                   </div>
+                  {pizza && pizzaLine && (
+                    <PizzaLineActions
+                      item={item}
+                      onEdit={pizza.edit}
+                      onCustomizeOne={pizza.customizeOne}
+                    />
+                  )}
                 </div>
               );
             })}

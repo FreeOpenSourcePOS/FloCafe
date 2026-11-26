@@ -17,6 +17,7 @@ import { normalizePathname } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import api from '@/lib/api';
+import { usePizzaCatalog } from '@/components/pos/pizza/usePizzaCatalog';
 
 function useIdleAutoLock(): void {
   const token = useAuthStore((s) => s.token);
@@ -84,6 +85,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useReceiptSettingsSync();
   // Auto-lock terminal after configured idle timeout.
   useIdleAutoLock();
+  // Every dashboard screen holds the pizza menu, so a reprint from Orders has it too.
+  usePizzaCatalog();
 
   return (
     <AuthGuard>

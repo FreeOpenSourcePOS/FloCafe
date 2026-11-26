@@ -1,6 +1,7 @@
 /** Cart changes the pizza screens make: "Customize 1" and saving an edited line. */
 import { generateCartItemId } from '@/lib/cart-identity';
-import type { CartItem } from '@/lib/types';
+import type { Addon, CartItem } from '@/lib/types';
+import { DIP_PREFIX } from './sheet-state';
 
 /**
  * "Customize 1": takes one off a line of several so it can be changed alone.
@@ -51,4 +52,12 @@ export function replaceCartLine(
     if (item.id === lineId) return joins ? [] : [{ ...edited, id }];
     return item.id === id ? [{ ...item, quantity: item.quantity + edited.quantity }] : [item];
   });
+}
+
+/**
+ * The add-ons of a line the sheet saves. The sheet changes dips only, so an
+ * add-on of any other group the line already had stays as it was.
+ */
+export function sheetAddons(had: Addon[], dips: Addon[]): Addon[] {
+  return [...had.filter((addon) => !addon.id.startsWith(DIP_PREFIX)), ...dips];
 }

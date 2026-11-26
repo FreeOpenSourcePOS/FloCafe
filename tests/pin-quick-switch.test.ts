@@ -352,6 +352,7 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === '@/components/layout/Ltr') {
     return { __esModule: true, Ltr: LtrStub };
   }
+  if (reqName === '@/components/pos/pizza/usePizzaPos') return { usePizzaPos: () => null };
   if (reqName.startsWith('@/components/')) return () => null;
   if (reqName === '@/lib/cart-identity') {
     return originalLoad.call(

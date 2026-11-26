@@ -21,6 +21,10 @@ The KDS WebSocket is served at path `/kds` on **both** `:3001` and `:3002`. Both
 same handler, `setupKdsWebSocket` in [`main/services/kds.ts`](../../main/services/kds.ts), so a
 KDS client behaves identically whichever port it connects to.
 
+The standalone KDS and Server App pages each link their own web app manifest
+(`frontend/public/kds-manifest.json` and `frontend/public/server-manifest.json`), so an installed
+app opens `/kds-standalone` or `/server-standalone` and not the POS dashboard.
+
 ```mermaid
 flowchart TB
   subgraph main["Electron main process"]

@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Chagua angalau aina moja ya oda"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Kufunga kunatoa muhtasari wa mauzo na malipo. Ripoti ya bidhaa inahusu siku nzima ya biashara.",
     "aov": "Wastani wa Thamani ya Oda",
     "avgPrepTime": "Wastani wa Muda wa Maandalizi",
     "avgTableTurn": "Wastani wa Mzunguko wa Meza",
@@ -1799,6 +1800,7 @@
     "success": "Hifadhidata imerejeshwa kikamilifu. Inawasha upya..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Bado hakuna mfanyakazi anayeweza kuingia kwa PIN. Mwombe msimamizi aweke PIN ya akaunti yako katika sehemu ya Wafanyakazi.",
     "addToOrder": "Ongeza kwenye oda",
     "billPrintFailed": "Oda imetumwa, lakini bili haikuchapishwa",
     "couldNotLoadData": "Imeshindikana kupakia data ya Programu ya Mhudumu",

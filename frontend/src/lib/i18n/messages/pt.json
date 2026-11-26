@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Selecione pelo menos um tipo de pedido"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "O fechamento resume as vendas e os pagamentos. O relatório de produtos cobre todo o dia comercial.",
     "aov": "Valor Médio do Pedido",
     "avgPrepTime": "Tempo Médio de Preparo",
     "avgTableTurn": "Rotatividade Média de Mesa",
@@ -1799,6 +1800,7 @@
     "success": "Banco de dados restaurado com sucesso. Reiniciando..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Nenhum funcionário pode entrar com PIN ainda. Peça a um gerente para configurar o PIN da sua conta em Equipe.",
     "addToOrder": "Adicionar ao pedido",
     "billPrintFailed": "Pedido enviado, mas a conta não foi impressa",
     "couldNotLoadData": "Não foi possível carregar os dados do App do Garçom",

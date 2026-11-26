@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Zgjidhni të paktën një lloj porosie"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Mbyllja përmbledh shitjet dhe pagesat. Raporti sipas produktit mbulon gjithë ditën e punës.",
     "aov": "Vlera mesatare e porosisë",
     "avgPrepTime": "Koha mesatare e përgatitjes",
     "avgTableTurn": "Koha mesatare e tavolinës",
@@ -1799,6 +1800,7 @@
     "success": "Baza e të dhënave u rivendos me sukses. Po riniset..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Asnjë punonjës nuk mund të hyjë ende me PIN. Kërkoji menaxherit të caktojë PIN-in e llogarisë sate te Stafi.",
     "addToOrder": "Shto në porosi",
     "billPrintFailed": "Porosia u dërgua, por dëftesa nuk u printua",
     "couldNotLoadData": "Nuk mund të ngarkoheshin të dhënat e aplikacionit të serverit",

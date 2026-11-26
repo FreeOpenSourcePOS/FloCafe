@@ -406,6 +406,7 @@ export default function POSPage() {
     operationFailure?: SupportOperationFailure;
     ticketCorrelationId: string;
     clientTicketId: string;
+    failureKey?: string;
     context: SupportErrorContextSnapshot;
     presentation: PosFailureSupportMetadata;
     payload: Record<string, unknown>;
@@ -417,6 +418,10 @@ export default function POSPage() {
   } | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const supportSubmitTokenRef = useRef<symbol | null>(null);
+  const currentSupportTicketRef = useRef<string | null>(null);
+  const supportTicketsRef = useRef(
+    new Map<string, { id: string; status: 'draft' | 'submitting' | 'queued' }>(),
+  );
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
@@ -470,6 +475,7 @@ export default function POSPage() {
     };
   };
   const clearSupportErrorState = () => {
+    currentSupportTicketRef.current = null;
     supportSubmitTokenRef.current = null;
     setSupportSubmitting(false);
     setSupportError(null);
@@ -509,6 +515,8 @@ export default function POSPage() {
     setPrepaidFailure(null);
     isSendingToPaymentRef.current = false;
     setSubmitting(false);
+    currentSupportTicketRef.current = null;
+    supportTicketsRef.current.clear();
     supportSubmitTokenRef.current = null;
     setSupportSubmitting(false);
     setSupportError(null);
@@ -928,7 +936,23 @@ export default function POSPage() {
       ? entry.correlationId
       : undefined;
     const ticketCorrelationId = correlationId || createOperationReference() || '';
-    const clientTicketId = createOperationReference() || '';
+    const failureKey = correlationId
+      ? JSON.stringify([
+          liveContext.storeId,
+          liveContext.userId,
+          liveContext.sessionEpoch,
+          correlationId,
+          entry.operation,
+          entry.reasonCode || entry.code,
+          entry.displayCode,
+          entry.operationFailure?.capture_point,
+        ])
+      : undefined;
+    const existingTicket = failureKey ? supportTicketsRef.current.get(failureKey) : undefined;
+    const clientTicketId = existingTicket?.id || createOperationReference() || '';
+    if (failureKey && clientTicketId && !existingTicket) {
+      supportTicketsRef.current.set(failureKey, { id: clientTicketId, status: 'draft' });
+    }
     const presentation = resolvePosFailureSupportMetadata({
       operation: entry.operation,
       classification: entry.classification,
@@ -945,11 +969,14 @@ export default function POSPage() {
       correlationId && entry.operationFailure?.operation_id === correlationId
         ? entry.operationFailure
         : undefined;
-    supportSubmitTokenRef.current = null;
-    setSupportSubmitting(false);
-    setSentTicketId(null);
-    setAttachLog(true);
-    supportLogSnapshotRef.current = null;
+    if (currentSupportTicketRef.current !== clientTicketId) {
+      supportSubmitTokenRef.current = null;
+      setSupportSubmitting(existingTicket?.status === 'submitting');
+      setAttachLog(true);
+      supportLogSnapshotRef.current = null;
+      currentSupportTicketRef.current = clientTicketId;
+    }
+    setSentTicketId(existingTicket?.status === 'queued' ? clientTicketId : null);
     setSupportError({
       title: entry.title,
       subject,
@@ -966,6 +993,7 @@ export default function POSPage() {
       operationFailure: matchedOperationFailure,
       ticketCorrelationId,
       clientTicketId,
+      failureKey,
       context: {
         storeId: liveContext.storeId,
         userId: liveContext.userId,
@@ -4306,6 +4334,10 @@ export default function POSPage() {
                       return;
                     }
                     const submitToken = Symbol('pos-support-submit');
+                    const ticket = targetError.failureKey
+                      ? supportTicketsRef.current.get(targetError.failureKey)
+                      : undefined;
+                    if (ticket && ticket.status !== 'draft') return;
                     supportSubmitTokenRef.current = submitToken;
                     setSupportSubmitting(true);
                     try {
@@ -4325,7 +4357,9 @@ export default function POSPage() {
                               : undefined,
                           );
                           if (!checkSessionCurrent(targetError.context)) {
-                            clearSupportErrorState();
+                            if (supportSubmitTokenRef.current === submitToken) {
+                              clearSupportErrorState();
+                            }
                             return;
                           }
                           if (supportSubmitTokenRef.current !== submitToken) {
@@ -4338,7 +4372,8 @@ export default function POSPage() {
                           };
                         }
                         if (!checkSessionCurrent(targetError.context)) {
-                          clearSupportErrorState();
+                          if (supportSubmitTokenRef.current === submitToken)
+                            clearSupportErrorState();
                           return;
                         }
                       }
@@ -4350,29 +4385,36 @@ export default function POSPage() {
                         attachLog,
                         logTail,
                       });
+                      if (ticket) ticket.status = 'submitting';
                       await api.post('/support-ticket', requestBody, {
                         headers: liveAuthHeadersFor(targetError.context),
                       });
                       if (!checkSessionCurrent(targetError.context)) {
-                        clearSupportErrorState();
+                        if (supportSubmitTokenRef.current === submitToken) clearSupportErrorState();
                         return;
+                      }
+                      if (ticket) ticket.status = 'queued';
+                      if (currentSupportTicketRef.current === targetError.clientTicketId) {
+                        setSentTicketId(targetError.clientTicketId);
                       }
                       if (supportSubmitTokenRef.current !== submitToken) {
                         return;
                       }
                       toast.success(tSupport('queued'));
-                      setSentTicketId(targetError.clientTicketId);
                     } catch {
                       if (!checkSessionCurrent(targetError.context)) {
-                        clearSupportErrorState();
+                        if (supportSubmitTokenRef.current === submitToken) clearSupportErrorState();
                         return;
                       }
                       if (supportSubmitTokenRef.current === submitToken) {
                         toast.error(t('supportRequestQueueFailed'));
                       }
                     } finally {
+                      if (ticket?.status === 'submitting') ticket.status = 'draft';
                       if (supportSubmitTokenRef.current === submitToken) {
                         supportSubmitTokenRef.current = null;
+                      }
+                      if (currentSupportTicketRef.current === targetError.clientTicketId) {
                         setSupportSubmitting(false);
                       }
                     }

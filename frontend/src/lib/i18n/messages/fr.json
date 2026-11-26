@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Sélectionnez au moins un type de commande"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "La clôture résume les ventes et les paiements. Le rapport par produit couvre toute la journée commerciale.",
     "aov": "Panier moyen",
     "avgPrepTime": "Temps de préparation moyen",
     "avgTableTurn": "Rotation moyenne des tables",
@@ -1799,6 +1800,7 @@
     "success": "Base de données restaurée avec succès. Redémarrage..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Aucun membre du personnel ne peut encore se connecter par PIN. Demandez à un responsable de définir votre PIN dans Personnel.",
     "addToOrder": "Ajouter à la commande",
     "billPrintFailed": "Commande envoyée, mais l’addition ne s’est pas imprimée",
     "couldNotLoadData": "Impossible de charger les données de l’application serveur",

@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "注文タイプを1つ以上選択してください"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "締め処理は売上と支払いの概要です。商品別レポートは営業日全体が対象です。",
     "aov": "平均注文額",
     "avgPrepTime": "平均調理時間",
     "avgTableTurn": "平均回転率",
@@ -1799,6 +1800,7 @@
     "success": "データベースを復元しました。再起動しています…"
   },
   "serverApp": {
+    "pinRosterEmpty": "PIN でログインできるスタッフはまだいません。管理者にスタッフ設定でアカウントの PIN を設定してもらってください。",
     "addToOrder": "注文に追加",
     "billPrintFailed": "注文は送信しましたが、請求書を印刷できませんでした",
     "couldNotLoadData": "サーバーアプリのデータを読み込めませんでした",

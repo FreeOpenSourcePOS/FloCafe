@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Pumili ng kahit isang uri ng order"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Buod ng benta at bayad ang pagsasara. Saklaw ng ulat ng produkto ang buong araw ng negosyo.",
     "aov": "Average na Halaga ng Order",
     "avgPrepTime": "Average na Oras ng Paghahanda",
     "avgTableTurn": "Average na Turnover ng Mesa",
@@ -1799,6 +1800,7 @@
     "success": "Matagumpay na naibalik ang database. Nagre-restart..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Wala pang kawani na makapag-sign in gamit ang PIN. Hilingin sa manager na magtakda ng PIN para sa account mo sa Staff.",
     "addToOrder": "Magdagdag to order",
     "billPrintFailed": "Naipadala ang order, pero hindi na-print ang kwenta",
     "couldNotLoadData": "Hindi ma-load ang data ng Server App",

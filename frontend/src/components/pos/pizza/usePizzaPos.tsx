@@ -7,6 +7,7 @@ import { customizeOne, replaceCartLine, sheetAddons } from '@/lib/pizza/cart-lin
 import { holdPizzaCatalog } from '@/lib/pizza/catalog';
 import { PIZZA_PRODUCT_PREFIX } from '@/lib/pizza/line-recipe';
 import { newSheet, sheetReducer, type SheetLine, type SheetState } from '@/lib/pizza/sheet-state';
+import { chargedAddons } from '@/lib/pizza/toppings';
 import type { CartItem, Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { pizzaLineEditButton } from './PizzaCartLine';
@@ -142,8 +143,10 @@ export function usePizzaPos(
       const addon = onSale.find((entry) => entry.id === dip.addonId);
       return addon ? [{ ...addon, quantity: dip.quantity }] : [];
     });
+    // The dips, and the topping add-ons the recipe is charged with.
+    const addons = chargedAddons(dips, line.recipe, onSale);
     // The menu was changed in the catalogue since it was loaded: refuse, never add half a pizza.
-    if (!product || !variant || dips.length !== line.dips.length) {
+    if (!product || !variant || dips.length !== line.dips.length || !addons) {
       toast.error(t('notOnPos'));
       return;
     }
@@ -152,7 +155,7 @@ export function usePizzaPos(
     const held = {
       product,
       variant,
-      addons: dips,
+      addons,
       special_instructions: note,
       recipe: line.recipe,
     };
@@ -164,14 +167,14 @@ export function usePizzaPos(
           product,
           variant,
           quantity: state.quantity,
-          addons: sheetAddons(source.addons, dips),
+          addons: sheetAddons(source.addons, addons),
           special_instructions: note,
           ...(source.price_override ? { price_override: source.price_override } : {}),
           ...(line.recipe ? { recipe: line.recipe } : {}),
         }),
       );
     } else {
-      cart.addItem(product, state.quantity, dips, note, variant, line.recipe);
+      cart.addItem(product, state.quantity, addons, note, variant, line.recipe);
     }
     split.current = null;
     setSession(null);

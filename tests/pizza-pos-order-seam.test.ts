@@ -27,7 +27,12 @@ const frontend = loadFrontend();
 const { cartItemToOrderItem } = require('../frontend/src/lib/cart-order-item');
 const { useCartStore } = require('../frontend/src/store/cart');
 const { getPizzaCatalog, reloadPizzaCatalog } = require('../frontend/src/lib/pizza/catalog');
-const { newSheet, sheetReducer, sheetLine } = require('../frontend/src/lib/pizza/sheet-state');
+const {
+  newSheet,
+  sheetReducer,
+  sheetLine,
+  sheetQuote,
+} = require('../frontend/src/lib/pizza/sheet-state');
 const { customizeOne, replaceCartLine } = require('../frontend/src/lib/pizza/cart-lines');
 
 const json = (value: unknown) => JSON.stringify(value);
@@ -101,7 +106,8 @@ async function main() {
     assertOrThrow(line.canAdd, `the sheet allows Add (${line.message})`);
     const product = productOf(line.productId);
     return {
-      line,
+      // What the sheet shows for one of the pizza: the cart's own prices for the POS product.
+      line: { ...line, unit: sheetQuote(catalog(), state, products, false).unit },
       product,
       variant: variantOf(product, line.variantId),
       addons: line.dips.map((dip: any) => addonOf(product, dip.addonId, dip.quantity)),
@@ -277,11 +283,7 @@ async function main() {
       accepted(response, 201, 'the order is accepted');
       same(storedRecipes(order.id), [null], 'stored with no recipe');
       assertEqualOrThrow(order.items[0].unit_price, sizePrice('large'), 'at the large price');
-      assertEqualOrThrow(
-        order.subtotal,
-        line.unitPriceCents / 100,
-        'which is what the sheet showed',
-      );
+      assertEqualOrThrow(order.subtotal, line.unit, 'which is what the sheet showed');
     },
 
     'Case 2: a large pizza with two removals, well done': async () => {
@@ -312,11 +314,7 @@ async function main() {
       );
       same(storedRecipes(order.id), [line.recipe], 'and equal to what the sheet produced');
       assertEqualOrThrow(order.items[0].unit_price, sizePrice('large'), 'at the large price');
-      assertEqualOrThrow(
-        order.subtotal,
-        line.unitPriceCents / 100,
-        'which is what the sheet showed',
-      );
+      assertEqualOrThrow(order.subtotal, line.unit, 'which is what the sheet showed');
     },
 
     'Case 3: a half and half with a removal on one half, and two of one dip': async () => {
@@ -361,11 +359,7 @@ async function main() {
         'with two ranch dips at the dip price',
       );
       assertEqualOrThrow(order.subtotal, 25.5, 'the size price plus the dips');
-      assertEqualOrThrow(
-        order.subtotal,
-        line.unitPriceCents / 100,
-        'which is what the sheet showed',
-      );
+      assertEqualOrThrow(order.subtotal, line.unit, 'which is what the sheet showed');
     },
 
     'Case 4: "Customize 1" on a 2x line, then one removal on the split line': async () => {
@@ -431,7 +425,13 @@ async function main() {
       const { stored, line } = await openStoredLine(placed.order.id);
       const plain = saveFromSheet(
         line.id,
-        tapped(newSheet(), { type: 'load', line }, { type: 'ingredient', half: 0, name: 'Olives' }),
+        // Off, then extra, then back to normal.
+        tapped(
+          newSheet(),
+          { type: 'load', line },
+          { type: 'ingredient', half: 0, name: 'Olives' },
+          { type: 'ingredient', half: 0, name: 'Olives' },
+        ),
       );
       assertEqualOrThrow(
         plain.recipe,

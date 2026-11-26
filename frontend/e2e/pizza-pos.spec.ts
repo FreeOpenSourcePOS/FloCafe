@@ -396,7 +396,9 @@ test.describe('with the sample menu loaded', () => {
 
     await cartLines(page).nth(1).getByRole('button', { name: 'Edit' }).click();
     const sheet = sheetOf(page);
+    // Off, then extra, then back on the pizza as it comes.
     await sheet.getByRole('button', { name: 'NO Olives' }).click();
+    await sheet.getByRole('button', { name: /^EXTRA Olives/ }).click();
     await sheet.getByRole('button', { name: /^Save/ }).click();
     await expect(sheet).toBeHidden();
 

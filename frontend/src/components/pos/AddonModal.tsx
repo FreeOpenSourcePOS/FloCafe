@@ -11,6 +11,7 @@ import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 import { addonStockCeiling, isAddonLowStock, isAddonSoldOut } from '@/lib/addon-inventory';
 import { activeVariants, isVariantSoldOut, selectDefaultVariant } from '@/lib/product-variants';
 import { cartVariantUnitPrice } from '@/lib/cart-price';
+import { handPickedGroups } from '@/lib/pizza/toppings';
 import type { Product, Addon, AddonGroup, ProductVariant } from '@/lib/types';
 
 interface Props {
@@ -136,7 +137,7 @@ export default function AddonModal({
     setQtyDraft(String(rounded));
   };
 
-  const groups = product.addon_groups || [];
+  const groups = handPickedGroups(product.addon_groups || []);
 
   const getGroupTotalQuantity = (groupId: string | number): number => {
     const list = selected[groupId] || [];

@@ -7,6 +7,7 @@ import type {
   PizzaPart,
   PizzaRecipe,
 } from './types';
+import { MAX_ADDED_TOPPINGS } from './toppings';
 
 /** A recipe the menu does not allow; the message tells the cashier what to do. */
 export class RecipeError extends Error {}
@@ -14,8 +15,8 @@ export class RecipeError extends Error {}
 type Fields = Record<string, unknown>;
 
 // ponytail: a fixed cap on the stored bytes. The menu parser keeps a deal small enough to fit
-// (MAX_DEAL_PIZZAS in menu.ts); raise both together if a menu ever sells a bigger deal.
-const MAX_RECIPE_BYTES = 20_000;
+// (MAX_DEAL_PIZZAS in menu.ts, MAX_ADDED_TOPPINGS in toppings.ts); raise them together.
+const MAX_RECIPE_BYTES = 28_000;
 const UNREADABLE = 'This item could not be read. Remove it and add it again';
 
 const some = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -35,8 +36,16 @@ function tooLarge(value: unknown): boolean {
   }
 }
 
+const sorted = (names: string[] | undefined): string[] => [...new Set(names ?? [])].sort();
+
+/** An empty list of extras or toppings is left out, so a recipe without any is what it always was. */
 function copyPart(part: PizzaPart): PizzaPart {
-  return { pizzaId: part.pizzaId, removed: [...new Set(part.removed)].sort() };
+  const copy: PizzaPart = { pizzaId: part.pizzaId, removed: sorted(part.removed) };
+  const extra = sorted(part.extra);
+  const added = sorted(part.added);
+  if (extra.length > 0) copy.extra = extra;
+  if (added.length > 0) copy.added = added;
+  return copy;
 }
 
 function copyPizza(recipe: PizzaRecipe): PizzaRecipe {
@@ -68,11 +77,39 @@ function checkPart(catalog: PizzaCatalog, raw: unknown, label: string): void {
   const part = fields(raw);
   const pizza = catalog.pizzas.find((entry) => entry.id === part.pizzaId);
   if (!pizza) throw new RecipeError(`${label}That pizza is not on the menu. Pick another pizza`);
-  const removed = part.removed ?? [];
-  if (!Array.isArray(removed)) throw new RecipeError(UNREADABLE);
-  if (!removed.every((name) => pizza.ingredients.includes(name)))
+  const lists = [part.removed ?? [], part.extra ?? [], part.added ?? []];
+  if (!lists.every(Array.isArray)) throw new RecipeError(UNREADABLE);
+  const [removed, extra, added] = lists as unknown[][];
+  const has = (name: unknown) => pizza.ingredients.includes(name as string);
+  if (!removed.every(has))
     throw new RecipeError(
       `${label}${pizza.name} does not have that ingredient. Choose what to remove again`,
+    );
+  if (!extra.every(has))
+    throw new RecipeError(
+      `${label}${pizza.name} does not have that ingredient. Choose what to make extra again`,
+    );
+  // An extra is charged the topping price, which only a menu with toppings has.
+  if (extra.length > 0 && !catalog.toppings)
+    throw new RecipeError(
+      `${label}This menu has no price for extra ${extra[0]}. Take the extra off`,
+    );
+  const both = extra.find((name) => removed.includes(name));
+  if (both !== undefined)
+    throw new RecipeError(`${label}${both} cannot be both removed and extra. Choose one`);
+  for (const id of added) {
+    const topping = catalog.toppings?.items.find((item) => item.id === id);
+    if (!topping)
+      throw new RecipeError(`${label}That topping is not on the menu. Pick another topping`);
+    const name = topping.label.trim().toLowerCase();
+    if (pizza.ingredients.some((ingredient) => ingredient.toLowerCase() === name))
+      throw new RecipeError(
+        `${label}${pizza.name} already has ${topping.label}. Choose extra ${topping.label} instead`,
+      );
+  }
+  if (new Set(added).size > MAX_ADDED_TOPPINGS)
+    throw new RecipeError(
+      `${label}A pizza takes at most ${MAX_ADDED_TOPPINGS} added toppings. Take one off`,
     );
 }
 

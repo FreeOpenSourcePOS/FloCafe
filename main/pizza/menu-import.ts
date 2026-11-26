@@ -4,7 +4,9 @@ import { getCurrencyMinorUnitFactor } from '../countries';
 import { now } from '../db';
 import { slugForName } from '../routes/categories';
 import { getTenantCurrency } from '../services/refund';
+import { lineSubtotal } from '../services/tax';
 import { MenuError } from '../../shared/pizza/menu';
+import { HALF_TOPPING_ADDON, TOPPING_ADDON } from '../../shared/pizza/toppings';
 import type { CatalogPriced, PizzaCatalog } from '../../shared/pizza/types';
 
 type Value = string | number | null;
@@ -45,6 +47,9 @@ const RESERVED: Record<string, string> = {
   'categories:cat-deals': 'the Deals section',
   'products:pz-half-and-half': 'the half and half pizza',
   'addon_groups:ag-dips': 'the dips',
+  'addon_groups:ag-toppings': 'the toppings',
+  [`addons:${TOPPING_ADDON}`]: 'the toppings',
+  [`addons:${HALF_TOPPING_ADDON}`]: 'the toppings',
 };
 const LINKS = ['category_addon_groups', 'addon_group_product'];
 /** The column a derived id is tied to: a variant to its product, an add-on to its group. */
@@ -214,6 +219,36 @@ function menuRows(
       { menu_id: deal.id, kind: 'deal', ingredients: null, picks: JSON.stringify(deal.picks) },
     );
   });
+
+  // An extra or an added topping is charged as one of two add-ons, whatever the topping is: the
+  // order route counts them from the line's recipe (`checkLineRecipe`), never the cashier.
+  if (catalog.toppings) {
+    const price = money(catalog.toppings.priceCents);
+    add(
+      'addon_groups',
+      { id: 'ag-toppings' },
+      {
+        name: 'Toppings',
+        is_required: 0,
+        min_selection: 0,
+        max_selection: null,
+        allow_multiple_quantities: 1,
+        is_active: 1,
+      },
+    );
+    const topping = (id: string, name: string, amount: number, sort_order: number) =>
+      add(
+        'addons',
+        { id },
+        { addon_group_id: 'ag-toppings', name, price: amount, sort_order, is_active: 1 },
+      );
+    topping(TOPPING_ADDON, 'Topping', price, 0);
+    // Half the price in decimal arithmetic, half a cent rounded up: two halves of 2.25 are 2.26.
+    topping(HALF_TOPPING_ADDON, 'Half topping', lineSubtotal(price, 0.5, null, 0, 2), 1);
+    add('category_addon_groups', { category_id: 'cat-pizzas', addon_group_id: 'ag-toppings' });
+    if (catalog.deals.length > 0)
+      add('category_addon_groups', { category_id: 'cat-deals', addon_group_id: 'ag-toppings' });
+  }
 
   return rows;
 }

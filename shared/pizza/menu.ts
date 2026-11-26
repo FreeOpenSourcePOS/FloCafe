@@ -27,12 +27,21 @@ const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const CONTROL_BYTE = /[\x00-\x1F\x7F]/;
 const MAX_TEXT = 240;
 const MAX_INGREDIENTS = 60;
-const MAX_ENTRIES = { pizzas: 200, sides: 50, drinks: 50, deals: 50, sizes: 12, other: 30 };
+const MAX_ENTRIES = {
+  pizzas: 200,
+  sides: 50,
+  drinks: 50,
+  deals: 50,
+  sizes: 12,
+  toppings: 60,
+  other: 30,
+};
 /**
- * The most a deal asks for, so that its fullest recipe fits the 20,000 bytes an order line allows.
- * A half and half with all 60 ingredients of a 240-character description removed from each half
- * and ids of 40 characters is at most 2,064 bytes; 50 drinks, a wing flavour and the deal's own
- * fields are at most 2,406 with can counts of two digits. Eight pizzas come to 18,925.
+ * The most a deal asks for, so that its fullest recipe fits the 28,000 bytes an order line allows.
+ * A half and half with all 60 ingredients of a 240-character description removed from or made
+ * extra on each half, ten toppings added to each half and ids of 40 characters is at most 2,965
+ * bytes; 50 drinks, a wing flavour and the deal's own fields are at most 2,406 with can counts of
+ * two digits. Eight pizzas come to 26,125.
  */
 const MAX_DEAL_PIZZAS = 8;
 const MAX_DEAL_CANS = 99;
@@ -350,6 +359,18 @@ export function parseMenuFile(raw: unknown): PizzaCatalog {
     deals: items('deals', (raw, at) => deal(raw, at, facts)),
     tax: { gst: rate(tax.GST, 'tax.GST'), pst: rate(tax.PST, 'tax.PST') },
   };
+  if (menu.toppings != null) {
+    const toppings = entry(menu.toppings, 'toppings');
+    catalog.toppings = {
+      priceCents: cents(toppings.price, 'toppings.price'),
+      items: entries(
+        toppings.items,
+        'toppings.items',
+        (raw, at) => ({ id: ident(raw.id, `${at}.id`), label: text(raw.name, `${at}.name`) }),
+        MAX_ENTRIES.toppings,
+      ),
+    };
+  }
   refuseSharedIds(catalog);
   return catalog;
 }

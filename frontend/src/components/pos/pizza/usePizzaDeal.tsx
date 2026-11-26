@@ -1,9 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import toast from 'react-hot-toast';
+import { useTranslations } from 'use-intl';
 import { replaceCartLine } from '@/lib/pizza/cart-lines';
 import { holdPizzaCatalog } from '@/lib/pizza/catalog';
 import { newDeal, type DealState } from '@/lib/pizza/deal-state';
+import { chargedAddons } from '@/lib/pizza/toppings';
 import type { CartItem, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import type { CatalogDeal, PizzaCatalog } from '@shared/pizza/types';
@@ -81,6 +84,7 @@ export function PizzaDealDialog({
   onClosed: () => void;
   returnFocus: () => HTMLElement | null;
 }) {
+  const t = useTranslations('pizza');
   if (!session) return null;
   return (
     <PizzaDeal
@@ -96,12 +100,22 @@ export function PizzaDealDialog({
       onSave={(recipe) => {
         const cart = useCartStore.getState();
         const source = cart.items.find((item) => item.id === session.lineId);
+        // The topping add-ons the deal's pizzas are charged with, beside any add-on the line had.
+        const addons = chargedAddons(
+          source?.addons ?? [],
+          recipe,
+          (session.product.addon_groups ?? []).flatMap((group) => group.addons ?? []),
+        );
+        if (!addons) {
+          toast.error(t('notOnPos'));
+          return;
+        }
         if (source) {
           // The deal's choices are all the configurator changes on a line.
           const { id, ...line } = source;
-          onSaved(replaceCartLine(cart.items, id, { ...line, recipe }));
+          onSaved(replaceCartLine(cart.items, id, { ...line, addons, recipe }));
         } else {
-          cart.addItem(session.product, session.quantity, [], '', null, recipe);
+          cart.addItem(session.product, session.quantity, addons, '', null, recipe);
         }
         end();
       }}

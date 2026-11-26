@@ -5,15 +5,17 @@ import type { OrderLineRecipe } from '../../../../shared/pizza/types';
 export const PIZZA_PRODUCT_PREFIX = 'pz-';
 
 /**
- * Null for no recipe and for a plain pizza: a whole pizza with nothing removed
- * and no cook or cut note is just its product and size, so a line that says so
- * in a recipe and a line with no recipe are the same line.
+ * Null for no recipe and for a plain pizza: a whole pizza with nothing removed,
+ * made extra or added and no cook or cut note is just its product and size, so
+ * a line that says so in a recipe and a line with no recipe are the same line.
  */
 export function lineRecipe<T extends OrderLineRecipe>(recipe: T | null | undefined): T | null {
   if (!recipe) return null;
   const plain =
     recipe.kind === 'pizza' &&
     recipe.whole?.removed?.length === 0 &&
+    !recipe.whole.extra?.length &&
+    !recipe.whole.added?.length &&
     !recipe.halves &&
     !recipe.cook &&
     !recipe.cut;

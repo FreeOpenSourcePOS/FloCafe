@@ -537,14 +537,14 @@ runCases('Pizza recipe', {
     const padded = (filler: string) => ({ ...whole('garden'), note: filler });
     const overhead = bytes(padded(''));
 
-    const wide = padded('\u3042'.repeat(8000));
-    assertOrThrow(JSON.stringify(wide).length < 20_000, 'under 20,000 characters');
-    assertOrThrow(bytes(wide) > 20_000, 'and over 20,000 bytes');
-    refused(wide, unreadable, 'a recipe of 24 KB in three-byte characters');
+    const wide = padded('\u3042'.repeat(10_000));
+    assertOrThrow(JSON.stringify(wide).length < 28_000, 'under 28,000 characters');
+    assertOrThrow(bytes(wide) > 28_000, 'and over 28,000 bytes');
+    refused(wide, unreadable, 'a recipe of 30 KB in three-byte characters');
 
-    const room = 20_000 - overhead;
+    const room = 28_000 - overhead;
     const atLimit = padded('\u00e9'.repeat(Math.floor(room / 2)) + 'x'.repeat(room % 2));
-    assertEqualOrThrow(bytes(atLimit), 20_000, 'a recipe of exactly 20,000 bytes');
+    assertEqualOrThrow(bytes(atLimit), 28_000, 'a recipe of exactly 28,000 bytes');
     assertEqualOrThrow(validateRecipe(catalog(), atLimit).kind, 'pizza', 'is accepted');
     refused(padded(`${atLimit.note}x`), unreadable, 'one byte more');
   },
@@ -562,6 +562,13 @@ runCases('Pizza recipe', {
     const largest = parseMenuFile({
       tax: { GST: 0.05, PST: 0.07 },
       sizes: { pizza: [{ id: id('size'), label: 'Size', price: 1 }] },
+      toppings: {
+        price: 1,
+        items: Array.from({ length: 60 }, (_, index) => ({
+          id: id(`topping${index}`),
+          name: 'Topping',
+        })),
+      },
       categories: [
         {
           id: 'pizzas',
@@ -617,11 +624,15 @@ runCases('Pizza recipe', {
       ],
     });
     assertEqualOrThrow(largest.pizzas[0].ingredients.length, 60, 'a pizza of 60 ingredients');
+    // An ingredient is removed or extra, never both, so the two lists share the 60.
     const half = (pizza: number) => ({
       pizzaId: id(`pizza${pizza}`),
-      removed: largest.pizzas[pizza].ingredients,
+      removed: largest.pizzas[pizza].ingredients.slice(1),
+      extra: largest.pizzas[pizza].ingredients.slice(0, 1),
+      added: largest.toppings.items.slice(0, 10).map((topping: { id: string }) => topping.id),
     });
-    // Every pizza a half and half with everything removed, every drink picked, five in double figures.
+    // Every pizza a half and half with every ingredient removed or extra and ten toppings added to
+    // each half, every drink picked, five in double figures.
     const recipe = {
       kind: 'deal',
       v: 1,
@@ -643,7 +654,7 @@ runCases('Pizza recipe', {
       wingFlavour: id('flavour'),
     };
     const size = Buffer.byteLength(JSON.stringify(recipe), 'utf8');
-    assertOrThrow(size > 18_000 && size <= 20_000, `it comes to ${size} bytes, under the limit`);
+    assertOrThrow(size > 26_000 && size <= 28_000, `it comes to ${size} bytes, under the limit`);
     assertEqualOrThrow(validateRecipe(largest, recipe).pizzas.length, 8, 'and is accepted');
   },
 });

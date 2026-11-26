@@ -30,6 +30,7 @@ import { orderItemDetailLines } from '@/lib/pizza/detail-lines';
 import { kotContactLines, kotScheduleLine } from '@print/kot-contact';
 import { layoutStyledUnit } from '@print/layout';
 import { formatItemHeading } from './item-heading';
+import { kitchenAddons } from '@shared/pizza/toppings';
 
 export interface KotOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -386,7 +387,7 @@ export function buildKotBytes(
 
     // Addons can come from older/API paths as a JSON string. Normalize before
     // iterating so a stored string cannot abort KOT printing.
-    const addons = parseAddons(item.addons);
+    const addons = parseAddons(kitchenAddons(item.addons));
     if (addons.length > 0) {
       for (const addon of addons) {
         if (addon.name) {

@@ -13,7 +13,7 @@ import {
 const SAMPLE = sampleMenu();
 const IMPORT_URL = `${BASE}/api/pizza/menu/import`;
 // Catalogue rows the sample maps to, the stored menu record included.
-const SAMPLE_ROWS = 73;
+const SAMPLE_ROWS = 78;
 const SAMPLE_COUNTS = ['5 pizzas', '3 sizes', '2 dips', '5 sides', '3 drinks', '4 deals'];
 const EVIDENCE_DIR = process.env.EVIDENCE_DIR;
 
@@ -169,7 +169,7 @@ test.describe('Pizza menu screen', () => {
     // Switched off: the pizza's product and its three sizes. Changed: the side's price, the
     // place of Half & Half after the pizzas, and the stored menu record.
     await expect(page.getByTestId('pizza-menu-result')).toContainText(
-      '0 added, 3 changed, 65 unchanged, 4 switched off',
+      '0 added, 3 changed, 70 unchanged, 4 switched off',
     );
     await expectLoaded(page, ['4 pizzas']);
   });

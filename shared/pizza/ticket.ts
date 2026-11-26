@@ -17,14 +17,14 @@ function chop(text: string, width: number): string[] {
   return pieces;
 }
 
-/** Wraps at commas. An item too wide for a line wraps on spaces, NO staying with its word. */
+/** Wraps at commas. An item too wide for a line wraps on spaces, NO, EXTRA or ADD staying with its word. */
 function wrap(text: string, width: number): string[] {
   const fits = (value: string) => displayCellWidth(value) <= width;
   const units = text
     .split(', ')
     .join(',\n')
     .split('\n')
-    .flatMap((item) => (fits(item) ? [item] : (item.match(/(?:(?:NO|\+) )?\S+/g) ?? [])))
+    .flatMap((item) => (fits(item) ? [item] : (item.match(/(?:(?:NO|EXTRA|ADD|\+) )?\S+/g) ?? [])))
     .flatMap((unit) => (fits(unit) ? [unit] : chop(unit, width)));
   const lines: string[] = [];
   for (const unit of units) {
@@ -57,14 +57,22 @@ export function ticketLines(
     const size = catalog.sizes.find((entry) => entry.id === pizza.sizeId)?.label ?? pizza.sizeId;
     return `${size} ${pizza.whole ? pizzaName(pizza.whole.pizzaId) : 'Half & Half'}`.toUpperCase();
   };
-  const addRemovals = (indent: number, part: PizzaPart) => {
-    if (part.removed.length > 0) add(indent, part.removed.map((name) => `NO ${name}`).join(', '));
+  const toppingName = (id: string) =>
+    catalog.toppings?.items.find((topping) => topping.id === id)?.label ?? id;
+  /** What comes off, what there is more of, what is added: a line each, left out when empty. */
+  const addChanges = (indent: number, part: PizzaPart) => {
+    const line = (word: string, names: string[]) => {
+      if (names.length > 0) add(indent, names.map((name) => `${word} ${name}`).join(', '));
+    };
+    line('NO', part.removed);
+    line('EXTRA', part.extra ?? []);
+    line('ADD', (part.added ?? []).map(toppingName));
   };
   const addPizza = (indent: number, pizza: PizzaRecipe) => {
-    if (pizza.whole) addRemovals(indent, pizza.whole);
+    if (pizza.whole) addChanges(indent, pizza.whole);
     (pizza.halves ?? []).forEach((half, index) => {
       add(indent, `${index === 0 ? '1ST' : '2ND'}: ${pizzaName(half.pizzaId)}`);
-      addRemovals(indent + 2, half);
+      addChanges(indent + 2, half);
     });
     const notes = [pizza.cook, pizza.cut].filter(Boolean).join(', ').replace(/-/g, ' ');
     if (notes) add(indent, notes);

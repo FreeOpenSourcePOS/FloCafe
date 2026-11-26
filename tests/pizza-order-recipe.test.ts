@@ -300,7 +300,7 @@ async function main() {
         );
         await refused(
           'a recipe larger than the core allows',
-          gardenLine({ modifier_selection: whole('garden', [], { padding: 'x'.repeat(20_001) }) }),
+          gardenLine({ modifier_selection: whole('garden', [], { padding: 'x'.repeat(28_001) }) }),
           UNREADABLE,
         );
       },

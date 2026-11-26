@@ -34,6 +34,7 @@ import {
 } from '../../shared/print/detail-lines';
 import { kotContactLines, kotScheduleLine } from '../../shared/print/kot-contact';
 import { withRecipeDetailLines } from '../pizza/order-recipe';
+import { kitchenAddons } from '../../shared/pizza/toppings';
 import {
   buildKotDocument,
   isKotItemPending,
@@ -81,7 +82,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
         parseVariantSelection(item?.variant_selection),
       ),
       quantity: Number(item?.quantity) || 0,
-      addons: parseKotAddons(item?.addons).map((addon) => ({
+      addons: parseKotAddons(kitchenAddons(item?.addons)).map((addon) => ({
         name: String(addon?.name ?? ''),
         ...(typeof addon?.quantity === 'number' &&
         Number.isFinite(addon.quantity) &&

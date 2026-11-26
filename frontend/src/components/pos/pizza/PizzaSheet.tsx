@@ -17,10 +17,12 @@ import {
   type SheetState,
   type SoldPrices,
 } from '@/lib/pizza/sheet-state';
+import type { ToppingPrices } from '@/lib/pizza/toppings';
 import type { Product } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import type { CookNote, CutNote, PizzaCatalog } from '@shared/pizza/types';
 import { PizzaChoice } from './PizzaChoice';
+import { PizzaChanges, ToppingPriceLines } from './PizzaToppings';
 import { QuickButtonSaveAction, useOnlineOrder } from './useQuickButtons';
 
 export const FOCUS =
@@ -118,21 +120,26 @@ export function Segmented({
   );
 }
 
-/** One half, or the whole pizza: which pizza it is and what comes off it. */
+/** One half, or the whole pizza: which pizza it is, what comes off it, what it has more of and what is added. */
 function HalfColumn({
   catalog,
   label,
   half,
   wide,
+  toppingPrice,
   onPizza,
   onIngredient,
+  onTopping,
 }: {
   catalog: PizzaCatalog;
   label: string;
   half: SheetHalf;
   wide: boolean;
+  /** What one extra or added topping costs here. */
+  toppingPrice: number | null;
   onPizza: (pizzaId: string) => void;
-  onIngredient: (name: string) => void;
+  onIngredient: (name: string, gone?: boolean) => void;
+  onTopping: (toppingId: string) => void;
 }) {
   const t = useTranslations('pizza');
   const pizza = catalog.pizzas.find((entry) => entry.id === half.pizzaId);
@@ -147,36 +154,21 @@ function HalfColumn({
       {pizza && (
         <>
           <p className={cn(HEADING, 'mt-3 mb-2')}>
-            {pizza.ingredients.length > 0 ? t('ingredientsHint') : t('noIngredients')}
+            {pizza.ingredients.length === 0
+              ? t('noIngredients')
+              : catalog.toppings
+                ? t('ingredientsHintExtra')
+                : t('ingredientsHint')}
           </p>
-          <div className="flex flex-wrap gap-2">
-            {pizza.ingredients.map((name) => {
-              const removed = half.removed.includes(name);
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  aria-pressed={removed}
-                  onClick={() => onIngredient(name)}
-                  className={cn(
-                    'min-h-12 min-w-12 rounded-full border px-4 text-sm font-semibold transition-colors',
-                    FOCUS,
-                    removed
-                      ? 'border-2 border-red-700 bg-red-50 text-red-700 dark:border-red-400 dark:bg-red-950/40 dark:text-red-300'
-                      : 'border-border bg-card text-foreground hover:border-brand/40',
-                  )}
-                >
-                  {removed ? (
-                    <>
-                      <span className="font-bold">{t('no')}</span> <s>{name}</s>
-                    </>
-                  ) : (
-                    name
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          <PizzaChanges
+            catalog={catalog}
+            pizza={pizza}
+            half={half}
+            wide={wide}
+            price={toppingPrice}
+            onIngredient={onIngredient}
+            onTopping={onTopping}
+          />
         </>
       )}
     </section>
@@ -205,10 +197,20 @@ export function WholeOrHalf({ state, dispatch }: EditorProps) {
   );
 }
 
-/** The whole pizza as one wide column, or both halves side by side: two columns of the grid around them. */
-export function PizzaHalves({ catalog, state, dispatch }: EditorProps & { catalog: PizzaCatalog }) {
+/**
+ * The whole pizza as one wide column, or both halves side by side: two columns of the grid around
+ * them. `toppingPrices` is what a topping costs on a whole pizza and on a half.
+ */
+export function PizzaHalves({
+  catalog,
+  state,
+  dispatch,
+  toppingPrices,
+}: EditorProps & { catalog: PizzaCatalog; toppingPrices: ToppingPrices }) {
   const t = useTranslations('pizza');
   const halves = state.split ? ([0, 1] as const) : ([0] as const);
+  // A menu with no topping price cannot charge an extra, so there a second tap puts the ingredient back.
+  const extras = Boolean(catalog.toppings);
   return halves.map((index) => (
     <HalfColumn
       key={index}
@@ -216,8 +218,12 @@ export function PizzaHalves({ catalog, state, dispatch }: EditorProps & { catalo
       label={state.split ? (index === 0 ? t('firstHalf') : t('secondHalf')) : t('wholePizza')}
       half={state.halves[index]}
       wide={!state.split}
+      toppingPrice={state.split ? toppingPrices.half : toppingPrices.whole}
       onPizza={(pizzaId) => dispatch({ type: 'pizza', half: index, pizzaId })}
-      onIngredient={(name) => dispatch({ type: 'ingredient', half: index, name })}
+      onIngredient={(name, gone) =>
+        dispatch({ type: 'ingredient', half: index, name, extras: extras && !gone })
+      }
+      onTopping={(toppingId) => dispatch({ type: 'topping', half: index, toppingId })}
     />
   ));
 }
@@ -367,7 +373,12 @@ export default function PizzaSheet({
           data-testid="pizza-sheet-body"
           className="grid min-h-0 flex-1 grid-cols-[1fr_1fr_18rem] items-start gap-3 overflow-y-auto p-4"
         >
-          <PizzaHalves catalog={catalog} state={state} dispatch={dispatch} />
+          <PizzaHalves
+            catalog={catalog}
+            state={state}
+            dispatch={dispatch}
+            toppingPrices={quote.toppings}
+          />
 
           <div className="space-y-3">
             <CookAndCut state={state} dispatch={dispatch} />
@@ -449,6 +460,7 @@ export default function PizzaSheet({
                 </dd>
               </div>
             ))}
+            <ToppingPriceLines counts={quote.counts} prices={quote.toppings} />
             {quote.kept && (
               <dt data-testid="pizza-price-kept" className="col-span-2 text-xs font-semibold">
                 {t('linePriceKept')}

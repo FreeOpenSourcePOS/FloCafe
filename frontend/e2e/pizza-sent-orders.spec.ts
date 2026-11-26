@@ -144,8 +144,11 @@ test.afterAll(async () => {
   expect(failures, 'cleaning up after the sent-orders spec').toEqual([]);
 });
 
-/** A table with one order on it: a large half and half with a removal, and a deal. */
-async function placeOrder(): Promise<Placed> {
+/**
+ * A table with one order on it: a large half and half with a removal, and a deal. `half` changes
+ * what the half and half is sent with.
+ */
+async function placeOrder(half: object = {}): Promise<Placed> {
   const tableNumber = `PZ-${Date.now()}-${placed.length}`;
   const table = await api.post(`${BASE}/api/tables`, {
     headers: ownerHeaders,
@@ -165,6 +168,7 @@ async function placeOrder(): Promise<Placed> {
           variant_id: 'pz-half-and-half-large',
           quantity: 1,
           modifier_selection: HALVES,
+          ...half,
         },
         { product_id: 'dl-large-combo', quantity: 1, modifier_selection: COMBO_RECIPE },
       ],
@@ -415,6 +419,80 @@ test.describe('a sent pizza and a sent deal', () => {
     expect(stored.total).toBe(order.total);
   });
 
+  test('a topping added to a sent half and half and to a sent deal is charged on the line', async ({
+    page,
+  }) => {
+    /** The line as the server stores it, with its add-ons. */
+    const storedLine = async (orderId: number, productId: string) => {
+      const read = await api.get(`${BASE}/api/orders/${orderId}`, { headers: ownerHeaders });
+      const { order: stored } = await read.json();
+      return stored.items.find(
+        (item: { product_id: string; status: string }) =>
+          item.product_id === productId && item.status === 'pending',
+      );
+    };
+    const charged = (item: { addons: { id: string; price: number; quantity: number }[] }) =>
+      item.addons.map((addon) => [addon.id, addon.quantity]);
+    const priceOf = (item: { addons: { id: string; price: number }[] }, id: string) =>
+      Number(item.addons.find((addon) => addon.id === id)!.price);
+
+    const order = await placeOrder();
+    await signIn(page);
+    const cart = await reopenInPos(page, order);
+    await sentLines(cart).first().getByRole('button', { name: 'Change pizza' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Pizza' });
+    const second = sheet.getByRole('group', { name: '2nd half' });
+    await second.getByRole('button', { name: 'Add a topping' }).click();
+    await second
+      .getByRole('group', { name: 'Toppings' })
+      .getByRole('button', { name: 'Bacon' })
+      .click();
+    await expect(sheet.getByTestId('pizza-topping-price')).toHaveText([/^1 half topping/]);
+    await sheet.getByRole('button', { name: /^Save/ }).click();
+    await expect(sheet).toBeHidden();
+    await expect(detailsOf(sentLines(cart).filter({ hasText: '1ST: GARDEN' }))).toHaveText([
+      '1ST: GARDEN',
+      '  NO OLIVES',
+      '2ND: CLASSIC PEPPERONI',
+      '  ADD BACON',
+    ]);
+    const half = await storedLine(order.id, 'pz-half-and-half');
+    expect(recipeOf(half)).toEqual({
+      ...HALVES,
+      halves: [HALVES.halves[0], { pizzaId: 'classic', removed: [], added: ['bacon'] }],
+    });
+    expect(charged(half)).toEqual([['ad-topping-half', 1]]);
+    expect(Number(half.unit_price)).toBe(LARGE);
+    expect(Number(half.subtotal).toFixed(2)).toBe(
+      (LARGE + priceOf(half, 'ad-topping-half')).toFixed(2),
+    );
+
+    await sentLines(cart)
+      .filter({ hasText: 'POP: 2 COLA' })
+      .getByRole('button', { name: 'Change deal' })
+      .click();
+    const dialog = page.getByRole('dialog', { name: COMBO.name as string });
+    const panel = dialog.getByRole('tabpanel');
+    await panel.getByRole('button', { name: 'Olives', exact: true }).click();
+    await panel.getByRole('button', { name: 'NO Olives' }).click();
+    await expect(panel.getByRole('button', { name: /^EXTRA Olives/ })).toBeVisible();
+    await expect(dialog.getByTestId('pizza-topping-price')).toHaveText([/^1 topping/]);
+    await dialog.getByRole('button', { name: /^Save/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(detailsOf(sentLines(cart).filter({ hasText: 'POP: 2 COLA' }))).toHaveText([
+      '1) LARGE GARDEN',
+      '   EXTRA OLIVES',
+      'POP: 2 COLA',
+      ...COMBO_INCLUDES,
+    ]);
+    const deal = await storedLine(order.id, 'dl-large-combo');
+    expect(charged(deal)).toEqual([['ad-topping', 1]]);
+    expect(Number(deal.unit_price)).toBe(COMBO.price);
+    expect(Number(deal.subtotal).toFixed(2)).toBe(
+      ((COMBO.price as number) + priceOf(deal, 'ad-topping')).toFixed(2),
+    );
+  });
+
   test('a sent pizza is changed from the Orders page too', async ({ page }) => {
     const order = await placeOrder();
     await signIn(page);
@@ -550,6 +628,67 @@ test.describe('a sent pizza and a sent deal', () => {
     await expect(page.getByPlaceholder('Search products')).toBeHidden();
     item = itemOf((await readOrder(order.id)).items, 'pz-half-and-half');
     expect(recipeOf(item)).toEqual({ ...HALVES, sizeId: 'medium' });
+  });
+
+  test('"Replace item" on the Orders page changes the size of a pizza with a topping and keeps its charge', async ({
+    page,
+  }) => {
+    const withBacon = {
+      ...HALVES,
+      halves: [HALVES.halves[0], { pizzaId: 'classic', removed: [], added: ['bacon'] }],
+    };
+    const order = await placeOrder({
+      modifier_selection: withBacon,
+      addons: [{ id: 'ad-topping-half', quantity: 1 }],
+    });
+    await signIn(page);
+    const panel = await openInOrders(page, order);
+    const bodies: Record<string, unknown>[] = [];
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+      bodies.push(route.request().postDataJSON());
+      await route.continue();
+    });
+
+    await panel
+      .locator('div.text-sm')
+      .filter({ hasText: 'Half & Half' })
+      .getByTitle('Edit item')
+      .click();
+    await page.getByRole('button', { name: 'Replace item' }).click();
+    await page.getByPlaceholder('Search products').fill('Half & Half');
+    await page.getByRole('button', { name: /^Half & Half/ }).click();
+    // The window offers the dips and not the toppings, which are counted from the recipe.
+    const window = page
+      .locator('div.fixed')
+      .filter({ has: page.getByRole('radio', { name: /^Medium/ }) })
+      .last();
+    await expect(window.getByText('Ranch', { exact: true })).toBeVisible();
+    await expect(window.getByText(/topping/i)).toHaveCount(0);
+    await page.getByRole('radio', { name: /^Medium/ }).click();
+    await page.getByRole('button', { name: /^Save changes/ }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => bodies.length).toBe(1);
+    const replacement = bodies[0].replacement as {
+      addons: { id: string; quantity: number }[];
+      variant_id: string;
+    };
+    expect(replacement.variant_id).toBe('pz-half-and-half-medium');
+    expect('modifier_selection' in replacement).toBe(false);
+    expect(replacement.addons.map((addon) => [addon.id, addon.quantity])).toEqual([
+      ['ad-topping-half', 1],
+    ]);
+    await expect(page.getByPlaceholder('Search products')).toBeHidden();
+
+    const read = await api.get(`${BASE}/api/orders/${order.id}`, { headers: ownerHeaders });
+    const item = (await read.json()).order.items.find(
+      (entry: { product_id: string; status: string }) =>
+        entry.product_id === 'pz-half-and-half' && entry.status === 'pending',
+    );
+    expect(recipeOf(item)).toEqual({ ...withBacon, sizeId: 'medium' });
+    expect(Number(item.unit_price)).toBe(MEDIUM);
+    expect(
+      item.addons.map((addon: { id: string; quantity: number }) => [addon.id, addon.quantity]),
+    ).toEqual([['ad-topping-half', 1]]);
   });
 
   test('"Add Item" on the Orders page sends a half and half and a deal to the POS', async ({

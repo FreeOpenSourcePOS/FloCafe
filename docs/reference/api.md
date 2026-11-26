@@ -678,6 +678,7 @@ only its own rows:
 | A pizza                | A product in "Pizzas" with one variant per size at the size price                                                                    | `cat-pizzas`; `pz-<pizza>`; `pz-<pizza>-<size>`                      |
 | Half and half          | One more product, "Half & Half", in "Pizzas" with the same variants                                                                  | `pz-half-and-half`; `pz-half-and-half-<size>`                        |
 | The `dip` side         | An add-on group "Dips" linked to the "Pizzas" category, one add-on per dip at the dip price: optional, any number, several of a kind | `ag-dips`; `ad-dips-<option>`                                        |
+| `toppings`             | An add-on group "Toppings" linked to the "Pizzas" and "Deals" categories, with "Topping" at the topping price and "Half topping" at half of it | `ag-toppings`; `ad-topping`; `ad-topping-half`                       |
 | A side                 | A product in "Sides"                                                                                                                 | `cat-sides`; `sd-<side>`                                             |
 | A side with a modifier | The side's product plus a required single-choice add-on group at no charge, linked to that product                                   | `ag-<side>-<modifier>`; `ad-<side>-<modifier>-<option>`              |
 | A drink                | A product in "Drinks" with one variant per drink variant                                                                             | `cat-drinks`; `dr-<drink>`; `dr-<drink>-<variant>`                   |
@@ -687,6 +688,14 @@ A category is written only when the menu has something to put in it, and each ha
 colour. The four categories have fixed ids, so a store that already has its own root category named
 "Pizzas", "Sides", "Drinks" or "Deals" gets a second one with that name. A product with variants
 carries its lowest variant price as its own price. Rows keep the order of the file in `sort_order`.
+
+A menu's optional `toppings` hold one price and the list of what can be added to a pizza. The load
+writes two add-ons from that price whatever the list holds, because an order line is charged by
+count: one "Topping" for each extra or added topping on a whole pizza and one "Half topping" for
+each on one half. Half the price is worked out in decimal arithmetic and rounded half-up to the
+cent, so half of 2.25 is 1.13. The order routes refuse a line whose count of either differs from
+what its recipe says; see [recipes on pizza and deal lines](../architecture/order-lifecycle.md#recipes-on-pizza-and-deal-lines). A menu without
+`toppings` has none of these rows, and loading one after a menu that had them switches them off.
 
 The menu file is priced in dollars and cents. Prices in the stored catalogue are whole cents and are
 divided by `getCurrencyMinorUnitFactor()` of the store's currency when they are written; a store
@@ -708,7 +717,8 @@ A name or price edited in the back office is put back by the next load. So is a 
 there, and a product switched off there, for example because it is sold out, is switched on again.
 A variant keeps its product, an add-on keeps its group and a side's add-on group keeps its side: a
 menu whose derived id is already stored under another product, group or side is refused. The link from the "Dips" group to the "Pizzas" category,
-and from a side's group to its side, is created when missing and never removed.
+from the "Toppings" group to the "Pizzas" and "Deals" categories, and from a side's group to its
+side, is created when missing and never removed.
 
 Drinks carry the tax category `soda` when the menu's drinks category has `pst: true`; every other
 product carries `food`. Both are looked up in the store's active tax pack. Where the pack has no
@@ -725,7 +735,8 @@ variant, add-on group or add-on that exists and is not in `owned_rows`, for exam
 hand or by a CSV import, the load is refused with a `400` that names it ("A product with the id
 pz-garden already exists and was not made by a menu load. Give that item a different id in the menu
 file, then load it again.") and nothing is written. For an id reserved for a section of the menu
-(`cat-pizzas`, `cat-sides`, `cat-drinks`, `cat-deals`, `pz-half-and-half`, `ag-dips`) no change to
+(`cat-pizzas`, `cat-sides`, `cat-drinks`, `cat-deals`, `pz-half-and-half`, `ag-dips`, `ag-toppings`,
+`ad-topping`, `ad-topping-half`) no change to
 an id in the file helps, so the message names the section and says that support has to rename or
 remove the row. A row deleted in the back office still exists,
 so it still refuses the load. A product that has a `pizza_products` row counts as a load's own

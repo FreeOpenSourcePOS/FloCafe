@@ -180,9 +180,10 @@ runCases('pizza-sent-line', {
         item({ ...HALF_AND_HALF, modifier_selection: JSON.stringify(HALVES) }),
         { type: 'ingredient', half: 0, name: 'Olives' },
         { type: 'ingredient', half: 0, name: 'Olives' },
+        { type: 'ingredient', half: 0, name: 'Olives' },
       ),
       null,
-      'a recipe stored as text, with a removal put back and taken off again',
+      'a recipe stored as text, with a removal made extra, put back and taken off again',
     );
   },
 
@@ -204,7 +205,9 @@ runCases('pizza-sent-line', {
         whole: { pizzaId: 'garden', removed: ['Onions'] },
       },
     });
-    const plain = sheetEdit(noOnions, { type: 'ingredient', half: 0, name: 'Onions' });
+    // Off, then extra, then back to normal.
+    const tapOnions = { type: 'ingredient', half: 0, name: 'Onions' };
+    const plain = sheetEdit(noOnions, tapOnions, tapOnions);
     assertEqualOrThrow(plain.replacement.modifier_selection, null, 'null clears the stored recipe');
     const small = sheetEdit(noOnions, { type: 'size', sizeId: 'small' });
     assertEqualOrThrow(small.replacement.variant_id, 'pz-garden-small', 'the variant is the size');
@@ -309,8 +312,8 @@ runCases('pizza-sent-line', {
       const was = sentLine(sold);
       same(
         soldPrices(sold),
-        { price: 21.5, dips: { ranch: 1.25 } },
-        'what the line was sold at: the pizza, and each dip by its menu id',
+        { price: 21.5, dips: { ranch: 1.25 }, toppings: { whole: null, half: null } },
+        'what the line was sold at: the pizza, each dip by its menu id, and no topping',
       );
       const after = (...actions: object[]) => {
         const opened = sheetReducer(newSheet(), { type: 'load', line: sheetSource(was) });

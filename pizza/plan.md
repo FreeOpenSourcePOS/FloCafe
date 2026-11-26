@@ -9,14 +9,14 @@ Revised 2026-11-25 after the owner pointed to the shop's real menu and to the ex
 | Part | What it is | Where it runs |
 | :--- | :--- | :--- |
 | **Pizza core** | Pure TypeScript in `shared/pizza/`: reads a menu file, validates the recipe on an order line, and writes the kitchen ticket text. | Inside the POS, server and browser |
-| **Pizza POS** | FloCafe with a pizza mode: a pizza sheet (size, dips, remove an ingredient, half and half, cook and cut notes), a deal configurator, quick buttons, pizza kitchen tickets, British Columbia tax, café features and outside connections switched off. | Locally, offline |
+| **Pizza POS** | FloCafe with a pizza mode: a pizza sheet (size, dips, remove an ingredient, extra of one, added toppings at one price, half and half, cook and cut notes), a deal configurator, quick buttons, pizza kitchen tickets, British Columbia tax, café features and outside connections switched off. | Locally, offline |
 | **Headless kit** | Service, scheduled backups, restore and health checks for running the POS on a small Linux PC with no monitor. | The shop's mini PC |
 
 ### Not in this plan
 
 - **A customer website.** The shop's customer ordering app is a separate project owned by the same developer. It is the customer site; nothing in this repository is hosted on Vercel.
 - **A real shop's menu.** This repository carries a made-up sample menu. A shop's own file is loaded at install.
-- Paid extra toppings, crust choices and build-your-own pizzas. The shop's menu has no prices for them. They are added when the shop supplies prices.
+- Per-size topping prices, crust choices and build-your-own pizzas. The shop's menu has no prices for them. They are added when the shop supplies prices. Extras and added toppings at one price for every size are built (decision D19).
 - Online order sync into the POS, card terminal integration, delivery apps, shop hardware, signed desktop installers, translations of the pizza screens, order parking, a delivery fee, an audit-log screen.
 
 ## 2. What the real menu looks like
@@ -160,7 +160,7 @@ None of these block the build; each is a setting or a later pull request.
 
 | # | Question |
 | :--- | :--- |
-| Q1 | Extra-topping prices per size, and whether a build-your-own pizza is sold. |
+| Q1 | Whether a build-your-own pizza is sold. Extra toppings are answered: one price for every size, half of it on a half (decision D19). |
 | Q2 | Crust options, if any. |
 | Q3 | Whether half and half is sold at the plain size price. The build assumes yes. |
 | Q4 | How the pops inside a deal are taxed. |

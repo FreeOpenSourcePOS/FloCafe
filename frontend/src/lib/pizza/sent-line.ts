@@ -7,7 +7,9 @@ import { recipeKey } from '../../../../shared/pizza/recipe';
 import { RECIPE_NOT_PRINTED, ticketLines } from '../../../../shared/pizza/ticket';
 import type { OrderLineRecipe, PizzaCatalog } from '../../../../shared/pizza/types';
 import type { OrderItemEditAttemptBody } from '../order-item-edit-attempt';
+import { HALF_TOPPING_ADDON, TOPPING_ADDON } from '../../../../shared/pizza/toppings';
 import { lineRecipe, PIZZA_PRODUCT_PREFIX, sentRecipe } from './line-recipe';
+import { chargedAddons, toppingCharges } from './toppings';
 import {
   DIP_PREFIX,
   type SheetLine,
@@ -130,15 +132,18 @@ export function sentLineRepriced(item: SentItem): boolean {
   return Boolean(item.price_overridden) || Number(item.discount_amount ?? 0) > 0;
 }
 
-/** What the line was sold at: one of it without add-ons, and each of its dips by the dip's menu id. */
+/** What the line was sold at: one of it without add-ons, each of its dips by the dip's menu id, and its toppings. */
 export function soldPrices(item: SentItem): SoldPrices {
+  const { addons } = sentLine(item);
+  const sold = (id: string) => addons.find((addon) => addon.id === id)?.price ?? null;
   return {
     price: Number(item.unit_price ?? 0),
     dips: Object.fromEntries(
-      sentLine(item)
-        .addons.filter((addon) => addon.id.startsWith(DIP_PREFIX))
+      addons
+        .filter((addon) => addon.id.startsWith(DIP_PREFIX))
         .map((addon) => [addon.id.slice(DIP_PREFIX.length), addon.price]),
     ),
+    toppings: { whole: sold(TOPPING_ADDON), half: sold(HALF_TOPPING_ADDON) },
   };
 }
 
@@ -187,26 +192,47 @@ export function sheetSource(line: SentLine): SheetSourceLine {
 }
 
 /**
- * The line the sheet saves over `was`. The sheet changes dips only, so an
- * add-on of any other group stays as it was.
+ * A sent line's add-ons with the topping add-ons `recipe` derives. One the
+ * line was sold with keeps its name and price; a new one is named by its id
+ * at no price, because the server names and prices the add-ons of an edit.
+ */
+function withToppings(addons: SentAddon[], recipe: OrderLineRecipe | null): SentAddon[] {
+  const sellable = [
+    ...addons,
+    ...toppingCharges(recipe).map(({ id }) => ({ id, name: id, price: 0, quantity: 0 })),
+  ];
+  return chargedAddons(addons, recipe, sellable) as SentAddon[];
+}
+
+/**
+ * The line the sheet saves over `was`. The sheet changes dips and toppings
+ * only, so an add-on of any other group stays as it was.
  */
 export function sheetSentLine(was: SentLine, line: SheetLine, state: SheetState): SentLine {
   return {
     productId: line.productId ?? was.productId,
     variantId: line.variantId,
     quantity: state.quantity,
-    addons: [
-      ...was.addons.filter((addon) => !addon.id.startsWith(DIP_PREFIX)),
-      ...line.dips.map((dip) => ({
-        id: dip.addonId,
-        name: dip.name,
-        price: dip.priceCents / 100,
-        quantity: dip.quantity,
-      })),
-    ],
+    addons: withToppings(
+      [
+        ...was.addons.filter((addon) => !addon.id.startsWith(DIP_PREFIX)),
+        ...line.dips.map((dip) => ({
+          id: dip.addonId,
+          name: dip.name,
+          price: dip.priceCents / 100,
+          quantity: dip.quantity,
+        })),
+      ],
+      line.recipe,
+    ),
     note: state.note.trim(),
     recipe: line.recipe,
   };
+}
+
+/** The line the deal configurator saves over `was`: its choices, and the toppings of its pizzas. */
+export function dealSentLine(was: SentLine, recipe: OrderLineRecipe): SentLine {
+  return { ...was, addons: withToppings(was.addons, recipe), recipe };
 }
 
 /** Everything about a line but its quantity, the same for the same line whatever order it was built in. */

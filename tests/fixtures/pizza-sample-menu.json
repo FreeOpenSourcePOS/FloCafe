@@ -17,6 +17,19 @@
       { "id": "large", "label": "Large", "price": 23.0 }
     ]
   },
+  "toppings": {
+    "price": 2.25,
+    "items": [
+      { "id": "mushrooms", "name": "Mushrooms" },
+      { "id": "bacon", "name": "Bacon" },
+      { "id": "feta", "name": "Feta" },
+      { "id": "spinach", "name": "Spinach" },
+      { "id": "tomatoes", "name": "Tomatoes" },
+      { "id": "banana-peppers", "name": "Banana Peppers" },
+      { "id": "anchovies", "name": "Anchovies" },
+      { "id": "artichokes", "name": "Artichokes" }
+    ]
+  },
   "categories": [
     {
       "id": "pizzas",

@@ -106,8 +106,9 @@ incoming line of `POST /api/orders`, `POST /api/orders/:id/items`, and
   require one.
 - `validateRecipe()` in [`shared/pizza/recipe.ts`](../../shared/pizza/recipe.ts) checks the recipe
   against the catalogue stored in `pizza_menu` and returns the form that is stored: removed
-  ingredients sorted with repeats dropped, pop counts sorted with zero counts dropped. A recipe
-  of more than 20,000 bytes of JSON in UTF-8 is refused.
+  ingredients, extras, and added toppings sorted with repeats dropped and an empty list of extras
+  or toppings left out, pop counts sorted with zero counts dropped. A recipe of more than 28,000
+  bytes of JSON in UTF-8 is refused.
 - The recipe has to agree with the line. The variant id is the product id, a hyphen, and the
   recipe's `sizeId`. `whole` names the pizza product's own menu id and never appears on the
   half-and-half product; `halves` appears only there. `dealId` is the deal product's menu id.
@@ -117,6 +118,14 @@ incoming line of `POST /api/orders`, `POST /api/orders/:id/items`, and
   is not loaded. Load the menu file again." Lines without a recipe are not affected.
 - A recipe never changes a price. The unit price is the variant's or product's catalog price, as
   for any other line.
+- Extras and added toppings are charged as two add-ons a menu load makes, `ad-topping` for one on
+  a whole pizza and `ad-topping-half` for one on a half. `toppingCounts()` in
+  [`shared/pizza/toppings.ts`](../../shared/pizza/toppings.ts) says how many of each a recipe
+  needs, a deal adding up its pizzas, and `checkLineRecipe()` refuses a line whose summed
+  quantities of the two differ from that with "The toppings on this item do not match what it is
+  charged. Remove it and add it again". The rule holds for every product, with or without a
+  recipe, so the charge can be neither left out nor added by hand. The add-ons are priced by
+  `resolveItemAddons()` from the catalog like any other.
 
 Later changes to the line keep the recipe:
 
@@ -142,7 +151,8 @@ Later changes to the line keep the recipe:
   is checked against the current menu and needs a product that is still switched on, so it is
   refused for a retired pizza; the saved recipe sent back is not checked. Any other replacement, a new
   size or one more add-on included, is a new sale: priced, taxed, and validated from the current
-  catalog.
+  catalog. Another number of toppings changes the line's add-ons, so it is such a sale; a recipe
+  that needs another number while the add-ons stay as sold is refused.
 - A replacement by another product does not carry the recipe over, and a line whose
   `modifier_selection` is not a recipe is replaced by exactly what the request sends.
 - The adjustment rows a void and an item refund write copy the line's `modifier_selection`.

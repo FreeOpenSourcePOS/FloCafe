@@ -3,6 +3,12 @@ import type Database from 'better-sqlite3';
 import { getDatabase } from '../db';
 import { RecipeError, recipeKey, validateRecipe } from '../../shared/pizza/recipe';
 import { RECIPE_NOT_PRINTED, ticketLines } from '../../shared/pizza/ticket';
+import {
+  HALF_TOPPING_ADDON,
+  kitchenAddons,
+  TOPPING_ADDON,
+  toppingCounts,
+} from '../../shared/pizza/toppings';
 import type { OrderLineRecipe, PizzaCatalog, PizzaRecipe } from '../../shared/pizza/types';
 
 const WRONG_ITEM = 'The recipe is for a different item. Remove it and add it again';
@@ -81,6 +87,25 @@ function agreedRecipe(
   return recipe;
 }
 
+/**
+ * The two topping add-ons are the charge for a recipe's extras and added toppings, so a line
+ * carries exactly as many of each as its recipe says: no fewer, which would give them away, and
+ * no more, on any product. The price of each is the add-on's own.
+ */
+function assertToppingsCharged(line: { modifier_selection?: unknown; addons?: unknown }): void {
+  const addons = Array.isArray(line.addons) ? line.addons : [];
+  const charged = (id: string): number =>
+    addons.reduce(
+      (sum, addon) => sum + (addon?.id === id ? Number(addon.quantity ?? 1) || 0 : 0),
+      0,
+    );
+  const counts = toppingCounts(recipeOf(line));
+  if (charged(TOPPING_ADDON) !== counts.whole || charged(HALF_TOPPING_ADDON) !== counts.half)
+    throw new RecipeError(
+      'The toppings on this item do not match what it is charged. Remove it and add it again',
+    );
+}
+
 const requestCatalogs = new WeakMap<object, PizzaCatalog>();
 
 /**
@@ -88,11 +113,12 @@ const requestCatalogs = new WeakMap<object, PizzaCatalog>();
  * variant, and leaves it normalised in `modifier_selection`. A refusal is a `RecipeError`
  * answered with 400; a menu that cannot be read answers 503. A product that is not a pizza or a
  * deal keeps what it sent. `lines` is the request's list: its lines share one read of the menu.
+ * The line's `addons`, as sent or as resolved, must charge the toppings the recipe has.
  */
 export function checkLineRecipe(
   db: Database.Database,
   lines: object,
-  line: { product_id: string; modifier_selection?: unknown },
+  line: { product_id: string; modifier_selection?: unknown; addons?: unknown },
   variantId: string | undefined,
 ): void {
   const catalog = () => {
@@ -107,6 +133,7 @@ export function checkLineRecipe(
       variantId,
       line.modifier_selection,
     );
+    assertToppingsCharged(line);
   } catch (error) {
     throw error instanceof RecipeError ? Object.assign(error, { statusCode: 400 }) : error;
   }
@@ -144,9 +171,15 @@ function isPops(pops: unknown): boolean {
     Object.values(pops).every((cans) => Number.isInteger(cans) && cans >= 0)
   );
 }
+const isNames = (list: unknown): boolean => Array.isArray(list) && list.every(isText);
 const isPart = (raw: unknown): boolean => {
   const part = raw as Loose;
-  return isText(part?.pizzaId) && Array.isArray(part?.removed) && part.removed.every(isText);
+  return (
+    isText(part?.pizzaId) &&
+    isNames(part?.removed) &&
+    (part?.extra == null || isNames(part.extra)) &&
+    (part?.added == null || isNames(part.added))
+  );
 };
 
 /** True when every field of the versioned recipe format has its own type, so a copy holds no more. */
@@ -247,7 +280,12 @@ const kdsLogged = new Set<unknown>();
  * Kitchen display items, each pizza or deal line carrying `recipe_lines`: the lines its kitchen
  * ticket prints at 48 columns, the warning line included. Other items are handed back untouched.
  * A display refreshes all day, so a recipe that cannot be written out is logged once per item.
+ * A line with a recipe loses its topping add-ons: they are the charge, and its lines name each topping.
  */
 export function withKdsRecipeLines<T>(items: T): T {
-  return withRecipeDetailLines(items, 48, 'recipe_lines', kdsLogged);
+  const lined = withRecipeDetailLines(items, 48, 'recipe_lines', kdsLogged);
+  if (!Array.isArray(lined)) return lined;
+  return lined.map((item) =>
+    item?.recipe_lines ? { ...item, addons: kitchenAddons(item.addons) } : item,
+  ) as T;
 }

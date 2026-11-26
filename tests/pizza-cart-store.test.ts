@@ -458,7 +458,7 @@ runCases('pizza-cart-store', {
   },
 
   'Case 9: the displayed unit price is the variant and the add-ons, recipe or not': () => {
-    const { newSheet, sheetReducer, sheetLine } = sheet();
+    const { newSheet, sheetReducer, sheetQuote } = sheet();
     const line = lineOf(ISLAND_CLASSIC, { quantity: 2, addons: [dip()] });
     assertEqualOrThrow(cartLineUnitPrice(line, false), 23, 'a pizza with a recipe');
     assertEqualOrThrow(cartLineUnitPrice(lineOf(undefined), false), 23, 'the same line without');
@@ -466,9 +466,10 @@ runCases('pizza-cart-store', {
     cart().clearCart();
     cart().addItem(HALF, 2, [dip()], '', LARGE, ISLAND_CLASSIC);
     assertEqualOrThrow(cart().subtotal(), 48.5, 'two large pizzas, each with a dip');
-    const priced = sheetLine(catalog, sheetReducer(newSheet(), { type: 'load', line }));
-    assertEqualOrThrow(priced.unitPriceCents, 2425, 'the sheet prices one of them');
-    assertEqualOrThrow((priced.unitPriceCents * 2) / 100, cart().subtotal(), 'the same total');
+    const loaded = sheetReducer(newSheet(), { type: 'load', line });
+    const priced = sheetQuote(catalog, loaded, undefined, false);
+    assertEqualOrThrow(priced.unit, 24.25, 'the sheet prices one of them');
+    assertEqualOrThrow(priced.unit * 2, cart().subtotal(), 'the same total');
   },
 
   'Case 10: the catalogue is fetched once, read at once, and reloaded on request': async () => {

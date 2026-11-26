@@ -9,6 +9,7 @@ import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import AddonModal from '@/components/pos/AddonModal';
 import { sentToPos } from '@/lib/pizza/sent-to-pos';
+import { keptToppingAddons } from '@/lib/pizza/toppings';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { cartVariantUnitPrice } from '@/lib/cart-price';
 import {
@@ -264,7 +265,11 @@ export default function EditOrderItemModal({
               ...(effectiveReplacement!.variant?.id
                 ? { variant_id: effectiveReplacement!.variant.id }
                 : {}),
-              addons: effectiveReplacement!.addons.map((a) => ({
+              addons: keptToppingAddons(
+                item,
+                effectiveReplacement!.product.id,
+                effectiveReplacement!.addons,
+              ).map((a) => ({
                 id: a.id,
                 name: a.name,
                 price: a.price,

@@ -67,6 +67,8 @@ export async function clearPizzaMenu(
 
   const emptied = sampleMenu();
   emptied.categories = [{ id: 'pizzas', name: 'Our Pizzas', items: [] }];
+  // Without its toppings, so the load switches the toppings group off with the others.
+  delete emptied.toppings;
   await step('load the emptied menu', [200], async () =>
     (
       await request.post(`${base}/api/pizza/menu/import`, {

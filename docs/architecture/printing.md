@@ -276,9 +276,19 @@ in the stored menu, upper-cased, after `INCLUDES:` and a space, wrapped as the o
 description has no such line. The item heading stays the product name and variant. An item with no recipe keeps the
 `detailLines` it carried.
 
+An extra of an ingredient and an added topping are named by the detail lines, under the pizza or
+half they are on: `EXTRA CHEESE` and `ADD BACON`. They are charged through two add-ons,
+`ad-topping` and `ad-topping-half`. A receipt prints those after the detail lines as any add-on,
+`+ Topping x2` or `+ Half topping x2` with the amount. A kitchen ticket does not print them:
+under the lines that name the toppings, a count of charges reads as more toppings to put on.
+`kitchenAddons()` in `shared/pizza/toppings.ts` takes the two out of an item's add-ons, by id,
+on every kitchen ticket path: `buildKotPrintData` on the backend, and `buildKotBytes`,
+`buildFrontendKotDocument` and `generateKotHtml` in the browser. Any other add-on prints as
+before.
+
 The recipe is not checked against the menu at print time, so an order sold before a menu change
-still prints its lines: a pizza, drink, or deal the menu no longer has prints by its id, and a
-removed ingredient prints under the name it was sold with.
+still prints its lines: a pizza, drink, topping, or deal the menu no longer has prints by its id,
+and a removed or extra ingredient prints under the name it was sold with.
 
 A recipe that cannot be written out never prints as a bare item. The item's detail lines are the
 single line `RECIPE NOT PRINTED - CHECK ORDER`, and the cause is logged with the order item id,
@@ -295,7 +305,9 @@ item with no recipe gets no such field, and its payload is unchanged. It runs wh
 prepared for the display: `GET /api/kitchen/orders`, `GET /api/kds/orders`, `GET /api/kds/display`,
 `PATCH /api/kds/items/:id/status`, and `PATCH /api/order-items/:id/status` on the main API,
 `GET /api/kds/orders` on the kitchen display server, and the WebSocket snapshot from
-`buildActiveOrdersSnapshot()`. `projectKdsItem()` keeps `recipe_lines` for a restricted station. A
+`buildActiveOrdersSnapshot()`. A line with a recipe also loses its two topping add-ons there,
+through `kitchenAddons()`, so the display lists a pizza's dips and not the charge for its
+toppings. `projectKdsItem()` keeps `recipe_lines` for a restricted station. A
 display refreshes all day, so a recipe that cannot be written out is logged once per order item.
 `RecipeLines` in `frontend/src/components/kds/pizza/RecipeLines.tsx` draws the lines under the item
 name, before the add-ons and the note, in the tabs view, the kanban view, and the item window: in a

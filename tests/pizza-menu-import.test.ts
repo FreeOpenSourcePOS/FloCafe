@@ -207,7 +207,7 @@ async function main() {
         assertEqualOrThrow(loaded.status, 200, 'the owner loads the sample menu');
         same(
           loaded.data,
-          { created: 73, updated: 0, unchanged: 0, deactivated: 0, untaxed: true },
+          { created: 78, updated: 0, unchanged: 0, deactivated: 0, untaxed: true },
           'the answer is the summary',
         );
         const stored = await catalogOf(cashier);
@@ -299,9 +299,10 @@ async function main() {
           'ag-dip-dip-type|Dip|1|1|1|0|1',
           'ag-dips|Dips|0|0|NULL|1|1',
           'ag-pasta-pasta-type|Pasta|1|1|1|0|1',
+          'ag-toppings|Toppings|0|0|NULL|1|1',
           'ag-wings-flavour|Flavour|1|1|1|0|1',
         ],
-        'dips are optional and unlimited; a side modifier is one required choice',
+        'dips and toppings are optional and unlimited; a side modifier is one required choice',
       );
       same(
         lines('addons', 'id, addon_group_id, name, price, sort_order, is_active'),
@@ -312,15 +313,17 @@ async function main() {
           'ad-dips-ranch|ag-dips|Ranch|1.25|0|1',
           'ad-pasta-pasta-type-lasagna|ag-pasta-pasta-type|Lasagna|0|0|1',
           'ad-pasta-pasta-type-spaghetti|ag-pasta-pasta-type|Spaghetti|0|1|1',
+          'ad-topping|ag-toppings|Topping|2.25|0|1',
+          'ad-topping-half|ag-toppings|Half topping|1.13|1|1',
           'ad-wings-flavour-hot|ag-wings-flavour|Hot|0|0|1',
           'ad-wings-flavour-sweet-chili|ag-wings-flavour|Sweet Chili|0|1|1',
         ],
-        'a dip costs the dip price on a pizza; a side choice costs nothing',
+        'a dip costs the dip price on a pizza, a topping the topping price and half of it; a side choice costs nothing',
       );
       same(
         lines('category_addon_groups', 'category_id, addon_group_id'),
-        ['cat-pizzas|ag-dips'],
-        'the Dips group is linked to the Pizzas category',
+        ['cat-deals|ag-toppings', 'cat-pizzas|ag-dips', 'cat-pizzas|ag-toppings'],
+        'the Dips group is linked to the Pizzas category, the Toppings group to Pizzas and Deals',
       );
       same(
         lines('addon_group_product', 'product_id, addon_group_id'),
@@ -376,7 +379,7 @@ async function main() {
         'product_variants',
         'products',
       ].flatMap((table) => lines(table, 'id').map((id) => `${table}:${id}`));
-      assertEqualOrThrow(owned.length, 58, 'the menu owns 58 catalogue rows');
+      assertEqualOrThrow(owned.length, 61, 'the menu owns 61 catalogue rows');
       same(JSON.parse(menuRows[0].owned_rows), owned, 'and the row lists them, sorted');
     });
 
@@ -385,9 +388,9 @@ async function main() {
         categories: 4,
         products: PIZZAS.length + 5 + DRINKS.length + DEALS.length,
         product_variants: PIZZAS.length * 3 + DRINKS.length * 2,
-        addon_groups: 4,
-        addons: 8,
-        category_addon_groups: 1,
+        addon_groups: 5,
+        addons: 10,
+        category_addon_groups: 3,
         addon_group_product: 3,
         pizza_products: PIZZAS.length + DEALS.length,
         pizza_menu: 1,
@@ -400,8 +403,8 @@ async function main() {
       }
       assertEqualOrThrow(
         Object.values(expected).reduce((sum, count) => sum + count, 0),
-        73,
-        'which is the 73 rows the summary counted',
+        78,
+        'which is the 78 rows the summary counted',
       );
     });
 
@@ -410,7 +413,7 @@ async function main() {
       const before = dump();
       same(
         load(sampleMenu()),
-        { created: 0, updated: 0, unchanged: 73, deactivated: 0, untaxed: true },
+        { created: 0, updated: 0, unchanged: 78, deactivated: 0, untaxed: true },
         'every row is reported unchanged',
       );
       assertEqualOrThrow(dump(), before, 'every row is byte for byte the same');
@@ -422,7 +425,7 @@ async function main() {
       ageEveryRow();
       same(
         load(menu),
-        { created: 0, updated: 7, unchanged: 66, deactivated: 0, untaxed: true },
+        { created: 0, updated: 7, unchanged: 71, deactivated: 0, untaxed: true },
         'a new large price updates seven rows',
       );
       same(
@@ -531,7 +534,7 @@ async function main() {
       const summary = load(sampleMenu());
       assertEqualOrThrow(
         summary.created + summary.updated + summary.unchanged,
-        73,
+        78,
         'the summary counts only the rows the menu owns',
       );
       assertEqualOrThrow(byHand(), before, 'and so does the next load');
@@ -1027,7 +1030,7 @@ async function main() {
       const loaded = await post(headers, sampleMenu());
       same(
         loaded.data,
-        { created: 73, updated: 0, unchanged: 0, deactivated: 0, untaxed: false },
+        { created: 78, updated: 0, unchanged: 0, deactivated: 0, untaxed: false },
         'the sample menu loads and is taxed',
       );
       same(

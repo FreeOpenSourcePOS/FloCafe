@@ -37,6 +37,7 @@ import {
   sentLineEdit,
   sentLineRepriced,
   sentLineReprices,
+  dealSentLine,
   sentPriceGate,
   sheetSentLine,
   sheetSource,
@@ -49,6 +50,7 @@ import { newSheet, sheetReducer } from '@/lib/pizza/sheet-state';
 import type { Order, OrderItem, Product } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { RECIPE_NOT_PRINTED } from '@shared/pizza/ticket';
+import { toppingCounts } from '@shared/pizza/toppings';
 import type { CatalogDeal, PizzaCatalog } from '@shared/pizza/types';
 import { PizzaDetailLines } from './PizzaCartLine';
 import PizzaDeal from './PizzaDeal';
@@ -212,11 +214,10 @@ function SentLineEditor({
   const tOrders = useTranslations('orders');
   const sending = useRef(false);
   const [was] = useState(() => sentLine(item));
-  // What a changed size or dip is charged at. A request that fails is sent again while the editor is open.
+  // What a changed size, dip or topping is charged at. A request that fails is sent again while the editor is open.
   const [products, setProducts] = useState<Product[]>();
   const [failures, setFailures] = useState(0);
   useEffect(() => {
-    if (deal) return;
     let current = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
     api.get('/products?active=1').then(
@@ -231,7 +232,7 @@ function SentLineEditor({
       current = false;
       clearTimeout(retry);
     };
-  }, [deal, failures]);
+  }, [failures]);
   const close = () => useSentEdit.setState({ open: null });
 
   /** Hands the order as it now stands to the screen, and the focus to the line that took this one's place. */
@@ -276,16 +277,26 @@ function SentLineEditor({
     }
   };
 
+  const soldToppings = toppingCounts(was.recipe);
   return deal ? (
     <PizzaDeal
       catalog={catalog}
       deal={deal}
-      // The configurator changes the deal's choices only, which keeps the price it was sold at.
-      product={{ price: soldPrices(item).price }}
+      product={products?.find((entry) => entry.id === item.product_id)}
+      // A change of the deal's choices keeps what it was sold at; another topping count prices it again.
+      soldPrices={(counts) =>
+        counts.whole === soldToppings.whole && counts.half === soldToppings.half
+          ? soldPrices(item)
+          : null
+      }
       initial={newDeal(deal, was.recipe?.kind === 'deal' ? was.recipe : null)}
       editing
       quantity={was.quantity}
-      onSave={(recipe) => void save({ ...was, recipe })}
+      onSave={(recipe) => {
+        const now = dealSentLine(was, recipe);
+        if (sentLineReprices(was, now) && !products) toast.error(t('sentPricesNotLoaded'));
+        else void save(now);
+      }}
       onClose={close}
       returnFocus={returnFocus}
     />

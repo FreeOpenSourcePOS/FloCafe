@@ -74,7 +74,7 @@ function checkedContents(db: Database.Database, lines: object, button: Fields) {
     throw refusal(`${product?.name ?? 'That item'} is not on the menu. Pick another item`);
   const variant = resolveOrderItemVariant(db, product, button, false);
 
-  const line = { product_id: product.id, modifier_selection: button.recipe };
+  const line = { product_id: product.id, modifier_selection: button.recipe, addons: button.addons };
   checkLineRecipe(db, lines, line, variant?.id);
   const recipe = (line.modifier_selection || null) as OrderLineRecipe | null;
   // An item that is not a pizza or a deal keeps what it was sent; a button keeps only a recipe.

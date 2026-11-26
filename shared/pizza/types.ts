@@ -83,6 +83,8 @@ export type MenuCategory =
 export interface MenuFile {
   tax: { GST: number; PST: number };
   sizes: { pizza: MenuSize[] };
+  /** What can be added to any pizza, each at the one `price`, in dollars. */
+  toppings?: { price: number; items: { id: string; name: string }[] };
   categories: MenuCategory[];
 }
 
@@ -138,6 +140,8 @@ export interface PizzaCatalog {
   drinksPst: boolean;
   deals: CatalogDeal[];
   tax: { gst: number; pst: number };
+  /** Absent when the menu lists no toppings. One price for an extra or an added topping, any size. */
+  toppings?: { priceCents: number; items: MenuOption[] };
 }
 
 /* ---------------- recipes on order lines ---------------- */
@@ -145,11 +149,15 @@ export interface PizzaCatalog {
 export type CookNote = 'well-done' | 'light-bake';
 export type CutNote = 'square-cut' | 'uncut';
 
-/** One pizza, or one half of a pizza, with the ingredients the customer does not want. */
+/** One pizza, or one half of a pizza, with what the customer wants off it, more of, and added. */
 export interface PizzaPart {
   pizzaId: string;
   /** Ingredient names from that pizza's `ingredients`. */
   removed: string[];
+  /** Ingredient names the customer wants extra of. Absent means none. */
+  extra?: string[];
+  /** Ids from the menu's `toppings` that this pizza does not already have. Absent means none. */
+  added?: string[];
 }
 
 /**

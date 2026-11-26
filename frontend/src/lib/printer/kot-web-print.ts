@@ -22,6 +22,7 @@ import { useAuthStore } from '@/store/auth';
 import { formatTime } from './format-date';
 import { escapeHtml } from './web-print';
 import { formatItemHeading } from './item-heading';
+import { kitchenAddons } from '@shared/pizza/toppings';
 
 export interface KotWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -233,7 +234,9 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
         item,
         layoutColumnsForTextSize(opts.columns ?? columnsForReceiptPaperSize(paperWidth), textSize),
       ),
-      addons: (Array.isArray(item.addons) ? item.addons : []).filter((addon) => addon?.name),
+      addons: (Array.isArray(item.addons) ? kitchenAddons(item.addons) : []).filter(
+        (addon) => addon?.name,
+      ),
       specialInstructions: item.special_instructions
         ? directionalText(String(item.special_instructions), base)
         : null,

@@ -33,6 +33,7 @@ import { orderItemDetailLines } from '@/lib/pizza/detail-lines';
 import { kotContactLines } from '@print/kot-contact';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { formatItemHeading } from './item-heading';
+import { kitchenAddons } from '@shared/pizza/toppings';
 import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
 
 /** Business contact facts and visibility flags for one bill print run. */
@@ -398,7 +399,7 @@ export function buildFrontendKotDocument(
       .map((item) => ({
         productName: formatItemHeading(String(item.product_name ?? ''), item.variant_selection),
         quantity: Number(item.quantity) || 0,
-        addons: parseKotAddons(item.addons).map((addon) => ({
+        addons: parseKotAddons(kitchenAddons(item.addons)).map((addon) => ({
           name: String(addon?.name ?? ''),
           ...(typeof addon?.quantity === 'number' &&
           Number.isFinite(addon.quantity) &&

@@ -2,6 +2,7 @@
 import { generateCartItemId } from '@/lib/cart-identity';
 import type { Addon, CartItem } from '@/lib/types';
 import { DIP_PREFIX } from './sheet-state';
+import { isToppingAddon } from './toppings';
 
 /**
  * "Customize 1": takes one off a line of several so it can be changed alone.
@@ -55,9 +56,13 @@ export function replaceCartLine(
 }
 
 /**
- * The add-ons of a line the sheet saves. The sheet changes dips only, so an
- * add-on of any other group the line already had stays as it was.
+ * The add-ons of a line the sheet saves: `now` is its dips and the topping
+ * add-ons of its recipe. The sheet changes those only, so an add-on of any
+ * other group the line already had stays as it was.
  */
-export function sheetAddons(had: Addon[], dips: Addon[]): Addon[] {
-  return [...had.filter((addon) => !addon.id.startsWith(DIP_PREFIX)), ...dips];
+export function sheetAddons(had: Addon[], now: Addon[]): Addon[] {
+  return [
+    ...had.filter((addon) => !addon.id.startsWith(DIP_PREFIX) && !isToppingAddon(addon.id)),
+    ...now,
+  ];
 }

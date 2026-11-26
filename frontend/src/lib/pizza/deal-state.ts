@@ -10,7 +10,9 @@ import type {
 } from '../../../../shared/pizza/types';
 import type { Product } from '@/lib/types';
 import { cartLineUnitPrice } from '../cart-price';
+import { toppingCounts } from '../../../../shared/pizza/toppings';
 import { PIZZA_PRODUCT_PREFIX } from './line-recipe';
+import { toppingPrices, toppingTotal, type ToppingPrices } from './toppings';
 import {
   newSheet,
   sheetDraft,
@@ -142,14 +144,23 @@ function checked<T extends OrderLineRecipe>(
   }
 }
 
-/** "Garden · NO OLIVES", or both names of a half and half. */
+/** "Garden · NO OLIVES · EXTRA CHEESE · ADD BACON", or both names of a half and half. */
 function pizzaSummary(catalog: PizzaCatalog, recipe: PizzaRecipe): string {
   const parts = recipe.halves ?? (recipe.whole ? [recipe.whole] : []);
   const names = parts.map(
     (part) => catalog.pizzas.find((pizza) => pizza.id === part.pizzaId)?.name ?? part.pizzaId,
   );
-  const removed = recipe.whole?.removed ?? [];
-  return [names.join(' / '), ...removed.map((name) => `NO ${name.toUpperCase()}`)].join(' · ');
+  const changes = (word: string, changed: string[] = []) =>
+    changed.map((name) => `${word} ${name.toUpperCase()}`);
+  const added = (recipe.whole?.added ?? []).map(
+    (id) => catalog.toppings?.items.find((topping) => topping.id === id)?.label ?? id,
+  );
+  return [
+    names.join(' / '),
+    ...changes('NO', recipe.whole?.removed),
+    ...changes('EXTRA', recipe.whole?.extra),
+    ...changes('ADD', added),
+  ].join(' · ');
 }
 
 /**
@@ -245,20 +256,51 @@ export function dealLine(catalog: PizzaCatalog, state: DealState, columns = 42):
   };
 }
 
+/** What the configurator shows as money, in the currency's own units. */
+export interface DealQuote {
+  /** One of the deal without its toppings. */
+  price: number;
+  /** What one topping on a whole pizza and one on a half cost; null for one the POS does not sell. */
+  toppings: ToppingPrices;
+  /** How many of each the deal's pizzas have as they stand. */
+  counts: { whole: number; half: number };
+  /** One of the line: the deal and its toppings; null while a price it needs is not known. */
+  unit: number | null;
+  kept: boolean;
+}
+
 /**
  * What the cart charges for one of a deal: the price of its POS product, or
- * the price a line keeps when one was set by hand. A configurator given no
- * product is quoted from the menu.
+ * the price a line keeps when one was set by hand, and the product's topping
+ * add-ons for the extras and added toppings of the pizzas in `state`. A
+ * configurator given no product is quoted from the menu. `sold` is what a line
+ * of an order already placed was sold at, while saving it keeps those prices.
  */
 export function dealQuote(
   deal: CatalogDeal,
-  product: Pick<Product, 'price'> | undefined,
+  product: Pick<Product, 'price' | 'addon_groups'> | undefined,
   override?: { price: number } | null,
-): { price: number; kept: boolean } {
-  return {
-    price: product
+  state?: DealState,
+  sold?: { price: number; toppings?: Partial<ToppingPrices> } | null,
+): DealQuote {
+  const price =
+    sold?.price ??
+    (product
       ? cartLineUnitPrice({ product, price_override: override }, false)
-      : deal.priceCents / 100,
+      : deal.priceCents / 100);
+  const toppings = toppingPrices(product, sold?.toppings);
+  const counts = toppingCounts({
+    kind: 'deal',
+    v: 1,
+    dealId: deal.id,
+    pizzas: (state?.pizzas ?? []).map(sheetDraft) as PizzaRecipe[],
+  });
+  const toppingsTotal = toppingTotal(counts, toppings);
+  return {
+    price,
+    toppings,
+    counts,
+    unit: toppingsTotal === null ? null : price + toppingsTotal,
     kept: Boolean(product && override),
   };
 }

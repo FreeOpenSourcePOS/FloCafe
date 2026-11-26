@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Wählen Sie mindestens eine Bestellart aus"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Der Abschluss fasst Verkäufe und Zahlungen zusammen. Der Artikelbericht umfasst den ganzen Geschäftstag.",
     "aov": "Durchschnittlicher Bestellwert",
     "avgPrepTime": "Durchschn. Zubereitung",
     "avgTableTurn": "Durchschn. Tischwechsel",
@@ -1799,6 +1800,7 @@
     "success": "Datenbank erfolgreich wiederhergestellt. System wird neu gestartet…"
   },
   "serverApp": {
+    "pinRosterEmpty": "Die PIN-Anmeldung ist noch für niemanden eingerichtet. Bitte die Leitung, unter Personal eine PIN für dein Konto festzulegen.",
     "addToOrder": "Zur Bestellung hinzufügen",
     "billPrintFailed": "Bestellung gesendet, aber die Rechnung wurde nicht gedruckt",
     "couldNotLoadData": "Server-App-Daten konnten nicht geladen werden",

@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Selecciona al menos un tipo de pedido"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "El cierre resume las ventas y los pagos. El informe por producto abarca todo el día comercial.",
     "aov": "Valor Prom. de Pedido",
     "avgPrepTime": "Tiempo Prom. de Preparación",
     "avgTableTurn": "Rotación Prom. de Mesa",
@@ -1799,6 +1800,7 @@
     "success": "Base restaurada con éxito. Reiniciando..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Todavía no hay personal con acceso por PIN. Pide a un encargado que configure el PIN de tu cuenta en Personal.",
     "addToOrder": "Agregar al pedido",
     "billPrintFailed": "Pedido enviado, pero la cuenta no se imprimió",
     "couldNotLoadData": "No se pudieron cargar los datos de la App de mesero",

@@ -466,18 +466,20 @@ export default function DashboardPage() {
     router.replace('/dashboard', { scroll: false });
   }, [cashCloseAction, cashCloseView, openCloseModal, router]);
 
-  const exportDailySales = async (format: 'xlsx' | 'csv' | 'pdf') => {
+  const exportDailySales = async (format: 'xlsx' | 'csv' | 'pdf', businessDate?: string) => {
     if (isExporting) return;
     setIsExporting(true);
     try {
-      const dateParams =
-        periodMode === 'day'
+      const dateParams = businessDate
+        ? { date: businessDate }
+        : periodMode === 'day'
           ? { date: selectedDate }
           : { from: range.startDate, to: range.endDate };
       const span =
-        periodMode === 'day' || range.startDate === range.endDate
+        businessDate ??
+        (periodMode === 'day' || range.startDate === range.endDate
           ? range.startDate
-          : `${range.startDate}_to_${range.endDate}`;
+          : `${range.startDate}_to_${range.endDate}`);
 
       if (format === 'pdf') {
         await exportReportAsPdf({
@@ -955,7 +957,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <CashCloseModal model={cashClose} />
+      <CashCloseModal
+        model={cashClose}
+        dailySalesExport={
+          tenantCan(currentTenant, 'reports.daily-sales.export')
+            ? { busy: isExporting, exportPdf: (date) => void exportDailySales('pdf', date) }
+            : undefined
+        }
+      />
       <SendWhatsAppReportModal
         open={dailySalesWhatsAppOpen}
         country={currentTenant?.country ?? ''}

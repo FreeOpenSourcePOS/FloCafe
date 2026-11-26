@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "최소 한 개의 주문 유형을 선택하세요"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "마감 보고서는 매출과 결제를 요약합니다. 상품별 보고서는 영업일 전체를 다룹니다.",
     "aov": "객단가",
     "avgPrepTime": "평균 준비 시간",
     "avgTableTurn": "평균 테이블 회전",
@@ -1799,6 +1800,7 @@
     "success": "데이터베이스가 복원되었습니다. 다시 시작 중..."
   },
   "serverApp": {
+    "pinRosterEmpty": "아직 PIN으로 로그인할 수 있는 직원이 없습니다. 관리자에게 직원 메뉴에서 계정 PIN을 설정해 달라고 요청하세요.",
     "addToOrder": "주문에 추가",
     "billPrintFailed": "주문은 전송되었지만 청구서가 출력되지 않았습니다",
     "couldNotLoadData": "서버 앱 데이터를 불러올 수 없습니다",

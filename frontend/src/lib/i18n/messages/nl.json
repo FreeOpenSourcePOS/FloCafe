@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Selecteer minimaal één besteltype"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "De afsluiting vat verkopen en betalingen samen. Het productrapport omvat de volledige bedrijfsdag.",
     "aov": "Gemiddelde bestelwaarde",
     "avgPrepTime": "Gemiddelde bereidingstijd",
     "avgTableTurn": "Gemiddelde tafelomzet",
@@ -1799,6 +1800,7 @@
     "success": "Database succesvol hersteld. Opnieuw opstarten..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Nog geen medewerker kan inloggen met een pincode. Vraag een manager om onder Personeel een pincode voor je account in te stellen.",
     "addToOrder": "Toevoegen aan bestelling",
     "billPrintFailed": "Bestelling verzonden, maar de bon is niet afgedrukt",
     "couldNotLoadData": "Kan serverapp-gegevens niet laden",

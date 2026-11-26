@@ -101,7 +101,7 @@ Quantity (`2x`) is added by the print layer, not by `ticketLines`.
 ## How a menu maps onto FloCafe's catalogue (lane B2, `main/pizza/menu-import.ts`)
 
 ```ts
-export function importMenu(db: Database, catalog: PizzaCatalog): { created: number; updated: number; unchanged: number };
+export function importMenu(db: Database, catalog: PizzaCatalog): { created: number; updated: number; unchanged: number; deactivated: number; untaxed: boolean };
 ```
 
 | Menu | FloCafe | Ids |
@@ -116,9 +116,9 @@ export function importMenu(db: Database, catalog: PizzaCatalog): { created: numb
 
 All of FloCafe's id columns here are text, and an id is unique across its whole table, so `tests/pizza-menu-import.test.ts` asserts that the sample menu produces no duplicate id in any table. Because every id is derived from the menu's ids, importing the same file twice changes nothing and a changed price updates one row. Category colours are colour names. Money is converted from cents with `getCurrencyMinorUnitFactor`.
 
-Tax: drinks get the tax category with code `soda` when `drinksPst`; every other imported product gets `food`. Lane C's setup profile creates both. If a category does not exist (tax not set up), the product is left without one, which FloCafe treats as untaxed, and the import summary says so.
+Tax: drinks get the tax category with code `soda` when `drinksPst`; every other imported product gets `food`. Lane C's setup profile creates both. If a category does not exist (tax not set up), the import does not write the product's tax category: a new product has none, which FloCafe treats as untaxed, a product that already has one keeps it, and the import summary says so.
 
-`importMenu` also writes the parsed catalogue to `pizza_menu`, and one `pizza_products` row per pizza, for the half-and-half product, and per deal. That stored catalogue is what the server validates recipes against.
+`importMenu` also writes the parsed catalogue to `pizza_menu`, with the list of catalogue rows the load owns (`owned_rows`), and one `pizza_products` row per pizza, for the half-and-half product, and per deal. The next load switches off the rows on that list that it no longer writes. That stored catalogue is what the server validates recipes against.
 
 ## Tables (lane B1, `main/pizza/migrations.ts`)
 
@@ -135,10 +135,11 @@ CREATE TABLE IF NOT EXISTS pizza_products (
   updated_at  TEXT NOT NULL
 );
 
--- One row: the catalogue parsed from the last menu file loaded.
+-- One row: the catalogue parsed from the last menu file loaded, and the catalogue rows that load owns.
 CREATE TABLE IF NOT EXISTS pizza_menu (
   id          INTEGER PRIMARY KEY CHECK (id = 1),
   catalog     TEXT NOT NULL,   -- JSON PizzaCatalog
+  owned_rows  TEXT NOT NULL DEFAULT '[]',   -- JSON array of "<table>:<id>", sorted: the categories, products, variants, add-on groups and add-ons the load wrote
   imported_at TEXT NOT NULL
 );
 

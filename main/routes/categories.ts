@@ -134,7 +134,7 @@ function loadAddonGroupIdsByCategory(
   return result;
 }
 
-function slugForName(name: string): string {
+export function slugForName(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

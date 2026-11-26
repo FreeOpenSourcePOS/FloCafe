@@ -27,6 +27,7 @@ export const PIZZA_MIGRATIONS: {
         CREATE TABLE IF NOT EXISTS pizza_menu (
           id          INTEGER PRIMARY KEY CHECK (id = 1),
           catalog     TEXT NOT NULL,
+          owned_rows  TEXT NOT NULL DEFAULT '[]',
           imported_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS pizza_quick_buttons (

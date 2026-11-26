@@ -150,10 +150,9 @@ function seedPizzaRows(db: any): void {
     `INSERT INTO pizza_products (product_id, menu_id, kind, ingredients, picks, created_at, updated_at)
      VALUES ('pz-garden', 'garden', 'pizza', '["Olives","Onions"]', NULL, ?, ?)`,
   ).run(STAMP, STAMP);
-  db.prepare('INSERT INTO pizza_menu (id, catalog, imported_at) VALUES (1, ?, ?)').run(
-    '{"sizes":[]}',
-    STAMP,
-  );
+  db.prepare(
+    "INSERT INTO pizza_menu (id, catalog, owned_rows, imported_at) VALUES (1, ?, '[]', ?)",
+  ).run('{"sizes":[]}', STAMP);
   db.prepare(
     `INSERT INTO pizza_quick_buttons (id, label, product_id, created_at, updated_at)
      VALUES ('qb-1', 'Large garden', 'pz-garden', ?, ?)`,
@@ -253,7 +252,12 @@ async function main() {
     );
     sameOrThrow(
       columnsOf(db, 'pizza_menu'),
-      ['id INTEGER PRIMARY KEY', 'catalog TEXT NOT NULL', 'imported_at TEXT NOT NULL'],
+      [
+        'id INTEGER PRIMARY KEY',
+        'catalog TEXT NOT NULL',
+        "owned_rows TEXT NOT NULL DEFAULT '[]'",
+        'imported_at TEXT NOT NULL',
+      ],
       'pizza_menu has the contract columns',
     );
     sameOrThrow(
@@ -296,7 +300,9 @@ async function main() {
     throwsOrThrow(
       () =>
         db
-          .prepare('INSERT INTO pizza_menu (id, catalog, imported_at) VALUES (2, ?, ?)')
+          .prepare(
+            "INSERT INTO pizza_menu (id, catalog, owned_rows, imported_at) VALUES (2, ?, '[]', ?)",
+          )
           .run('{}', STAMP),
       'pizza_menu holds one row only',
     );
@@ -499,10 +505,9 @@ async function main() {
       ],
       tax: { gst: 5, pst: 7 },
     };
-    db.prepare('INSERT INTO pizza_menu (id, catalog, imported_at) VALUES (1, ?, ?)').run(
-      '{"sizes":[',
-      STAMP,
-    );
+    db.prepare(
+      'INSERT INTO pizza_menu (id, catalog, owned_rows, imported_at) VALUES (1, ?, ?, ?)',
+    ).run('{"sizes":[', '["products:pz-garden"]', STAMP);
     let unreadable: any;
     await resetDatabaseForCurrencyChange('USD', 'CAD').catch((error: unknown) => {
       unreadable = error;
@@ -548,6 +553,11 @@ async function main() {
     const menu = rows(fresh, 'pizza_menu') as any[];
     assertEqualOrThrow(menu.length, 1, 'the stored catalogue survives');
     assertEqualOrThrow(menu[0].imported_at, STAMP, 'with its import time');
+    assertEqualOrThrow(
+      menu[0].owned_rows,
+      '["products:pz-garden"]',
+      'and the list of catalogue rows the menu owns',
+    );
     sameOrThrow(
       JSON.parse(menu[0].catalog),
       JSON.parse(JSON.stringify(catalog).replace(/"priceCents":\d+/g, '"priceCents":0')),
@@ -614,9 +624,10 @@ async function main() {
           CREATE TABLE pizza_menu_rebuilt (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             catalog TEXT NOT NULL CHECK (catalog <> ''),
+            owned_rows TEXT NOT NULL,
             imported_at TEXT NOT NULL
           );
-          INSERT INTO pizza_menu_rebuilt SELECT id, catalog, imported_at FROM pizza_menu;
+          INSERT INTO pizza_menu_rebuilt SELECT id, catalog, owned_rows, imported_at FROM pizza_menu;
           DROP TABLE pizza_menu;
           ALTER TABLE pizza_menu_rebuilt RENAME TO pizza_menu;
         `);

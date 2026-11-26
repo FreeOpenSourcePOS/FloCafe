@@ -320,15 +320,14 @@ runCases('Pizza ticket', {
       'the heading is left for the print layer to wrap',
     );
 
-    const longIngredient = withMenu((menu) => {
-      pizzasOf(menu)[0].description =
-        'Thirty-one letter made-up thing, a made-up topping with a name far too long to fit on one line of paper & supercalifragilisticexpialidocious-style-pepperoncini';
-    });
     const removed = [
       'A made-up topping with a name far too long to fit on one line of paper',
       'Thirty-one letter made-up thing',
       'Supercalifragilisticexpialidocious-style-pepperoncini',
     ];
+    // Together these are longer than a menu file's description may be, so they are set after parsing.
+    const longIngredient = catalog();
+    longIngredient.pizzas[0].ingredients = [removed[1], removed[0], removed[2]];
     prints(
       whole('garden', [removed[0], removed[1]]),
       42,

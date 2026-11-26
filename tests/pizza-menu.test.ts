@@ -31,6 +31,31 @@ function rejected(change: (menu: any) => void, expectedPath: string, message: st
   return error;
 }
 
+/** The sample with 200 pizzas and 12 sizes, the most the parser accepts. */
+function largestMenu() {
+  const menu = structuredClone(sample);
+  const pizzas = category(menu, 'pizzas').items;
+  pizzas.splice(
+    0,
+    pizzas.length,
+    ...Array.from({ length: 200 }, (_, index) => ({
+      ...pizzas[1],
+      id: `pizza-${index}`,
+      number: index + 1,
+      name: `Pizza ${index + 1}`,
+    })),
+  );
+  menu.sizes.pizza = [
+    ...menu.sizes.pizza,
+    ...Array.from({ length: 9 }, (_, index) => ({
+      id: `size-${index}`,
+      label: `Size ${index}`,
+      price: 30 + index,
+    })),
+  ];
+  return menu;
+}
+
 function throwsRangeError(run: () => unknown, message: string) {
   let error: unknown;
   try {
@@ -503,6 +528,204 @@ runCases('Pizza menu', {
     const text = JSON.stringify(expected);
     for (const field of ['image', 'restaurant', 'source', 'rules', 'sizes":"pizza'])
       assertOrThrow(!text.includes(`"${field}`), `the catalogue does not carry "${field}"`);
+  },
+
+  'Case 12: an id is lower-case letters, digits and hyphens, at most 40 characters': () => {
+    const pizzaId = 'categories.pizzas.items[0].id';
+    const bad: Array<[id: string, what: string]> = [
+      ['__proto__', 'the prototype key'],
+      ['two words', 'a space'],
+      ['a:b', 'a colon'],
+      ['Garden', 'an upper-case letter'],
+      ['-garden', 'a leading hyphen'],
+      ['a'.repeat(41), '41 characters'],
+    ];
+    for (const [id, what] of bad)
+      rejected(
+        (menu) => (category(menu, 'pizzas').items[0].id = id),
+        pizzaId,
+        `a pizza id: ${what}`,
+      );
+    const longest = structuredClone(sample);
+    category(longest, 'pizzas').items[0].id = '0' + 'a'.repeat(39);
+    assertEqualOrThrow(parseMenuFile(longest).pizzas[0].id.length, 40, '40 characters is accepted');
+
+    const everywhere: Array<[change: (menu: any) => void, at: string]> = [
+      [(menu) => (menu.sizes.pizza[0].id = 'Small'), 'sizes.pizza[0].id'],
+      [(menu) => (category(menu, 'sides').items[1].id = 'a b'), 'categories.sides.items[1].id'],
+      [
+        (menu) => (category(menu, 'sides').items[0].modifiers[0].id = 'a b'),
+        'categories.sides.items[0].modifiers[0].id',
+      ],
+      [
+        (menu) => (category(menu, 'sides').items[0].modifiers[0].options[0].id = '__proto__'),
+        'categories.sides.items[0].modifiers[0].options[0].id',
+      ],
+      [(menu) => (category(menu, 'drinks').items[0].id = 'a:b'), 'categories.drinks.items[0].id'],
+      [
+        (menu) => (category(menu, 'drinks').variants[0].id = 'Can'),
+        'categories.drinks.variants[0].id',
+      ],
+      [(menu) => (category(menu, 'deals').items[0].id = 'a b'), 'categories.deals.items[0].id'],
+    ];
+    for (const [change, at] of everywhere) rejected(change, at, `a bad id at ${at}`);
+  },
+
+  'Case 13: names, labels and descriptions are short and hold no control bytes': () => {
+    const long = 'x'.repeat(241);
+    const fields: Array<[set: (menu: any, value: string) => void, at: string]> = [
+      [(menu, value) => (menu.sizes.pizza[0].label = value), 'sizes.pizza[0].label'],
+      [
+        (menu, value) => (category(menu, 'pizzas').items[0].name = value),
+        'categories.pizzas.items[0].name',
+      ],
+      [
+        (menu, value) => (category(menu, 'pizzas').items[0].description = value),
+        'categories.pizzas.items[0].description',
+      ],
+      [
+        (menu, value) => (category(menu, 'sides').items[1].name = value),
+        'categories.sides.items[1].name',
+      ],
+      [
+        (menu, value) => (category(menu, 'sides').items[1].description = value),
+        'categories.sides.items[1].description',
+      ],
+      [
+        (menu, value) => (category(menu, 'sides').items[0].modifiers[0].label = value),
+        'categories.sides.items[0].modifiers[0].label',
+      ],
+      [
+        (menu, value) => (category(menu, 'sides').items[0].modifiers[0].options[0].label = value),
+        'categories.sides.items[0].modifiers[0].options[0].label',
+      ],
+      [
+        (menu, value) => (category(menu, 'drinks').items[0].name = value),
+        'categories.drinks.items[0].name',
+      ],
+      [
+        (menu, value) => (category(menu, 'drinks').variants[0].label = value),
+        'categories.drinks.variants[0].label',
+      ],
+      [
+        (menu, value) => (category(menu, 'deals').items[0].name = value),
+        'categories.deals.items[0].name',
+      ],
+      [
+        (menu, value) => (category(menu, 'deals').items[0].description = value),
+        'categories.deals.items[0].description',
+      ],
+    ];
+    for (const [set, at] of fields) {
+      rejected((menu) => set(menu, long), at, `241 characters at ${at}`);
+      rejected((menu) => set(menu, 'Cut\x1Bhere'), at, `an escape byte at ${at}`);
+      rejected((menu) => set(menu, 'Two\nlines'), at, `a line break at ${at}`);
+      const atCap = structuredClone(sample);
+      set(atCap, 'x'.repeat(240));
+      parseMenuFile(atCap);
+    }
+    assertOrThrow(true, '240 characters is accepted in every field');
+  },
+
+  'Case 14: every list has a cap': () => {
+    /** `count` copies of the first entry, each with its own id. */
+    const grow = (items: any[], count: number) =>
+      items.splice(
+        0,
+        items.length,
+        ...Array.from({ length: count }, (_, index) => ({
+          ...items[0],
+          id: `entry-${index}`,
+        })),
+      );
+    const lists: Array<[pick: (menu: any) => any[], cap: number, at: string]> = [
+      [(menu) => menu.sizes.pizza, 12, 'sizes.pizza'],
+      [(menu) => category(menu, 'pizzas').items, 200, 'categories.pizzas.items'],
+      [(menu) => category(menu, 'sides').items, 50, 'categories.sides.items'],
+      [(menu) => category(menu, 'drinks').items, 50, 'categories.drinks.items'],
+      [(menu) => category(menu, 'drinks').variants, 30, 'categories.drinks.variants'],
+      [
+        (menu) => category(menu, 'sides').items[0].modifiers[0].options,
+        30,
+        'categories.sides.items[0].modifiers[0].options',
+      ],
+    ];
+    for (const [pick, cap, at] of lists) {
+      const error = rejected(
+        (menu) => grow(pick(menu), cap + 1),
+        at,
+        `${cap + 1} entries in ${at}`,
+      );
+      assertOrThrow(error.message.includes(String(cap)), `${at}: the message gives the cap`);
+    }
+
+    // Deals and picks are checked without the deals that point at sizes or drinks by id.
+    const oneDeal = (menu: any) => {
+      const deals = category(menu, 'deals').items;
+      deals.splice(0, deals.length, {
+        ...deals[0],
+        picks: [{ type: 'pizza', size: 'large', count: 1 }],
+      });
+      return deals;
+    };
+    rejected((menu) => grow(oneDeal(menu), 51), 'categories.deals.items', '51 deals');
+    rejected(
+      (menu) => {
+        const [deal] = oneDeal(menu);
+        deal.picks = Array.from({ length: 31 }, () => ({
+          type: 'pizza',
+          size: 'large',
+          count: 1,
+        }));
+      },
+      'categories.deals.items[0].picks',
+      '31 picks in a deal',
+    );
+    rejected(
+      (menu) => (category(menu, 'deals').items[2].picks[1].options = new Array(31).fill({})),
+      'categories.deals.items[2].picks[1].options',
+      '31 options in a choice pick',
+    );
+    rejected((menu) => (menu.categories = new Array(31).fill({})), 'categories', '31 categories');
+
+    const ingredients = (count: number) =>
+      Array.from({ length: count }, (_, index) => `a${index}`).join(',');
+    const error = rejected(
+      (menu) => (category(menu, 'pizzas').items[0].description = ingredients(61)),
+      'categories.pizzas.items[0].description',
+      '61 ingredients on one pizza',
+    );
+    assertOrThrow(error.message.includes('60'), 'the message gives the ingredient cap');
+
+    const atCap = structuredClone(sample);
+    grow(category(atCap, 'sides').items[0].modifiers[0].options, 30);
+    grow(category(atCap, 'drinks').variants, 30);
+    grow(category(atCap, 'drinks').items, 50);
+    const sides = category(atCap, 'sides').items;
+    sides.push(
+      ...Array.from({ length: 50 - sides.length }, (_, index) => ({
+        ...sides[1],
+        id: `extra-${index}`,
+      })),
+    );
+    grow(oneDeal(atCap), 50);
+    const catalog = parseMenuFile(atCap);
+    same(
+      [
+        catalog.sides.length,
+        catalog.drinks.length,
+        catalog.drinkVariants.length,
+        catalog.deals.length,
+      ],
+      [50, 50, 30, 50],
+      'a list exactly at its cap is accepted',
+    );
+  },
+
+  'Case 15: the largest menu the caps allow, 200 pizzas in 12 sizes, parses': () => {
+    const catalog = parseMenuFile(largestMenu());
+    same([catalog.pizzas.length, catalog.sizes.length], [200, 12], 'every pizza and size is kept');
+    assertEqualOrThrow(catalog.pizzas[199].ingredients.length, 4, 'with its ingredients');
   },
 
   'Case 11: nothing under shared/pizza imports outside shared': () => {

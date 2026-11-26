@@ -6,7 +6,7 @@ const path = require('node:path');
 const {
   config,
   BACKUP_NAME,
-  backupDir,
+  privateBackupDir,
   timestamp,
   appModule,
   fsync,
@@ -20,8 +20,7 @@ main(async () => {
   if (!Number.isInteger(keep) || keep < 1)
     throw new Error(`BACKUP_KEEP must be a whole number of at least 1, got ${BACKUP_KEEP}`);
 
-  const dir = backupDir(FLO_DEV_USER_DATA);
-  fs.mkdirSync(dir, { recursive: true });
+  const dir = privateBackupDir(FLO_DEV_USER_DATA);
   for (const name of fs.readdirSync(dir).filter((n) => /^\.pizza-pos-.*\.partial$/.test(n))) {
     fs.unlinkSync(path.join(dir, name));
     console.log(`removed stale ${name}`);

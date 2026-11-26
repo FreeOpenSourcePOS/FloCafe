@@ -4,11 +4,17 @@ import { displayCellWidth, wrapToDisplayCells } from './width';
 /** Indent of every detail-line row, on tickets and receipts. */
 export const DETAIL_LINE_INDENT = '   ';
 
+/** Text without C0 control bytes and DEL, so nothing typed or imported can command a printer. */
+export const stripControlBytes = (text: string): string => text.replace(/[\x00-\x1F\x7F]/g, '');
+
 /** The `detailLines` a raw order item carries: its non-blank strings, in order. */
 export function readDetailLines(item: unknown): string[] {
   const lines = (item as { detailLines?: unknown } | null | undefined)?.detailLines;
   return Array.isArray(lines)
-    ? lines.filter((line): line is string => typeof line === 'string' && line.trim().length > 0)
+    ? lines
+        .filter((line): line is string => typeof line === 'string')
+        .map(stripControlBytes)
+        .filter((line) => line.trim().length > 0)
     : [];
 }
 

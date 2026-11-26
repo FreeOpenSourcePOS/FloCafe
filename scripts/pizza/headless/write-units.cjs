@@ -56,6 +56,7 @@ Description=Pizza POS server (headless)
 Type=simple
 WorkingDirectory=${repoRoot}
 EnvironmentFile=${envFile}
+UMask=0077
 ExecStart=${node} ${path.join(repoRoot, 'dev-server.js')}
 Restart=on-failure
 RestartSec=5
@@ -71,6 +72,7 @@ Description=Pizza POS database backup
 Type=oneshot
 WorkingDirectory=${repoRoot}
 EnvironmentFile=${envFile}
+UMask=0077
 ExecStart=${node} ${path.join(__dirname, 'backup.cjs')}
 `,
     [path.join(unitDir, 'pizza-pos-backup.timer')]: `[Unit]

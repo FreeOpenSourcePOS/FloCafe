@@ -112,6 +112,9 @@ void runCases('Pizza headless kit: restore', [
         'the safety copy holds the database as it was before the restore',
       );
       assertOrThrow(appDb().isHealthyDatabaseFile(safety[0]), 'the safety copy is healthy');
+      const modeOf = (file: string) => (fs.statSync(file).mode & 0o777).toString(8);
+      assertEqualOrThrow(modeOf(safety[0]), '600', 'the safety copy is owner-only');
+      assertEqualOrThrow(modeOf(backupDir(env)), '700', 'the backup folder is owner-only');
       assertOrThrow(!fs.existsSync(drivePending(env)), 'no Drive restore intent is left behind');
       await assertServerHealthy(env, 'the server is healthy on the restored database');
     },

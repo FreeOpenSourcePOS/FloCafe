@@ -1,5 +1,7 @@
 /** Customer contact facts a kitchen ticket header prints when the merchant opts in. */
 
+import { stripControlBytes } from './detail-lines';
+
 /** One labelled header line; `concept` names an existing print label. */
 export interface KotContactLine {
   readonly concept:
@@ -11,7 +13,7 @@ export interface KotContactLine {
 
 /** One line of text: a stored line break becomes a space, so the two parts do not run together. */
 const text = (value: unknown): string =>
-  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  typeof value === 'string' ? stripControlBytes(value.replace(/\s+/g, ' ')).trim() : '';
 
 /**
  * Contact lines for a raw order: the customer's phone number when the order

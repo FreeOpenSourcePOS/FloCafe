@@ -96,6 +96,11 @@ Backups are written to `headless-backups/` inside the data folder, named `pizza-
 
 The backups sit on the same disk as the database. Copy that folder somewhere else if the PC itself may be lost.
 
+**A backup file is a credential.** It holds the secret that signs every login token, the staff PIN hashes and customers' phone numbers and addresses. Anyone who can read one can sign themselves in as the owner. The same is true of the live database and the `pre-restore-` copies. So:
+
+- `install.sh` sets the data folder to mode 700, both units run with `UMask=0077`, and the backup folder (700) and every copy in it (600) are readable by the service's user only. Do not loosen these, and do not run the POS under an account other people share.
+- Keep an off-machine copy only on storage that is encrypted and that only the owner can open: an encrypted disk, or an archive encrypted before it is uploaded. Never email one, put it in a shared folder or attach it to a support request.
+
 ## Restore
 
 Restore runs with the POS stopped. It refuses while `systemctl --user is-active` reports `pizza-pos.service` or `pizza-pos-backup.service` as anything but inactive or failed, and while anything listens on the three configured ports. Without `systemctl` it says so and relies on the port check.
@@ -152,7 +157,7 @@ It stops and disables the service and the timer, deletes the three unit files an
 
 | Step | Checked how |
 | :--- | :--- |
-| Unit files, health, backup, restore, recovery steps | 21 test cases against a real headless server, with a stand-in for `systemctl` |
+| Unit files, file modes, health, backup, restore, recovery steps | 22 test cases against a real headless server, with a stand-in for `systemctl` |
 | Install as a user service, health on fixed ports | Run for real on Fedora 45 (systemd 262) |
 | Install again with a changed port | Run for real: the server restarted on the new port |
 | Backup and restore through the real service manager | Run for real with the first version of the kit only |

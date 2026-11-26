@@ -7,7 +7,7 @@ const net = require('node:net');
 const path = require('node:path');
 const {
   config,
-  backupDir,
+  privateBackupDir,
   timestamp,
   appModule,
   fsync,
@@ -61,8 +61,7 @@ main(async () => {
   }
 
   const livePath = path.join(settings.FLO_DEV_USER_DATA, 'flo.db');
-  const dir = backupDir(settings.FLO_DEV_USER_DATA);
-  fs.mkdirSync(dir, { recursive: true });
+  const dir = privateBackupDir(settings.FLO_DEV_USER_DATA);
   const safetyPath = path.join(dir, `pre-restore-${timestamp()}.db`);
   await onlineCopy(livePath, safetyPath);
   fsync(dir);

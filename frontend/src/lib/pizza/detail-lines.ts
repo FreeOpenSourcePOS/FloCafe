@@ -1,5 +1,5 @@
 /** The lines under a pizza or deal, built from its recipe and the catalogue held in the browser. */
-import { readDetailLines } from '@print/detail-lines';
+import { readDetailLines, stripControlBytes } from '@print/detail-lines';
 import { ticketLines } from '../../../../shared/pizza/ticket';
 import type { OrderLineRecipe } from '../../../../shared/pizza/types';
 import type { CartItem } from '@/lib/types';
@@ -31,7 +31,7 @@ function recipeLines(raw: unknown, columns: number): string[] | null {
  */
 export function orderItemDetailLines(item: unknown, columns: number): string[] {
   const recipe = (item as { modifier_selection?: unknown } | null | undefined)?.modifier_selection;
-  return recipeLines(recipe, columns) ?? readDetailLines(item);
+  return recipeLines(recipe, columns)?.map(stripControlBytes) ?? readDetailLines(item);
 }
 
 /** The lines the cart panel shows under a pizza or deal line. */

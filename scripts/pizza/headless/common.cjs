@@ -7,6 +7,10 @@ const os = require('node:os');
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 
+// The database holds the JWT signing secret, PIN hashes and customer phone numbers, so nothing
+// the kit writes is readable by another account, from the first byte of a copy.
+process.umask(0o077);
+
 function config(...names) {
   const missing = names.filter((name) => !process.env[name]);
   if (missing.length > 0) {
@@ -22,6 +26,14 @@ const BACKUP_NAME = /^pizza-pos-\d{4}-\d{2}-\d{2}T[\d-]+Z\.db$/;
 
 function backupDir(dataDir) {
   return path.join(dataDir, 'headless-backups');
+}
+
+/** Creates the backup folder owner-only, and closes one an earlier version left open. */
+function privateBackupDir(dataDir) {
+  const dir = backupDir(dataDir);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(dir, 0o700);
+  return dir;
 }
 
 function timestamp() {
@@ -113,6 +125,7 @@ module.exports = {
   config,
   BACKUP_NAME,
   backupDir,
+  privateBackupDir,
   timestamp,
   appModule,
   fsync,

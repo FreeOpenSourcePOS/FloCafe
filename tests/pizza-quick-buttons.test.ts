@@ -710,9 +710,31 @@ async function main() {
         'the refused requests changed nothing',
       );
 
-      for (const who of [cashier, chef]) {
-        assertEqualOrThrow((await list('cust-1', who)).length, 3, 'any signed-in user reads them');
+      assertEqualOrThrow((await list('cust-1', cashier)).length, 3, 'a cashier reads both kinds');
+      assertEqualOrThrow((await list(undefined, cashier)).length, 1, "or the shop's alone");
+      assertEqualOrThrow((await list(undefined, chef)).length, 1, "the kitchen reads the shop's");
+      const kitchenAsks = await call(chef, 'GET', '?customer_id=cust-1');
+      assertEqualOrThrow(kitchenAsks.status, 403, "but not a customer's");
+      assertEqualOrThrow(kitchenAsks.data.buttons, undefined, 'and is sent no button');
+
+      const answers = [];
+      for (const id of [managerShop.id, managerTheirs.id, 'no-such-button']) {
+        for (const method of ['PUT', 'DELETE']) {
+          const response = await call(chef, method, `/${id}`, { label: 'Mine' });
+          answers.push(`${response.status} ${JSON.stringify(response.data)}`);
+        }
       }
+      assertEqualOrThrow(answers[0].slice(0, 3), '403', 'someone with neither right is refused');
+      assertEqualOrThrow(
+        new Set(answers).size,
+        1,
+        `and is answered the same whether or not the button exists: ${answers.join(' | ')}`,
+      );
+      assertEqualOrThrow(
+        (await call(cashier, 'PUT', '/no-such-button', { label: 'Mine' })).status,
+        404,
+        'someone who keeps buttons is still told a button is gone',
+      );
       const cashierChange = await call(cashier, 'PUT', `/${managerTheirs.id}`, { label: 'Usual' });
       assertEqualOrThrow(cashierChange.status, 200, "a cashier changes a customer's button");
       assertEqualOrThrow(
@@ -847,6 +869,34 @@ async function main() {
         [[true, null]],
         'with the database answering again, the button is usable',
       );
+    },
+
+    'Case 11: a customer keeps at most 24 buttons and the shop 48': async () => {
+      clear();
+      const theirs = pizzaButton('garden', 'large', { customer_id: 'cust-1' });
+      for (let saved = 0; saved < 24; saved++) await save(theirs, cashier);
+      await refused(
+        'a 25th button for one customer',
+        theirs,
+        'This customer already has 24 buttons. Delete one, then save this one',
+      );
+      seedCustomer(db, 'cust-3', 'Third Customer', '+16045550103');
+      await save({ ...theirs, customer_id: 'cust-3' }, cashier);
+      const [first] = stored();
+      assertEqualOrThrow(
+        (await call(cashier, 'PUT', `/${first.id}`, { label: 'Usual' })).status,
+        200,
+        'a button can still be changed when the customer has 24',
+      );
+
+      const shop = pizzaButton('garden', 'large');
+      for (let saved = 0; saved < 48; saved++) await save(shop);
+      await refused(
+        'a 49th shop-wide button',
+        shop,
+        'The shop already has 48 buttons. Delete one, then save this one',
+      );
+      assertEqualOrThrow(stored().length, 24 + 1 + 48, 'only the buttons within the limits exist');
     },
 
     'Case 10: a currency reset leaves no buttons': async () => {

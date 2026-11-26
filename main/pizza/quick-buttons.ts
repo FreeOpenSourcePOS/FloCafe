@@ -29,6 +29,10 @@ export const QUICK_BUTTON_COLORS = [
   'rose',
 ];
 
+/** The most buttons one customer and the shop keep; every listed button is checked on each read. */
+const MAX_CUSTOMER_BUTTONS = 24;
+const MAX_SHOP_BUTTONS = 48;
+
 const COLUMNS = [
   'id',
   'label',
@@ -213,6 +217,14 @@ export function saveQuickButton(
       if (!customer) throw refusal('That customer was not found. Search for the customer again');
       row.customer_id = customer.id;
     }
+    const { kept } = db
+      .prepare('SELECT COUNT(*) AS kept FROM pizza_quick_buttons WHERE customer_id IS ?')
+      .get(row.customer_id) as { kept: number };
+    const most = row.customer_id ? MAX_CUSTOMER_BUTTONS : MAX_SHOP_BUTTONS;
+    if (kept >= most)
+      throw refusal(
+        `${row.customer_id ? 'This customer' : 'The shop'} already has ${most} buttons. Delete one, then save this one`,
+      );
     row.id = randomUUID();
     row.created_at = now();
     row.sort_order = (

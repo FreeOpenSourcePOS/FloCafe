@@ -21,6 +21,19 @@ What `parseMenuFile` rejects, each with a `MenuError` naming the entry. Nothing 
 - Duplicate ids within a category, and a pizza whose id is `half-and-half` (reserved for the half-and-half product).
 - A side with more than one modifier, or a modifier that is not a required single choice (`required` true, `choose` 1 or absent), because the import always creates a required single-choice group.
 - A deal with more than one drink pick (a `pop` pick and a `choice` pick count as one each), more than one `choice` pick, more than one `wing-flavour` pick, a `wing-flavour` pick whose count is not 1, a `2l` option whose count is not 1, a `pizza` pick with an unknown size, a `pizza` or `pop` pick whose count is below 1, a `choice` pick whose options are not exactly one `pop` and one `2l`, or a `wing-flavour` pick when there is no `wings` side.
+- An id that does not match `^[a-z0-9][a-z0-9-]{0,39}$`: lower-case letters, digits and hyphens, starting with a letter or digit, at most 40 characters. This holds for every size, pizza, side, modifier, option, drink, drink variant and deal id. Ids become parts of database keys.
+- A name, label or description longer than 240 characters, or holding a control character (a line break and a tab count). These are printed on tickets and receipts.
+- A list longer than its limit:
+
+  | List | Most entries |
+  | :--- | ---: |
+  | Pizzas | 200 |
+  | Pizza sizes | 12 |
+  | Ingredients in one pizza's description | 60 |
+  | Sides | 50 |
+  | Drinks | 50 |
+  | Deals | 50 |
+  | Any other list: drink variants, a modifier's options, a deal's picks, categories | 30 |
 
 Unknown extra fields on any entry are ignored.
 
@@ -178,7 +191,7 @@ A quick button is one cart line saved under a label, for the whole shop or for o
 
 | Route | Permission | Body | Answer |
 | :--- | :--- | :--- | :--- |
-| `GET /quick-buttons` | `catalog.view` | none; query `customer_id` is optional | `200 { buttons: QuickButton[] }` |
+| `GET /quick-buttons` | `catalog.view`, and `orders.create` as well when `customer_id` is given | none; query `customer_id` is optional | `200 { buttons: QuickButton[] }` |
 | `POST /quick-buttons` | `orders.create` with a `customer_id`, `catalog.manage` without | `QuickButtonInput` | `201 { button: QuickButton }` |
 | `PUT /quick-buttons/:id` | by the stored button: `orders.create` for a customer's, `catalog.manage` for a shop-wide one | any fields of `QuickButtonInput` except `customer_id` | `200 { button: QuickButton }` |
 | `DELETE /quick-buttons/:id` | as `PUT` | none | `200 { success: true }` |
@@ -193,7 +206,8 @@ Rules:
 - A `PUT` changes only the fields it names. Naming any of `product_id`, `variant_id`, `recipe` or `addons` checks all four together, the stored values standing in for the ones left out. A button never moves to another customer.
 - No price is stored or returned.
 - A stored button is never rewritten by a menu change. `usable` and `reason` are worked out each time a button is returned, by running the save checks against the current menu. `reason` is the refusal's message; when the recipe names a pizza the menu no longer has, or removes an ingredient its pizza no longer has, it names that pizza or ingredient.
-- A missing id answers `404 { error }`.
+- One customer keeps at most 24 buttons and the shop at most 48 shop-wide ones. A `POST` beyond either answers `400 { error }` telling the cashier to delete one first. A `PUT` is not counted.
+- `PUT` and `DELETE` first need `orders.create` or `catalog.manage`. A user with neither gets the same 403 for every id, so the answer does not say whether a button exists. For a user with either, a missing id answers `404 { error }`.
 
 ## Lanes and file ownership
 

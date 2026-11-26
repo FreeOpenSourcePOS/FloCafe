@@ -22,6 +22,13 @@ interface MenuFacts {
 
 const CATEGORY_IDS = ['pizzas', 'sides', 'drinks', 'deals'];
 
+/** Limits on a menu file. Ids become parts of database keys, and names are printed. */
+const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const CONTROL_BYTE = /[\x00-\x1F\x7F]/;
+const MAX_TEXT = 240;
+const MAX_INGREDIENTS = 60;
+const MAX_ENTRIES = { pizzas: 200, sides: 50, drinks: 50, deals: 50, sizes: 12, other: 30 };
+
 /** A menu file that cannot be loaded; `path` names the bad entry. */
 export class MenuError extends Error {
   readonly path: string;
@@ -43,13 +50,32 @@ function entry(value: unknown, path: string): Entry {
   return value as Entry;
 }
 
-function list(value: unknown, path: string): unknown[] {
+function list(value: unknown, path: string, max = MAX_ENTRIES.other): unknown[] {
   if (!Array.isArray(value)) fail(path, 'must be a list');
+  if (value.length > max) fail(path, `has ${value.length} entries; at most ${max} are allowed`);
+  return value;
+}
+
+/** A name, label or description: short, and nothing a printer could take as a command. */
+function printable(value: string, path: string): string {
+  if (value.length > MAX_TEXT)
+    fail(path, `is ${value.length} characters long; at most ${MAX_TEXT} are allowed`);
+  if (CONTROL_BYTE.test(value))
+    fail(path, 'must not hold control characters such as a line break or a tab');
   return value;
 }
 
 function text(value: unknown, path: string): string {
   if (typeof value !== 'string' || !value.trim()) fail(path, 'must be text');
+  return printable(value, path);
+}
+
+function ident(value: unknown, path: string): string {
+  if (typeof value !== 'string' || !ID.test(value))
+    fail(
+      path,
+      'must be an id of lower-case letters, digits and hyphens, starting with a letter or digit, at most 40 characters',
+    );
   return value;
 }
 
@@ -79,9 +105,10 @@ function entries<T extends { id: string }>(
   value: unknown,
   path: string,
   parse: (raw: Entry, at: string) => T,
+  max?: number,
 ): T[] {
   const seen = new Set<string>();
-  return list(value, path).map((raw, index) => {
+  return list(value, path, max).map((raw, index) => {
     const at = `${path}[${index}]`;
     const parsed = parse(entry(raw, at), at);
     if (seen.has(parsed.id)) fail(`${at}.id`, `"${parsed.id}" is used twice`);
@@ -91,7 +118,7 @@ function entries<T extends { id: string }>(
 }
 
 function option(raw: Entry, at: string): MenuOption {
-  return { id: text(raw.id, `${at}.id`), label: text(raw.label, `${at}.label`) };
+  return { id: ident(raw.id, `${at}.id`), label: text(raw.label, `${at}.label`) };
 }
 
 function priced(raw: Entry, at: string): CatalogPriced {
@@ -99,19 +126,25 @@ function priced(raw: Entry, at: string): CatalogPriced {
 }
 
 function pizza(raw: Entry, at: string): CatalogPizza {
-  const id = text(raw.id, `${at}.id`);
+  const id = ident(raw.id, `${at}.id`);
   if (id === 'half-and-half')
     fail(`${at}.id`, '"half-and-half" is reserved for the half and half product');
   const { number, description } = raw;
   if (number != null && typeof number !== 'number') fail(`${at}.number`, 'must be a number');
   if (raw.sizes !== 'pizza') fail(`${at}.sizes`, 'must be "pizza"');
   if (typeof description !== 'string') fail(`${at}.description`, 'must be text; it may be empty');
+  const ingredients = ingredientsOf(description);
+  if (ingredients.length > MAX_INGREDIENTS)
+    fail(
+      `${at}.description`,
+      `lists ${ingredients.length} ingredients; at most ${MAX_INGREDIENTS} are allowed`,
+    );
   return {
     id,
     ...(number == null ? {} : { number }),
     name: text(raw.name, `${at}.name`),
-    description,
-    ingredients: ingredientsOf(description),
+    description: printable(description, `${at}.description`),
+    ingredients,
   };
 }
 
@@ -122,7 +155,7 @@ function modifier(raw: Entry, at: string): MenuModifier {
   const options = entries(raw.options, `${at}.options`, option);
   if (options.length === 0) fail(`${at}.options`, 'needs at least one option');
   return {
-    id: text(raw.id, `${at}.id`),
+    id: ident(raw.id, `${at}.id`),
     label: text(raw.label, `${at}.label`),
     required: true,
     ...(raw.choose === 1 ? { choose: 1 } : {}),
@@ -138,10 +171,10 @@ function side(raw: Entry, at: string): CatalogSide {
   if (modifiers.length > 1) fail(`${at}.modifiers`, 'a side can have only one modifier');
   const modifierAt = `${at}.modifiers[0]`;
   return {
-    id: text(raw.id, `${at}.id`),
+    id: ident(raw.id, `${at}.id`),
     name: text(raw.name, `${at}.name`),
     priceCents: cents(raw.price, `${at}.price`),
-    ...(description == null ? {} : { description }),
+    ...(description == null ? {} : { description: printable(description, `${at}.description`) }),
     ...(modifiers.length === 0
       ? {}
       : { modifier: modifier(entry(modifiers[0], modifierAt), modifierAt) }),
@@ -199,10 +232,10 @@ function deal(raw: Entry, at: string, facts: MenuFacts): CatalogDeal {
     return parsed;
   });
   return {
-    id: text(raw.id, `${at}.id`),
+    id: ident(raw.id, `${at}.id`),
     name: text(raw.name, `${at}.name`),
     priceCents: cents(raw.price, `${at}.price`),
-    description,
+    description: printable(description, `${at}.description`),
     picks,
   };
 }
@@ -211,7 +244,7 @@ function deal(raw: Entry, at: string, facts: MenuFacts): CatalogDeal {
 export function parseMenuFile(raw: unknown): PizzaCatalog {
   const menu = entry(raw, 'menu');
   const tax = entry(menu.tax, 'tax');
-  const sizes = entries(entry(menu.sizes, 'sizes').pizza, 'sizes.pizza', priced);
+  const sizes = entries(entry(menu.sizes, 'sizes').pizza, 'sizes.pizza', priced, MAX_ENTRIES.sizes);
   if (sizes.length === 0) fail('sizes.pizza', 'needs at least one size');
 
   const categories = new Map<string, Entry>();
@@ -225,8 +258,16 @@ export function parseMenuFile(raw: unknown): PizzaCatalog {
     categories.set(id, category);
   });
   if (!categories.has('pizzas')) fail('categories', 'needs a "pizzas" category');
-  const items = <T extends { id: string }>(id: string, parse: (raw: Entry, at: string) => T) =>
-    entries(categories.get(id)?.items ?? [], `categories.${id}.items`, parse);
+  const items = <T extends { id: string }>(
+    category: 'pizzas' | 'sides' | 'drinks' | 'deals',
+    parse: (raw: Entry, at: string) => T,
+  ) =>
+    entries(
+      categories.get(category)?.items ?? [],
+      `categories.${category}.items`,
+      parse,
+      MAX_ENTRIES[category],
+    );
 
   const sides = items('sides', side);
   const dip = sides.find((item) => item.id === 'dip');
@@ -235,7 +276,7 @@ export function parseMenuFile(raw: unknown): PizzaCatalog {
   if (pst != null && typeof pst !== 'boolean')
     fail('categories.drinks.pst', 'must be true or false');
   const drinks = items('drinks', (drink, at) => ({
-    id: text(drink.id, `${at}.id`),
+    id: ident(drink.id, `${at}.id`),
     label: text(drink.name, `${at}.name`),
   }));
   const drinkVariants = entries(

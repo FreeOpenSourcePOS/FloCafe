@@ -236,6 +236,76 @@ runCases('pizza-kot-customer-contact', {
     });
   },
 
+  'Case 2d: control bytes in a note, an address or a detail line never reach the printer': () => {
+    const withText = (note: string, address: string, detail: string) => ({
+      ...deliveryOrder,
+      delivery_note: note,
+      delivery_address: address,
+      items: [{ ...items[0], detailLines: [detail] }],
+    });
+    const hostile = withText('a\x1B@b\x1DV\x00', '12 Main\x1Bi St', 'No \x1Bolives\x1DV\x00');
+    const clean = withText('a@bV', '12 Maini St', 'No olivesV');
+    const countOf = (bytes: Uint8Array | Buffer) =>
+      [0x00, 0x1b, 0x1d].map((byte) => bytes.filter((b: number) => b === byte).length).join('/');
+    const bytePaths: Record<string, (order: any) => Uint8Array | Buffer> = {
+      'server ESC/POS': (order) =>
+        renderKotViaDocument(
+          { ...order, show_customer_contact: true },
+          order.items,
+          'Kitchen',
+          kotOptions(42),
+        ).data,
+      'browser ESC/POS': (order) =>
+        frontend.kotEncoder.buildKotBytes(
+          order,
+          {
+            columns: 42,
+            paperWidth: 80,
+            stationName: 'Kitchen',
+            language: 'en',
+            timezone: 'UTC',
+            showCustomerContact: true,
+          } as any,
+          [],
+        ),
+      'raster document': (order) =>
+        buildEscPos(
+          renderKotDocumentToLines(
+            frontend.printDocument.buildFrontendKotDocument(order, {
+              stationName: 'Kitchen',
+              columns: 42,
+              language: 'en',
+              timezone: 'UTC',
+              showCustomerContact: true,
+            } as any),
+            kotOptions(42),
+          ),
+          false,
+          { cutMode: 'partial', columns: 42, language: 'en' },
+        ),
+    };
+    for (const [name, render] of Object.entries(bytePaths)) {
+      assertEqualOrThrow(
+        countOf(render(hostile)),
+        countOf(render(clean)),
+        `${name}: NUL/ESC/GS bytes are only the encoder's own commands`,
+      );
+    }
+    const html = frontend.kotWebPrint.generateKotHtml(hostile, {
+      paperWidth: 80,
+      language: 'en',
+      stationName: 'Kitchen',
+      timezone: 'UTC',
+      showCustomerContact: true,
+    } as any);
+    assertOrThrow(!/[\x00-\x08\x0B-\x1F\x7F]/.test(html), 'browser HTML: no control bytes');
+    forEveryPath((name, render) => {
+      const text = flat(render(hostile, true));
+      assertOrThrow(text.includes('Delivery note: a@bV'), `${name}: the note text still prints`);
+      assertOrThrow(text.includes('No olivesV'), `${name}: the detail line text still prints`);
+    });
+  },
+
   'Case 3: setting on, a pickup ticket with a phone prints the phone only': () => {
     forEveryPath((name, render) => {
       const text = flat(render(pickupOrder, true));

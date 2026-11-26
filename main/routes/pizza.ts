@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, RequestHandler, Response } from 'express';
 import { getDatabase } from '../db';
 import { importMenu, MenuImportError } from '../pizza/menu-import';
 import {
@@ -8,7 +8,7 @@ import {
   type QuickButtonRow,
   saveQuickButton,
 } from '../pizza/quick-buttons';
-import { requirePermission } from '../services/authorization';
+import { requireAnyPermission, requirePermission } from '../services/authorization';
 import { MenuError, parseMenuFile } from '../../shared/pizza/menu';
 
 const router = Router();
@@ -62,7 +62,13 @@ function fail(res: Response, error: unknown): void {
 const mayKeepButton = (customerId: unknown) =>
   requirePermission(customerId ? 'orders.create' : 'catalog.manage');
 
-router.get('/quick-buttons', requirePermission('catalog.view'), (req: Request, res: Response) => {
+/** The shop's buttons are part of the menu; a customer's say what that customer orders. */
+const mayReadButtons: RequestHandler = (req, res, next) =>
+  requirePermission('catalog.view')(req, res, () =>
+    req.query.customer_id ? requirePermission('orders.create')(req, res, next) : next(),
+  );
+
+router.get('/quick-buttons', mayReadButtons, (req: Request, res: Response) => {
   try {
     const { customer_id: customerId } = req.query;
     res.json({
@@ -86,15 +92,20 @@ router.post('/quick-buttons', (req: Request, res: Response) =>
   }),
 );
 
-/** Runs `change` on the stored button when there is one and the user may keep it. */
+/**
+ * Runs `change` on the stored button when there is one and the user may keep it. Someone who may
+ * keep neither kind is refused before the lookup, so the answer does not say whether an id exists.
+ */
 function withStoredButton(req: Request, res: Response, change: (row: QuickButtonRow) => void) {
-  try {
-    const row = findQuickButton(getDatabase(), String(req.params.id));
-    if (!row) return res.status(404).json({ error: 'That button is no longer saved' });
-    mayKeepButton(row.customer_id)(req, res, () => change(row));
-  } catch (error) {
-    fail(res, error);
-  }
+  requireAnyPermission('orders.create', 'catalog.manage')(req, res, () => {
+    try {
+      const row = findQuickButton(getDatabase(), String(req.params.id));
+      if (!row) return res.status(404).json({ error: 'That button is no longer saved' });
+      mayKeepButton(row.customer_id)(req, res, () => change(row));
+    } catch (error) {
+      fail(res, error);
+    }
+  });
 }
 
 router.put('/quick-buttons/:id', (req: Request, res: Response) =>

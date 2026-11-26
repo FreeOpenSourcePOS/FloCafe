@@ -56,6 +56,7 @@ void runCases('Pizza headless kit: unit files', [
         'service: working directory',
       );
       assertIncludesOrThrow(service, 'Restart=on-failure\n', 'service: restarts on failure');
+      assertIncludesOrThrow(service, 'UMask=0077\n', 'service: files are private to the owner');
       assertIncludesOrThrow(
         service,
         'WantedBy=default.target\n',
@@ -74,12 +75,27 @@ void runCases('Pizza headless kit: unit files', [
         'backup: absolute Node runs backup.cjs',
       );
       assertIncludesOrThrow(backupService, 'Type=oneshot\n', 'backup: one-shot');
+      assertIncludesOrThrow(
+        backupService,
+        'UMask=0077\n',
+        'backup: files are private to the owner',
+      );
 
       const timer = read(path.join(unitDir, 'pizza-pos-backup.timer'));
       assertIncludesOrThrow(timer, 'OnCalendar=daily\n', 'timer: daily');
       assertIncludesOrThrow(timer, 'Persistent=true\n', 'timer: catches up a missed run');
       assertIncludesOrThrow(timer, 'Unit=pizza-pos-backup.service\n', 'timer: runs the backup');
       assertIncludesOrThrow(timer, 'WantedBy=timers.target\n', 'timer: enabled with timers');
+    },
+  ],
+  [
+    'install.sh closes the data folder to other accounts',
+    async () => {
+      assertIncludesOrThrow(
+        fs.readFileSync(path.join(kitDir, 'install.sh'), 'utf8'),
+        'chmod 700 "$FLO_DEV_USER_DATA"\n',
+        'install.sh: data folder mode 700',
+      );
     },
   ],
   [

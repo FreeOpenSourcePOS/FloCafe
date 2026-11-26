@@ -846,6 +846,35 @@ async function main() {
       assertEqualOrThrow(load(menu).untaxed, false, 'the menu is still taxed');
       same(lines('products', 'DISTINCT tax_category_id'), ['food'], 'every product carries food');
     });
+
+    await testCase('15. The largest menu the parser accepts, 200 pizzas in 12 sizes, loads', () => {
+      const menu = sampleMenu();
+      menu.categories[0].items = Array.from({ length: 200 }, (_, index) => ({
+        ...pizzas(menu)[1],
+        id: `pizza-${index}`,
+        number: index + 1,
+        name: `Pizza ${index + 1}`,
+      }));
+      sizes(menu).push(
+        ...Array.from({ length: 9 }, (_, index) => ({
+          id: `size-${index}`,
+          label: `Size ${index}`,
+          price: 30 + index,
+        })),
+      );
+      load(menu);
+      same(
+        lines('products', 'COUNT(*)', "id LIKE 'pz-pizza-%' AND is_active = 1"),
+        ['200'],
+        'every pizza is a product on sale',
+      );
+      same(
+        lines('product_variants', 'COUNT(*)', "product_id LIKE 'pz-pizza-%' AND is_active = 1"),
+        ['2400'],
+        'each in every size',
+      );
+      assertEqualOrThrow(load(menu).unchanged > 2600, true, 'and loading it again changes nothing');
+    });
   } finally {
     server.close();
     closeDatabase();

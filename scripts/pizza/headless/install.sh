@@ -12,6 +12,7 @@ unit_dir="$config_home/systemd/user"
 
 node "$kit/write-units.cjs" "$env_file" "$unit_dir"
 mkdir -p "$FLO_DEV_USER_DATA"
+chmod 700 "$FLO_DEV_USER_DATA"
 (cd "$repo" && npm run build && npm run build:frontend)
 
 systemctl --user daemon-reload

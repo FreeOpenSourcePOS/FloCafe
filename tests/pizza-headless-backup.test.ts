@@ -26,6 +26,8 @@ const insertCategory = (db: Database.Database, id: string) =>
     )
     .run(id, id);
 
+const modeOf = (file: string) => (fs.statSync(file).mode & 0o777).toString(8);
+
 void runCases('Pizza headless kit: online backup and retention', [
   [
     'a backup taken while the server runs and writes is healthy and holds the last row',
@@ -64,6 +66,8 @@ void runCases('Pizza headless kit: online backup and retention', [
           path.dirname(copyPath) === backupDir(env) && fs.existsSync(copyPath),
           `backup file exists in the backup folder: ${copyPath}`,
         );
+        assertEqualOrThrow(modeOf(backupDir(env)), '700', 'the backup folder is owner-only');
+        assertEqualOrThrow(modeOf(copyPath), '600', 'the backup file is owner-only');
         assertOrThrow(
           appDb().isHealthyDatabaseFile(copyPath),
           'the copy passes the app health predicate',
@@ -137,6 +141,7 @@ void runCases('Pizza headless kit: online backup and retention', [
         }
         const kept = fs.readdirSync(dir).sort();
         console.log(`  kept: ${kept.join(', ')}`);
+        assertEqualOrThrow(modeOf(dir), '700', 'a folder from an earlier version is closed');
         assertEqualOrThrow(
           JSON.stringify(kept),
           JSON.stringify([...spared, ...made.slice(-2)].sort()),

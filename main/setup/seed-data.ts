@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { getDatabase, now } from '../db';
 import { RegionalNotConfiguredError } from '../countries';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { seedPizzaShop } from '../pizza/setup-profile';
 
 function dialCodeFor(country: string | undefined): string {
   if (!country) return '+1';
@@ -2429,5 +2430,7 @@ export function seedSetupProfile(
     seedExpressRestaurant(db, serviceModel, language);
   } else if (profile === 'demo') {
     seedDemoRestaurant(db, serviceModel, language, country);
+  } else if (profile === 'pizza') {
+    seedPizzaShop(db);
   }
 }

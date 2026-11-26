@@ -578,7 +578,9 @@ entry. Each registry entry carries the BCP-47 locale tag, the native name, the t
 
 [`loader.ts`](../../frontend/src/lib/i18n/loader.ts) imports English statically and seeds the cache
 with it, then loads every other locale through its dynamic import. In-flight requests are
-deduplicated, and an unregistered locale key falls back to English.
+deduplicated, and an unregistered locale key falls back to English. It adds the English-only pizza
+strings to every catalogue as the `pizza` namespace; see
+[internationalization](internationalization.md#english-only-pizza-strings).
 [`I18nProvider`](../../frontend/src/components/providers/I18nProvider.tsx) wraps the tree in
 `use-intl`'s provider, holds the last language that actually loaded, and reverts the store to it
 when a later load fails, so a broken chunk leaves the screen in the language it had rather than in

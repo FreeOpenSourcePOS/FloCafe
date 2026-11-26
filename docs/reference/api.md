@@ -183,6 +183,19 @@ Router: `main/routes/auth.ts`. Full path: `/api/auth`.
 | `POST` | `/setup/initialize`                    | any authenticated role                                                                  | body: `name`, `password`, `business_type`, `setup_profile`, `service_model`, `language`, `business_name`, `country`, `currency`, `currency_symbol`, `timezone`, `business_address`, `business_phone`, `tax_registration_number`, `state_code`, `tax_registered`, `billing_type`, `terms_accepted`, `master_pin`, `owner_approval_pin`, `owner_approval_pin_confirmation`, `cloud_server_url`, `email_product_updates`, `email_marketing` | Creates the first owner. Refuses once any user exists.                                                                                                                                                                                                                                           |
 | `POST` | `/setup/seed`                          | any authenticated role                                                                  | none                                                                                                                                                                                                                                                                                                                                                                                                                                     | Always `410`; directs the caller to `/api/auth/setup/initialize`.                                                                                                                                                                                                                                |
 
+`setup_profile` on `/setup/initialize` chooses what is seeded after the owner and the store settings are written, in the same transaction: `empty` seeds nothing, `express` (the default) a starter menu, `demo` sample data for training, and `pizza` a counter-service pizza shop with no menu. Any other value is a `400`. The `pizza` profile (`seedPizzaShop()` in `main/pizza/setup-profile.ts`) writes these settings and installs the British Columbia tax configuration described in [taxation](../architecture/taxation.md#the-pizza-setup-profile):
+
+| Setting | Value |
+| --- | --- |
+| `service_model`, `tables_required`, `billing_type` | `qsr`, `false`, `prepaid`, whatever `service_model` and `billing_type` the request carries |
+| `kds_enabled`, `server_app_enabled` | `false` |
+| `auto_print_kot` | `true` |
+| `cash_drawer_pulse_enabled`, `cash_drawer_pulse_methods` | `true`, `["cash"]` |
+| `kot_show_customer_contact` | `true` |
+| `taxes_enabled` | `true` |
+
+It seeds no products, printers, kitchen stations, or permission overrides, and it does not write `offline_mode`. Country, currency, and timezone come from the request for every profile. The `pizza` profile is refused with a `400`, and nothing is written, unless `country` is `CA` and `state_code` is absent or `BC`.
+
 ### Categories
 
 Router: `main/routes/categories.ts`. Full path: `/api/categories`.

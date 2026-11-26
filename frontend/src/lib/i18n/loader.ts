@@ -1,4 +1,5 @@
 import en from './messages/en.json';
+import pizza from './messages-pizza/en.json';
 import { LANGUAGES, type Language } from './languages';
 
 export type Messages = Record<string, unknown>;
@@ -8,7 +9,7 @@ export type Messages = Record<string, unknown>;
 const messageCache = new Map<Language, Messages>();
 const inFlightPromises = new Map<Language, Promise<Messages>>();
 
-messageCache.set('en', en as Messages);
+messageCache.set('en', { ...en, pizza } as Messages);
 
 /** Synchronously cached messages for a language (undefined until loaded). */
 export function getCachedMessages(lang: Language): Messages | undefined {
@@ -31,7 +32,7 @@ export function loadLocaleMessages(lang: Language): Promise<Messages> {
 
   const config = LANGUAGES[lang] ?? LANGUAGES.en;
   const promise = (config.load ? config.load() : Promise.resolve({ default: en })).then((mod) => {
-    const messages = (mod.default ?? mod) as Messages;
+    const messages = { ...(mod.default ?? mod), pizza } as Messages;
     messageCache.set(lang, messages);
     inFlightPromises.delete(lang);
     return messages;

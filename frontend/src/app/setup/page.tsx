@@ -17,6 +17,7 @@ import {
   Cloud,
   Database,
   KeyRound,
+  Pizza,
   Search,
   Sparkles,
   UtensilsCrossed,
@@ -40,14 +41,18 @@ import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 import { useConfirm } from '@/hooks/use-confirm';
 import { RESTORE_FROM_FILE_EVENT } from '@/components/layout/MenuActionHandler';
 
-type SetupProfile = 'empty' | 'express' | 'demo';
+type SetupProfile = 'empty' | 'express' | 'demo' | 'pizza';
 type ServiceModel = 'qsr' | 'finedine';
 
 const SETUP_PROFILES: Array<{ value: SetupProfile; badge?: 'express' | null }> = [
   { value: 'empty' },
   { value: 'express', badge: 'express' },
   { value: 'demo' },
+  { value: 'pizza' },
 ];
+
+// What choosing the pizza profile pre-fills; the owner can change each of them in step 1.
+const PIZZA_SHOP_REGION = { country: 'CA', currency: 'CAD', timezone: 'America/Vancouver' };
 
 const SERVICE_MODELS: Array<{ value: ServiceModel }> = [{ value: 'qsr' }, { value: 'finedine' }];
 
@@ -58,7 +63,10 @@ const SETUP_PROFILE_KEYS = {
   empty: { label: 'emptyLabel', desc: 'emptyDesc', details: 'emptyDetails' },
   express: { label: 'expressLabel', desc: 'expressDesc', details: 'expressDetails' },
   demo: { label: 'demoLabel', desc: 'demoDesc', details: 'demoDetails' },
-} as const satisfies Record<SetupProfile, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
+} as const satisfies Record<
+  Exclude<SetupProfile, 'pizza'>,
+  { label: SetupKey; desc: SetupKey; details: SetupKey }
+>;
 
 const SERVICE_MODEL_KEYS = {
   qsr: { label: 'qsrLabel', desc: 'qsrDesc', details: 'qsrDetails' },
@@ -102,6 +110,7 @@ export default function SetupPage() {
   const [showConfirmApprovalPin, setShowConfirmApprovalPin] = useState(false);
   const [profile, setProfile] = useState<SetupProfile>('express');
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
+  const [currencyResetPending, setCurrencyResetPending] = useState(false);
   // Wizard language follows shared store to update translations immediately.
   const language = usePosSettingsStore((s) => s.language);
   const setStoreLanguage = usePosSettingsStore((s) => s.setLanguage);
@@ -150,6 +159,7 @@ export default function SetupPage() {
   const isPasswordValid = validatePassword;
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
   const t = useTranslations('setup');
+  const tPizza = useTranslations('pizza');
   const tAnalytics = useTranslations('productAnalytics');
   const tSettings = useTranslations('settings');
   const tRestore = useTranslations('restore');
@@ -182,6 +192,7 @@ export default function SetupPage() {
             setCurrency(String(data.currencyReset.currency || ''));
             setTimezone(String(data.currencyReset.timezone || ''));
             setProfile('empty');
+            setCurrencyResetPending(true);
           }
           // Redirect to login if setup was already completed.
           if (!data.needsSetup) {
@@ -211,6 +222,24 @@ export default function SetupPage() {
     // One-time mount check — the toast uses the initial language selection.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The pizza profile is counter service, so it is the only service model offered with it.
+  const serviceModels = SERVICE_MODELS.filter(
+    (item) => profile !== 'pizza' || item.value === 'qsr',
+  );
+  // After a currency reset the server seeds nothing, so the pizza profile is not offered.
+  const setupProfiles = SETUP_PROFILES.filter(
+    (item) => item.value !== 'pizza' || !currencyResetPending,
+  );
+  const chooseProfile = (next: SetupProfile) => {
+    if (next === 'pizza' && profile !== 'pizza') {
+      setCountry(PIZZA_SHOP_REGION.country);
+      setCurrency(PIZZA_SHOP_REGION.currency);
+      setTimezone(PIZZA_SHOP_REGION.timezone);
+      setServiceModel('qsr');
+    }
+    setProfile(next);
+  };
 
   const restoreInFlightRef = useRef(false);
   const initInFlightRef = useRef(false);
@@ -321,6 +350,11 @@ export default function SetupPage() {
     if (!country) {
       toast.error(t('chooseCountryRequired'));
       setStep(1);
+      return;
+    }
+    if (profile === 'pizza' && country !== PIZZA_SHOP_REGION.country) {
+      toast.error(tPizza('setupProfileNeedsCanada'));
+      setStep(4);
       return;
     }
     if (!validateOwner()) {
@@ -1056,18 +1090,21 @@ export default function SetupPage() {
                 </div>
 
                 <div className="grid gap-4">
-                  {SETUP_PROFILES.map((item) => {
+                  {setupProfiles.map((item) => {
                     const selected = profile === item.value;
+                    const keys = item.value === 'pizza' ? null : SETUP_PROFILE_KEYS[item.value];
                     const Icon =
                       item.value === 'demo'
                         ? Database
                         : item.value === 'express'
                           ? Sparkles
-                          : UtensilsCrossed;
+                          : item.value === 'pizza'
+                            ? Pizza
+                            : UtensilsCrossed;
                     return (
                       <button
                         key={item.value}
-                        onClick={() => setProfile(item.value)}
+                        onClick={() => chooseProfile(item.value)}
                         className={`p-4 rounded-xl border-2 text-start transition-all ${
                           selected
                             ? 'border-primary bg-primary/5'
@@ -1081,7 +1118,7 @@ export default function SetupPage() {
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-semibold">
-                                {t(SETUP_PROFILE_KEYS[item.value].label)}
+                                {keys ? t(keys.label) : tPizza('setupProfileLabel')}
                               </span>
                               {item.badge && (
                                 <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
@@ -1090,10 +1127,10 @@ export default function SetupPage() {
                               )}
                             </div>
                             <div className="text-sm text-muted-foreground mt-1">
-                              {t(SETUP_PROFILE_KEYS[item.value].desc)}
+                              {keys ? t(keys.desc) : tPizza('setupProfileDesc')}
                             </div>
                             <div className="text-xs text-muted-foreground mt-2">
-                              {t(SETUP_PROFILE_KEYS[item.value].details)}
+                              {keys ? t(keys.details) : tPizza('setupProfileDetails')}
                             </div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary" />}
@@ -1183,7 +1220,7 @@ export default function SetupPage() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  {SERVICE_MODELS.map((item) => {
+                  {serviceModels.map((item) => {
                     const selected = serviceModel === item.value;
                     return (
                       <button

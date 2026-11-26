@@ -1402,6 +1402,143 @@ function buildManualPack(body: any, country: string, currency: string): CountryP
   };
 }
 
+/** Builds, installs and activates a manual tax configuration. Saves nothing when it fails validation. */
+export function saveManualConfig(
+  body: unknown,
+  country: string,
+  currency: string,
+  actorId: string | null,
+  replacedOfficialPackId: string | null = null,
+) {
+  const db = getDatabase();
+  const pack = buildManualPack(body, country, currency);
+  const packJson = JSON.stringify(pack);
+  const digest = createHash('sha256').update(packJson, 'utf8').digest('hex');
+  const installedAt = now();
+  const versionId = `${pack.id}@${pack.version}`;
+  const version: VersionRow = {
+    id: versionId,
+    pack_id: pack.id,
+    version: pack.version,
+    schema_version: 1,
+    manifest_json: JSON.stringify({
+      id: pack.id,
+      publisher: 'local',
+      country,
+      jurisdiction: '*',
+      version: pack.version,
+      publishedAt: pack.publishedAt,
+    }),
+    pack_json: packJson,
+    digest,
+    signature: null,
+    effective_from: pack.effectiveFrom,
+    effective_to: null,
+    min_flo_version: pack.minFloVersion,
+    published_at: pack.publishedAt,
+    status: 'installed',
+    created_at: installedAt,
+  };
+  const validation = validationChecklist(version);
+  let remapped: Array<{ entity: string; count: number }> = [];
+  if (!validation.valid) return { pack, versionId, validation, remapped };
+
+  withTxn(() => {
+    const existingPackRow = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(pack.id) as
+      | PackRow
+      | undefined;
+    if (!existingPackRow) {
+      db.prepare(`
+      INSERT INTO country_packs (id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at)
+      VALUES (?, 'local', ?, '*', NULL, 'installed', ?, ?)
+    `).run(pack.id, country, installedAt, installedAt);
+    } else {
+      db.prepare('UPDATE country_packs SET updated_at = ? WHERE id = ?').run(installedAt, pack.id);
+    }
+    persistPackArtifacts(version, pack, installedAt);
+
+    const packRow = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(pack.id) as PackRow;
+    activateInstalledPack(packRow, version, actorId);
+
+    // Reassign products and add-ons pointing to removed/renamed categories to the new default.
+    const categoryIds = pack.categories.map((category) => category.id);
+    const placeholders = categoryIds.map(() => '?').join(',');
+    const staleProducts = db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM products WHERE deleted_at IS NULL AND tax_category_id IS NOT NULL AND tax_category_id NOT IN (${placeholders})`,
+      )
+      .get(...categoryIds) as { total: number };
+    const staleAddons = db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM addons WHERE tax_category_id IS NOT NULL AND tax_category_id NOT IN (${placeholders})`,
+      )
+      .get(...categoryIds) as { total: number };
+    db.prepare(
+      `UPDATE products SET tax_category_id = ?, updated_at = ? WHERE deleted_at IS NULL AND (tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders}))`,
+    ).run(pack.defaultCategories.product, installedAt, ...categoryIds);
+    db.prepare(
+      `UPDATE addons SET tax_category_id = ? WHERE tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders})`,
+    ).run(pack.defaultCategories.addon, ...categoryIds);
+
+    // Reassign merchant overrides referencing removed categories to the new defaults.
+    const overrideDefaultByEntity: Record<OverrideEntityType, string> = {
+      product: pack.defaultCategories.product,
+      addon: pack.defaultCategories.addon,
+      packaging: pack.defaultCategories.packaging,
+      delivery: pack.defaultCategories.delivery,
+      service_charge: pack.defaultCategories.service_charge,
+    };
+    const overrideRows = db
+      .prepare(
+        `SELECT id, entity_type, value_json FROM tax_overrides WHERE pack_version_id = ? AND field_name = 'tax_category_id'`,
+      )
+      .all(versionId) as Array<{
+      id: string;
+      entity_type: OverrideEntityType;
+      value_json: string;
+    }>;
+    const updateOverrideStmt = db.prepare(
+      `UPDATE tax_overrides SET value_json = ?, updated_at = ? WHERE id = ?`,
+    );
+    const overrideRemapCounts = new Map<OverrideEntityType, number>();
+    for (const override of overrideRows) {
+      const currentCategoryId = parseJson<{ categoryId?: string }>(
+        override.value_json,
+        {},
+      ).categoryId;
+      if (currentCategoryId && categoryIds.includes(currentCategoryId)) continue;
+      const fallbackCategoryId = overrideDefaultByEntity[override.entity_type];
+      updateOverrideStmt.run(
+        JSON.stringify({ categoryId: fallbackCategoryId }),
+        installedAt,
+        override.id,
+      );
+      overrideRemapCounts.set(
+        override.entity_type,
+        (overrideRemapCounts.get(override.entity_type) || 0) + 1,
+      );
+    }
+
+    remapped = [
+      ...(staleProducts.total > 0 ? [{ entity: 'product', count: staleProducts.total }] : []),
+      ...(staleAddons.total > 0 ? [{ entity: 'addon', count: staleAddons.total }] : []),
+      ...Array.from(overrideRemapCounts.entries()).map(([entityType, count]) => ({
+        entity: `${entityType}_override`,
+        count,
+      })),
+    ];
+    if (remapped.length > 0) {
+      audit('remap_categories', actorId, pack.id, versionId, null, { remapped });
+    }
+    audit('save_manual_config', actorId, pack.id, versionId, null, {
+      replacedOfficialPackId,
+      categoryCount: pack.categories.length,
+      ruleCount: pack.rules.length,
+    });
+  });
+  return { pack, versionId, validation, remapped };
+}
+
 router.post(
   '/manual-config',
   requirePermission('tax-packs.manage'),
@@ -1427,141 +1564,18 @@ router.post(
           can_override: true,
         });
       }
-
-      const pack = buildManualPack(req.body, country, currency);
-      const packJson = JSON.stringify(pack);
-      const digest = createHash('sha256').update(packJson, 'utf8').digest('hex');
-      const installedAt = now();
-      const versionId = `${pack.id}@${pack.version}`;
-      const version: VersionRow = {
-        id: versionId,
-        pack_id: pack.id,
-        version: pack.version,
-        schema_version: 1,
-        manifest_json: JSON.stringify({
-          id: pack.id,
-          publisher: 'local',
-          country,
-          jurisdiction: '*',
-          version: pack.version,
-          publishedAt: pack.publishedAt,
-        }),
-        pack_json: packJson,
-        digest,
-        signature: null,
-        effective_from: pack.effectiveFrom,
-        effective_to: null,
-        min_flo_version: pack.minFloVersion,
-        published_at: pack.publishedAt,
-        status: 'installed',
-        created_at: installedAt,
-      };
-      const validation = validationChecklist(version);
+      const { pack, versionId, validation, remapped } = saveManualConfig(
+        req.body,
+        country,
+        currency,
+        actorUserId(req),
+        replacesOfficial ? activeForCountry!.id : null,
+      );
       if (!validation.valid) {
         return res
           .status(400)
           .json({ error: 'Manual tax configuration failed validation', validation });
       }
-
-      let remapped: Array<{ entity: string; count: number }> = [];
-      withTxn(() => {
-        const existingPackRow = db
-          .prepare('SELECT * FROM country_packs WHERE id = ?')
-          .get(pack.id) as PackRow | undefined;
-        if (!existingPackRow) {
-          db.prepare(`
-          INSERT INTO country_packs (id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at)
-          VALUES (?, 'local', ?, '*', NULL, 'installed', ?, ?)
-        `).run(pack.id, country, installedAt, installedAt);
-        } else {
-          db.prepare('UPDATE country_packs SET updated_at = ? WHERE id = ?').run(
-            installedAt,
-            pack.id,
-          );
-        }
-        persistPackArtifacts(version, pack, installedAt);
-
-        const packRow = db
-          .prepare('SELECT * FROM country_packs WHERE id = ?')
-          .get(pack.id) as PackRow;
-        activateInstalledPack(packRow, version, actorUserId(req));
-
-        // Reassign products and add-ons pointing to removed/renamed categories to the new default.
-        const categoryIds = pack.categories.map((category) => category.id);
-        const placeholders = categoryIds.map(() => '?').join(',');
-        const staleProducts = db
-          .prepare(
-            `SELECT COUNT(*) AS total FROM products WHERE deleted_at IS NULL AND tax_category_id IS NOT NULL AND tax_category_id NOT IN (${placeholders})`,
-          )
-          .get(...categoryIds) as { total: number };
-        const staleAddons = db
-          .prepare(
-            `SELECT COUNT(*) AS total FROM addons WHERE tax_category_id IS NOT NULL AND tax_category_id NOT IN (${placeholders})`,
-          )
-          .get(...categoryIds) as { total: number };
-        db.prepare(
-          `UPDATE products SET tax_category_id = ?, updated_at = ? WHERE deleted_at IS NULL AND (tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders}))`,
-        ).run(pack.defaultCategories.product, installedAt, ...categoryIds);
-        db.prepare(
-          `UPDATE addons SET tax_category_id = ? WHERE tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders})`,
-        ).run(pack.defaultCategories.addon, ...categoryIds);
-
-        // Reassign merchant overrides referencing removed categories to the new defaults.
-        const overrideDefaultByEntity: Record<OverrideEntityType, string> = {
-          product: pack.defaultCategories.product,
-          addon: pack.defaultCategories.addon,
-          packaging: pack.defaultCategories.packaging,
-          delivery: pack.defaultCategories.delivery,
-          service_charge: pack.defaultCategories.service_charge,
-        };
-        const overrideRows = db
-          .prepare(
-            `SELECT id, entity_type, value_json FROM tax_overrides WHERE pack_version_id = ? AND field_name = 'tax_category_id'`,
-          )
-          .all(versionId) as Array<{
-          id: string;
-          entity_type: OverrideEntityType;
-          value_json: string;
-        }>;
-        const updateOverrideStmt = db.prepare(
-          `UPDATE tax_overrides SET value_json = ?, updated_at = ? WHERE id = ?`,
-        );
-        const overrideRemapCounts = new Map<OverrideEntityType, number>();
-        for (const override of overrideRows) {
-          const currentCategoryId = parseJson<{ categoryId?: string }>(
-            override.value_json,
-            {},
-          ).categoryId;
-          if (currentCategoryId && categoryIds.includes(currentCategoryId)) continue;
-          const fallbackCategoryId = overrideDefaultByEntity[override.entity_type];
-          updateOverrideStmt.run(
-            JSON.stringify({ categoryId: fallbackCategoryId }),
-            installedAt,
-            override.id,
-          );
-          overrideRemapCounts.set(
-            override.entity_type,
-            (overrideRemapCounts.get(override.entity_type) || 0) + 1,
-          );
-        }
-
-        remapped = [
-          ...(staleProducts.total > 0 ? [{ entity: 'product', count: staleProducts.total }] : []),
-          ...(staleAddons.total > 0 ? [{ entity: 'addon', count: staleAddons.total }] : []),
-          ...Array.from(overrideRemapCounts.entries()).map(([entityType, count]) => ({
-            entity: `${entityType}_override`,
-            count,
-          })),
-        ];
-        if (remapped.length > 0) {
-          audit('remap_categories', actorUserId(req), pack.id, versionId, null, { remapped });
-        }
-        audit('save_manual_config', actorUserId(req), pack.id, versionId, null, {
-          replacedOfficialPackId: replacesOfficial ? activeForCountry!.id : null,
-          categoryCount: pack.categories.length,
-          ruleCount: pack.rules.length,
-        });
-      });
 
       upsertSettings({ taxes_enabled: 'true' });
       return res.json({

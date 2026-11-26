@@ -41,6 +41,13 @@ the fix for a wrong rendering is the country profile, which corrects every store
 **No default country.** The resolver reads the store's country and has no fallback. A store without a
 resolvable country cannot produce a snapshot.
 
+A setup profile cannot choose the region either: `POST /api/auth/setup/initialize` takes country,
+currency, and timezone from the request for every profile. The setup wizard's Pizza shop card fills
+in Canada, `CAD`, and `America/Vancouver` when the owner picks it, in the wizard's own state. The
+owner can change the currency and timezone in the wizard's first step before finishing, and the
+request carries whatever the wizard holds. The profile configures British Columbia tax, so the
+wizard and the setup route both refuse it for a country other than Canada.
+
 **No per-store override of a derived value.** Symbol, position, fraction digits, and separators
 come from the country profile and the currency, never from a store setting.
 

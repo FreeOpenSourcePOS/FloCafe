@@ -131,7 +131,7 @@ Pizza strings live in `frontend/src/lib/i18n/messages-pizza/en.json` and are mer
 
 **Checked.** On `spike/pizza-ui`: pizza keys render under German, Arabic and Traditional Chinese next to translated core strings; the frontend typecheck passes and a misspelled key fails it; the loader suites `phase6-locale-loading`, `kot-locale-cold-start` and `decoupled-ui-locale` still pass.
 
-**One upstream test changes.** `tests/translations.test.ts` check 7a requires every literal `t()` key to exist in the 32 language files, so it fails on pizza keys. Four added lines (at `tests/translations.test.ts:3206`) add the pizza file's keys to the known set; `npm run i18n:check` then passes. Parity and the identical-to-English checks for the 32 languages are untouched.
+**Two upstream tests change.** Two tests scan the frontend for literal `t()` keys and fail on pizza keys: check 7a of `tests/translations.test.ts`, which wants each key in the 32 language files, and step 4 of `tests/e2e-argentina-flow.test.ts`, which wants it in `en.json`. Each gets the pizza file's keys added to its known set (four lines at `tests/translations.test.ts:3206`, two lines in `runArgentinaTranslations`); `npm run i18n:check` and `npm run test:e2e-argentina-flow` then pass. The second file was not formatted, and the changed-file format gate checks a touched file whole, so it is also formatted. Parity and the identical-to-English checks for the 32 languages are untouched.
 
 **Must not miss:** the pizza file gets no message-syntax, duplicate-key or placeholder checks from upstream's test, so `pizza-i18n` adds them.
 
@@ -143,16 +143,24 @@ A new profile `pizza` next to `empty`, `express` and `demo` (`main/routes/auth.t
 
 | Setting | Value | Why |
 | :--- | :--- | :--- |
-| `service_model` | `qsr` | Counter service; also sets `tables_required=false` (`auth.ts:1857`) |
+| `service_model`, `tables_required`, `billing_type` | `qsr`, `false`, `prepaid` | Counter service. The profile writes all three itself, whatever the request carries |
 | `kds_enabled`, `server_app_enabled` | owner's choice, default off | Hides the kitchen display and waiter app |
 | `auto_print_kot` | `true` | Default is `false` (`main/routes/settings.ts:182`) |
 | `cash_drawer_pulse_enabled`, `cash_drawer_pulse_methods` | `true`, `["cash"]` | The default method list includes card |
+| `kot_show_customer_contact` | `true` | Kitchen tickets print the customer's contact details |
 | `taxes_enabled` | `true` | Default is `false` (`main/db.ts:11240`) |
-| Kitchen printer `text_size` | `large` | Whole-ticket size; there is no per-field size |
 
-A profile cannot choose the region: country, currency and time zone come from the setup request, and upstream forbids a fallback country. The pizza wizard pre-fills Canada, CAD and `America/Vancouver`.
+The profile seeds no menu, printers, kitchen stations or permission overrides.
 
-Category colours are stored as names (`red`, `orange`), not hex; upstream's own seeds store hex and those show uncoloured (`ProductGrid.tsx:153-287`). Dashboard, Inventory, Expenses and Staff are hidden only by permissions, so the profile seeds `role_permission_overrides` rows for the entries the shop does not use.
+A profile cannot choose the region: country, currency and time zone come from the setup request, and upstream forbids a fallback country. The pizza wizard pre-fills Canada, CAD and `America/Vancouver`. The wizard asks for the region at step 1 and the profile at step 4, so choosing the pizza card overwrites the country, currency and time zone the owner picked at step 1; the owner goes back to step 1 to change the currency or time zone.
+
+The tax is British Columbia's, so the setup route refuses the profile with a 400 unless the country is `CA` and `state_code` is absent or `BC`, and writes nothing. The wizard has no province field. It shows one generic error for any refusal from the setup route, so it checks the country itself before sending and says what to change.
+
+Wizard edge cases, left as they are: switching from the pizza card to another card keeps Canada, CAD, `America/Vancouver` and counter service; the pizza card is not offered on an install that is finishing a currency reset, where the server seeds nothing.
+
+The tax category ids come from the labels: `Food` gives `food` and `Soda` gives `soda`, held in `tax_categories.category_id` and in `products.tax_category_id`. They change if the owner renames a category in Settings. The pack names `food` (GST only) as the default category for products and for packaging, delivery and service charges. The product screen pre-selects it, so a soda added by hand is GST only until its category is changed. A charge is taxed only once the owner gives it a tax category in Settings; the profile does not, so charges are untaxed until then.
+
+Category colours are stored as names (`red`, `orange`), not hex; upstream's own seeds store hex and those show uncoloured (`ProductGrid.tsx:153-287`).
 
 ## D9. The menu site
 
@@ -176,7 +184,7 @@ Tests in `tests/` cannot resolve `react` or `use-intl` by bare name, because the
 
 FloCafe's engine gives each line one tax category; a category lists the rules that apply to it (`docs/architecture/taxation.md:31-53`, `main/services/tax-engine.ts:265-290`). BC fits as category `food` with rule GST 5%, and category `soda` with rules GST 5% and PST 7%.
 
-A new tax pack file does nothing by itself: only `generic.json` is bundled (`main/tax-packs/bundled.ts:4-6`), the community packs are reference data, and the catalogue accepts only signed releases. The pizza profile uses the code behind `POST /api/tax-packs/manual-config` (`main/routes/tax-packs.ts:1262-1402`) with `inclusive: false`, because that path defaults to tax-inclusive prices and Canada needs exclusive.
+A new tax pack file does nothing by itself: only `generic.json` is bundled (`main/tax-packs/bundled.ts:4-6`), the community packs are reference data, and the catalogue accepts only signed releases. The pizza profile calls `saveManualConfig()`, the function behind `POST /api/tax-packs/manual-config` (`main/routes/tax-packs.ts`), with `inclusive: false`, because that path defaults to tax-inclusive prices and Canada needs exclusive.
 
 Reports merge tax lines by label and rate (`main/services/tax-components.ts:124`), so both GST lines carry the same label.
 

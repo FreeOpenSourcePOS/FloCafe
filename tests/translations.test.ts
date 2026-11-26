@@ -3203,6 +3203,10 @@ async function run(): Promise<void> {
   // 7a. Every literal t('...') key used in the frontend is defined.
   const union = new Set<string>();
   for (const s of sets.values()) for (const k of s) union.add(k);
+  const pizzaEn = JSON.parse(
+    fs.readFileSync(path.join(I18N_DIR, '../messages-pizza/en.json'), 'utf8'),
+  );
+  for (const k of Object.keys(flattenLeaves({ pizza: pizzaEn }))) union.add(k);
   const called = collectCalledKeys();
   const undefinedKeys = [...called].filter((k) => !union.has(k));
   if (undefinedKeys.length) {

@@ -18,6 +18,20 @@ completeness, and frontend key safety.
 The 32 committed catalogues are: `ar`, `bn`, `de`, `en`, `es`, `fa`, `fil`, `fr`, `ha`, `hi`, `id`,
 `it`, `ja`, `jv`, `ko`, `mr`, `ne`, `nl`, `pa`, `pt`, `ru`, `sq`, `sw`, `ta`, `te`, `th`, `tr`, `uk`, `ur`, `vi`, `zh`, `zh-tw`.
 
+## English-only pizza strings
+
+The pizza screens keep their text outside the 32 catalogues, in
+`frontend/src/lib/i18n/messages-pizza/en.json`. The loader merges that file into every language's
+messages as the `pizza` namespace, so `useTranslations('pizza')` returns the English text whichever
+language is active, next to translated core strings. The parity rule does not apply to it: no
+catalogue under `messages/` has a `pizza` namespace, and a pizza string is never added to one.
+
+`messages.d.ts` types the namespace from the pizza file, so a misspelled pizza key is a TypeScript
+error like any other. `tests/translations.test.ts` reads the file only to count its keys as defined
+when it checks the literal `t()` calls in the frontend. Its other checks cover the 32 catalogues, so
+`tests/pizza-i18n.test.ts` checks the pizza file itself: every string parses as ICU, no key is
+repeated inside one object, and a pizza key resolves under two non-English languages.
+
 ## The registry
 
 `frontend/src/lib/i18n/languages.ts` exports `LANGUAGES`, the single source for everything about a
@@ -57,6 +71,8 @@ layout code.
 
 - English is imported statically at module load and pre-seeded into the cache, so a cold boot always
   has a complete catalogue and never waits on the network.
+- The pizza strings file is imported statically too and added to every catalogue, English included,
+  as the `pizza` namespace when the catalogue enters the cache.
 - Every other language is a dynamic import, one chunk per catalogue, declared by the registry's
   `load` function.
 - Concurrent requests for the same language are deduplicated. The second caller receives the same
@@ -109,8 +125,9 @@ every locale, that each message parses as valid ICU and that argument names and 
 drops a plural branch fails the check.
 
 Key safety is compile-time. `frontend/src/lib/i18n/messages.d.ts` augments `use-intl`'s `AppConfig`
-with `Messages = typeof en` and `Locale`, so a `t()` call with a key that does not exist in
-`en.json`, or an argument set that does not match, is a TypeScript error. `npm run i18n:check` runs
+with `Messages = typeof en & { pizza: typeof pizza }` and `Locale`, so a `t()` call with a key that
+does not exist in `en.json` or in the pizza strings file, or an argument set that does not match, is
+a TypeScript error. `npm run i18n:check` runs
 `tsc --noEmit -p frontend/tsconfig.json` and therefore fails on it. The same step also type-checks
 the frontend, which is why the command reports anything it finds beyond translations.
 
@@ -180,7 +197,8 @@ representability, are in
 
 ```sh
 npm run i18n:check
+npm run test:pizza-i18n
 ```
 
-The command runs `npm run test:translations`, the print-label drift check, and the frontend
+The first command runs `npm run test:translations`, the print-label drift check, and the frontend
 TypeScript check. It is fully offline and needs no server or database.

@@ -1,0 +1,6 @@
+{
+  "setupProfileDesc": "Counter service for a pizza shop in British Columbia.",
+  "setupProfileDetails": "Sets Canada, Canadian dollars, Vancouver time, and GST and PST. Seeds no menu. Go back to the first step to change the currency or time zone.",
+  "setupProfileLabel": "Pizza shop",
+  "setupProfileNeedsCanada": "The pizza shop profile sets up British Columbia tax. Choose Canada in the first step, or pick another option here."
+}

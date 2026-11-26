@@ -10,6 +10,7 @@ import {
   type KdsOrderItem,
 } from '@/hooks/useKdsConnection';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import { RecipeLines } from '@/components/kds/pizza/RecipeLines';
 
 export interface KdsItemModalProps {
   item: KdsOrderItem;
@@ -81,6 +82,8 @@ export function KdsItemModal({
             <X size={18} />
           </button>
         </div>
+
+        <RecipeLines lines={item.recipe_lines} className="text-lg" />
 
         {item.addons && item.addons.length > 0 && (
           <div className="bg-blue-50 dark:bg-blue-950/60 border-s-4 border-blue-500 rounded-e-xl p-3">

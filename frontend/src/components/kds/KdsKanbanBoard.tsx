@@ -23,6 +23,7 @@ import { useTranslations } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import { Ltr } from '@/components/layout/Ltr';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import { RecipeLines } from '@/components/kds/pizza/RecipeLines';
 
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
@@ -297,6 +298,7 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
                   {formatItemHeading(item.product_name, item.variant_selection)}
                 </span>
               </div>
+              <RecipeLines lines={item.recipe_lines} className="ms-[26px] mt-1 text-base" />
               {item.addons && item.addons.length > 0 && (
                 <div className="ms-[26px] flex flex-wrap gap-1 mt-1.5">
                   {item.addons.map((addon, i) => (
@@ -377,6 +379,7 @@ function VoidedColumn({
                       {formatItemHeading(item.product_name, item.variant_selection)}
                     </span>
                   </div>
+                  <RecipeLines lines={item.recipe_lines} className="ms-[26px] mt-1 text-base" />
                   {item.addons && item.addons.length > 0 && (
                     <div className="ms-[26px] flex flex-wrap gap-1 mt-1.5">
                       {item.addons.map((addon, i) => (

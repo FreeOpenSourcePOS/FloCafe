@@ -110,7 +110,10 @@ Later changes to the line keep the recipe:
 - The adjustment rows a void and an item refund write copy the line's `modifier_selection`.
 
 Restricted kitchen display payloads carry a line's recipe: `projectKdsItem()` in `main/db.ts`
-projects `modifier_selection` when it holds a pizza or deal recipe and as `null` otherwise.
+projects `modifier_selection` when it holds a pizza or deal recipe and as `null` otherwise. Every
+kitchen display item that holds a recipe, restricted or not, also carries `recipe_lines`: the
+kitchen ticket's lines for it, which the display shows under the item name. See
+[Item detail lines](printing.md#item-detail-lines).
 
 ## Scheduled orders and kitchen release
 
@@ -525,4 +528,5 @@ npm run test:kds-contract                     # KDS item-to-order status reconci
 npm run test:customer-display-feed            # pickup board projection and board_status pagination
 npm run test:scheduled-orders                 # scheduled orders, DST, sweep, stock hold, prepay/refund rules
 npm run test:pizza-order-recipe               # recipe validation on create, add items, edits, void, refund
+npm run test:pizza-kds-lines                  # recipe lines on kitchen display items, every server path
 ```

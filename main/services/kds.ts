@@ -37,6 +37,7 @@ import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { hasPermission } from './authorization';
 import { reconcileActiveOrderStatusFromItems } from './orders';
 import { cloudSync } from './cloud-sync';
+import { withKdsRecipeLines } from '../pizza/order-recipe';
 
 interface KdsClient {
   ws: WebSocket;
@@ -824,7 +825,9 @@ export function buildActiveOrdersSnapshot(
           stationScope.hasUnrestrictedStation,
         ),
     );
-  const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
+  const itemsWithAddons = withKdsRecipeLines(
+    attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]),
+  );
   const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
 
   const ordersWithItems = orders

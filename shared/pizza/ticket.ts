@@ -3,6 +3,9 @@ import { DETAIL_LINE_INDENT } from '../print/detail-lines';
 import { displayCellWidth, truncateToDisplayCells } from '../print/width';
 import type { OrderLineRecipe, PizzaCatalog, PizzaPart, PizzaRecipe, TicketLines } from './types';
 
+/** The one detail line of a recipe that could not be written out. */
+export const RECIPE_NOT_PRINTED = 'RECIPE NOT PRINTED - CHECK ORDER';
+
 /** Cuts text that has no place to break into pieces of at most `width` cells. */
 function chop(text: string, width: number): string[] {
   const pieces: string[] = [];

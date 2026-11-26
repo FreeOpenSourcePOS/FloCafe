@@ -18,6 +18,7 @@ import { requireKdsEnabled } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { parseCategoryIds } from './auth';
+import { withKdsRecipeLines } from '../pizza/order-recipe';
 
 const router = Router();
 
@@ -133,7 +134,9 @@ router.get('/orders', (req: Request, res: Response) => {
           stationScope.hasUnrestrictedStation,
         ),
     );
-    const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson));
+    const itemsWithAddons = withKdsRecipeLines(
+      attachEffectiveAddons(db, allVisibleItems.map(parseItemJson)),
+    );
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
 
     const ordersWithItems = orders

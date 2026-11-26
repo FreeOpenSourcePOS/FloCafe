@@ -127,6 +127,8 @@ export interface KdsOrderItem {
     | { id: string; name: string; price: number; sku?: string | null }
     | string
     | null;
+  /** The kitchen ticket's lines for a pizza or deal recipe, written by the server. */
+  recipe_lines?: string[];
   created_at?: string;
   updated_at?: string;
 }

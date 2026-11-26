@@ -2,11 +2,10 @@
 import type Database from 'better-sqlite3';
 import { getDatabase } from '../db';
 import { RecipeError, validateRecipe } from '../../shared/pizza/recipe';
-import { ticketLines } from '../../shared/pizza/ticket';
+import { RECIPE_NOT_PRINTED, ticketLines } from '../../shared/pizza/ticket';
 import type { OrderLineRecipe, PizzaCatalog, PizzaRecipe } from '../../shared/pizza/types';
 
 const WRONG_ITEM = 'The recipe is for a different item. Remove it and add it again';
-const NOT_PRINTED = 'RECIPE NOT PRINTED - CHECK ORDER';
 
 type Line = { modifier_selection?: unknown } | null | undefined;
 
@@ -156,9 +155,15 @@ function hasPrintableShape(recipe: OrderLineRecipe): boolean {
  * Order items with `detailLines` written from each line's recipe, for a printer laying out
  * `columns` characters. The recipe is not checked against the menu: an order sold before a menu
  * change still prints. A recipe whose shape cannot be written out, or a menu that cannot be read,
- * is logged and prints one warning line, so a ticket never drops a recipe silently.
+ * is logged and prints one warning line, so a ticket never drops a recipe silently. `field` names
+ * where the lines go; a caller that runs on every refresh passes `logged` to log each item once.
  */
-export function withRecipeDetailLines<T>(items: T, columns: number): T {
+export function withRecipeDetailLines<T>(
+  items: T,
+  columns: number,
+  field = 'detailLines',
+  logged?: Set<unknown>,
+): T {
   if (!Array.isArray(items) || !items.some(recipeOf)) return items;
   let catalog: PizzaCatalog | undefined;
   let menuError: unknown;
@@ -170,14 +175,28 @@ export function withRecipeDetailLines<T>(items: T, columns: number): T {
   return items.map((item) => {
     const recipe = recipeOf(item);
     if (!recipe) return item;
-    let detailLines = [NOT_PRINTED];
+    let detailLines = [RECIPE_NOT_PRINTED];
     try {
       if (!catalog) throw menuError;
       if (!hasPrintableShape(recipe)) throw new Error('The recipe is not in a printable shape');
       detailLines = ticketLines(catalog, recipe, columns).detailLines;
     } catch (error) {
-      console.warn(`[Pizza] Recipe not printed for order item ${item.id}:`, error);
+      if (!logged?.has(item.id))
+        console.warn(`[Pizza] Recipe not printed for order item ${item.id}:`, error);
+      if (logged && logged.size > 1000) logged.clear();
+      logged?.add(item.id);
     }
-    return { ...item, detailLines };
+    return { ...item, [field]: detailLines };
   }) as T;
+}
+
+const kdsLogged = new Set<unknown>();
+
+/**
+ * Kitchen display items, each pizza or deal line carrying `recipe_lines`: the lines its kitchen
+ * ticket prints at 48 columns, the warning line included. Other items are handed back untouched.
+ * A display refreshes all day, so a recipe that cannot be written out is logged once per item.
+ */
+export function withKdsRecipeLines<T>(items: T): T {
+  return withRecipeDetailLines(items, 48, 'recipe_lines', kdsLogged);
 }

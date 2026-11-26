@@ -73,6 +73,7 @@ import {
   hasPermission,
   resolveEffectivePermissions,
 } from './services/authorization';
+import { withKdsRecipeLines } from './pizza/order-recipe';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -744,9 +745,8 @@ export function startKdsServer(): Promise<void> {
         const allVisibleItems = (orders as any[]).flatMap((order: any) =>
           (itemsByOrder[order.id] || []).filter((item: any) => isVisibleItem(item, order)),
         );
-        const itemsWithAddons = attachEffectiveAddons(
-          db,
-          allVisibleItems.map(parseItemJson) as any[],
+        const itemsWithAddons = withKdsRecipeLines(
+          attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]),
         );
         const addonsByItemId = new Map(itemsWithAddons.map((item: any) => [item.id, item]));
 

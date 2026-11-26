@@ -12024,6 +12024,7 @@ export function projectKdsItem(item: any, restricted: boolean): any {
     'order_status',
     'order_notes',
     'order_time',
+    'recipe_lines',
   ];
   const projected = Object.fromEntries(
     allowedFields.filter((field) => field in item).map((field) => [field, item[field]]),

@@ -17,6 +17,7 @@ import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import { RecipeLines } from '@/components/kds/pizza/RecipeLines';
 
 export interface KdsTabsViewProps {
   orders: KdsOrder[];
@@ -165,6 +166,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                           className="text-slate-700 dark:text-slate-300 shrink-0 rtl-flip"
                         />
                       </div>
+                      <RecipeLines lines={item.recipe_lines} className="ms-[26px] mt-1 text-base" />
                       {item.addons && item.addons.length > 0 && (
                         <div className="ms-[26px] flex flex-wrap gap-1 mt-1.5">
                           {item.addons.map((addon, i) => (

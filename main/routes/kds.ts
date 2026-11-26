@@ -36,6 +36,7 @@ import { notifyKdsUpdate } from '../services/kds';
 import { reconcileActiveOrderStatusFromItems } from '../services/orders';
 import { cloudSync } from '../services/cloud-sync';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { withKdsRecipeLines } from '../pizza/order-recipe';
 
 const router = Router();
 
@@ -246,7 +247,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
             requestedScope.hasUnrestrictedStation,
           ),
       );
-    const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
+    const itemsWithAddons = withKdsRecipeLines(attachEffectiveAddons(db, allVisibleItems));
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
 
     const ordersWithItems = (orders as any[])
@@ -455,9 +456,9 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
 
     itemsQuery += ' ORDER BY oi.created_at ASC';
 
-    const items = attachEffectiveAddons(db, db.prepare(itemsQuery).all(...params) as any[]).map(
-      (item) => projectKdsItem(item, restrictedPayload),
-    );
+    const items = withKdsRecipeLines(
+      attachEffectiveAddons(db, db.prepare(itemsQuery).all(...params) as any[]),
+    ).map((item) => projectKdsItem(item, restrictedPayload));
     const groupedByOrder: Record<number, any> = {};
     for (const item of items) {
       const orderId = (item as any).order_id;
@@ -679,7 +680,7 @@ router.patch(
       if (autoCompletedOrderId) {
         cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
       }
-      res.json({ item: projectKdsItem(updatedItem, restrictedPayload) });
+      res.json({ item: projectKdsItem(withKdsRecipeLines([updatedItem])[0], restrictedPayload) });
     } catch (error: any) {
       res.locals.postHogError = error;
       if (error.message === 'VOIDED_ITEM') {

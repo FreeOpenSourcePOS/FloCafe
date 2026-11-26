@@ -43,6 +43,7 @@ export function dealPickCount(deal: CatalogDeal): { pizzas: { sizeId: string }[]
 
 // ticket.ts
 export function ticketLines(catalog: PizzaCatalog, recipe: OrderLineRecipe, columns: number): TicketLines;
+export const RECIPE_NOT_PRINTED = 'RECIPE NOT PRINTED - CHECK ORDER'; // the one detail line of a recipe that cannot be written out
 ```
 
 Recipe rules:
@@ -168,6 +169,7 @@ CREATE TABLE IF NOT EXISTS pizza_quick_buttons (
 - When the `pizza_menu` row is missing or unreadable, a line with a recipe answers 503 with "The pizza menu is not loaded. Load the menu file again."; lines without a recipe are unaffected.
 - A recipe is not validated against the menu at print time: an order sold before a menu change still prints, with an id the menu no longer has printed as the id. A recipe that cannot be printed (the stored menu cannot be read, `ticketLines` throws, or a pizza lacks one whole or two halves each with a `removed` list) prints the one detail line `RECIPE NOT PRINTED - CHECK ORDER`, never nothing.
 - A restricted kitchen display station gets `modifier_selection` only when it is a recipe, and `null` otherwise.
+- Every kitchen display item whose `modifier_selection` is a recipe carries `recipe_lines`: the `detailLines` of `ticketLines` at 48 columns, or the one warning line in the cases above. An item with no recipe has no such field. The display draws the lines as given and needs no menu in the browser.
 - Print data gets `detailLines` from `ticketLines`, called with the printer's layout column count. The item heading stays FloCafe's own product and variant name.
 
 ## Quick buttons (lane G, `main/pizza/quick-buttons.ts`)

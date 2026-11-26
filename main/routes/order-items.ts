@@ -27,6 +27,7 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { cloudSync } from '../services/cloud-sync';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+import { withKdsRecipeLines } from '../pizza/order-recipe';
 
 const router = Router();
 
@@ -379,9 +380,9 @@ router.patch(
                 stationScope.hasUnrestrictedStation,
               ),
           );
-        const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson)).map((row) =>
-          projectKdsItem(row, restrictedKdsPayload),
-        );
+        const items = withKdsRecipeLines(
+          attachEffectiveAddons(db, visibleItems.map(parseItemJson)),
+        ).map((row) => projectKdsItem(row, restrictedKdsPayload));
         const tableRow = order.table_id
           ? (db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any)
           : null;

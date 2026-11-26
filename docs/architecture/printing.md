@@ -277,11 +277,26 @@ two `halves`, a part whose `removed` is not a list, or a deal whose `pops` is no
 malformed recipe among the items a client sent to the print route can have such a shape; stored
 recipes are normalised when the order is written.
 
+The kitchen display shows the same lines on screen. `withKdsRecipeLines(items)` in
+`main/pizza/order-recipe.ts` runs kitchen display items through the same code at a fixed 48 columns
+and writes the result to `recipe_lines` on each pizza or deal line, the warning line included. An
+item with no recipe gets no such field, and its payload is unchanged. It runs wherever items are
+prepared for the display: `GET /api/kitchen/orders`, `GET /api/kds/orders`, `GET /api/kds/display`,
+`PATCH /api/kds/items/:id/status`, and `PATCH /api/order-items/:id/status` on the main API,
+`GET /api/kds/orders` on the kitchen display server, and the WebSocket snapshot from
+`buildActiveOrdersSnapshot()`. `projectKdsItem()` keeps `recipe_lines` for a restricted station. A
+display refreshes all day, so a recipe that cannot be written out is logged once per order item.
+`RecipeLines` in `frontend/src/components/kds/pizza/RecipeLines.tsx` draws the lines under the item
+name, before the add-ons and the note, in the tabs view, the kanban view, and the item window: in a
+monospace face, leading spaces kept, a line wider than its card wrapped one cell inside its own
+indent, and the warning line on a red band with a warning symbol. The display holds no catalogue.
+
 The detailed receipt (`buildDetailedReceiptBytes`), the tax bill, compliance line templates, the
-browser HTML receipt (`web-print.ts`), the delivery slip, the payment ticket slip, and the kitchen
-display do not print detail lines. `tests/pizza-print-detail-lines.test.ts` covers the paths that
-print detail lines, `tests/pizza-order-print.test.ts` covers the lines the server writes from a
-recipe, and `tests/pizza-kot-browser.test.ts` covers the lines the browser paths build from one.
+browser HTML receipt (`web-print.ts`), the delivery slip, and the payment ticket slip do not print
+detail lines. `tests/pizza-print-detail-lines.test.ts` covers the paths that print detail lines,
+`tests/pizza-order-print.test.ts` covers the lines the server writes from a recipe,
+`tests/pizza-kot-browser.test.ts` covers the lines the browser paths build from one, and
+`tests/pizza-kds-lines.test.ts` covers the lines on kitchen display items.
 
 ### Customer contact on kitchen tickets
 

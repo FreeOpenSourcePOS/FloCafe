@@ -9,6 +9,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import {
   sheetLine,
   sheetReducer,
+  type SheetAction,
   type SheetHalf,
   type SheetLine,
   type SheetState,
@@ -16,9 +17,9 @@ import {
 import { cn } from '@/lib/utils';
 import type { CookNote, CutNote, PizzaCatalog } from '@shared/pizza/types';
 
-const FOCUS =
+export const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
-const HEADING = 'text-xs font-semibold uppercase tracking-wider text-muted-foreground';
+export const HEADING = 'text-xs font-semibold uppercase tracking-wider text-muted-foreground';
 const NORMAL = 'normal';
 
 /** A minus, a count and a plus, each 48 px; `name` says what is counted, for the labels. */
@@ -26,12 +27,14 @@ export function PizzaStepper({
   name,
   value,
   least,
+  most,
   onChange,
   valueTestId,
 }: {
   name: string;
   value: number;
   least: number;
+  most?: number;
   onChange: (value: number) => void;
   valueTestId?: string;
 }) {
@@ -58,6 +61,7 @@ export function PizzaStepper({
         type="button"
         className={button}
         aria-label={t('oneMore', { name })}
+        disabled={most != null && value >= most}
         onClick={() => onChange(value + 1)}
       >
         <Plus size={18} />
@@ -67,7 +71,7 @@ export function PizzaStepper({
 }
 
 /** One choice out of a few, as a row of buttons; the chosen one is pressed. */
-function Segmented({
+export function Segmented({
   label,
   value,
   options,
@@ -209,6 +213,82 @@ function HalfColumn({
   );
 }
 
+/** What the pizza sheet and a deal's pizza tab hand each part of the pizza editor. */
+interface EditorProps {
+  state: SheetState;
+  dispatch: (action: SheetAction) => void;
+}
+
+/** Whole pizza or half and half. */
+export function WholeOrHalf({ state, dispatch }: EditorProps) {
+  const t = useTranslations('pizza');
+  return (
+    <Segmented
+      label={t('wholeOrHalf')}
+      value={state.split ? 'half' : 'whole'}
+      options={[
+        { id: 'whole', label: t('wholePizza') },
+        { id: 'half', label: t('halfAndHalf') },
+      ]}
+      onChange={(id) => dispatch({ type: 'split', split: id === 'half' })}
+    />
+  );
+}
+
+/** The whole pizza as one wide column, or both halves side by side: two columns of the grid around them. */
+export function PizzaHalves({ catalog, state, dispatch }: EditorProps & { catalog: PizzaCatalog }) {
+  const t = useTranslations('pizza');
+  const halves = state.split ? ([0, 1] as const) : ([0] as const);
+  return halves.map((index) => (
+    <HalfColumn
+      key={index}
+      catalog={catalog}
+      label={state.split ? (index === 0 ? t('firstHalf') : t('secondHalf')) : t('wholePizza')}
+      half={state.halves[index]}
+      wide={!state.split}
+      onPizza={(pizzaId) => dispatch({ type: 'pizza', half: index, pizzaId })}
+      onIngredient={(name) => dispatch({ type: 'ingredient', half: index, name })}
+    />
+  ));
+}
+
+/** The cook and the cut, each a row of three. */
+export function CookAndCut({ state, dispatch }: EditorProps) {
+  const t = useTranslations('pizza');
+  return (
+    <>
+      <div>
+        <p className={cn(HEADING, 'mb-1')}>{t('cook')}</p>
+        <Segmented
+          label={t('cook')}
+          value={state.cook ?? NORMAL}
+          options={[
+            { id: NORMAL, label: t('normal') },
+            { id: 'well-done', label: t('cookWellDone') },
+            { id: 'light-bake', label: t('cookLightBake') },
+          ]}
+          onChange={(id) =>
+            dispatch({ type: 'cook', cook: id === NORMAL ? null : (id as CookNote) })
+          }
+        />
+      </div>
+      <div>
+        <p className={cn(HEADING, 'mb-1')}>{t('cut')}</p>
+        <Segmented
+          label={t('cut')}
+          value={state.cut ?? NORMAL}
+          options={[
+            { id: NORMAL, label: t('normal') },
+            { id: 'square-cut', label: t('cutSquare') },
+            { id: 'uncut', label: t('cutUncut') },
+          ]}
+          onChange={(id) => dispatch({ type: 'cut', cut: id === NORMAL ? null : (id as CutNote) })}
+        />
+      </div>
+    </>
+  );
+}
+
 /**
  * The pizza sheet: one dialog for a new pizza and for a cart line being
  * changed. Its state is `sheetReducer`'s; `sheetLine` says what it would put
@@ -243,7 +323,6 @@ export default function PizzaSheet({
   const line = sheetLine(catalog, state);
   const size = catalog.sizes.find((entry) => entry.id === state.sizeId);
   const total = line.unitPriceCents === null ? '—' : money(line.unitPriceCents * state.quantity);
-  const halves = state.split ? ([0, 1] as const) : ([0] as const);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -270,15 +349,7 @@ export default function PizzaSheet({
             }))}
             onChange={(sizeId) => dispatch({ type: 'size', sizeId })}
           />
-          <Segmented
-            label={t('wholeOrHalf')}
-            value={state.split ? 'half' : 'whole'}
-            options={[
-              { id: 'whole', label: t('wholePizza') },
-              { id: 'half', label: t('halfAndHalf') },
-            ]}
-            onChange={(id) => dispatch({ type: 'split', split: id === 'half' })}
-          />
+          <WholeOrHalf state={state} dispatch={dispatch} />
           <DialogClose
             aria-label={tCommon('close')}
             className={cn(
@@ -291,51 +362,10 @@ export default function PizzaSheet({
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-[1fr_1fr_18rem] items-start gap-3 overflow-y-auto p-4">
-          {halves.map((index) => (
-            <HalfColumn
-              key={index}
-              catalog={catalog}
-              label={
-                state.split ? (index === 0 ? t('firstHalf') : t('secondHalf')) : t('wholePizza')
-              }
-              half={state.halves[index]}
-              wide={!state.split}
-              onPizza={(pizzaId) => dispatch({ type: 'pizza', half: index, pizzaId })}
-              onIngredient={(name) => dispatch({ type: 'ingredient', half: index, name })}
-            />
-          ))}
+          <PizzaHalves catalog={catalog} state={state} dispatch={dispatch} />
 
           <div className="space-y-3">
-            <div>
-              <p className={cn(HEADING, 'mb-1')}>{t('cook')}</p>
-              <Segmented
-                label={t('cook')}
-                value={state.cook ?? NORMAL}
-                options={[
-                  { id: NORMAL, label: t('normal') },
-                  { id: 'well-done', label: t('cookWellDone') },
-                  { id: 'light-bake', label: t('cookLightBake') },
-                ]}
-                onChange={(id) =>
-                  dispatch({ type: 'cook', cook: id === NORMAL ? null : (id as CookNote) })
-                }
-              />
-            </div>
-            <div>
-              <p className={cn(HEADING, 'mb-1')}>{t('cut')}</p>
-              <Segmented
-                label={t('cut')}
-                value={state.cut ?? NORMAL}
-                options={[
-                  { id: NORMAL, label: t('normal') },
-                  { id: 'square-cut', label: t('cutSquare') },
-                  { id: 'uncut', label: t('cutUncut') },
-                ]}
-                onChange={(id) =>
-                  dispatch({ type: 'cut', cut: id === NORMAL ? null : (id as CutNote) })
-                }
-              />
-            </div>
+            <CookAndCut state={state} dispatch={dispatch} />
             {catalog.dips.length > 0 && (
               <div role="group" aria-label={t('dips')} className="space-y-2">
                 <p className={HEADING}>

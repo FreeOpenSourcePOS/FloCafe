@@ -12,10 +12,10 @@ import { pizzaLineEditButton } from './PizzaCartLine';
 import { HalfAndHalfTile, PIZZA_GRID_CLASS, PizzaCategoryBlocks, PizzaTile } from './PizzaHome';
 import PizzaSheet from './PizzaSheet';
 import { usePizzaCatalog } from './usePizzaCatalog';
+import { PizzaDealDialog, usePizzaDeal } from './usePizzaDeal';
 
 const HALF_AND_HALF = `${PIZZA_PRODUCT_PREFIX}half-and-half`;
 const PIZZAS_CATEGORY = 'cat-pizzas';
-const DEAL_PRODUCT_PREFIX = 'dl-';
 
 /** The cart with a line "Customize 1" split off merged back into the line it came from. */
 function mergedBack(split: CartItem): CartItem[] {
@@ -35,15 +35,15 @@ export interface PizzaPos {
     disabled: boolean,
     fmt: (amount: number) => string,
   ) => ReactNode;
-  /** Opens the sheet for a pizza product; false for any other product. */
+  /** Opens the sheet for a pizza product, or the deal configurator for a deal; false for any other product. */
   open: (product: Product, quantity?: number) => boolean;
-  /** True for a cart line the sheet edits. */
+  /** True for a cart line the sheet or the deal configurator edits. */
   isPizzaLine: (item: CartItem) => boolean;
-  /** Opens the sheet on a cart line; false for a line that is not a pizza. */
+  /** Opens the sheet or the deal configurator on a cart line; false for a line that is neither. */
   edit: (item: CartItem) => boolean;
   /** "Customize 1": takes one off the line and opens the sheet on it. */
   customizeOne: (item: CartItem) => void;
-  /** The open sheet, or null. */
+  /** The open sheet or deal configurator, or null. */
   sheet: ReactNode;
 }
 
@@ -61,6 +61,7 @@ export function usePizzaPos(
 ): PizzaPos | null {
   const t = useTranslations('pizza');
   const catalog = usePizzaCatalog();
+  const deal = usePizzaDeal(catalog);
   const [session, setSession] = useState<Session | null>(null);
   /** The line "Customize 1" split off, merged back unless the sheet saves it. */
   const split = useRef<CartItem | null>(null);
@@ -91,13 +92,14 @@ export function usePizzaPos(
   if (!catalog) return null;
 
   const isPizzaLine = (item: CartItem) =>
-    item.product.id.startsWith(PIZZA_PRODUCT_PREFIX) && item.recipe?.kind !== 'deal';
+    deal.isDealLine(item) ||
+    (item.product.id.startsWith(PIZZA_PRODUCT_PREFIX) && item.recipe?.kind !== 'deal');
   const openSheet = (initial: SheetState, lineId: string | null = null) => {
     written.current = null;
     setSession({ initial, lineId });
   };
   const openLine = (line: CartItem) =>
-    openSheet(sheetReducer(newSheet(), { type: 'load', line }), line.id);
+    deal.edit(line) || openSheet(sheetReducer(newSheet(), { type: 'load', line }), line.id);
   /** Writes the cart and notes which line is new in it. */
   const writeCart = (items: CartItem[]) => {
     const before = useCartStore.getState().items;
@@ -149,7 +151,7 @@ export function usePizzaPos(
     setSession(null);
   };
 
-  return {
+  const pos: PizzaPos = {
     Categories: PizzaCategoryBlocks,
     gridClassName: PIZZA_GRID_CLASS,
     tile: (product, inCart, disabled, fmt) => {
@@ -182,11 +184,7 @@ export function usePizzaPos(
       );
     },
     open: (product, quantity = 1) => {
-      // Until the deal screen exists a deal would go in with no recipe, which the server refuses.
-      if (catalog.deals.some((deal) => DEAL_PRODUCT_PREFIX + deal.id === product.id)) {
-        toast.error(t('dealsComingSoon'));
-        return true;
-      }
+      if (deal.open(product, quantity)) return true;
       const pizza = menuPizza(product);
       if (!pizza && product.id !== HALF_AND_HALF) return false;
       openSheet({ ...newSheet({ pizzaId: pizza?.id, split: !pizza }), quantity });
@@ -216,4 +214,17 @@ export function usePizzaPos(
       />
     ),
   };
+  const dealDialog = deal.session && (
+    <PizzaDealDialog
+      deal={deal}
+      catalog={catalog}
+      onSaved={(items) => {
+        writeCart(items);
+        split.current = null;
+      }}
+      onClosed={close}
+      returnFocus={() => pizzaLineEditButton(written.current)}
+    />
+  );
+  return dealDialog ? { ...pos, sheet: dealDialog } : pos;
 }

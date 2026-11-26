@@ -26,7 +26,6 @@ const sizePrice = (id: string): number =>
     .price;
 const LARGE = sizePrice('large');
 const DIP = itemsOf('sides').find((side) => side.id === 'dip')!.price!;
-const A_DEAL = itemsOf('deals')[0].name as string;
 const money = (amount: number) => new RegExp(amount.toFixed(2).replace('.', '\\.'));
 
 /** Screenshots are saved only when a folder outside the checkout is named. */
@@ -301,14 +300,6 @@ test.describe('with the sample menu loaded', () => {
     await expect(sheetOf(page)).toHaveCount(0);
     await expect(cartLines(page)).toHaveCount(1);
     await expect(quantity(cartLines(page).first())).toHaveText('2');
-  });
-
-  test('a deal cannot be added until its screen exists', async ({ page }) => {
-    await page.getByTestId('pizza-category-blocks').getByRole('button', { name: 'Deals' }).click();
-    await page.getByTestId('pos-product-card').filter({ hasText: A_DEAL }).click();
-    await expect(page.getByText('Deals cannot be added from this screen yet.')).toBeVisible();
-    await expect(cartLines(page)).toHaveCount(0);
-    await expect(sheetOf(page)).toHaveCount(0);
   });
 
   test('an order paid in cash stores each recipe the sheet built', async ({ page }) => {

@@ -160,16 +160,12 @@ export function sheetReducer(state: SheetState, action: SheetAction): SheetState
   }
 }
 
-/**
- * The line the sheet describes. `columns` is the paper width the "prints as"
- * text is wrapped for. Add is off until the core accepts the recipe; its
- * message says what is missing.
- */
-export function sheetLine(catalog: PizzaCatalog, state: SheetState, columns = 42): SheetLine {
+/** The pizza the sheet holds as it stands, finished or not: what `validateRecipe` is asked about. */
+export function sheetDraft(state: SheetState): unknown {
   const [first, second] = state.halves.map((half) =>
     half.pizzaId === null ? null : { pizzaId: half.pizzaId, removed: half.removed },
   );
-  const draft = {
+  return {
     kind: 'pizza',
     v: 1,
     sizeId: state.sizeId,
@@ -177,6 +173,15 @@ export function sheetLine(catalog: PizzaCatalog, state: SheetState, columns = 42
     ...(state.cook ? { cook: state.cook } : {}),
     ...(state.cut ? { cut: state.cut } : {}),
   };
+}
+
+/**
+ * The line the sheet describes. `columns` is the paper width the "prints as"
+ * text is wrapped for. Add is off until the core accepts the recipe; its
+ * message says what is missing.
+ */
+export function sheetLine(catalog: PizzaCatalog, state: SheetState, columns = 42): SheetLine {
+  const draft = sheetDraft(state);
   let pizza: PizzaRecipe | null = null;
   let message: string | null = null;
   try {

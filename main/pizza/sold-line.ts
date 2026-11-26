@@ -8,12 +8,21 @@ import type { OrderLineRecipe } from '../../shared/pizza/types';
 
 type Addon = { id?: unknown; quantity?: unknown } | null | undefined;
 
-const addonKey = (addons: Addon[]): string =>
-  addons
-    .filter(Boolean)
-    .map((addon) => `${addon?.id} x${Number(addon?.quantity) || 1}`)
-    .sort()
-    .join('\n');
+/**
+ * How many of each add-on a list holds, summed per id, as sorted pairs; null for an entry the
+ * order routes would refuse (an id that is not text, a count that is not a positive whole number).
+ */
+function addonCounts(addons: Addon[]): string | null {
+  const counts = new Map<string, number>();
+  for (const addon of addons) {
+    if (!addon) continue;
+    const quantity = addon.quantity ?? 1;
+    if (typeof addon.id !== 'string' || !Number.isInteger(quantity) || (quantity as number) <= 0)
+      return null;
+    counts.set(addon.id, (counts.get(addon.id) ?? 0) + (quantity as number));
+  }
+  return JSON.stringify([...counts].sort());
+}
 
 /**
  * True when a replacement names the product, variant, quantity and add-ons the sold line already
@@ -32,13 +41,15 @@ export function changesRecipeOnly(
   sold: { product_id: unknown; variant_id?: unknown; quantity: unknown },
   soldAddons: { addon_id: unknown; quantity: unknown }[],
 ): boolean {
+  const sent = addonCounts(Array.isArray(replacement.addons) ? replacement.addons : []);
   return (
     replacement.product_id === sold.product_id &&
     String(replacement.variant_id ?? '').trim() === String(sold.variant_id ?? '') &&
     Number(replacement.quantity) === Number(sold.quantity) &&
     (replacement.price_override ?? null) === null &&
-    addonKey(Array.isArray(replacement.addons) ? replacement.addons : []) ===
-      addonKey(soldAddons.map((addon) => ({ id: addon.addon_id, quantity: addon.quantity }))) &&
+    sent !== null &&
+    sent ===
+      addonCounts(soldAddons.map((addon) => ({ id: addon.addon_id, quantity: addon.quantity }))) &&
     !!db.prepare('SELECT 1 FROM pizza_products WHERE product_id = ?').get(sold.product_id)
   );
 }
@@ -69,21 +80,24 @@ function sameSelection(sent: unknown, sold: unknown): boolean {
 
 /**
  * Turns a recipe-only replacement into the sold line with a new recipe or note: the size, unit
- * price and item discount are copied from the saved row, never worked out again. A recipe that
+ * price, item discount and add-ons are copied from the saved row, never worked out again. A recipe that
  * differs from the saved one, a cleared one included, is checked against the menu and needs a
  * product that is still sold; the saved one is not checked, so a pizza the menu has since lost
  * can still take a note.
  */
 export function carrySoldLine(
   db: Database.Database,
-  line: { product_id: string; modifier_selection?: unknown },
+  line: { product_id: string; modifier_selection?: unknown; addons?: unknown },
   soldRow: object,
+  soldAddons: { addon_id: unknown; quantity: unknown }[],
 ): void {
   const sold = soldRow as Record<string, unknown>;
   const soldRecipe = parsed(sold.modifier_selection);
   if (sameSelection(line.modifier_selection ?? null, soldRecipe)) {
     line.modifier_selection = soldRecipe;
   } else {
+    // The sold add-ons are what is saved, so they are what the new recipe must charge.
+    line.addons = soldAddons.map((addon) => ({ id: addon.addon_id, quantity: addon.quantity }));
     checkLineRecipe(db, [line], line, (sold.variant_id as string | null) ?? undefined, sold);
     // A plain pizza may drop its recipe without a look at the menu, so a retired one is stopped here.
     assertProductOnMenu(

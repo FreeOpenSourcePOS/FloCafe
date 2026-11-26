@@ -5,6 +5,7 @@ import { now } from '../db';
 import { getTenantCurrency } from '../services/refund';
 import { lineSubtotal } from '../services/tax';
 import { menuPrices, withPrices, type PriceList } from '../../shared/pizza/prices';
+import { isToppingAddon } from '../../shared/pizza/toppings';
 import type { PizzaCatalog } from '../../shared/pizza/types';
 import { importMenu } from './menu-import';
 
@@ -99,11 +100,14 @@ export function savePrices(db: Database.Database, changes: unknown): PriceList {
       }
       const price = prices.find((entry) => entry.key === key);
       if (!price) refuse(400, `${key} is not a price on the menu that is loaded.`);
-      // Whole minor units, worked out in decimal arithmetic: 23.005 is not an amount in cents.
-      const minor =
-        typeof amount === 'number' && amount >= 0 && amount <= MAX_PRICE
-          ? lineSubtotal(amount, factor, null, 0, 6)
-          : NaN;
+      // An amount with no more decimals than the currency has, in decimal arithmetic: an amount
+      // that rounding changes, 23.005 or 2.000000001, is not an amount in cents.
+      const exact =
+        typeof amount === 'number' &&
+        amount >= 0 &&
+        amount <= MAX_PRICE &&
+        lineSubtotal(amount, 1, null, 0, decimals) === amount;
+      const minor = exact ? lineSubtotal(amount, factor, null, 0, 0) : NaN;
       if (!Number.isInteger(minor))
         refuse(
           400,
@@ -114,4 +118,28 @@ export function savePrices(db: Database.Database, changes: unknown): PriceList {
     importMenu(db, fileCatalog);
   })();
   return readPrices(db);
+}
+
+/** Why Products → Add-ons cannot change a topping add-on's price or switch it off. */
+export const TOPPING_PRICE_ELSEWHERE = 'Change the topping price in Pizza menu → Prices.';
+
+/**
+ * True when an add-on edit would change the price or the active state of one of the two topping
+ * add-ons, which a menu load writes from the one topping price; `change` null removes the add-on.
+ */
+export function changesToppingAddon(
+  db: Database.Database,
+  addonId: unknown,
+  change: { price?: number | null; is_active?: boolean | null } | null,
+): boolean {
+  if (!isToppingAddon(addonId)) return false;
+  const row = db.prepare('SELECT price, is_active FROM addons WHERE id = ?').get(addonId) as
+    | { price: number; is_active: number }
+    | undefined;
+  if (!row) return false;
+  if (change === null) return row.is_active === 1;
+  return (
+    (change.price != null && change.price !== row.price) ||
+    (change.is_active != null && change.is_active !== (row.is_active === 1))
+  );
 }

@@ -20,6 +20,7 @@ const {
 } = require('./helpers/pizza-print-harness');
 const { initDatabase, getDatabase } = require('../main/db');
 const { kdsRecipe, withKdsRecipeLines } = require('../main/pizza/order-recipe');
+const { carrySoldLine, changesRecipeOnly } = require('../main/pizza/sold-line');
 const { registerRoutes } = require('../main/routes/index');
 const net = require('node:net');
 const { printKOTDetailed, prepareReceipt } = require('../main/printers/thermal');
@@ -48,6 +49,7 @@ const {
   dealSentLine,
   sentLine,
   sentLineEdit,
+  sentLineReprices,
   sheetSentLine,
   sheetSource,
 } = require('../frontend/src/lib/pizza/sent-line');
@@ -918,6 +920,219 @@ async function main() {
           'kitchen display: the recipe lines still name the extra and the topping',
         );
         same(shown[1].addons, [dips], 'kitchen display: an item without a recipe is as it was');
+      },
+
+    'Case 19: a recipe-only edit compares add-ons by id and count, and saves only what its recipe charges':
+      async () => {
+        const soldRow = { product_id: 'pz-garden', variant_id: 'pz-garden-large', quantity: 1 };
+        const asked = (addons: object[]) =>
+          changesRecipeOnly(db, { ...soldRow, addons }, soldRow, [
+            { addon_id: 'ad-topping', quantity: 1 },
+            { addon_id: 'ad-topping-half', quantity: 1 },
+          ]);
+        assertOrThrow(
+          !asked([{ id: 'ad-topping x1\nad-topping-half', quantity: 1 }]),
+          'one made-up id that spells out both add-ons is not the same add-ons',
+        );
+        assertOrThrow(
+          !asked([toppings(0), halfToppings(1)]),
+          'a topping at quantity 0 is not one topping',
+        );
+        assertOrThrow(
+          !asked([{ id: 'ad-topping', quantity: '1' }, halfToppings(1)]),
+          'a count sent as text is not a count',
+        );
+        assertOrThrow(asked([halfToppings(1), toppings(1)]), 'the same two in another order are');
+        assertOrThrow(
+          changesRecipeOnly(db, { ...soldRow, addons: [toppings(2)] }, soldRow, [
+            { addon_id: 'ad-topping', quantity: 1 },
+            { addon_id: 'ad-topping', quantity: 1 },
+          ]),
+          'two rows of one are the same add-ons as one row of two',
+        );
+
+        const oneExtra = whole('garden', { extra: ['Cheese'] });
+        const order = (
+          await createOrder([gardenLine({ modifier_selection: oneExtra, addons: [toppings(1)] })])
+        ).data.order;
+        const live = () => liveRows(order.id);
+        const standing = [live()[0].id, count('order_items')];
+        const noExtra = whole('garden', { removed: ['Olives'] });
+        for (const [label, addons] of [
+          ['the sold add-ons', [toppings(1)]],
+          ['a topping at quantity 0', [toppings(0)]],
+        ] as const) {
+          const dropped = await edit(order.id, live()[0].id, {
+            replacement: gardenLine({ modifier_selection: noExtra, addons }),
+          });
+          assertEqualOrThrow(
+            dropped.status,
+            400,
+            `dropping the extra cheese with ${label} is refused (${json(dropped.data)})`,
+          );
+          same([live()[0].id, count('order_items')], standing, `${label}: the line still stands`);
+        }
+        same(
+          [live()[0].modifier_selection, addonRows(live()[0].id).length, live()[0].subtotal],
+          [json(oneExtra), 1, 25.25],
+          'the recipe and its charge are as sold',
+        );
+
+        // What is saved is the sold add-ons, so the recipe is checked against them.
+        const line: any = {
+          product_id: 'pz-garden',
+          modifier_selection: noExtra,
+          addons: [],
+        };
+        let refusal: any = null;
+        try {
+          carrySoldLine(db, line, live()[0], addonRows(live()[0].id));
+        } catch (error) {
+          refusal = error;
+        }
+        assertEqualOrThrow(
+          refusal?.message,
+          MISMATCH,
+          'a recipe with no topping is refused beside the sold topping, whatever the request named',
+        );
+      },
+
+    'Case 20: a sent pizza sold with two topping rows keeps them, and its price, when only the cut changes':
+      async () => {
+        const order = (
+          await createOrder([
+            gardenLine({ modifier_selection: twoOnWhole, addons: [toppings(1), toppings(1)] }),
+          ])
+        ).data.order;
+        const dearer = structuredClone(sample);
+        dearer.toppings.price = 3.01;
+        accepted(await loadMenu(dearer), 200, 'the topping price goes up after the sale');
+        await readPos();
+        const read = async () =>
+          (await api(baseUrl, `/api/orders/${order.id}`, { headers })).data.order.items.filter(
+            (item: any) => item.status === 'pending',
+          );
+        const [sold] = await read();
+        const was = sentLine(sold);
+        const state = tap(
+          newSheet(),
+          { type: 'load', line: sheetSource(was) },
+          { type: 'cut', cut: 'square-cut' },
+        );
+        const now = sheetSentLine(was, sheetLine(getPizzaCatalog(), state), state);
+        same(
+          now.addons.map((addon: any) => [addon.id, addon.quantity]),
+          [
+            ['ad-topping', 1],
+            ['ad-topping', 1],
+          ],
+          'the editor keeps the two rows of one',
+        );
+        assertOrThrow(!sentLineReprices(was, now), 'and does not say the line is priced again');
+        const changed = await api(baseUrl, `/api/orders/${order.id}/items/${sold.id}/edit`, {
+          method: 'PATCH',
+          headers: { ...headers, 'Idempotency-Key': `pizza-toppings-${++key}` },
+          body: sentLineEdit(sold, now),
+        });
+        accepted(changed, 200, 'the cut change is accepted');
+        const [after] = await read();
+        same(
+          [
+            after.subtotal,
+            after.addons.map((addon: any) => [addon.id, addon.price, addon.quantity]),
+          ],
+          [
+            27.5,
+            [
+              ['ad-topping', 2.25, 1],
+              ['ad-topping', 2.25, 1],
+            ],
+          ],
+          'at the sold price, with the sold rows',
+        );
+
+        // The server takes one row of two for the same two toppings.
+        const uncut = await edit(order.id, after.id, {
+          replacement: gardenLine({
+            modifier_selection: { ...twoOnWhole, cut: 'uncut' },
+            addons: [toppings(2)],
+          }),
+        });
+        accepted(uncut, 200, 'one row of two is the same add-ons');
+        assertEqualOrThrow(liveRows(order.id)[0].subtotal, 27.5, 'and the sold price is kept');
+        accepted(await loadMenu(sample), 200, 'the sample loads again');
+        await readPos();
+      },
+
+    'Case 21: Products → Add-ons cannot change the topping price or switch a topping add-on off':
+      async () => {
+        const MESSAGE = 'Change the topping price in Pizza menu → Prices.';
+        const send = (method: string, path: string, body?: object) =>
+          api(baseUrl, `/api/addon-groups${path}`, { method, headers, body });
+        const state = () =>
+          ['ad-topping', 'ad-topping-half'].map((id) => [addon(id).price, addon(id).is_active]);
+        const before = state();
+        const groupAddons = (change: (row: any) => object | null) =>
+          ['ad-topping', 'ad-topping-half'].flatMap((id) => {
+            const row = addon(id);
+            const sent = change({ id, name: row.name, price: row.price, is_active: true });
+            return sent ? [sent] : [];
+          });
+        for (const [label, method, path, body] of [
+          ['a topping price', 'PUT', '/ag-toppings/addons/ad-topping', { price: 9 }],
+          ['a half topping price', 'PUT', '/ag-toppings/addons/ad-topping-half', { price: 0 }],
+          ['a topping switched off', 'PUT', '/ag-toppings/addons/ad-topping', { is_active: false }],
+          ['a topping deleted', 'DELETE', '/ag-toppings/addons/ad-topping-half', undefined],
+          [
+            'a price in the group form',
+            'PUT',
+            '/ag-toppings',
+            {
+              addons: groupAddons((row) => (row.id === 'ad-topping' ? { ...row, price: 1 } : row)),
+            },
+          ],
+          [
+            'a topping left out of the group form',
+            'PUT',
+            '/ag-toppings',
+            { addons: groupAddons((row) => (row.id === 'ad-topping-half' ? null : row)) },
+          ],
+        ] as const) {
+          const answer = await send(method, path, body);
+          assertEqualOrThrow(answer.status, 400, `${label} is refused (${json(answer.data)})`);
+          assertEqualOrThrow(answer.data.error, MESSAGE, `${label}: says where to change it`);
+          same(state(), before, `${label}: nothing changes`);
+        }
+        accepted(
+          await send('PUT', '/ag-toppings', { addons: groupAddons((row) => row) }),
+          200,
+          'the group form saved with the prices as they are',
+        );
+        accepted(
+          await send('PUT', '/ag-toppings/addons/ad-topping', { price: 2.25, sort_order: 0 }),
+          200,
+          'an add-on saved at its own price',
+        );
+
+        const prices = (body: object) =>
+          api(baseUrl, '/api/pizza/prices', { method: 'PUT', headers, body: { prices: body } });
+        accepted(await prices({ topping: 3 }), 200, 'the Prices screen sets the topping price');
+        same(
+          state(),
+          [
+            [3, 1],
+            [1.5, 1],
+          ],
+          'on both add-ons',
+        );
+        accepted(await prices({ topping: null }), 200, 'and takes it off');
+        same(state(), before, 'back to the menu file');
+        const again = await loadMenu(sample);
+        same(
+          [again.data.created, again.data.updated, again.data.deactivated],
+          [0, 0, 0],
+          'the next menu load changes nothing',
+        );
       },
   });
 }

@@ -836,9 +836,10 @@ runCases('Pizza toppings', {
           addon.id,
           addon.quantity,
         ]),
+        // The sold rows go back as they were sold, in the order they were sold.
         [
-          ['ad-dips-ranch', 1],
           ['ad-topping', 1],
+          ['ad-dips-ranch', 1],
         ],
         'and the same add-ons',
       );

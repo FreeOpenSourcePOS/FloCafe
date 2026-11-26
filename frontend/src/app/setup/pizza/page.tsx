@@ -50,19 +50,29 @@ export default function PizzaQuickSetupPage() {
   const [formError, setFormError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [masterPinAvailable, setMasterPinAvailable] = useState(false);
+  // The recovery-PIN note depends on the setup status, so the form is not sent before it is read.
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  useEffect(() => {
+  // The first read starts from the 'loading' state above; a retry sets it from its click.
+  const readStatus = () => {
     api
       .get('/auth/setup/status')
       .then(({ data }) => {
         if (!data.needsSetup) window.location.replace('/auth/login');
         // A store finishing a currency reset keeps its region, which only the full wizard handles.
         else if (data.currencyReset) window.location.replace('/setup');
-        else setMasterPinAvailable(Boolean(data.masterPinAvailable));
+        else {
+          setMasterPinAvailable(Boolean(data.masterPinAvailable));
+          setStatus('ready');
+        }
       })
-      .catch(() => {});
+      .catch(() => setStatus('failed'));
+  };
+
+  useEffect(() => {
+    readStatus();
     const restore = () => window.location.assign(RESTORE_URL);
     window.addEventListener(RESTORE_FROM_FILE_EVENT, restore);
     return () => window.removeEventListener(RESTORE_FROM_FILE_EVENT, restore);
@@ -81,7 +91,7 @@ export default function PizzaQuickSetupPage() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || status !== 'ready') return;
     setFormError('');
     const problems = quickSetupProblems(form);
     if (Object.keys(problems).length > 0) {
@@ -305,7 +315,31 @@ export default function PizzaQuickSetupPage() {
             </p>
           )}
 
-          <Button type="submit" disabled={busy} className="h-12 w-full text-base">
+          {status === 'failed' && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-3 rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700 dark:bg-red-950 dark:text-red-300"
+            >
+              <span className="flex-1">{t('quickSetupStatusFailed')}</span>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12"
+                onClick={() => {
+                  setStatus('loading');
+                  readStatus();
+                }}
+              >
+                {t('quickSetupRetry')}
+              </Button>
+            </div>
+          )}
+
+          <Button
+            type="submit"
+            disabled={busy || status !== 'ready'}
+            className="h-12 w-full text-base"
+          >
             {busy ? t('quickSetupSubmitting') : t('quickSetupSubmit')}
           </Button>
         </form>

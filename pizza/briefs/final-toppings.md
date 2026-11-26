@@ -1,0 +1,23 @@
+# Brief: three gaps in the topping charge
+
+Toppings (see [toppings.md](toppings.md)) are charged as two add-ons whose quantities the server checks against the recipe. A review found three ways the charge and the recipe can part. Read `main/pizza/sold-line.ts`, `main/pizza/order-recipe.ts` (`checkLineRecipe`), `shared/pizza/toppings.ts`, `frontend/src/lib/pizza/sent-line.ts` and `tests/pizza-toppings-order.test.ts` first. Another coder is changing the price guard and the POS page's retry paths at the same time: stay out of `frontend/src/app/(dashboard)/pos/page.tsx`, `frontend/src/lib/pizza/price-guard.ts` and `usePriceGuard.tsx`.
+
+- **T1 (blocker) `main/pizza/sold-line.ts` ~87 and ~11: a recipe-only edit checks the request's add-ons, then saves the sold add-ons.** The "same add-ons" comparison joins ids and quantities with a delimiter, so different lists can compare equal; an edit can then remove a topping from the recipe while its charge stays on the order (or the reverse). Compare structured add-on ids and quantities (sorted, summed per id), and validate the changed recipe against the sold add-ons that will actually be saved, so what is stored always passes `checkLineRecipe`'s topping-count rule.
+- **T2 (should) `main/routes/addon-groups.ts` ~666: Products → Add-ons can change the half-topping (or topping) price on its own.** Staff can then sell at that price while Pizza menu → Prices still shows the configured topping price, and the next menu load silently reverses the edit. The two generated topping add-ons are priced only through the single `topping` price (the menu file or the override in `main/pizza/prices.ts`): refuse a direct price or active-state change to `ad-topping` and `ad-topping-half` in the add-on routes with a message that says where to change it ("Change the topping price in Pizza menu → Prices."). Smallest hook in the upstream route; check the other fork-generated rows are not left with the same hole in a way that matters for money (say what you find; fix only the topping pair).
+- **T3 (should) `frontend/src/lib/pizza/sent-line.ts` ~199: the sent-line editor collapses topping rows.** The API accepts two `ad-topping` rows of quantity one each; the editor turns them into one row of quantity two, so changing only the cut after a price increase is sent as an add-on change and re-prices the sold pizza. Preserve the sold topping rows exactly whenever the recipe's topping counts are unchanged; and on the server side T1's structured comparison should treat two rows of one and one row of two as the same add-ons, so either form keeps the sold price.
+- Also, two small ones in the prices screen: `main/pizza/prices.ts` ~103 accepts `2.000000001` as 2.00: validate exact minor units before rounding and refuse more decimals than the currency has. And in `frontend/src/app/setup/pizza/page.tsx` ~52 keep the form's submit disabled until the setup status has loaded, with a retry when that request fails, so the recovery-PIN note is on screen before the owner submits.
+
+Tests: script cases for each (T1: an edit that drops a topping from the recipe with the sold add-ons unchanged is refused or re-priced correctly, and add-on lists that used to collide no longer compare equal; T2: the route refuses, the prices route still works, the next load changes nothing; T3: two rows of one stay two rows and the price is kept); Playwright only where a screen changed (the setup page). Playwright on ports 3431–3433, and 3441–3443 for the fresh setup server.
+
+## Rules
+
+A failing test first for each id, then the smallest fix. Only the made-up sample menu in tests. A store with no pizza menu behaves as before. This is the last fix round of a long hardening effort, and the owner chose to fix these rather than drop the feature: make each fix complete, and do not widen it.
+
+## Verify before pushing
+
+Every `test:pizza-*`; every script with order, tax, bill, discount, pos, cart, addon or server-app in its name; `test:dev-tooling`; `npm run i18n:check`, `npm run test:script-coverage`, both `tsc --noEmit`, `npm run lint`, `npm run lint:budget`, `node scripts/ci/check-changed-format.cjs --base cc5e1b74`, `npm run docs:check`; one Playwright run of every `e2e/pizza-*.spec.ts` plus pos-actions-menu, pos-keyboard-shortcuts and server-app-ordering with `--retries=0`. Do not run the full core suite. Update `pizza/contract.md` and the `docs/` pages whose described behaviour changes.
+
+## Report
+
+Branch and commit; for each id red then green, or why no change; every upstream file edited with line counts; upstream tests whose expected values changed; anything not verified.
+

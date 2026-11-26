@@ -124,6 +124,38 @@ test('a server that cannot be reached says so and keeps what was typed', async (
   await expect(field(page, 'Your email')).toHaveValue(OWNER.email);
 });
 
+test('the form waits for the setup status, and a status that fails can be asked again', async ({
+  page,
+}) => {
+  await openSetup(page);
+  let answer: 'fail' | 'hold' = 'fail';
+  const held: { release?: () => void } = {};
+  await page.route('**/api/auth/setup/status', async (route) => {
+    if (answer === 'fail') return route.abort('connectionrefused');
+    if (answer === 'hold') await new Promise<void>((resolve) => (held.release = resolve));
+    return route.fulfill({ json: { needsSetup: true, masterPinAvailable: true } });
+  });
+  await page.reload();
+  const submit = page.getByRole('button', { name: 'Set up my shop' });
+  await expect(page.locator('main').getByRole('alert')).toContainText(
+    'The POS server could not be asked how to set up',
+  );
+  await expect(submit).toBeDisabled();
+  await fill(page);
+  await expect(submit).toBeDisabled();
+
+  answer = 'hold';
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect.poll(() => Boolean(held.release), 'the second request is held').toBe(true);
+  await expect(submit).toBeDisabled();
+  await expect(page.getByText("this computer's recovery PIN")).toHaveCount(0);
+  held.release?.();
+  await expect(submit).toBeEnabled();
+  await expect(page.getByText("this computer's recovery PIN")).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+  await expect(field(page, 'Shop name')).toHaveValue(OWNER.shop);
+});
+
 test('the full wizard and restore are one link away', async ({ page }) => {
   await openSetup(page);
   await page.getByRole('link', { name: 'Not a pizza shop in BC? Use the full setup' }).click();

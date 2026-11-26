@@ -166,8 +166,11 @@ Later changes to the line keep the recipe:
   the sale and the edit does not move the line's money, and the edit is accepted when the
   product, its size, or one of its add-ons has since been switched off. Two recipes are the
   same when `recipeKey()` gives them the same key, whatever the order of their keys, removals,
-  and pops. A recipe that differs from the saved one, an explicit `null` that clears it included,
-  is checked against the current menu and needs a product that is still switched on, so it is
+  and pops. Two add-on lists are the same when they name the same add-on ids with the same summed
+  quantity, so two rows of one and one row of two are the same; an add-on whose id is not text or
+  whose quantity is not a positive whole number makes the list differ. A recipe that differs from
+  the saved one, an explicit `null` that clears it included, is checked, beside the saved add-ons
+  the new line keeps, against the current menu and needs a product that is still switched on, so it is
   refused for a retired pizza; the saved recipe sent back is not checked. Any other replacement, a new
   size or one more add-on included, is a new sale: priced, taxed, and validated from the current
   catalog. Another number of toppings changes the line's add-ons, so it is such a sale; a recipe

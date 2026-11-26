@@ -8,6 +8,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { serializeOperationFailure } from '../lib/operation-failure';
 import { adjustProductStock } from '../services/inventory';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
+import { changesToppingAddon, TOPPING_PRICE_ELSEWHERE } from '../pizza/prices';
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
 
@@ -592,6 +593,12 @@ router.put(
         : null;
       const validationResponse = validationErrorResponse(res, errors);
       if (validationResponse) return validationResponse;
+      const sent = (id: string) => normalizedAddons?.find((a: any) => a.id === id) ?? null;
+      if (
+        normalizedAddons &&
+        existingAddonRows.some((a) => changesToppingAddon(db, a.id, sent(a.id)))
+      )
+        return res.status(400).json({ error: TOPPING_PRICE_ELSEWHERE });
       const activeAddonCount = Array.isArray(addons)
         ? normalizedAddons!.filter((a: any) => a.is_active).length
         : (
@@ -927,6 +934,10 @@ router.put(
         captureAddonGroupInputValidation();
         return res.status(400).json({ error: 'Cannot update add-ons for an inactive group' });
       }
+      if (
+        changesToppingAddon(db, req.params.addonId, { price: addonPrice, is_active: addonActive })
+      )
+        return res.status(400).json({ error: TOPPING_PRICE_ELSEWHERE });
 
       const hasTaxCategoryId = 'tax_category_id' in req.body;
       const actorUserId = String(
@@ -1017,6 +1028,8 @@ router.delete(
       if (!addon) {
         return res.status(404).json({ error: 'Addon not found' });
       }
+      if (changesToppingAddon(db, req.params.addonId, null))
+        return res.status(400).json({ error: TOPPING_PRICE_ELSEWHERE });
 
       const deletedAtomically = withTxn(() => {
         const current = db

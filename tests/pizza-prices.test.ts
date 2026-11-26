@@ -347,6 +347,8 @@ async function main() {
       const bad: Array<[label: string, prices: unknown]> = [
         ['a negative amount', { 'size:large': -1 }],
         ['a fraction of a cent', { 'size:large': 23.005 }],
+        ['a billionth of a unit over a whole amount', { 'size:large': 2.000000001 }],
+        ['a trillionth over a price in cents', { 'size:large': 19.990000000001 }],
         ['text', { 'size:large': '24' }],
         ['an amount too large to be a price', { 'size:large': 1000000 }],
         ['a key the menu does not have', { 'size:huge': 30 }],

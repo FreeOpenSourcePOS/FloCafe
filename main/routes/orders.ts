@@ -6938,7 +6938,7 @@ router.patch(
           } else {
             newItem = { ...replacement };
             keepStoredRecipe(newItem, oldItem);
-            if (recipeOnly) carrySoldLine(db, newItem, oldItem);
+            if (recipeOnly) carrySoldLine(db, newItem, oldItem, oldAddons);
           }
 
           if (isStartedQuantityIncrease) {

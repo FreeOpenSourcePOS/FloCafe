@@ -228,6 +228,13 @@ Router: `main/routes/addon-groups.ts`. Full path: `/api/addon-groups`.
 | `PUT`    | `/:groupId/addons/:addonId` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `addonId`, `groupId`; body: `name`, `price`, `tax_category_id`, `tax_behavior`, `inherit_parent_tax_category`, `is_active`, `sort_order`             | -                                                  |
 | `DELETE` | `/:groupId/addons/:addonId` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `groupId`, `addonId`                                                                                                                                 | -                                                  |
 
+The two topping add-ons a pizza menu load makes, `ad-topping` and `ad-topping-half`, are priced
+only from the menu's topping price. A `PUT /:groupId/addons/:addonId` that changes the price or
+the active state of one, a `PUT /:id` whose `addons` would do that or leaves an active one out,
+and a `DELETE /:groupId/addons/:addonId` of an active one answer `400` with
+`{ error: "Change the topping price in Pizza menu → Prices." }` and change nothing. A store with
+no pizza menu has neither add-on.
+
 ### Products
 
 Router: `main/routes/products.ts`. Full path: `/api/products`.
@@ -786,7 +793,7 @@ prices.
 | Method | Path      | Authorization    | Parameters                                                    | Response |
 | ------ | --------- | ---------------- | ------------------------------------------------------------- | -------- |
 | `GET`  | `/prices` | `catalog.view`   | none                                                          | `{ prices, unused }` (`PriceList` in `shared/pizza/prices.ts`). `prices` has one entry per price of the loaded menu, sizes first, then the topping, the dip, sides, drink sizes and deals: `key`, `group`, `label`, `count` (the pizzas, dips or drinks it is charged on), `file` (what the menu file says), `price` (what is charged) and `overridden`. Amounts are in the store's currency, not cents. `unused` lists `{ key, price }` for stored prices the menu has no item for. `404` when no menu has been loaded, `503` when the stored menu cannot be read. |
-| `PUT`  | `/prices` | `catalog.manage` | body: `{ prices: { "<key>": <amount or null> } }`             | The same answer as `GET`, after the change. An amount sets the price; `null` takes it off, back to the menu file's. An amount must be a number of 0 to 99,999.99 in whole minor units of the store's currency, and its key must be a price of the loaded menu; `null` is accepted for any key. One bad entry answers `400` with `{ error }` and nothing is written. `404` and `503` as for `GET`. |
+| `PUT`  | `/prices` | `catalog.manage` | body: `{ prices: { "<key>": <amount or null> } }`             | The same answer as `GET`, after the change. An amount sets the price; `null` takes it off, back to the menu file's. An amount must be a number of 0 to 99,999.99 with no more decimal places than the store's currency has (2.000000001 is refused), and its key must be a price of the loaded menu; `null` is accepted for any key. One bad entry answers `400` with `{ error }` and nothing is written. `404` and `503` as for `GET`. |
 
 ### Pizza quick buttons
 

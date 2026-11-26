@@ -7,7 +7,11 @@ import { recipeKey } from '../../../../shared/pizza/recipe';
 import { RECIPE_NOT_PRINTED, ticketLines } from '../../../../shared/pizza/ticket';
 import type { OrderLineRecipe, PizzaCatalog } from '../../../../shared/pizza/types';
 import type { OrderItemEditAttemptBody } from '../order-item-edit-attempt';
-import { HALF_TOPPING_ADDON, TOPPING_ADDON } from '../../../../shared/pizza/toppings';
+import {
+  HALF_TOPPING_ADDON,
+  TOPPING_ADDON,
+  toppingCounts,
+} from '../../../../shared/pizza/toppings';
 import { lineRecipe, PIZZA_PRODUCT_PREFIX, sentRecipe } from './line-recipe';
 import { chargedAddons, toppingCharges } from './toppings';
 import {
@@ -194,9 +198,15 @@ export function sheetSource(line: SentLine): SheetSourceLine {
 /**
  * A sent line's add-ons with the topping add-ons `recipe` derives. One the
  * line was sold with keeps its name and price; a new one is named by its id
- * at no price, because the server names and prices the add-ons of an edit.
+ * at no price, because the server names and prices the add-ons of an edit. While the counts are
+ * unchanged the sold rows are kept as they are, so two rows of one stay two rows.
  */
 function withToppings(addons: SentAddon[], recipe: OrderLineRecipe | null): SentAddon[] {
+  const held = (id: string) =>
+    addons.reduce((sum, addon) => sum + (addon.id === id ? addon.quantity : 0), 0);
+  const counts = toppingCounts(recipe);
+  if (held(TOPPING_ADDON) === counts.whole && held(HALF_TOPPING_ADDON) === counts.half)
+    return addons;
   const sellable = [
     ...addons,
     ...toppingCharges(recipe).map(({ id }) => ({ id, name: id, price: 0, quantity: 0 })),

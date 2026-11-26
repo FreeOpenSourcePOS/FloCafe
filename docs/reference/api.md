@@ -1214,6 +1214,7 @@ Twenty-five routes in total, thirteen of which forward:
 | `GET`  | `/api/categories`            | `GET /api/categories`                                                                                           |
 | `GET`  | `/api/products`              | `GET /api/products`                                                                                             |
 | `GET`  | `/api/products/:id/image`    | `GET /api/products/:id/image`                                                                                   |
+| `GET`  | `/api/pizza/catalog`         | `GET /api/pizza/catalog`                                                                                         |
 | `GET`  | `/api/tables`                | `GET /api/tables`                                                                                               |
 | `POST` | `/api/tables/:id/move-order` | `POST /api/tables/:id/move-order`                                                                               |
 | `GET`  | `/api/orders`                | `GET /api/orders`                                                                                               |
@@ -1448,18 +1449,18 @@ documents only the two routes.
 
 ## Coverage
 
-This page lists 323 HTTP route registrations across 322 distinct rows, and one WebSocket contract:
+This page lists 324 HTTP route registrations across 323 distinct rows, and one WebSocket contract:
 
 - `285` on the main API: 277 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `13` REST routes on the KDS server, plus 3 static handlers.
-- `25` route registrations on the Server App, of which 13 forward to the main API. Two of those 25
-  are mutually exclusive `GET /` handlers under one path, which is why 25 registrations render as 24
+- `26` route registrations on the Server App, of which 14 forward to the main API. Two of those 26
+  are mutually exclusive `GET /` handlers under one path, which is why 26 registrations render as 25
   rows.
 
-Every one of the 322 rows is listed with its method, path, authorization gate, and the parameters
-its handler reads. The **Response** column carries a note for 187 of them: 150 main-API endpoints,
-all 13 KDS-server routes, and the 24 Server App routes. The remaining 135 main-API endpoints are
+Every one of the 323 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 188 of them: 150 main-API endpoints,
+all 13 KDS-server routes, and the 25 Server App routes. The remaining 135 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in
 `main/routes/` is authoritative for them. A `-` in the Response column means that, not that the

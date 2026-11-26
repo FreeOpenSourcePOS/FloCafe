@@ -565,6 +565,9 @@ export function startServerApp(): Promise<void> {
     app.get('/api/products', serverAppApiRateLimit, requireServerAppAuth, (req, res) =>
       forwardToMainApi(req, res, '/products'),
     );
+    app.get('/api/pizza/catalog', serverAppApiRateLimit, requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/pizza/catalog'),
+    );
     app.get('/api/products/:id/image', serverAppApiRateLimit, (req, res) => {
       if (!isServerAppEnabled()) return res.status(404).json({ error: 'Not found' });
       return forwardToMainApi(

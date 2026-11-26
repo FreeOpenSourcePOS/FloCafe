@@ -10,12 +10,12 @@ import { PizzaLineFold, usePizzaLineFolded } from './SmallItems';
 const ACTION =
   'min-h-12 min-w-12 rounded-lg border border-border bg-card px-2 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
 
-/** The kitchen lines under a pizza or deal in the cart; nothing for any other line. */
-export function PizzaLineDetails({ item }: { item: CartItem }) {
-  return cartLineDetailLines(item).map((text, index) => (
+/** Kitchen lines as the ticket writes them; a removal is red as well as worded. */
+export function PizzaDetailLines({ lines, testId }: { lines: string[]; testId: string }) {
+  return lines.map((text, index) => (
     <p
       key={index}
-      data-testid="pizza-line-detail"
+      data-testid={testId}
       className={`whitespace-pre font-mono text-xs font-semibold leading-snug ${
         text.trimStart().startsWith('NO ') ? 'text-red-700 dark:text-red-300' : 'text-foreground'
       }`}
@@ -23,6 +23,11 @@ export function PizzaLineDetails({ item }: { item: CartItem }) {
       {text}
     </p>
   ));
+}
+
+/** The kitchen lines under a pizza or deal in the cart; nothing for any other line. */
+export function PizzaLineDetails({ item }: { item: CartItem }) {
+  return <PizzaDetailLines lines={cartLineDetailLines(item)} testId="pizza-line-detail" />;
 }
 
 /** The Edit button of a pizza line on screen, where the focus goes after the sheet changed that line. */

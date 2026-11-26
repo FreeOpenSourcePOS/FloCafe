@@ -63,6 +63,7 @@ import {
   resolveOrderPaymentStatus,
 } from '@/lib/order-payment-state';
 import PendingOrderItemEdits from './PendingOrderItemEdits';
+import { SentPizzaLine } from '@/components/pos/pizza/SentPizzaLine';
 import { getPaymentCorrectionUnavailableMessage } from './CorrectPaymentMethodModal';
 import {
   orderStatusBadge,
@@ -728,6 +729,12 @@ function OrderDetailContent({
                       )}
                   </div>
                 </div>
+                <SentPizzaLine
+                  item={item}
+                  order={order}
+                  onSaved={() => void onItemEditResolved?.(order.id)}
+                  className="ps-6"
+                />
                 {Boolean(item.price_overridden) && (
                   <div className="ps-6 mt-0.5 text-xs text-amber-600 dark:text-amber-400">
                     {tOrders('priceOverriddenMenu', {

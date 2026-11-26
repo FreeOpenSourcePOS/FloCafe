@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import AddonModal from '@/components/pos/AddonModal';
+import { sentToPos } from '@/lib/pizza/sent-to-pos';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { cartVariantUnitPrice } from '@/lib/cart-price';
 import {
@@ -83,6 +84,7 @@ export default function EditOrderItemModal({
 }: Props) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
+  const tPizza = useTranslations('pizza');
   const fmt = useFormatCurrency();
   const { user, currentTenant } = useAuthStore();
   const actorId = user ? String(user.id) : null;
@@ -519,6 +521,12 @@ export default function EditOrderItemModal({
                       disabled={operationLocked}
                       onClick={() => {
                         if (inFlightRef.current || operationLocked) return;
+                        // The same product keeps its stored recipe; another one would come without.
+                        if (
+                          product.id !== item.product_id &&
+                          sentToPos(product, tPizza('sentAddFromPos'))
+                        )
+                          return;
                         setCustomizingProduct(product);
                       }}
                       className={`w-full flex justify-between px-3 py-2 text-sm text-start hover:bg-muted disabled:opacity-50 ${effectiveReplacement?.product.id === product.id ? 'bg-muted font-medium' : ''}`}

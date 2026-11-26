@@ -59,6 +59,7 @@ test('adding an item to an occupied table only prints the newly appended item on
   const originalBusiness = await businessRes.json();
 
   const tableNumber = `E2E-KOT-${Date.now()}`;
+  let seeded: { tableId: string; orderId?: number } | undefined;
 
   try {
     const putRes = await page.request.put(`${BASE}/api/settings/business`, {
@@ -69,21 +70,28 @@ test('adding an item to an occupied table only prints the newly appended item on
 
     // A configured non-WebUSB printer routes KOT prints through the network
     // POST /printers/print-kot path instead of the browser popup fallback,
-    // so the outgoing item payload can be captured directly. It can't be
-    // torn down afterward (the API refuses to delete a business's only
-    // printer), but a configured printer never triggers a print on its own —
-    // autoPrintKot is a fresh, per-browser localStorage flag that stays off
-    // for every other spec's page — so leaving it in place is harmless.
-    const printerRes = await page.request.post(`${BASE}/api/printers`, {
-      headers: authHeaders,
-      data: {
-        name: 'E2E KOT Printer',
-        connection_type: 'network',
-        ip_address: '127.0.0.1',
-        port: 9100,
-      },
+    // so the outgoing item payload can be captured directly. The printer is
+    // answered to this page only: a real one cannot be deleted afterward (the
+    // API refuses to delete a business's only printer), and it would send
+    // every later spec's receipts to a printer that is not there.
+    await page.route('**/api/printers', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      await route.fulfill({
+        json: {
+          printers: [
+            {
+              id: 'e2e-kot-printer',
+              name: 'E2E KOT Printer',
+              connection_type: 'network',
+              ip_address: '127.0.0.1',
+              port: 9100,
+              is_default: 1,
+              paper_width: 80,
+            },
+          ],
+        },
+      });
     });
-    expect(printerRes.ok()).toBeTruthy();
 
     const tableRes = await page.request.post(`${BASE}/api/tables`, {
       headers: authHeaders,
@@ -91,6 +99,7 @@ test('adding an item to an occupied table only prints the newly appended item on
     });
     expect(tableRes.ok()).toBeTruthy();
     const table = (await tableRes.json()).table;
+    seeded = { tableId: table.id };
 
     // Seed the table's existing order the way a real dine-in order arrives:
     // one item already on the ticket before the cashier reopens this table.
@@ -105,6 +114,7 @@ test('adding an item to an occupied table only prints the newly appended item on
     });
     expect(orderRes.ok()).toBeTruthy();
     const order = (await orderRes.json()).order;
+    seeded.orderId = order.id;
     expect(order.items).toHaveLength(1);
     const originalItemId = order.items[0].id;
 
@@ -163,6 +173,7 @@ test('adding an item to an occupied table only prints the newly appended item on
     expect(kotRequestBody!.items).toHaveLength(1);
     expect(kotRequestBody!.items![0].id).not.toBe(originalItemId);
   } finally {
+    if (seeded) await cleanupDineInFixture(page.request, authHeaders, seeded);
     await page.request.put(`${BASE}/api/settings/business`, {
       headers: authHeaders,
       data: originalBusiness,

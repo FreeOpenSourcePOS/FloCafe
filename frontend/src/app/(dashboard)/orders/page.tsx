@@ -86,6 +86,7 @@ import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
 import { OrderDetailPanel } from '@/components/orders/OrderDetailPanel';
 import CorrectPaymentMethodModal from '@/components/orders/CorrectPaymentMethodModal';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
+import { sentToPos } from '@/lib/pizza/sent-to-pos';
 import { PriceOverrideModal } from '@/components/orders/PriceOverrideModal';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { useManagerApprovers } from '@/hooks/useManagerApprovers';
@@ -225,6 +226,7 @@ export default function OrdersPage() {
   } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tPos = useTranslations('pos');
+  const tPizza = useTranslations('pizza');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
@@ -1900,6 +1902,7 @@ export default function OrdersPage() {
   }, [addItemsOrder, tOrders]);
 
   const handleAddItemToSelection = (product: Product) => {
+    if (sentToPos(product, tPizza('sentAddFromPos'))) return;
     if ((product.addon_groups || []).length > 0 || (product.variants || []).length > 0) {
       setAddonPickerProduct(product);
       return;

@@ -3869,6 +3869,7 @@ export default function POSPage() {
     pizza,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
+    onExistingOrderChange: setPendingOrder,
     storeTimezone,
     onCancelExistingOrderMode: () => {
       setPendingOrder(null);

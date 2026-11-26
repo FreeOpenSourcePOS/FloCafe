@@ -57,6 +57,7 @@ import {
   type OrderPaymentBadgeStatus,
 } from '@/lib/order-payment-state';
 import PendingOrderItemEdits from './PendingOrderItemEdits';
+import { SentPizzaLine } from '@/components/pos/pizza/SentPizzaLine';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type WhatsAppStatusKey = keyof AppConfig['Messages']['whatsapp']['status'];
@@ -788,6 +789,12 @@ export function OrderCard({
                 </div>
 
                 {/* Add-ons subline */}
+                <SentPizzaLine
+                  item={item}
+                  order={order}
+                  onSaved={() => void onItemEditResolved?.(order.id)}
+                  className="ps-6"
+                />
                 {Boolean(item.price_overridden) && (
                   <div className="ps-6 mt-0.5 text-xs text-amber-600 dark:text-amber-400">
                     {tOrders('priceOverriddenMenu', {

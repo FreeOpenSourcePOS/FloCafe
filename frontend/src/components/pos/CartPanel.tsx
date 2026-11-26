@@ -45,6 +45,7 @@ import { getCurrencyFractionDigits } from '@countries';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import { PizzaLineActions, PizzaLineDetails } from './pizza/PizzaCartLine';
+import { SentPizzaLine } from './pizza/SentPizzaLine';
 import type { PizzaPos } from './pizza/usePizzaPos';
 import { QuickButtonLineAction } from './pizza/useQuickButtons';
 
@@ -64,6 +65,8 @@ interface Props {
   onModalOpenChange?: (open: boolean) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
+  /** The order after a sent pizza or deal line of it was changed. */
+  onExistingOrderChange?: (order: Order) => void;
   storeTimezone?: string;
   onCancelExistingOrderMode?: () => void;
 }
@@ -230,6 +233,7 @@ export default function CartPanel({
   onModalOpenChange,
   variant = 'sidebar',
   existingOrder,
+  onExistingOrderChange,
   storeTimezone,
   onCancelExistingOrderMode,
 }: Props) {
@@ -894,13 +898,21 @@ export default function CartPanel({
                 {existingOrder.items
                   .filter((i: OrderItem) => !isTerminalItemStatus(i.status))
                   .map((item: OrderItem) => (
-                    <div key={item.id} className="flex justify-between items-center">
-                      <span className="text-xs text-muted-foreground">
-                        {item.quantity}× {item.product_name}
-                      </span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {fmt(Number(item.total))}
-                      </span>
+                    <div key={item.id}>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-muted-foreground">
+                          {item.quantity}× {item.product_name}
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {fmt(Number(item.total))}
+                        </span>
+                      </div>
+                      <SentPizzaLine
+                        item={item}
+                        order={existingOrder}
+                        onSaved={onExistingOrderChange}
+                        className="mb-1.5"
+                      />
                     </div>
                   ))}
               </div>

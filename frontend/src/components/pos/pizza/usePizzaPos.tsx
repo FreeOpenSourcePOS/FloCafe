@@ -11,6 +11,7 @@ import { useCartStore } from '@/store/cart';
 import { pizzaLineEditButton } from './PizzaCartLine';
 import { HalfAndHalfTile, PIZZA_GRID_CLASS, PizzaCategoryBlocks, PizzaTile } from './PizzaHome';
 import PizzaSheet from './PizzaSheet';
+import { useSentLineOpen } from './SentPizzaLine';
 import { SmallItemBlocks, useSmallItems, type SmallItemsPos } from './SmallItems';
 import { usePizzaCatalog } from './usePizzaCatalog';
 import { PizzaDealDialog, usePizzaDeal } from './usePizzaDeal';
@@ -69,6 +70,7 @@ export function usePizzaPos(
   const deal = usePizzaDeal(catalog);
   const quick = useQuickButtonSheet();
   const small = useSmallItems(catalog, products);
+  const sentLineOpen = useSentLineOpen();
   const [session, setSession] = useState<Session | null>(null);
   /** The line "Customize 1" split off, merged back unless the sheet saves it. */
   const split = useRef<CartItem | null>(null);
@@ -233,8 +235,8 @@ export function usePizzaPos(
         returnFocus={() => pizzaLineEditButton(written.current)}
       />
     ) : (
-      // True while a quick button dialog is open, so the POS page counts it as a modal.
-      quick.dialogOpen
+      // True while a quick button dialog or a sent line is open, so the POS page counts it as a modal.
+      quick.dialogOpen || sentLineOpen
     ),
   };
   const dealDialog = deal.session && (

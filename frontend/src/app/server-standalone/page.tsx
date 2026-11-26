@@ -38,6 +38,8 @@ import { formatItemHeading } from '@/lib/printer/item-heading';
 import { generateCartItemId } from '@/lib/cart-identity';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
+import { SentPizzaLine, useFetchedPizzaMenu } from '@/components/pos/pizza/SentPizzaLine';
+import { sentToPos } from '@/lib/pizza/sent-to-pos';
 import ProductGrid from '@/components/pos/ProductGrid';
 import type { PosCategorySort, PosItemSort } from '@/lib/pos-sort';
 import MoveTableModal from '@/components/tables/MoveTableModal';
@@ -199,6 +201,7 @@ export default function ServerStandalonePage() {
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tPos = useTranslations('pos');
+  const tPizza = useTranslations('pizza');
   const tSettings = useTranslations('settings');
   const tStaff = useTranslations('staff');
 
@@ -216,6 +219,7 @@ export default function ServerStandalonePage() {
   const [pinError, setPinError] = useState('');
   const [signInMode, setSignInMode] = useState<'pin' | 'password' | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const pizzaMenu = useFetchedPizzaMenu(api, user?.id);
   const [disabled, setDisabled] = useState(false);
   const [regional, setRegional] = useState<ServerAppInfo | null>(null);
 
@@ -1633,12 +1637,15 @@ export default function ServerStandalonePage() {
           </p>
           <div className="space-y-2">
             {currentOrder.items.map((item) => (
-              <div key={item.id} className="flex items-center gap-2 text-sm">
-                {itemStatusIcon(item.status, t)}
-                <span className="min-w-0 flex-1 truncate">
-                  <Ltr>{item.quantity}</Ltr> x{' '}
-                  {formatItemHeading(item.product_name, item.variant_selection)}
-                </span>
+              <div key={item.id}>
+                <div className="flex items-center gap-2 text-sm">
+                  {itemStatusIcon(item.status, t)}
+                  <span className="min-w-0 flex-1 truncate">
+                    <Ltr>{item.quantity}</Ltr> x{' '}
+                    {formatItemHeading(item.product_name, item.variant_selection)}
+                  </span>
+                </div>
+                <SentPizzaLine item={item} menu={pizzaMenu} className="ps-6" />
               </div>
             ))}
           </div>
@@ -1856,12 +1863,14 @@ export default function ServerStandalonePage() {
               disabled={sending}
               onProductClick={(product, quantity) => {
                 if (sendInFlightRef.current) return;
+                if (sentToPos(product, tPizza('sentAddFromPos'))) return;
                 if (productNeedsCustomizer(product)) {
                   openAddonModal(product, quantity, null);
                 } else addDraftLine(product, quantity, [], '');
               }}
               onScannedVariant={(product, variant, quantity) => {
                 if (sendInFlightRef.current) return;
+                if (sentToPos(product, tPizza('sentAddFromPos'))) return;
                 if (scannedVariantNeedsCustomizer(product, variant)) {
                   openAddonModal(product, quantity, variant);
                 } else addDraftLine(product, quantity, [], '', variant);

@@ -35,6 +35,7 @@ const { generateCartItemId, normalizeCartItems } = require('../frontend/src/lib/
 const {
   cartLineUnitPrice,
   clampCartPriceOverride,
+  draftLinesTotal,
   resolveActiveCurrencyDecimals,
   roundCartMoney,
 } = require('../frontend/src/lib/cart-price');
@@ -291,5 +292,29 @@ try {
     delete (globalThis as { localStorage?: unknown }).localStorage;
   }
 }
+
+// A draft total rounds each line to the currency before adding, as the server prices an order:
+// two half kilos at 10.01/kg are 5.01 each, 10.02 together, not 10.01.
+const halfKilo = { unitPrice: 10.01, quantity: 0.5 };
+assert.equal(draftLinesTotal([halfKilo, halfKilo], 2), 10.02, 'weighed lines round one by one');
+assert.equal(
+  draftLinesTotal([{ unitPrice: 10.7, quantity: 3 }], 2),
+  32.1,
+  'three at 10.70 are 32.10, without binary noise',
+);
+assert.equal(
+  draftLinesTotal([{ unitPrice: 0.35, quantity: 1.5 }], 2),
+  0.53,
+  'a true half cent (0.525) rounds up although the float product is just under it',
+);
+assert.equal(
+  draftLinesTotal(
+    [{ unitPrice: 23, quantity: 2, addons: [{ price: 1.5, quantity: 2 }, { price: '0.25' }] }],
+    2,
+  ),
+  52.5,
+  'add-ons count per unit: (23 + 3 + 0.25) x 2',
+);
+assert.equal(draftLinesTotal([], 2), 0, 'an empty draft is 0');
 
 console.log('✓ cart price override checks passed');

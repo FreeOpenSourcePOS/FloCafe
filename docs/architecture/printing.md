@@ -254,9 +254,14 @@ text. The HTML ticket renders each line with `white-space: pre-wrap`.
 
 On the backend ESC/POS paths, a pizza or deal line gets its detail lines from the recipe in its
 `modifier_selection`. `renderKotViaDocument`, `renderClassicReceiptViaDocument`,
-`renderCompactReceiptViaDocument`, and `renderMerchantReceiptViaDocument` pass the order's items
+`renderCompactReceiptViaDocument`, `renderMerchantReceiptViaDocument`, and the compliance line
+template (`escposLineTemplateV1Lines`) pass the order's items
 through `withRecipeDetailLines(items, columns)` in `main/pizza/order-recipe.ts` before they build
-print data. It reads the catalogue from `pizza_menu` once per call and, for each item that holds a
+print data. The compliance template prints the lines under the item row, before add-ons, whatever
+its layout's `detailLines` setting selects. `POST /api/printers/print-kot` prints the order's saved
+lines: the `items` in a request only choose lines by `id`, so a recipe always comes from the
+database. The print test page's hardware ticket sends `sample: true` instead, and the route prints
+`sampleKotOrder()` from `main/printers/sample-kot.ts` without reading an order. It reads the catalogue from `pizza_menu` once per call and, for each item that holds a
 recipe, sets `detailLines` to `ticketLines(catalog, recipe, columns).detailLines`
 (`shared/pizza/ticket.ts`), replacing any lines the item carried. `columns` is the renderer's own layout width, the value `resolvePrinterContext()`
 returns after [text size](#text-size) is applied, so an extra large printer gets lines wrapped for

@@ -599,6 +599,427 @@ async function main() {
       assertEqualOrThrow(row(without.id).modifier_selection, 'null', 'nothing is stored for none');
     },
 
+    'Case 6f: changing only the recipe or the note of a sold pizza keeps what it was sold at':
+      async () => {
+        const order = (
+          await createOrder([
+            gardenLine({ modifier_selection: gardenSent }),
+            halfLine({
+              modifier_selection: halfSent,
+              price_override: { price: 20, reason: 'Regular customer' },
+            }),
+          ])
+        ).data.order;
+        const lineOf = (productId: string) =>
+          liveRows(order.id).find((line) => line.product_id === productId);
+        const discounted = await post(
+          `/api/orders/${order.id}/items/${lineOf('pz-garden').id}/discount`,
+          { discount_type: 'percentage', discount_value: 10 },
+        );
+        assertEqualOrThrow(discounted.status, 200, 'the garden line gets 10% off');
+        const money = (line: any) =>
+          JSON.stringify([line.unit_price, line.discount_amount, line.subtotal]);
+        assertEqualOrThrow(money(lineOf('pz-garden')), '[23,2.3,20.7]', 'sold at 23 less 2.30');
+
+        // A menu load with new prices: every size costs 2 more.
+        const reprice = (by: number) =>
+          db.prepare('UPDATE product_variants SET price = price + ?').run(by);
+        reprice(2);
+        try {
+          const removal = await edit(order.id, lineOf('pz-garden').id, {
+            replacement: gardenLine({ modifier_selection: whole('garden', ['Olives']) }),
+          });
+          assertEqualOrThrow(removal.status, 200, 'recipe only: accepted');
+          assertEqualOrThrow(
+            lineOf('pz-garden').modifier_selection,
+            stored(whole('garden', ['Olives'])),
+            'recipe only: the new recipe is stored',
+          );
+          assertEqualOrThrow(
+            money(lineOf('pz-garden')),
+            '[23,2.3,20.7]',
+            'recipe only: the price and the discount it was sold at stay',
+          );
+
+          const note = await edit(order.id, lineOf('pz-garden').id, {
+            replacement: gardenLine({ special_instructions: 'Ring the bell' }),
+          });
+          assertEqualOrThrow(note.status, 200, 'note only: accepted');
+          assertEqualOrThrow(
+            lineOf('pz-garden').special_instructions,
+            'Ring the bell',
+            'note only: the note is stored',
+          );
+          assertEqualOrThrow(money(lineOf('pz-garden')), '[23,2.3,20.7]', 'note only: same money');
+
+          const otherHalves = await edit(order.id, lineOf('pz-half-and-half').id, {
+            replacement: halfLine({
+              modifier_selection: halves(
+                { pizzaId: 'plain', removed: [] },
+                { pizzaId: 'classic', removed: [] },
+              ),
+            }),
+          });
+          assertEqualOrThrow(otherHalves.status, 200, 'overridden line: accepted');
+          const half = lineOf('pz-half-and-half');
+          assertEqualOrThrow(
+            JSON.stringify([half.unit_price, half.price_overridden, half.original_unit_price]),
+            '[20,1,23]',
+            'overridden line: the override and the price it replaced stay',
+          );
+
+          const medium = await edit(order.id, lineOf('pz-garden').id, {
+            replacement: gardenLine({ variant_id: 'pz-garden-medium' }),
+          });
+          assertEqualOrThrow(medium.status, 200, 'size change: accepted');
+          assertEqualOrThrow(
+            money(lineOf('pz-garden')),
+            '[21,0,21]',
+            'size change: charged the new price of the new size',
+          );
+        } finally {
+          reprice(-2);
+        }
+      },
+
+    'Case 6h: a recipe or note change copies the saved discount, add-ons and stock as they are':
+      async () => {
+        db.prepare(
+          "INSERT INTO addon_groups (id, name, allow_multiple_quantities, max_selection) VALUES ('ag-dips', 'Dips', 1, NULL)",
+        ).run();
+        db.prepare(
+          "INSERT INTO addons (id, addon_group_id, name, price, is_active, track_inventory, stock_quantity) VALUES ('ad-dips-ranch', 'ag-dips', 'Ranch', 1.5, 1, 1, 10)",
+        ).run();
+        db.prepare(
+          "INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('pz-garden', 'ag-dips')",
+        ).run();
+        const dips = [{ id: 'ad-dips-ranch', quantity: 2 }];
+        const createdH = await createOrder([
+          gardenLine({ modifier_selection: gardenSent }),
+          gardenLine({ modifier_selection: gardenSent, addons: dips }),
+        ]);
+        assertEqualOrThrow(createdH.status, 201, `the order is accepted: ${createdH.data.error}`);
+        const order = createdH.data.order;
+        const [plain, dipped] = liveRows(order.id);
+        const money = (line: any) =>
+          JSON.stringify([line.unit_price, line.discount_amount, line.subtotal]);
+        const live = (index: number) => liveRows(order.id)[index];
+
+        // 10% off 23.00 is 2.30; the owner then sets the price to 10.00 and the 2.30 stays.
+        const discounted = await post(`/api/orders/${order.id}/items/${plain.id}/discount`, {
+          discount_type: 'percentage',
+          discount_value: 10,
+        });
+        assertEqualOrThrow(discounted.status, 200, 'the first line gets 10% off');
+        const overridden = await patch(`/api/orders/${order.id}/items/${plain.id}/price`, {
+          price: 10,
+          reason: 'Regular customer',
+        });
+        assertEqualOrThrow(overridden.status, 200, 'and then a price of 10.00');
+        assertEqualOrThrow(money(live(0)), '[10,2.3,7.7]', 'it stands at 10.00 less 2.30');
+        const noted = await edit(order.id, plain.id, {
+          replacement: gardenLine({ special_instructions: 'Ring the bell' }),
+        });
+        assertEqualOrThrow(noted.status, 200, 'note only: accepted');
+        const afterNote = liveRows(order.id).find(
+          (line) => line.special_instructions === 'Ring the bell',
+        );
+        assertEqualOrThrow(money(afterNote), '[10,2.3,7.7]', 'note only: the 2.30 is not reworked');
+
+        // A menu load retires the dip the second pizza was sold with.
+        db.prepare("UPDATE addons SET is_active = 0 WHERE id = 'ad-dips-ranch'").run();
+        try {
+          const other = liveRows(order.id).find((line) => line.id === dipped.id);
+          const removal = await edit(order.id, other.id, {
+            replacement: gardenLine({
+              modifier_selection: whole('garden', ['Olives']),
+              addons: dips,
+            }),
+          });
+          assertEqualOrThrow(removal.status, 200, 'retired dip: a recipe change is accepted');
+          const changed = liveRows(order.id).find(
+            (line) => line.modifier_selection === stored(whole('garden', ['Olives'])),
+          );
+          assertEqualOrThrow(
+            money(changed),
+            '[23,0,26]',
+            'retired dip: 23.00 and two dips at 1.50',
+          );
+          assertEqualOrThrow(
+            JSON.stringify(
+              db
+                .prepare(
+                  'SELECT addon_id, addon_name, price, quantity FROM order_item_addons WHERE order_item_id = ?',
+                )
+                .all(changed.id),
+            ),
+            JSON.stringify([
+              { addon_id: 'ad-dips-ranch', addon_name: 'Ranch', price: 1.5, quantity: 2 },
+            ]),
+            'retired dip: the dips are on the new line as they were sold',
+          );
+          assertEqualOrThrow(
+            (
+              db
+                .prepare("SELECT stock_quantity FROM addons WHERE id = 'ad-dips-ranch'")
+                .get() as any
+            ).stock_quantity,
+            8,
+            'retired dip: the two dips stay out of stock, counted once',
+          );
+          const bad = await edit(order.id, changed.id, {
+            replacement: gardenLine({
+              modifier_selection: whole('garden', ['Anchovies']),
+              addons: dips,
+            }),
+          });
+          assertEqualOrThrow(bad.status, 400, 'retired dip: a recipe the menu refuses is refused');
+          const more = await edit(order.id, changed.id, {
+            replacement: gardenLine({
+              modifier_selection: whole('garden', ['Olives']),
+              addons: [{ id: 'ad-dips-ranch', quantity: 3 }],
+            }),
+          });
+          assertEqualOrThrow(
+            more.status,
+            400,
+            'retired dip: one more of it is a new sale, refused',
+          );
+        } finally {
+          db.prepare("UPDATE addons SET is_active = 1 WHERE id = 'ad-dips-ranch'").run();
+        }
+      },
+
+    'Case 6i: a note change on a retired pizza is accepted; a new recipe for it is checked':
+      async () => {
+        const order = (
+          await createOrder([
+            { product_id: 'pz-island', variant_id: 'pz-island-large', quantity: 1 },
+            {
+              product_id: 'pz-island',
+              variant_id: 'pz-island-large',
+              quantity: 1,
+              modifier_selection: whole('island', ['Ham']),
+            },
+          ])
+        ).data.order;
+        const [bare, withRecipe] = liveRows(order.id);
+        const islandLine = (extra: object) => ({
+          product_id: 'pz-island',
+          variant_id: 'pz-island-large',
+          quantity: 1,
+          ...extra,
+        });
+        // A menu load without Island: the product and its sizes are off, the menu has no such pizza.
+        const without = {
+          ...catalog,
+          pizzas: catalog.pizzas.filter((p: any) => p.id !== 'island'),
+        };
+        const retire = (active: number) => {
+          db.prepare("UPDATE products SET is_active = ? WHERE id = 'pz-island'").run(active);
+          db.prepare(
+            "UPDATE product_variants SET is_active = ? WHERE product_id = 'pz-island'",
+          ).run(active);
+        };
+        retire(0);
+        writePizzaMenu(db, JSON.stringify(without));
+        try {
+          const noted = await edit(order.id, bare.id, {
+            replacement: islandLine({ special_instructions: 'Back door' }),
+          });
+          assertEqualOrThrow(noted.status, 200, 'no recipe: the note change is accepted');
+          const kept = await edit(order.id, withRecipe.id, {
+            replacement: islandLine({
+              special_instructions: 'Ring the bell',
+              modifier_selection: whole('island', ['Ham']),
+            }),
+          });
+          assertEqualOrThrow(
+            kept.status,
+            200,
+            'same recipe sent back: the note change is accepted',
+          );
+          const line = liveRows(order.id).find(
+            (row) => row.special_instructions === 'Ring the bell',
+          );
+          assertEqualOrThrow(
+            line.modifier_selection,
+            stored(whole('island', ['Ham'])),
+            'and the recipe it was sold with stays',
+          );
+          const changed = await edit(order.id, line.id, {
+            replacement: islandLine({ modifier_selection: whole('island', ['Pineapple']) }),
+          });
+          assertEqualOrThrow(changed.status, 400, 'a new recipe is checked against the menu');
+          assertEqualOrThrow(
+            changed.data.error,
+            'That pizza is not on the menu. Pick another pizza',
+            'and refused, because the menu no longer has the pizza',
+          );
+
+          // The same recipe with its keys in another order and a removal repeated is no change.
+          const reordered = await edit(order.id, line.id, {
+            replacement: islandLine({
+              special_instructions: 'Side door',
+              modifier_selection: {
+                whole: { removed: ['Ham', 'Ham'], pizzaId: 'island' },
+                sizeId: 'large',
+                v: 1,
+                kind: 'pizza',
+              },
+            }),
+          });
+          assertEqualOrThrow(reordered.status, 200, 'the same recipe, keys reordered: accepted');
+          const sideDoor = liveRows(order.id).find(
+            (row) => row.special_instructions === 'Side door',
+          );
+          assertEqualOrThrow(
+            sideDoor.modifier_selection,
+            stored(whole('island', ['Ham'])),
+            'and stored as it was sold',
+          );
+          // Clearing the recipe is a change of recipe: the pizza must still be on the menu.
+          const cleared = await edit(order.id, sideDoor.id, {
+            replacement: islandLine({
+              special_instructions: 'Side door',
+              modifier_selection: null,
+            }),
+          });
+          assertEqualOrThrow(cleared.status, 400, 'an explicit null on a retired pizza is refused');
+          assertEqualOrThrow(
+            cleared.data.error,
+            'Island is not on the menu. Pick another item',
+            'with a message the cashier can act on',
+          );
+          assertEqualOrThrow(
+            liveRows(order.id).find((row) => row.id === sideDoor.id)?.modifier_selection,
+            stored(whole('island', ['Ham'])),
+            'and the line keeps its recipe',
+          );
+          const stillBare = liveRows(order.id).find(
+            (row) => row.special_instructions === 'Back door',
+          );
+          const nullOnBare = await edit(order.id, stillBare.id, {
+            replacement: islandLine({
+              special_instructions: 'Front door',
+              modifier_selection: null,
+            }),
+          });
+          assertEqualOrThrow(
+            nullOnBare.status,
+            200,
+            'null on a line that has no recipe is no change',
+          );
+        } finally {
+          retire(1);
+          writePizzaMenu(db, JSON.stringify(catalog));
+        }
+      },
+
+    'Case 6g: an edit key reused with a cleared recipe instead of a kept one is a conflict':
+      async () => {
+        const order = (await createOrder([gardenLine({ modifier_selection: gardenSent })])).data
+          .order;
+        const [line] = liveRows(order.id);
+        const version = editVersion(order.id, line.id);
+        const sendAt = (replacement: object) =>
+          api(baseUrl, `/api/orders/${order.id}/items/${line.id}/edit`, {
+            method: 'PATCH',
+            body: { expected_edit_version: version, replacement },
+            headers: { ...owner.authHeader, 'Idempotency-Key': 'pizza-recipe-absent-or-null' },
+          });
+        const kept = await sendAt(gardenLine({ special_instructions: 'Ring the bell' }));
+        assertEqualOrThrow(kept.status, 200, 'the edit that leaves the recipe out is accepted');
+        const again = await sendAt(gardenLine({ special_instructions: 'Ring the bell' }));
+        assertEqualOrThrow(again.status, 200, 'the same request again is answered as before');
+        const cleared = await sendAt(
+          gardenLine({ special_instructions: 'Ring the bell', modifier_selection: null }),
+        );
+        assertEqualOrThrow(cleared.status, 409, 'the same key with an explicit null is refused');
+        assertEqualOrThrow(
+          liveRows(order.id)[0].modifier_selection,
+          stored(gardenStored),
+          'and the kept recipe still stands',
+        );
+      },
+
+    'Case 6e: an item a menu load retired cannot be sold again, but a sold line can shrink':
+      async () => {
+        const islandLine = (extra: object = {}) => ({
+          product_id: 'pz-island',
+          variant_id: 'pz-island-large',
+          quantity: 2,
+          ...extra,
+        });
+        const sold = (await createOrder([islandLine(), islandLine()])).data.order;
+        const [first, second] = liveRows(sold.id);
+        // What a menu load does to a pizza that left the file, and what the back office does.
+        const retire = (active: number, deletedAt: string | null) => {
+          db.prepare('UPDATE products SET is_active = ?, deleted_at = ? WHERE id = ?').run(
+            active,
+            deletedAt,
+            'pz-island',
+          );
+          db.prepare('UPDATE product_variants SET is_active = ? WHERE product_id = ?').run(
+            active,
+            'pz-island',
+          );
+        };
+        const gone = 'Island is not on the menu. Pick another item';
+        const refusedSale = async (label: string, response: any) => {
+          assertEqualOrThrow(response.status, 400, `${label}: refused`);
+          assertEqualOrThrow(response.data.error, gone, `${label}: says what to do`);
+        };
+        retire(0, null);
+        try {
+          const before = [count('orders'), count('order_items')];
+          await refusedSale('create with its size', await createOrder([islandLine()]));
+          await refusedSale(
+            'create with no size, which would sell at the base price',
+            await createOrder([{ product_id: 'pz-island', quantity: 1 }]),
+          );
+          await refusedSale(
+            'add items',
+            await post(`/api/orders/${sold.id}/items`, { items: [islandLine()] }),
+          );
+          await refusedSale('quantity increase', await edit(sold.id, first.id, { quantity: 3 }));
+          assertEqualOrThrow(
+            JSON.stringify([count('orders'), count('order_items')]),
+            JSON.stringify(before),
+            'the refusals write nothing',
+          );
+
+          const fewer = await edit(sold.id, first.id, { quantity: 1 });
+          assertEqualOrThrow(fewer.status, 200, 'a reduction of the sold line is accepted');
+          assertEqualOrThrow(
+            JSON.stringify(liveRows(sold.id).map((line) => line.quantity)),
+            '[2,1]',
+            'and the line now holds one',
+          );
+          const cancelled = await patch(`/api/orders/${sold.id}/items/${second.id}/cancel`, {});
+          assertEqualOrThrow(cancelled.status, 200, 'a sold line can still be cancelled');
+
+          retire(1, '2026-01-01T00:00:00.000Z');
+          await refusedSale('a deleted product', await createOrder([islandLine()]));
+        } finally {
+          retire(1, null);
+        }
+
+        // A pizza whose sizes are all switched off must not sell at its base price.
+        db.prepare(
+          "UPDATE product_variants SET is_active = 0 WHERE product_id = 'pz-island'",
+        ).run();
+        try {
+          const sizeless = await createOrder([{ product_id: 'pz-island', quantity: 1 }]);
+          assertEqualOrThrow(sizeless.status, 400, 'a pizza with no size is refused');
+          assertEqualOrThrow(sizeless.data.error, 'Pick a size for this pizza', 'with a message');
+        } finally {
+          retire(1, null);
+        }
+        const back = await createOrder([islandLine()]);
+        assertEqualOrThrow(back.status, 201, 'back on the menu, it sells again');
+      },
+
     'Case 9: with no readable menu, pizza recipes answer 503 and other lines still sell':
       async () => {
         const menuText = JSON.stringify(catalog);

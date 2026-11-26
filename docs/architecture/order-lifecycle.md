@@ -50,6 +50,26 @@ Everything monetary is resolved server-side inside one transaction:
 
 - The unit price comes from the catalog: `products.price`, or the variant price for an order with an
   `online_platform`. A client-sent price is never read.
+- A product that is switched off or deleted is refused with `400` (`assertProductOnMenu()` in
+  [`main/routes/orders-validation.ts`](../../main/routes/orders-validation.ts)). Adding items, a
+  quantity increase, and a replacement apply the same check; a quantity reduction, a void, a
+  refund, and a [recipe-only or note-only edit](#recipes-on-pizza-and-deal-lines) of a line
+  already sold do not.
+- A line's amount is its unit price plus its add-ons, times the quantity, less its item discount,
+  worked out in decimal arithmetic and rounded half-up to the currency's decimal places
+  (`lineSubtotal()` in [`main/services/tax.ts`](../../main/services/tax.ts)). Order creation, added
+  items, item edits, item discounts, price overrides, and the tax preview all use it, so the tax
+  engine is given the same whole-cent amount on every path. The order subtotal is the rounded sum
+  of its lines.
+- A percentage or flat discount is worked out by `discountOn()` in the same file: in decimal
+  arithmetic, rounded half-up, never more than its base. The item, order, and bill discount
+  routes, the recalculation after an order or a line changes, and the tax preview all use it.
+  `calculateOrderTotals()` in [`main/services/orders.ts`](../../main/services/orders.ts) rounds
+  each stored line subtotal to the currency before adding the lines up, so a line stored as
+  `32.099999999999994` is discounted and taxed as `32.10`.
+- An item discount and an order discount of the same percentage can differ by a cent in tax: an
+  item discount taxes the discounted line, while an order discount prorates tax that was already
+  rounded per line (1.52 against 1.53 on three at 10.70 with 5% off and 5% tax).
 - Quantity rules are checked per sale unit, including fractional and weight-precision products.
 - Stock deduction and recipe depletion are written in the same transaction for immediate orders
   (scheduled orders defer stock and recipe depletion until kitchen release), so the order and its
@@ -80,6 +100,8 @@ incoming line of `POST /api/orders`, `POST /api/orders/:id/items`, and
 - `pizza_products` says whether the line's product is a pizza, the half-and-half product, or a
   deal. A product with no row there keeps whatever `modifier_selection` it sends, except that an
   object whose `kind` is `pizza` or `deal` is refused.
+- A pizza product and the half-and-half product need a size variant on the line; a line without
+  one is refused with "Pick a size for this pizza".
 - A pizza product may arrive with no recipe. The half-and-half product and every deal product
   require one.
 - `validateRecipe()` in [`shared/pizza/recipe.ts`](../../shared/pizza/recipe.ts) checks the recipe
@@ -105,6 +127,21 @@ Later changes to the line keep the recipe:
   kept recipe is then checked like any other.
 - A replacement that sends `modifier_selection: null` sends no recipe: it clears the recipe of a
   pizza product, and is refused on the half-and-half product and on a deal.
+- A replacement that names the line's own product, variant, quantity, and add-ons, and sends no
+  `price_override`, changes only the recipe or the note (`changesRecipeOnly()` in
+  [`main/pizza/sold-line.ts`](../../main/pizza/sold-line.ts)). The new line is the saved line
+  with that recipe or note: `carrySoldLine()` and `soldTax()` copy the unit price, the item
+  discount amount, and the tax from the saved row, and the saved add-ons, their prices, and their
+  stock deductions are reused as a quantity reduction reuses them. Nothing is worked out from the
+  current catalog or by the tax engine, so a menu load, a price override, or a tax change between
+  the sale and the edit does not move the line's money, and the edit is accepted when the
+  product, its size, or one of its add-ons has since been switched off. Two recipes are the
+  same when `recipeKey()` gives them the same key, whatever the order of their keys, removals,
+  and pops. A recipe that differs from the saved one, an explicit `null` that clears it included,
+  is checked against the current menu and needs a product that is still switched on, so it is
+  refused for a retired pizza; the saved recipe sent back is not checked. Any other replacement, a new
+  size or one more add-on included, is a new sale: priced, taxed, and validated from the current
+  catalog.
 - A replacement by another product does not carry the recipe over, and a line whose
   `modifier_selection` is not a recipe is replaced by exactly what the request sends.
 - The adjustment rows a void and an item refund write copy the line's `modifier_selection`.

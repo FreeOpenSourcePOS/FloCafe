@@ -219,6 +219,7 @@ export default function PrintTestPage() {
             const printWarnings = await printKot(testOrder, {
               paperWidth,
               stationName: t('kitchenStation'),
+              sample: true,
             });
             toast.success(t('kotPrinted'));
             showPrintWarningsToast(printWarnings);

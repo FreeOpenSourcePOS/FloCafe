@@ -74,6 +74,7 @@ import {
 } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
+import { sampleKotOrder } from '../printers/sample-kot';
 
 const router = Router();
 
@@ -1418,14 +1419,18 @@ router.post(
       const arabicShapingOverride =
         typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
 
-      if (!orderId) {
+      // The print test's ticket is the server's own sample; no order is read for it.
+      const sample = req.body?.sample === true;
+      if (!orderId && !sample) {
         return res.status(400).json({ error: 'orderId is required' });
       }
 
       const db = getDatabase();
-      const preCheckOrder = db
-        .prepare('SELECT id, release_status FROM orders WHERE id = ?')
-        .get(orderId) as { id: number; release_status?: string | null } | undefined;
+      const preCheckOrder = (
+        sample
+          ? undefined
+          : db.prepare('SELECT id, release_status FROM orders WHERE id = ?').get(orderId)
+      ) as { id: number; release_status?: string | null } | undefined;
       if (preCheckOrder?.release_status && preCheckOrder.release_status !== 'released') {
         return res.status(409).json({
           error: 'Cannot print KOT for a scheduled order before it is released to the kitchen',
@@ -1447,7 +1452,9 @@ router.post(
           .json({ error: 'No default printer configured. Add a printer in Settings.' });
       }
 
-      const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+      const order: any = sample
+        ? sampleKotOrder()
+        : db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
       }
@@ -1455,7 +1462,7 @@ router.post(
       const kotLanguage = resolveTenantKotLanguage(db);
 
       // Fetch order items from database
-      const orderItems: any[] = getEffectiveOrderItems(db, orderId);
+      const orderItems: any[] = sample ? order.items : getEffectiveOrderItems(db, orderId);
 
       // Fetch table/customer info if available so backend KOT metadata matches
       // the browser and WebUSB paths.
@@ -1479,8 +1486,14 @@ router.post(
       const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
       let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
       let failedPrinter: any = printer;
-      const kotSourceItems = (Array.isArray(items) ? items : orderItems).filter((item: any) =>
-        isKotItemPending(item?.status),
+      // The request only chooses lines; what prints is the saved order.
+      const requestedIds =
+        !sample && Array.isArray(items)
+          ? new Set(items.map((item: any) => String(item?.id)))
+          : null;
+      const kotSourceItems = orderItems.filter(
+        (item: any) =>
+          (!requestedIds || requestedIds.has(String(item.id))) && isKotItemPending(item.status),
       );
 
       if (stationName) {

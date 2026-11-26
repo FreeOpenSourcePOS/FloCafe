@@ -34,7 +34,9 @@ import {
   getConfiguredChargeTaxCategories,
   getCountryPackByVersion,
   invertTaxBreakdown,
+  discountOn,
   invertTaxSnapshot,
+  lineSubtotal,
   normalizeChargeAmount,
   type Customer,
 } from '../services/tax';
@@ -85,10 +87,12 @@ import {
 } from '../services/item-price-override';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { checkLineRecipe, keepStoredRecipe } from '../pizza/order-recipe';
+import { carrySoldLine, changesRecipeOnly, soldTax } from '../pizza/sold-line';
 import { cloudSync } from '../services/cloud-sync';
 import {
   validateOrderNotes,
   validateItemNotes,
+  assertProductOnMenu,
   validateProductQuantity,
   validateDeliveryAddress,
   validateDeliveryNote,
@@ -1077,6 +1081,8 @@ function insertOrderItems(
     preserveSelections?: boolean;
     /** Scheduled orders defer product/add-on/recipe stock depletion until release. */
     deferStockDeduction?: boolean;
+    /** A recipe-only edit keeps the tax its line was sold with; the catalog is not consulted. */
+    soldTax?: ReturnType<typeof calculateItemTax>;
   },
 ): (number | bigint)[] {
   const { tenantInfo, customer, isOnlineOrder, actorUserId } = context;
@@ -1111,6 +1117,7 @@ function insertOrderItems(
 
     // Validate quantity and price
     validateProductQuantity(product, quantity);
+    if (!context.preserveSelections) assertProductOnMenu(product);
     const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder, {
       // A quantity reduction keeps the stored selection even if the merchant
       // has since disabled the variant or added variants the line never had;
@@ -1160,7 +1167,6 @@ function insertOrderItems(
       );
     }
 
-    let itemSubtotal = unitPrice * quantity;
     if (item.addons && Array.isArray(item.addons)) {
       for (const addon of item.addons) {
         if (!addon) continue;
@@ -1178,13 +1184,18 @@ function insertOrderItems(
             );
           }
         }
-        const addonQty = addon.quantity || 1;
-        itemSubtotal += (addon.price || 0) * addonQty * quantity;
       }
     }
-    itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
+    const itemSubtotal = lineSubtotal(
+      unitPrice,
+      quantity,
+      Array.isArray(item.addons) ? item.addons : null,
+      itemDiscount,
+      getCurrencyFractionDigits(getTenantCurrency()),
+    );
 
-    const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
+    const taxResult =
+      context.soldTax ?? calculateItemTax(tenantInfo, product, itemSubtotal, customer);
     const itemTotal =
       itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
     const itemTaxSnapshotJson = taxResult.tax_snapshot
@@ -1316,7 +1327,7 @@ function resolveOrderLevelDiscountAmount(
   const configuredValue = Number(order.discount_value || 0);
   if (order.discount_type === 'percentage') {
     if (configuredValue > 0) {
-      return Math.min(subtotal, Number(((subtotal * configuredValue) / 100).toFixed(decimals)));
+      return discountOn(subtotal, 'percentage', configuredValue, decimals);
     }
     const previousSubtotal = Number(order.subtotal || 0);
     if (existingDiscountAmount > 0 && previousSubtotal > 0) {
@@ -2456,6 +2467,7 @@ router.post(
 
           // Validate quantity and price
           validateProductQuantity(product, quantity);
+          assertProductOnMenu(product);
           const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
           checkLineRecipe(db, items, item, variant?.id);
           let unitPrice = variant
@@ -2486,7 +2498,6 @@ router.post(
             );
           }
 
-          let itemSubtotal = unitPrice * quantity;
           if (item.addons && Array.isArray(item.addons)) {
             for (const addon of item.addons) {
               if (!addon) continue;
@@ -2504,11 +2515,15 @@ router.post(
                   );
                 }
               }
-              const addonQty = addon.quantity || 1;
-              itemSubtotal += (addon.price || 0) * addonQty * quantity;
             }
           }
-          itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
+          const itemSubtotal = lineSubtotal(
+            unitPrice,
+            quantity,
+            Array.isArray(item.addons) ? item.addons : null,
+            itemDiscount,
+            getCurrencyFractionDigits(getTenantCurrency()),
+          );
 
           const itemId = String(item.id || item.product_id || idx + 1);
           validatedItems.push({
@@ -2525,10 +2540,11 @@ router.post(
           });
         }
 
-        const itemsSubtotal = validatedItems.reduce((acc, v) => acc + v.itemSubtotal, 0);
-
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
+        const itemsSubtotal = Number(
+          validatedItems.reduce((acc, v) => acc + v.itemSubtotal, 0).toFixed(decimals),
+        );
         const minorFactor = getCurrencyMinorUnitFactor(currency);
 
         const resolvedCharges = buildAppliedCharges({
@@ -2594,7 +2610,7 @@ router.post(
 
           const itemTotal =
             itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
-          subtotal += itemSubtotal;
+          subtotal = Number((subtotal + itemSubtotal).toFixed(decimals));
 
           const itemCreatedAt = now();
           const recipeSnapshot = shouldDeferRelease
@@ -5032,15 +5048,10 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       const totals = calculateOrderTotals(db, req.params.id as string);
 
       // Calculate discount amount
-      let discountAmount = 0;
-      if (discount_value > 0) {
-        if (discount_type === 'percentage') {
-          discountAmount = (totals.subtotal * discount_value) / 100;
-        } else {
-          discountAmount = Math.min(discount_value, totals.subtotal);
-        }
-        discountAmount = Number(discountAmount.toFixed(decimals));
-      }
+      const discountAmount =
+        discount_value > 0
+          ? discountOn(totals.subtotal, discount_type, discount_value, decimals)
+          : 0;
 
       const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
       const {
@@ -5518,22 +5529,28 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
       const addonRows = db
         .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
         .all(currentItem.id) as { price: number; quantity?: number }[];
-      const addonTotal = addonRows.reduce(
-        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
+      const freshItemBaseTotal = lineSubtotal(
+        currentItem.unit_price,
+        currentItem.quantity,
+        addonRows,
         0,
+        decimals,
       );
-      const freshItemBaseTotal = currentItem.unit_price * currentItem.quantity + addonTotal;
-
-      let discountAmount: number;
-      if (discount_type === 'percentage') {
-        discountAmount = (freshItemBaseTotal * discount_value) / 100;
-      } else {
-        discountAmount = Math.min(discount_value, freshItemBaseTotal);
-      }
-      discountAmount = Number(discountAmount.toFixed(decimals));
+      const discountAmount = discountOn(
+        freshItemBaseTotal,
+        discount_type,
+        discount_value,
+        decimals,
+      );
 
       // Recalculate item subtotal after discount
-      const newSubtotal = Math.max(0, freshItemBaseTotal - discountAmount);
+      const newSubtotal = lineSubtotal(
+        currentItem.unit_price,
+        currentItem.quantity,
+        addonRows,
+        discountAmount,
+        decimals,
+      );
 
       // Recalculate tax on discounted subtotal
       const product = db
@@ -5848,7 +5865,13 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
       const itemDiscount = Number(
         Math.min(Number(currentItem.discount_amount || 0), baseTotal).toFixed(decimals),
       );
-      const newSubtotal = Math.max(0, Number((baseTotal - itemDiscount).toFixed(decimals)));
+      const newSubtotal = lineSubtotal(
+        override.price,
+        currentItem.quantity,
+        addonRows,
+        itemDiscount,
+        decimals,
+      );
 
       const customer = currentOrder.customer_id
         ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
@@ -6089,7 +6112,8 @@ function normalizeReplacementForHash(replacement: unknown): Record<string, unkno
     quantity: Number(r.quantity),
     variant_id: r.variant_id ?? null,
     variant_selection: r.variant_selection ?? null,
-    modifier_selection: r.modifier_selection ?? null,
+    // Left out keeps a stored recipe and null clears it, so the two must not hash alike.
+    modifier_selection: r.modifier_selection,
     special_instructions:
       typeof r.special_instructions === 'string' ? r.special_instructions.trim() || null : null,
     addons,
@@ -6163,14 +6187,11 @@ function resolveEditedItemDiscountAmount(
   if (existingDiscount <= 0) return 0;
   const details = getAppliedItemDiscountDetails(db, oldItem.id);
   if (details?.discount_type === 'percentage') {
-    return Math.min(
-      itemBaseTotal,
-      Number(((itemBaseTotal * details.discount_value) / 100).toFixed(decimals)),
-    );
+    return discountOn(itemBaseTotal, 'percentage', details.discount_value, decimals);
   }
   if (details?.discount_type === 'amount') {
     if (extraLineOnly) return 0;
-    return Math.min(itemBaseTotal, Number(details.discount_value.toFixed(decimals)));
+    return discountOn(itemBaseTotal, 'amount', details.discount_value, decimals);
   }
   if (extraLineOnly) return 0;
   const scaled =
@@ -6792,12 +6813,8 @@ router.patch(
           }
           validateProductQuantity(product, newQuantity);
 
-          const addonPerUnitTotal = oldAddons.reduce(
-            (sum, addon) => sum + Number(addon.price || 0) * Number(addon.quantity || 1),
-            0,
-          );
           const unitPrice = Number(oldItem.unit_price);
-          const itemBaseTotal = (unitPrice + addonPerUnitTotal) * newQuantity;
+          const itemBaseTotal = lineSubtotal(unitPrice, newQuantity, oldAddons, 0, decimals);
           const itemDiscount = resolveEditedItemDiscountAmount(
             db,
             oldItem,
@@ -6806,9 +6823,12 @@ router.patch(
             oldQuantity,
             decimals,
           );
-          const itemSubtotal = Math.max(
-            0,
-            Number((itemBaseTotal - itemDiscount).toFixed(decimals)),
+          const itemSubtotal = lineSubtotal(
+            unitPrice,
+            newQuantity,
+            oldAddons,
+            itemDiscount,
+            decimals,
           );
           const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
           const itemTotal =
@@ -6878,8 +6898,9 @@ router.patch(
           wastedQuantity = Number((oldQuantity - newQuantity).toFixed(6));
         } else {
           let newItem: OrderItemInput;
-          const preserveUnitPrice = hasQuantity;
-          const preserveStoredSelections = hasQuantity && newQuantity < oldQuantity;
+          const recipeOnly = !hasQuantity && changesRecipeOnly(db, replacement, oldItem, oldAddons);
+          const preserveUnitPrice = hasQuantity || recipeOnly;
+          const preserveStoredSelections = recipeOnly || (hasQuantity && newQuantity < oldQuantity);
           if (hasQuantity) {
             const lineQuantity = isStartedQuantityIncrease
               ? Number((newQuantity - oldQuantity).toFixed(6))
@@ -6903,6 +6924,7 @@ router.patch(
           } else {
             newItem = { ...replacement };
             keepStoredRecipe(newItem, oldItem);
+            if (recipeOnly) carrySoldLine(db, newItem, oldItem);
           }
 
           if (isStartedQuantityIncrease) {
@@ -6927,7 +6949,7 @@ router.patch(
               // A reduction needs no extra units, so the stored selections stay
               // authoritative even when the catalog has since disabled the sold
               // variant or add-on; their held stock scales with the line.
-              const heldRatio = newQuantity / oldQuantity;
+              const heldRatio = recipeOnly ? 1 : newQuantity / oldQuantity;
               newItem.addons = oldAddons.map((addon) => ({
                 id: addon.addon_id ?? undefined,
                 name: addon.addon_name,
@@ -6973,13 +6995,14 @@ router.patch(
           const carriedDiscountDetails = preserveUnitPrice
             ? getAppliedItemDiscountDetails(db, oldItem.id)
             : null;
-          if (preserveUnitPrice) {
-            const addonPerUnitTotal = (newItem.addons || []).reduce(
-              (sum, addon) => sum + Number(addon?.price || 0) * Number(addon?.quantity || 1),
+          if (preserveUnitPrice && !recipeOnly) {
+            const itemBaseTotal = lineSubtotal(
+              Number(newItem.unit_price),
+              Number(newItem.quantity),
+              newItem.addons,
               0,
+              decimals,
             );
-            const itemBaseTotal =
-              (Number(newItem.unit_price) + addonPerUnitTotal) * Number(newItem.quantity);
             newItem.discount_amount = resolveEditedItemDiscountAmount(
               db,
               oldItem,
@@ -7000,6 +7023,7 @@ router.patch(
             preserveUnitPrice,
             preserveSelections: preserveStoredSelections,
             deferStockDeduction: deferUnreleased,
+            soldTax: recipeOnly ? soldTax(oldItem) : undefined,
           });
           newItemId = insertedId;
           if (preserveUnitPrice) carryPriceOverride(db, oldItem.id, insertedId);

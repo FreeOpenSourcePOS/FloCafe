@@ -364,4 +364,39 @@ runCases('pizza-print-detail-lines', {
       );
     }
   },
+
+  'Case: the print test asks the server for its own sample ticket, naming no order': async () => {
+    const { usePrinterStore } = frontend.usePrinter;
+    frontend.posSettings.usePosSettingsStore.getState().setKotPrintingEnabled(true);
+    usePrinterStore.setState({
+      hardwarePrinter: { id: 'hw', name: 'Kitchen', connection_type: 'network', is_default: 1 },
+      printMethod: 'escpos',
+    });
+    const sent: any[] = [];
+    const originalPost = frontend.api.post;
+    frontend.api.post = async (url: string, body: any) => {
+      if (url === '/printers/print-kot') sent.push(body);
+      return { data: { warnings: [] } };
+    };
+    try {
+      // The print test's made-up order: its ids could be a real order's.
+      await usePrinterStore
+        .getState()
+        .printKot(detailOrder, { stationName: 'Kitchen', sample: true });
+      await usePrinterStore.getState().printKot(detailOrder, { stationName: 'Kitchen' });
+    } finally {
+      frontend.api.post = originalPost;
+    }
+    assertEqualOrThrow(sent.length, 2, 'both prints go to the kitchen ticket route');
+    assertEqualOrThrow(sent[0].sample, true, 'the print test asks for the sample ticket');
+    assertOrThrow(
+      !('orderId' in sent[0]) && !('items' in sent[0]),
+      'and sends no order id and no items',
+    );
+    assertEqualOrThrow(sent[0].stationName, 'Kitchen', 'the station name still goes along');
+    assertOrThrow(
+      sent[1].orderId === 1 && sent[1].items.length === 1 && !('sample' in sent[1]),
+      'a real print still names its order and lines',
+    );
+  },
 });

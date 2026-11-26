@@ -212,6 +212,33 @@ export function roundMoney(
 
 export const roundCartMoney = roundMoney;
 
+/**
+ * A draft's total as the server charges it: each line is rounded to the currency before the
+ * lines are added up. `toPrecision` sheds binary noise first, so a true half cent rounds up as
+ * the server's decimal arithmetic rounds it. This is a display estimate: it is not decimal
+ * arithmetic, can differ from the server by a cent at a price just under a half-cent boundary,
+ * and the server alone decides what is charged.
+ */
+export function draftLinesTotal(
+  lines: ReadonlyArray<{
+    unitPrice: number;
+    quantity: number;
+    addons?: ReadonlyArray<{ price?: number | string | null; quantity?: number | null }>;
+  }>,
+  decimalsOrCurrency?: number | string,
+): number {
+  const exact = (amount: number) => roundMoney(Number(amount.toPrecision(15)), decimalsOrCurrency);
+  return exact(
+    lines.reduce((sum, line) => {
+      const perUnit = (line.addons ?? []).reduce(
+        (unit, addon) => unit + Number(addon.price || 0) * (addon.quantity || 1),
+        line.unitPrice,
+      );
+      return sum + exact(perUnit * line.quantity);
+    }, 0),
+  );
+}
+
 export function clampCartPriceOverride(
   rawPrice: unknown,
   baseUnitPrice?: unknown,

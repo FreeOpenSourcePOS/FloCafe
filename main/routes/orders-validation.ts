@@ -180,6 +180,20 @@ export function resolveExpectedPaymentMethodIdentity(
   return { id: method.id, name: method.name };
 }
 
+/** A new sale needs a product that is switched on and not deleted. */
+export function assertProductOnMenu(product: {
+  name?: string;
+  is_active?: unknown;
+  deleted_at?: unknown;
+}): void {
+  if (product.is_active === 0 || product.deleted_at) {
+    throw Object.assign(
+      new Error(`${product.name || 'That item'} is not on the menu. Pick another item`),
+      { statusCode: 400 },
+    );
+  }
+}
+
 export function validateProductQuantity(
   product: {
     name?: string;

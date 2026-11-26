@@ -243,7 +243,11 @@ interface PrinterState {
     tenant: ReceiptTenant,
     opts?: TaxBillOptions,
   ) => Promise<PrintWarning[]>;
-  printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
+  printKot: (
+    order: Order,
+    /** `sample` asks a hardware printer's server for its own test ticket; no order is named. */
+    opts?: KotOptions & { items?: OrderItem[]; sample?: boolean },
+  ) => Promise<PrintWarning[]>;
   printDeliverySlip: (
     order: Order,
     contact: DeliverySlipContact,
@@ -860,8 +864,9 @@ export const usePrinterStore = create<PrinterState>()(
               const response = await api.post<{ warnings?: PrintWarning[] }>(
                 '/printers/print-kot',
                 {
-                  orderId: order.id,
-                  items: opts?.items ?? order.items,
+                  ...(opts?.sample
+                    ? { sample: true }
+                    : { orderId: order.id, items: opts?.items ?? order.items }),
                   stationName: opts?.stationName,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,

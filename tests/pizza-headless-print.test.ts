@@ -53,6 +53,11 @@ void runCases('Pizza headless kit: network ESC/POS kitchen ticket', [
               )
               .run().lastInsertRowid,
           );
+          // The ticket prints saved lines only.
+          db.prepare(
+            `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status)
+             VALUES (?, 'margherita-large', 'Margherita Large', 50, 2, 100, 100, 'pending')`,
+          ).run(orderId);
         } finally {
           db.close();
         }
@@ -73,11 +78,7 @@ void runCases('Pizza headless kit: network ESC/POS kitchen ticket', [
             'Content-Type': 'application/json',
             Authorization: `Bearer ${loginBody.access_token}`,
           },
-          body: JSON.stringify({
-            orderId,
-            stationName: 'Kitchen',
-            items: [{ product_name: 'Margherita Large', quantity: 2, status: 'pending' }],
-          }),
+          body: JSON.stringify({ orderId, stationName: 'Kitchen' }),
         });
         const printBody = await print.json();
         console.log(`  print-kot ${print.status}: ${JSON.stringify(printBody)}`);

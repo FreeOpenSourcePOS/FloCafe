@@ -55,6 +55,7 @@ function agreedRecipe(
       );
     return raw;
   }
+  if (product.kind !== 'deal' && !variantId) throw new RecipeError('Pick a size for this pizza');
   const pickHalves = 'Pick the two halves';
   if (!raw) {
     if (product.kind === 'pizza') return raw;

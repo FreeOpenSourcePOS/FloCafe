@@ -36,6 +36,7 @@ import { formatCurrencyForTenant } from '@/lib/countries';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { generateCartItemId } from '@/lib/cart-identity';
+import { draftLinesTotal } from '@/lib/cart-price';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
 import { SentPizzaLine, useFetchedPizzaMenu } from '@/components/pos/pizza/SentPizzaLine';
@@ -1270,15 +1271,14 @@ export default function ServerStandalonePage() {
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
   const canMoveTable = tenantCan(user as unknown as Tenant, 'tables.orders.move');
-  const draftTotal = draft.reduce((sum, line) => {
-    const addonTotal = line.addons.reduce(
-      (addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1),
-      0,
-    );
-    return (
-      sum + ((Number(line.variant?.price ?? line.product.price) || 0) + addonTotal) * line.quantity
-    );
-  }, 0);
+  const draftTotal = draftLinesTotal(
+    draft.map((line) => ({
+      unitPrice: Number(line.variant?.price ?? line.product.price) || 0,
+      quantity: line.quantity,
+      addons: line.addons,
+    })),
+    regional?.currency || undefined,
+  );
   const draftQuantities = useMemo(() => {
     const quantities = new Map<string, number>();
     for (const line of draft) {

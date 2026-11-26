@@ -1,6 +1,10 @@
 import Decimal from 'decimal.js';
 import { getDatabase, isKdsEnabled, now, recordOrderAudit } from '../db';
-import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
+import {
+  getCurrencyFractionDigits,
+  getCurrencyMinorUnitFactor,
+  resolveTenantCurrency,
+} from '../countries';
 import {
   allocateDocumentTaxRounding,
   calculateConfiguredChargeTaxes,
@@ -55,6 +59,19 @@ export interface OrderTotals {
   db?: Database;
 }
 
+/** The store currency's decimal places, or null while its region is not configured. */
+function storeCurrencyDecimals(db: Database): number | null {
+  const setting = (key: string) =>
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value?: string })?.value;
+  try {
+    return getCurrencyFractionDigits(
+      resolveTenantCurrency(setting('currency'), setting('country') || ''),
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
   const allItems = db
     .prepare(`SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC`)
@@ -70,7 +87,15 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
   const allTaxBreakdowns: TaxBreakdown[][] = [];
   const allTaxSnapshots: (string | null)[] = [];
 
+  // A line stored before amounts were rounded can hold 32.099999999999994; every discount and
+  // tax roll-up downstream reads the line as the currency amount it stands for.
+  const decimals = storeCurrencyDecimals(db);
   for (const item of activeItems) {
+    if (decimals !== null && item.subtotal != null) {
+      item.subtotal = new Decimal(item.subtotal)
+        .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
+        .toNumber();
+    }
     subtotalDec = subtotalDec.plus(item.subtotal || 0);
     totalTaxDec = totalTaxDec.plus(item.tax_amount || 0);
     if (item.tax_type !== 'inclusive') {

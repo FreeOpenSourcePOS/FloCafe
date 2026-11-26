@@ -7,6 +7,8 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
 import { kotCustomerContactFields } from '../pizza/kot-customer-contact';
+import { withRecipeDetailLines } from '../pizza/order-recipe';
+import { detailLineRows, readDetailLines } from '../../shared/print/detail-lines';
 import { getKdsPort, getServerPort } from '../server-state';
 import { getServerAppPort } from '../server-app-state';
 import {
@@ -3309,7 +3311,7 @@ function escposLineTemplateV1Lines(
   if (order.items) {
     const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols, fractionDigits);
     const itemNameLen = itemNameWidth(cols, amtLen);
-    for (const item of order.items) {
+    for (const item of withRecipeDetailLines(order.items, cols)) {
       if (isExcludedFromBillReceipt(item.status)) continue;
       pushFinancialLines(
         pluginItemRows(
@@ -3335,6 +3337,9 @@ function escposLineTemplateV1Lines(
           capabilities,
         ),
       );
+      for (const detail of readDetailLines(item)) {
+        lines.push(...detailLineRows(normalize(safePrinterText(detail)), cols));
+      }
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const quantitySuffix =

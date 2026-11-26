@@ -140,13 +140,13 @@ const sha = (text: string): string => createHash('sha256').update(text).digest('
  * `PIZZA_KDS_BASELINE=print npm run test:pizza-kds-lines`.
  */
 const BASELINE: Record<string, string> = {
-  'main API, GET /api/kitchen/orders, an owner': '9acf42f6c0c93e16',
-  'main API, GET /api/kds/orders, an owner': '480584023427ba03',
+  'main API, GET /api/kitchen/orders, an owner': '7238afb42fcdff44',
+  'main API, GET /api/kds/orders, an owner': '7ff5d6723f8732df',
   'main API, GET /api/kds/display, an owner': '688a365ca0245782',
-  'kitchen display server, GET /api/kds/orders, an owner': 'ec60bfbe73ed19c7',
-  'live broadcast, buildActiveOrdersSnapshot, an owner': '9d31e63b3f1767ec',
+  'kitchen display server, GET /api/kds/orders, an owner': '9ae502de5797d5f9',
+  'live broadcast, buildActiveOrdersSnapshot, an owner': '4ac72193d15978f4',
   'main API, PATCH /api/kds/items/:id/status, an owner': '43912674f63dd272',
-  'main API, PATCH /api/order-items/:id/status, an owner': '40031e1efb86cb3e',
+  'main API, PATCH /api/order-items/:id/status, an owner': '90a209c2009abf1b',
   'main API, GET /api/kitchen/orders, a restricted station': 'ad1f37f13f10dc5a',
   'main API, GET /api/kds/orders, a restricted station': 'dcd154d0340a404f',
   'main API, GET /api/kds/display, a restricted station': '04968522ab732ab0',

@@ -62,7 +62,12 @@ export {
   PIN_MAX_ATTEMPTS,
   PIN_WINDOW_MS,
 };
-import { getActiveCountryPack, scaleTaxSnapshots, type Customer } from '../services/tax';
+import {
+  discountOn,
+  getActiveCountryPack,
+  scaleTaxSnapshots,
+  type Customer,
+} from '../services/tax';
 import {
   allocateMinorUnits,
   allocateSignedMinorUnits,
@@ -4397,13 +4402,7 @@ router.post(
         assertScheduledOrderUnpaidForEdit(db, currentBill.order_id, currentOrder);
 
         const freshTotals = calculateOrderTotals(db, currentBill.order_id);
-        let freshDiscountAmount: number;
-        if (type === 'percentage') {
-          freshDiscountAmount = (freshTotals.subtotal * value) / 100;
-        } else {
-          freshDiscountAmount = Math.min(value, freshTotals.subtotal);
-        }
-        freshDiscountAmount = Number(freshDiscountAmount.toFixed(decimals));
+        const freshDiscountAmount = discountOn(freshTotals.subtotal, type, value, decimals);
 
         const freshCustomer = currentBill.customer_id
           ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentBill.customer_id) as

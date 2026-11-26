@@ -334,7 +334,7 @@ relationships. Product prices, product costs, stock balances, tax assignments, c
 percentages, and add-on prices reset to zero or defaults, all other local data is erased, and
 first-run setup is required again. The pizza layer follows the menu: `pizza_products` rows of
 preserved products and the stored `pizza_menu` catalogue are kept, with the catalogue's prices set
-to zero, and quick buttons are erased. Changing country alone changes the recommendation, never the
+to zero, and quick buttons and the prices set in the POS are erased. Changing country alone changes the recommendation, never the
 active currency. Ordinary business and wildcard settings writes reject an actual currency change
 with `currency_change_requires_reset`.
 

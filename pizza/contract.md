@@ -13,7 +13,7 @@ Rules the format carries:
 - The side with id `dip` defines the dips: its modifier options, each at that side's price. The side with id `wings` defines the wing flavours a deal can ask for.
 - A drink is sold in every entry of the drinks category's `variants`. `pst: true` on that category means drinks carry provincial sales tax.
 - A deal has a fixed price and a list of picks. A `pop` pick is any cans adding up to its count. A `choice` pick is answered with one of its options, which then becomes a `pop` or `2l` pick.
-- `toppings` is optional: `{ "price": 2.25, "items": [{ "id": "bacon", "name": "Bacon" }, ...] }`. Every topping costs the one `price`, on any pizza of any size. A menu without it sells no extras and no added toppings. The price lives here and nowhere else in the file: a load writes it onto the two topping add-ons (see the mapping table), and whatever changes the price later changes this value and loads again.
+- `toppings` is optional: `{ "price": 2.25, "items": [{ "id": "bacon", "name": "Bacon" }, ...] }`. Every topping costs the one `price`, on any pizza of any size. A menu without it sells no extras and no added toppings. The price lives here and nowhere else in the file: a load writes it onto the two topping add-ons (see the mapping table), and whatever changes the price later changes this value and loads again, as a price set in the POS does (see Prices set in the POS).
 - Prices in the file are dollars. The catalogue holds whole cents.
 
 What `parseMenuFile` rejects, each with a `MenuError` naming the entry. Nothing is dropped silently:
@@ -169,7 +169,50 @@ Tax: drinks get the tax category with code `soda` when `drinksPst`; every other 
 
 The next load switches off the rows the previous load wrote that it no longer writes, worked out from the stored catalogue. A row that left the file and was switched on again by hand therefore stays on. A category is the exception: every load judges every category on the list that the menu no longer has, and switches it off unless it still holds an active product or an active sub-category (a product is shown only while every category above it is on). Categories nested by hand are judged child first, so a parent and child that both left the menu are switched off by the same load. So a category kept on for a hand-made product is switched off by the first load after that product is gone or switched off. While the stored catalogue is unreadable, every row on the list that the load does not write is switched off.
 
-The file is the master of the rows on that list while it has them: a load puts back a name or price changed by hand, switches on a row switched off by hand, restores one deleted in the back office and makes again one removed from the database. A load never takes over a row that is not on the list. When the menu derives the id of a category, product, variant, add-on group or add-on that exists and no load made, `importMenu` throws a `MenuImportError` that names it ("A product with the id pz-garden already exists and was not made by a menu load. Give that item a different id in the menu file, then load it again.") and writes nothing; a row deleted in the back office still exists and still refuses. For a row under an id reserved for a section of the menu (`cat-pizzas`, `cat-sides`, `cat-drinks`, `cat-deals`, `pz-half-and-half`, `ag-dips`, `ag-toppings`, `ad-topping`, `ad-topping-half`) the message names the section and says instead that support has to rename or remove the row. A product with a `pizza_products` row counts as made by a load, with its variants, even when the list does not name it. Those are the only rows from before the list kept what left the menu that a load adopts: a pizza, the half-and-half product or a deal, and the sizes of one. A side, a drink or its size, an add-on group or an add-on that left the menu before then is not adopted, and a file that has it again is refused.
+The file is the master of the rows on that list while it has them, except for a price set in the POS (next section): a load puts back a name or price changed by hand in the product screen, switches on a row switched off by hand, restores one deleted in the back office and makes again one removed from the database. A load never takes over a row that is not on the list. When the menu derives the id of a category, product, variant, add-on group or add-on that exists and no load made, `importMenu` throws a `MenuImportError` that names it ("A product with the id pz-garden already exists and was not made by a menu load. Give that item a different id in the menu file, then load it again.") and writes nothing; a row deleted in the back office still exists and still refuses. For a row under an id reserved for a section of the menu (`cat-pizzas`, `cat-sides`, `cat-drinks`, `cat-deals`, `pz-half-and-half`, `ag-dips`, `ag-toppings`, `ad-topping`, `ad-topping-half`) the message names the section and says instead that support has to rename or remove the row. A product with a `pizza_products` row counts as made by a load, with its variants, even when the list does not name it. Those are the only rows from before the list kept what left the menu that a load adopts: a pizza, the half-and-half product or a deal, and the sizes of one. A side, a drink or its size, an add-on group or an add-on that left the menu before then is not adopted, and a file that has it again is refused.
+
+## Prices set in the POS (`shared/pizza/prices.ts`, `main/pizza/prices.ts`)
+
+```ts
+// shared/pizza/prices.ts
+export function menuPrices(catalog: PizzaCatalog): MenuPrice[];   // every price of a catalogue: { key, group, label, priceCents, count }
+export function withPrices(catalog: PizzaCatalog, cents: ReadonlyMap<string, number>): PizzaCatalog; // a copy at those prices, by key
+
+// main/pizza/prices.ts
+export function readPrices(db: Database): PriceList;                   // { prices: PriceRow[]; unused: { key, price }[] }
+export function savePrices(db: Database, changes: unknown): PriceList; // { "<key>": amount | null }; throws with a statusCode and a message for the owner
+```
+
+A price is keyed by what the owner counts as one price, not by a catalogue row:
+
+| Key | The price of | In the catalogue | Rows a load writes at it |
+| :--- | :--- | :--- | :--- |
+| `size:<size id>` | One pizza size | `sizes[].priceCents` | `pz-<pizza>-<size>` of every pizza and `pz-half-and-half-<size>` |
+| `topping` | An extra or an added topping | `toppings.priceCents` | `ad-topping`, and `ad-topping-half` at half of it |
+| `dip` | A dip | the `dip` side's `priceCents` and every `dips[].priceCents` | `sd-dip` and every `ad-dips-<option>` |
+| `side:<side id>` | A side other than `dip` | `sides[].priceCents` | `sd-<side>` |
+| `drink:<variant id>` | One drink size | `drinkVariants[].priceCents` | `dr-<drink>-<variant>` of every drink |
+| `deal:<deal id>` | A deal | `deals[].priceCents` | `dl-<deal>` |
+
+A drink has no price of its own in the menu format: every drink is sold in every variant at the variant's price. So the key is the variant, and one cola cannot cost more than another can.
+
+Rules:
+
+- `importMenu` reads `pizza_price_overrides` and applies it to the parsed file with `withPrices` before it works out a single row. Everything it writes, the `pizza_menu` catalogue included, is at the price in force, so the browser, the order routes and the ticket code need no knowledge of overrides. A product with variants still carries its lowest variant price, worked out from the prices in force.
+- The same load writes, beside each override, what the file charges for that key (`file_cents`), or null when the file has no such price. A null one is an override that is kept and not used; the list returns it under `unused`, and a later file that has the item again is loaded at the stored price.
+- `savePrices` is one transaction: it rebuilds the catalogue as the file had it (the stored catalogue with each override's `file_cents` put back), writes the changes to `pizza_price_overrides`, and calls `importMenu` with that catalogue. A price is therefore changed by the same code as a menu load and on every row at once. A refusal by the load (a store currency not counted in hundredths) rolls the change back.
+- An amount is a number from 0 to 99,999.99 that is whole minor units of the store's currency, checked in decimal arithmetic (`lineSubtotal`); text, a negative amount and 23.005 are refused. A key that is not a price of the loaded menu is refused for an amount and accepted for `null`, so an unused override can be taken off. One bad entry refuses the whole request with `400 { error }`, the message naming the price and the currency.
+- Nothing sold changes: order lines hold their own prices. A till picks a new price up as it picks up a menu load, because the stored catalogue changed (`refreshPizzaCatalog`), and the order routes charge from the catalogue rows whatever the till showed.
+- A currency reset does not carry `pizza_price_overrides` across: the amounts are in the old currency.
+
+| Route | Permission | Body | Answer |
+| :--- | :--- | :--- | :--- |
+| `GET /api/pizza/prices` | `catalog.view` | none | `200 PriceList`; `404` when no menu is loaded; `503` when the stored menu cannot be read |
+| `PUT /api/pizza/prices` | `catalog.manage` | `{ prices: { "<key>": amount or null } }` | `200 PriceList` after the change; `400 { error }` for a bad entry |
+
+In a `PriceList`, amounts are in the store's currency, not cents. A `PriceRow` has `key`, `group` (`size`, `topping`, `dip`, `side`, `drink` or `deal`), `label`, `count` (how many pizzas, dips or drinks the price is on; 1 otherwise), `file`, `price` and `overridden`.
+
+The Pizza menu screen (`/pizza-menu`, opened with `catalog.import-export`) shows the Prices section to a user who also has `catalog.manage`.
 
 ## Tables (lane B1, `main/pizza/migrations.ts`)
 
@@ -206,6 +249,14 @@ CREATE TABLE IF NOT EXISTS pizza_quick_buttons (
   note        TEXT,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+-- Pizza migration 2. One row per price set in the POS.
+CREATE TABLE IF NOT EXISTS pizza_price_overrides (
+  key         TEXT PRIMARY KEY,   -- size:<id>, topping, dip, side:<id>, drink:<variant id>, deal:<id>
+  price_cents INTEGER NOT NULL CHECK (price_cents >= 0),
+  file_cents  INTEGER,            -- what the last menu file loaded charges for it; null: the file has no such price
   updated_at  TEXT NOT NULL
 );
 ```
@@ -259,7 +310,7 @@ Rules:
 | Lane | Builds | Owns |
 | :--- | :--- | :--- |
 | A, core | `parseMenuFile`, `validateRecipe`, `recipeKey`, `ticketLines`, `toppingCounts` | `shared/pizza/*.ts` except `types.ts`; `tests/pizza-menu.test.ts`, `tests/pizza-recipe.test.ts`, `tests/pizza-ticket.test.ts`, `tests/pizza-toppings.test.ts` |
-| B1, tables | The pizza migration list and its three tables | `main/pizza/migrations.ts`; the hook in `main/db.ts`; `tests/pizza-migrations.test.ts` |
+| B1, tables | The pizza migration list and its four tables | `main/pizza/migrations.ts`; the hook in `main/db.ts`; `tests/pizza-migrations.test.ts` |
 | C, shop mode | The `pizza` setup profile, BC tax, wizard pre-fill, the English-only strings file | `main/pizza/setup-profile.ts`; hooks in `main/routes/auth.ts`, `main/setup/seed-data.ts`, `frontend/src/app/setup/page.tsx`, `frontend/src/lib/i18n/`; `tests/pizza-setup-profile.test.ts`, `tests/pizza-tax-bc.test.ts`, `tests/pizza-i18n.test.ts` |
 | B2, import | `importMenu` and its route | `main/pizza/menu-import.ts`, `main/routes/pizza.ts` and its one-line mount in the server's route index; `tests/pizza-menu-import.test.ts` |
 | E, order lines | Recipe validation at the API, print wiring, kitchen display | `main/pizza/order-recipe.ts`; hooks in `main/routes/orders.ts`, the print data builders and the kitchen display views; `tests/pizza-order-recipe.test.ts`, `tests/pizza-order-print.test.ts` |

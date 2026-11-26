@@ -556,15 +556,28 @@ is in the
 - **Choosing a file** reads it in the browser. A file that is not a JSON object is refused there,
   and nothing is sent. A file that is one opens a confirm step that says what loading does: the
   file is the master copy, names, prices and what is on sale follow it, what it no longer has is
-  switched off and not deleted, and changes made in the product screen are overwritten.
+  switched off and not deleted, changes made in the product screen are overwritten, and prices set
+  in the Prices section are kept.
 - **Confirming** sends the parsed file to
   [`POST /api/pizza/menu/import`](../reference/api.md#pizza-menu). On success the screen shows the
   four row counts of the answer, and a warning when the answer says `untaxed`. On a refusal it shows
   the server's message and, on a line of its own, the entry the answer names.
 - After a successful load the screen calls `reloadPizzaCatalog()`, so the catalogue the POS reads is
   the new one without a sign-out.
+- **Prices** (`PricesSection.tsx`, beside the page) is shown to a tenant who also has
+  `catalog.manage`, once a menu is loaded. It lists what
+  [`GET /api/pizza/prices`](../reference/api.md#pizza-prices) answers, group by group: the price,
+  what the menu file says, what is charged now, and an input for a new amount. A row whose price was
+  set in the POS says so and has a "Use the menu's price" button. Nothing is sent while the owner
+  types: a box that stays at the bottom of the window lists what will change ("Large: 23.00 to
+  24.50, on 5 pizzas and the half and half"), and its Save button sends every change in one `PUT`.
+  Text that is not an amount of at most two decimals is named there and disables Save. After a save
+  the screen calls `reloadPizzaCatalog()`, as it does after a load. Prices set for something the
+  menu no longer has are listed below the table, each with a Remove button.
 
-`frontend/e2e/pizza-menu.spec.ts` drives the screen against the sample menu and copies of it. A
+`frontend/e2e/pizza-menu.spec.ts` drives the screen against the sample menu and copies of it, and
+`frontend/e2e/pizza-prices.spec.ts` the Prices section, which also takes the prices it set off
+again when it ends. A
 spec that loads a menu uses `loadSampleMenu` and, in `test.afterAll`, `clearPizzaMenu` from
 `frontend/e2e/helpers/pizza-menu.ts`, because the suite shares one database and a loaded menu puts
 its categories first in the POS.

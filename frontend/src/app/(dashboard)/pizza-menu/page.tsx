@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { PizzaCatalog } from '@shared/pizza/types';
+import { PricesSection } from './PricesSection';
 
 /** What `POST /api/pizza/menu/import` answers. */
 interface LoadSummary {
@@ -135,6 +136,8 @@ export default function PizzaMenuPage() {
         </CardContent>
       </Card>
 
+      <PricesSection menu={loaded} onSaved={refresh} />
+
       <Card>
         <CardHeader>
           <CardTitle>
@@ -169,6 +172,7 @@ export default function PizzaMenuPage() {
                 <li>{t('menuConfirmFollows')}</li>
                 <li>{t('menuConfirmSwitchedOff')}</li>
                 <li>{t('menuConfirmOverwrites')}</li>
+                <li>{t('menuConfirmKeepsPrices')}</li>
               </ul>
               <div className="flex flex-wrap gap-3">
                 <Button className="h-12 px-6" disabled={busy} onClick={load}>

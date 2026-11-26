@@ -6,6 +6,7 @@ import { slugForName } from '../routes/categories';
 import { getTenantCurrency } from '../services/refund';
 import { lineSubtotal } from '../services/tax';
 import { MenuError } from '../../shared/pizza/menu';
+import { menuPrices, withPrices } from '../../shared/pizza/prices';
 import { HALF_TOPPING_ADDON, TOPPING_ADDON } from '../../shared/pizza/toppings';
 import type { CatalogPriced, PizzaCatalog } from '../../shared/pizza/types';
 
@@ -390,7 +391,18 @@ function writeRow(
  * off, not deleted, because orders point at it; a row no load owned is never touched, so a menu
  * that derives the id of one is refused.
  */
-export function importMenu(db: Database.Database, catalog: PizzaCatalog): ImportSummary {
+export function importMenu(db: Database.Database, fileCatalog: PizzaCatalog): ImportSummary {
+  // Prices set in the POS win over the file's: every row below, and the catalogue stored for the
+  // browser and the tickets, is written at the price in force.
+  const overrides = db.prepare('SELECT key, price_cents FROM pizza_price_overrides').all() as {
+    key: string;
+    price_cents: number;
+  }[];
+  const catalog = withPrices(
+    fileCatalog,
+    new Map(overrides.map((override) => [override.key, override.price_cents])),
+  );
+  const filePrices = new Map(menuPrices(fileCatalog).map((price) => [price.key, price.priceCents]));
   const currency = getTenantCurrency(db);
   const factor = getCurrencyMinorUnitFactor(currency);
   if (factor !== 100)
@@ -456,6 +468,12 @@ export function importMenu(db: Database.Database, catalog: PizzaCatalog): Import
     }
     const stamp = now();
     for (const row of rows) summary[writeRow(db, row, stamp)] += 1;
+    // What the file charges is kept beside each override, for the price list and for taking the
+    // override off again. Null: the file has no such thing now, and the override waits unused.
+    const fileCents = db.prepare(
+      'UPDATE pizza_price_overrides SET file_cents = @cents WHERE key = @key AND file_cents IS NOT @cents',
+    );
+    for (const { key } of overrides) fileCents.run({ key, cents: filePrices.get(key) ?? null });
     // A category nested under another by hand is judged before it: the parent then sees whether
     // its child stayed on.
     const depth = (entry: string): number => {

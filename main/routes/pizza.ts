@@ -1,6 +1,7 @@
 import { Router, Request, RequestHandler, Response } from 'express';
 import { getDatabase } from '../db';
 import { importMenu, MenuImportError } from '../pizza/menu-import';
+import { readPrices, savePrices } from '../pizza/prices';
 import {
   deleteQuickButton,
   findQuickButton,
@@ -57,6 +58,25 @@ function fail(res: Response, error: unknown): void {
   console.error('[API] Internal error:', error);
   res.status(500).json({ error: 'Internal server error' });
 }
+
+// Every price of the loaded menu, with the menu file's amount beside the one charged.
+router.get('/prices', requirePermission('catalog.view'), (_req: Request, res: Response) => {
+  try {
+    res.json(readPrices(getDatabase()));
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// Body `{ prices: { "<key>": <amount or null> } }`; null takes the price set in the POS off.
+router.put('/prices', requirePermission('catalog.manage'), (req: Request, res: Response) => {
+  try {
+    res.json(savePrices(getDatabase(), req.body?.prices));
+  } catch (error) {
+    if (error instanceof MenuImportError) return res.status(400).json({ error: error.message });
+    fail(res, error);
+  }
+});
 
 /** A customer's button is kept by whoever takes orders; a shop-wide one is part of the menu. */
 const mayKeepButton = (customerId: unknown) =>

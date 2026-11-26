@@ -70,7 +70,7 @@ The change to `main/db.ts` in the spike is 14 lines: an import, a rename of the 
 
 **Revised.** The menu file has the shape of `tests/fixtures/pizza-sample-menu.json` (type `MenuFile` in `shared/pizza/types.ts`). It is the same file the shop's customer ordering app reads, so the two cannot disagree on a price. The POS loads it and maps it onto FloCafe's own catalogue: sizes become variants, dips and flavours become add-on groups, deals become fixed-price products ([contract.md](contract.md)). Loading is idempotent and keyed by ids derived from the menu's ids.
 
-A price changed only inside the POS back office is overwritten by the next load of the file. The file is the master.
+A price changed in FloCafe's own product screen is overwritten by the next load of the file. The file is the master, with one exception the owner asked for on 2026-11-26: a price set in the Prices section of the Pizza menu screen is stored apart from the file (`pizza_price_overrides`), and every load applies it on top of the file's price. Such a price is one the customer site does not know, so the two can disagree on it until the file is changed to match.
 
 ## D5. One ticket formatter, printed on every path
 
@@ -263,7 +263,7 @@ The kitchen is not shown the charge. On a line of three pizzas, `+ Topping x2` u
 **Must not miss:**
 
 - Half of an odd number of cents is rounded half-up, once, by the menu load: half of 2.25 is 1.13, so two halves cost a cent more than a whole topping. Nothing else halves a price.
-- The price is in one place, `toppings.price` in the menu file and in the stored catalogue. A screen that changes it has to load the menu again, because both add-on rows are written from it.
+- The price is in one place, `toppings.price` in the menu file and in the stored catalogue. A screen that changes it has to load the menu again, because both add-on rows are written from it. The Prices section does exactly that: the `topping` override is applied to the catalogue and the load writes both add-ons from it.
 - A replacement that sends the same topping add-ons with a recipe that needs another count is refused, and one with a different count is a new sale priced from the current catalogue (the rule for any changed add-on).
 - Per-size topping prices would not fit this: they need an add-on per size, or the pricing hook.
 - After a menu load that drops `toppings`, a pizza already sent with an extra or an added topping can shrink but not grow: a quantity increase is refused, because the menu has no price for the topping and the add-on group is switched off. A decrease still works, at the prices sold.

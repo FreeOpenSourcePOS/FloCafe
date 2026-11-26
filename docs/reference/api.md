@@ -757,7 +757,36 @@ as a product or a variant added by hand under an id no menu derives, are never t
 | Method | Path           | Authorization           | Parameters                                         | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------ | -------------- | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST` | `/menu/import` | `catalog.import-export` | body: the menu file (`tax`, `sizes`, `categories`) | `{ created, updated, unchanged, deactivated, untaxed }`, counting rows. `parseMenuFile()` validates the whole file before anything is written; a file it rejects answers `400` with `{ error, path }`, where `path` names the bad entry, and writes nothing. A menu in which two entries derive the same id, or that would move a stored variant, add-on or side's add-on group to another product, group or side, answers the same way with `path: 'menu'`. So does a deal of more than 8 pizzas or 99 cans, with the path of its picks. A store currency that is not counted in hundredths, or an unreadable `pizza_menu.owned_rows`, answers `400` with `{ error }` and writes nothing. |
-| `GET`  | `/catalog`     | `catalog.view`          | none                                               | The catalogue parsed from the last menu file loaded (`PizzaCatalog` in `shared/pizza/types.ts`, money in whole cents). `404` when no menu has been loaded.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `GET`  | `/catalog`     | `catalog.view`          | none                                               | The catalogue parsed from the last menu file loaded, at the prices in force (`PizzaCatalog` in `shared/pizza/types.ts`, money in whole cents). `404` when no menu has been loaded.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+### Pizza prices
+
+Router: `main/routes/pizza.ts`. Full path: `/api/pizza`. Logic: `main/pizza/prices.ts`.
+
+A price set in the POS is kept apart from the menu file, in `pizza_price_overrides`, under the key
+of one price as the owner counts them:
+
+| Key | Price | Rows written at it |
+| --- | --- | --- |
+| `size:<size id>` | One pizza size | That size's variant of every pizza and of the half and half |
+| `topping` | An extra or an added topping | The "Topping" add-on, and the "Half topping" add-on at half of it |
+| `dip` | A dip | The `dip` side's product and every add-on of the "Dips" group |
+| `side:<side id>` | A side other than the dip | That side's product |
+| `drink:<variant id>` | One drink size | That variant of every drink |
+| `deal:<deal id>` | A deal | That deal's product |
+
+Every menu load applies the stored prices on top of the file's before it writes a row, so a load
+never loses one, and the catalogue it stores in `pizza_menu` carries the prices in force. A price
+whose key the file no longer has is kept and not used; a later file that has the item again is
+loaded at it. Saving prices loads the menu again from what the file said, in one transaction with
+the change, so every row in the table above changes together and an order placed afterwards is
+charged the new price. Orders already placed are not touched. A currency reset erases the stored
+prices.
+
+| Method | Path      | Authorization    | Parameters                                                    | Response |
+| ------ | --------- | ---------------- | ------------------------------------------------------------- | -------- |
+| `GET`  | `/prices` | `catalog.view`   | none                                                          | `{ prices, unused }` (`PriceList` in `shared/pizza/prices.ts`). `prices` has one entry per price of the loaded menu, sizes first, then the topping, the dip, sides, drink sizes and deals: `key`, `group`, `label`, `count` (the pizzas, dips or drinks it is charged on), `file` (what the menu file says), `price` (what is charged) and `overridden`. Amounts are in the store's currency, not cents. `unused` lists `{ key, price }` for stored prices the menu has no item for. `404` when no menu has been loaded, `503` when the stored menu cannot be read. |
+| `PUT`  | `/prices` | `catalog.manage` | body: `{ prices: { "<key>": <amount or null> } }`             | The same answer as `GET`, after the change. An amount sets the price; `null` takes it off, back to the menu file's. An amount must be a number of 0 to 99,999.99 in whole minor units of the store's currency, and its key must be a price of the loaded menu; `null` is accepted for any key. One bad entry answers `400` with `{ error }` and nothing is written. `404` and `503` as for `GET`. |
 
 ### Pizza quick buttons
 

@@ -62,8 +62,13 @@ const {
 } = require('../main/db');
 
 const CORE = MIGRATIONS[MIGRATIONS.length - 1].version;
-const PIZZA = 1;
-const PIZZA_TABLES = ['pizza_menu', 'pizza_products', 'pizza_quick_buttons'];
+const PIZZA = 2;
+const PIZZA_TABLES = [
+  'pizza_menu',
+  'pizza_price_overrides',
+  'pizza_products',
+  'pizza_quick_buttons',
+];
 const STAMP = '2026-01-01 00:00:00';
 
 function useDir(name: string): string {
@@ -157,6 +162,9 @@ function seedPizzaRows(db: any): void {
     `INSERT INTO pizza_quick_buttons (id, label, product_id, created_at, updated_at)
      VALUES ('qb-1', 'Large garden', 'pz-garden', ?, ?)`,
   ).run(STAMP, STAMP);
+  db.prepare(
+    "INSERT INTO pizza_price_overrides (key, price_cents, file_cents, updated_at) VALUES ('size:large', 2400, 2300, ?)",
+  ).run(STAMP);
 }
 const pizzaRowCounts = (db: any): number[] =>
   PIZZA_TABLES.map((table) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n);
@@ -233,7 +241,7 @@ async function main() {
 
   const dirA = useDir('a-new');
   let forkBackup = '';
-  await testCase('1. A new database gets the three pizza tables and its own counter', () => {
+  await testCase('1. A new database gets the four pizza tables and its own counter', () => {
     initDatabase();
     const db = getDatabase();
     assertEqualOrThrow(getCurrentSchemaVersion(), CORE, 'user_version is the upstream version');
@@ -279,11 +287,21 @@ async function main() {
       'pizza_quick_buttons has the contract columns',
     );
     sameOrThrow(
+      columnsOf(db, 'pizza_price_overrides'),
+      [
+        'key TEXT PRIMARY KEY',
+        'price_cents INTEGER NOT NULL',
+        'file_cents INTEGER',
+        'updated_at TEXT NOT NULL',
+      ],
+      'pizza_price_overrides has the contract columns',
+    );
+    sameOrThrow(
       getTables(db)
         .filter((table: string) => !upstreamTables.includes(table))
         .sort(),
       PIZZA_TABLES,
-      'the pizza list adds the three pizza tables and nothing else',
+      'the pizza list adds the four pizza tables and nothing else',
     );
     assertEqualOrThrow(pizzaVersion(db), PIZZA, '_flo_meta.pizza_schema_version is recorded');
     seedPizzaRows(db);
@@ -321,7 +339,7 @@ async function main() {
     assertEqualOrThrow(schemaDump(db), before, 'sqlite_master is identical');
     assertEqualOrThrow(getCurrentSchemaVersion(), CORE, 'upstream version is unchanged');
     assertEqualOrThrow(pizzaVersion(db), PIZZA, 'pizza version is unchanged');
-    sameOrThrow(pizzaRowCounts(db), [1, 1, 1], 'pizza rows are kept');
+    sameOrThrow(pizzaRowCounts(db), [1, 1, 1, 1], 'pizza rows are kept');
     assertEqualOrThrow(backupsIn(dirA).length, 1, 'no backup is taken when nothing is pending');
   });
 
@@ -383,7 +401,7 @@ async function main() {
       for (const table of PIZZA_TABLES) getDatabase().prepare(`DELETE FROM ${table}`).run();
       const restore = restoreBackup(forkBackup);
       assertEqualOrThrow(restore.success, true, `the backup restores (${restore.error})`);
-      sameOrThrow(pizzaRowCounts(getDatabase()), [1, 1, 1], 'pizza rows come back');
+      sameOrThrow(pizzaRowCounts(getDatabase()), [1, 1, 1, 1], 'pizza rows come back');
       assertEqualOrThrow(pizzaVersion(getDatabase()), PIZZA, 'pizza version comes back');
       closeDatabase();
     },
@@ -441,7 +459,7 @@ async function main() {
     );
     sameOrThrow(
       PIZZA_TABLES.map((table) => hasTable(getDatabase(), table)),
-      [true, true, true],
+      [true, true, true, true],
       'the restored database has the pizza tables',
     );
     assertEqualOrThrow(pizzaVersion(getDatabase()), PIZZA, 'and the pizza version');
@@ -530,6 +548,9 @@ async function main() {
     );
     button.run('qb-shop', 'Large garden', null, STAMP, STAMP);
     button.run('qb-customer', 'The usual', 'cust-1', STAMP, STAMP);
+    db.prepare(
+      "INSERT INTO pizza_price_overrides (key, price_cents, updated_at) VALUES ('deal:party', 6000, ?)",
+    ).run(STAMP);
     const keptProducts = rows(db, 'pizza_products').filter(
       (row: any) => row.product_id !== 'pz-gone',
     );
@@ -564,6 +585,11 @@ async function main() {
       'its prices are zeroed, since they are in the old currency, and nothing else changes',
     );
     sameOrThrow(rows(fresh, 'pizza_quick_buttons'), [], 'quick buttons are cleared');
+    sameOrThrow(
+      rows(fresh, 'pizza_price_overrides'),
+      [],
+      'prices set in the POS are cleared: they were amounts in the old currency',
+    );
     assertEqualOrThrow(pizzaVersion(fresh), PIZZA, 'the pizza version is recorded');
     sameOrThrow(findingIds(), [], 'the health check reports no findings');
     closeDatabase();
@@ -583,7 +609,7 @@ async function main() {
       assertEqualOrThrow(getCurrentSchemaVersion(), CORE + 1, 'it runs on a pizza database');
       assertEqualOrThrow(hasTable(db, 'test_later_upstream'), true, 'and creates its table');
       assertEqualOrThrow(pizzaVersion(db), PIZZA, 'the pizza version is left alone');
-      sameOrThrow(pizzaRowCounts(db), [1, 1, 1], 'pizza rows are kept');
+      sameOrThrow(pizzaRowCounts(db), [1, 1, 1, 1], 'pizza rows are kept');
       sameOrThrow(findingIds(), [], 'the health check reports no findings');
       sameOrThrow(
         backupsIn(dirD).map((name) => name.replace(/^flo-backup-.*(-pre-v)/, '$1')),
@@ -656,7 +682,7 @@ async function main() {
     assertEqualOrThrow(pizzaVersion(db), PIZZA + 1, 'the later pizza migration runs');
     assertEqualOrThrow(hasTable(db, 'pizza_test_later'), true, 'and creates its table');
     assertEqualOrThrow(getCurrentSchemaVersion(), CORE, 'the upstream version is untouched');
-    sameOrThrow(pizzaRowCounts(db), [1, 1, 1], 'pizza rows are kept');
+    sameOrThrow(pizzaRowCounts(db), [1, 1, 1, 1], 'pizza rows are kept');
     sameOrThrow(findingIds(), [], 'the health check reports no findings');
     const taken = backupsIn(dirA).filter((name) => !backupsBefore.includes(name));
     sameOrThrow(
@@ -760,7 +786,7 @@ async function main() {
     const db = getDatabase();
     assertEqualOrThrow(pizzaVersion(db), PIZZA, 'the restored database is at this build’s version');
     assertEqualOrThrow(hasTable(db, 'pizza_test_later'), false, 'without the later table');
-    sameOrThrow(pizzaRowCounts(db), [1, 1, 1], 'and with the pizza rows of the backup');
+    sameOrThrow(pizzaRowCounts(db), [1, 1, 1, 1], 'and with the pizza rows of the backup');
     sameOrThrow(findingIds(), [], 'the health check reports no findings');
 
     const refused = restoreBackup(newerPizzaBackup);
@@ -770,7 +796,7 @@ async function main() {
       'an ordinary restore of the newer backup is refused',
     );
     assertIncludesOrThrow(String(refused.error), 'pizza schema', 'and says why');
-    sameOrThrow(pizzaRowCounts(getDatabase()), [1, 1, 1], 'leaving the live database as it was');
+    sameOrThrow(pizzaRowCounts(getDatabase()), [1, 1, 1, 1], 'leaving the live database as it was');
     closeDatabase();
   });
 
@@ -797,7 +823,7 @@ async function main() {
       closeDatabase();
       initDatabase();
       assertEqualOrThrow(getCurrentSchemaVersion(), CORE + 1, 'and the live database still opens');
-      sameOrThrow(pizzaRowCounts(getDatabase()), [1, 1, 1], 'with its rows');
+      sameOrThrow(pizzaRowCounts(getDatabase()), [1, 1, 1, 1], 'with its rows');
       closeDatabase();
     } finally {
       MIGRATIONS.pop();
@@ -898,7 +924,7 @@ async function main() {
         'with the migration fixed, the next open runs it',
       );
       assertEqualOrThrow(hasTable(db, 'pizza_test_half_done'), true, 'and creates its table');
-      sameOrThrow(pizzaRowCounts(db), [1, 1, 1], 'with the pizza rows kept');
+      sameOrThrow(pizzaRowCounts(db), [1, 1, 1, 1], 'with the pizza rows kept');
       closeDatabase();
     } finally {
       PIZZA_MIGRATIONS.pop();

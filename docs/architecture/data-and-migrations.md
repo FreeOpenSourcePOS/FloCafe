@@ -90,6 +90,7 @@ too, the reference schema is "upstream at version N plus the pizza list".
 | `pizza_products` | One row per product that is a pizza, the half-and-half product, or a deal. |
 | `pizza_menu` | One row: the catalogue parsed from the last menu file loaded, and the catalogue rows menu loads have made (`owned_rows`, an empty list by default). |
 | `pizza_quick_buttons` | Saved one-tap order lines, shop-wide or for one customer. |
+| `pizza_price_overrides` | One row per price set in the POS (`size:large`, `topping`, `deal:party`): the amount in whole cents, and what the menu file last loaded charges for the same thing. Added by pizza migration 2. |
 
 Rules for an entry, on top of the two registry rules above:
 
@@ -117,7 +118,8 @@ under the second fail-closed rule and the value is left as it is.
 A currency reset recreates the database, so `capturePizzaMenu` and `restorePizzaMenu` carry the
 pizza side of the menu across with the rest of it: `pizza_products` rows whose product survives,
 and the `pizza_menu` catalogue with every `priceCents` set to 0, because those amounts are in the
-old currency. `pizza_quick_buttons` is not carried, shop-wide buttons included.
+old currency. `pizza_quick_buttons` is not carried, shop-wide buttons included, and neither is
+`pizza_price_overrides`: a price set in the POS is an amount in the old currency too.
 
 ## The two fail-closed rules
 

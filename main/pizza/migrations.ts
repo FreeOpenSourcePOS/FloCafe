@@ -46,6 +46,21 @@ export const PIZZA_MIGRATIONS: {
         );
       `),
   },
+  {
+    version: 2,
+    name: 'create_pizza_price_overrides',
+    // `file_cents` is what the menu file last loaded charges for the same thing; null when it
+    // has no such thing, so the override is kept and not used.
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pizza_price_overrides (
+          key         TEXT PRIMARY KEY,
+          price_cents INTEGER NOT NULL CHECK (price_cents >= 0),
+          file_cents  INTEGER,
+          updated_at  TEXT NOT NULL
+        );
+      `),
+  },
 ];
 
 const latestPizzaVersion = (): number => PIZZA_MIGRATIONS[PIZZA_MIGRATIONS.length - 1].version;

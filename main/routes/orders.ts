@@ -88,6 +88,7 @@ import {
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { checkLineRecipe, keepStoredRecipe } from '../pizza/order-recipe';
 import { carrySoldLine, changesRecipeOnly, soldTax } from '../pizza/sold-line';
+import { PRICES_CHANGED, assertExpectedSubtotal, lineSubtotalsOf } from '../pizza/price-guard';
 import { cloudSync } from '../services/cloud-sync';
 import {
   validateOrderNotes,
@@ -2546,6 +2547,11 @@ router.post(
           validatedItems.reduce((acc, v) => acc + v.itemSubtotal, 0).toFixed(decimals),
         );
         const minorFactor = getCurrencyMinorUnitFactor(currency);
+        assertExpectedSubtotal(
+          body.expected_subtotal,
+          validatedItems.map((v) => v.itemSubtotal),
+          decimals,
+        );
 
         const resolvedCharges = buildAppliedCharges({
           currency,
@@ -2875,7 +2881,9 @@ router.post(
               ? { ...error.refusal }
               : undefined,
         ),
-        ...(error.code === 'MULTI_COUNTER_DISABLED' || error.code === 'SCHEDULED_ORDERS_DISABLED'
+        ...([PRICES_CHANGED, 'MULTI_COUNTER_DISABLED', 'SCHEDULED_ORDERS_DISABLED'].includes(
+          error.code,
+        )
           ? { code: error.code }
           : {}),
       });
@@ -3197,6 +3205,11 @@ router.post(
         // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
+        assertExpectedSubtotal(
+          body.expected_subtotal,
+          lineSubtotalsOf(db, insertedItemIds),
+          decimals,
+        );
         const newDiscountAmount = resolveOrderLevelDiscountAmount(currentOrder, subtotal, decimals);
 
         const engineCharges = resolveEngineCharges(currentOrder, subtotal, newDiscountAmount);

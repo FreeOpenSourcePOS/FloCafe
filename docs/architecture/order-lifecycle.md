@@ -67,6 +67,25 @@ Everything monetary is resolved server-side inside one transaction:
   `calculateOrderTotals()` in [`main/services/orders.ts`](../../main/services/orders.ts) rounds
   each stored line subtotal to the currency before adding the lines up, so a line stored as
   `32.099999999999994` is discounted and taxed as `32.10`.
+- A client may send `expected_subtotal`, the amount it showed for the lines of the request before
+  tax, order discounts, and charges. `assertExpectedSubtotal()` in
+  [`main/pizza/price-guard.ts`](../../main/pizza/price-guard.ts) compares it with the sum of the
+  line amounts above and refuses the request with `409` and `code: "PRICES_CHANGED"` ("Prices have
+  changed. Check the order and place it again.") when they differ by a cent or more. The check
+  throws inside the route's transaction, which rolls back: no order, line, stock movement, or
+  audit row stays, and nothing is sent to the kitchen. Adding items applies the same check to the
+  lines it adds. A request without the field is priced as it always was, which is what the Server
+  App, the Orders page, and other API clients send.
+- The POS sends the field on every order it creates and every cart it adds to an order
+  (`cartExpectedSubtotal()` in
+  [`frontend/src/lib/pizza/price-guard.ts`](../../frontend/src/lib/pizza/price-guard.ts)): unit
+  price, or the owner's override, or the platform price of an online order, plus add-ons, times
+  quantity, each line rounded as `lineSubtotal()` rounds it. The cart holds no item discount. On
+  the refusal it shows the message, fetches the pizza menu, products, and categories again, and
+  prices the cart from the fresh products with every line kept; a line whose product, size, or
+  add-on is no longer listed keeps its old price and is marked "Not on the menu". The cashier
+  places the order again. The cart's own total can show a weighed line a cent lower than the
+  field (1.5 kg at 1.13 shows 1.69 and is charged 1.70), because it multiplies in binary.
 - An item discount and an order discount of the same percentage can differ by a cent in tax: an
   item discount taxes the discounted line, while an order discount prorates tax that was already
   rounded per line (1.52 against 1.53 on three at 10.70 with 5% off and 5% tax).
@@ -564,6 +583,7 @@ movements, and refunds follow the approval tiers described above.
 
 ```sh
 npm run test:integration-order-hold-payment   # hold, discount, tax, installments, gates, replay
+npm run test:pizza-price-guard                # expected_subtotal: equal, a cent off, absent, every line shape
 npm run test:financial-safety-remediation     # payment replay idempotency, PIN decoupling, discount revalidation
 npm run test:issue-terminal-state-guards      # terminal bill/order guards, takeaway/customer sync, flat discount caps
 npm run test:issue-exact-balance-settlement    # auto-settle bill and complete order on exact-balance discount

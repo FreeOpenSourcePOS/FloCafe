@@ -208,6 +208,20 @@ export function reloadPizzaCatalog(now = Date.now()): Promise<PizzaCatalog | nul
   return fetching;
 }
 
+/**
+ * Fetches the menu now and puts fresh lists on screen beside it whether or not it changed: an
+ * order was refused for its prices, and a price is not always in the menu. A changed menu brings
+ * its lists itself, in the one step every change takes; an unchanged one has them loaded here.
+ */
+export async function reloadPizzaMenuAndLists(): Promise<void> {
+  const tenant = scope();
+  const before = held;
+  await reloadPizzaCatalog();
+  if (waiting?.scope === tenant || held !== before) return;
+  const apply = await companion?.();
+  if (tenant === scope()) apply?.();
+}
+
 /** Fetches the catalogue the first time; every later call by the same tenant answers that same fetch. */
 export function loadPizzaCatalog(): Promise<PizzaCatalog | null> {
   return request?.scope === scope() ? request.fetching : reloadPizzaCatalog();

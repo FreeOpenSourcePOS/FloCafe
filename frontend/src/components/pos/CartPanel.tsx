@@ -48,6 +48,7 @@ import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/
 import { PizzaLineActions, PizzaLineDetails } from './pizza/PizzaCartLine';
 import { SentPizzaLine } from './pizza/SentPizzaLine';
 import type { PizzaPos } from './pizza/usePizzaPos';
+import { OffSaleMark } from './pizza/usePriceGuard';
 import { QuickButtonLineAction } from './pizza/useQuickButtons';
 
 interface Props {
@@ -975,6 +976,7 @@ export default function CartPanel({
                         ? `${item.product.name} (${item.variant.name})`
                         : item.product.name}
                       {pizza?.lineMark(item)}
+                      <OffSaleMark item={item} />
                     </p>
                     <div className="flex items-baseline gap-1.5 shrink-0">
                       {item.quantity > 1 && (

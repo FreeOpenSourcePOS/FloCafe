@@ -29,6 +29,8 @@ import ProductGrid from '@/components/pos/ProductGrid';
 import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
 import { usePizzaPos } from '@/components/pos/pizza/usePizzaPos';
+import { usePriceGuard } from '@/components/pos/pizza/usePriceGuard';
+import { cartExpectedSubtotal } from '@/lib/pizza/price-guard';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
@@ -1939,6 +1941,13 @@ export default function POSPage() {
   );
 
   const pizza = usePizzaPos(products, categories, setSelectedCategory, setProducts, setCategories);
+  const pricesChanged = usePriceGuard(products);
+  /** A refused append must not stay stored: a reload would send it again, at the new prices. */
+  const dropAppendAttempt = () => {
+    if (addItemsAttemptRef.current)
+      clearAppendAttempt(getAppendAttemptStorage(), addItemsAttemptRef.current);
+    addItemsAttemptRef.current = null;
+  };
 
   const handleProductClick = (product: Product, quantity = 1) => {
     if (pizza?.open(product, quantity)) return;
@@ -2214,7 +2223,11 @@ export default function POSPage() {
         failureStage = 'append_items';
         const { data } = await api.post(
           `/orders/${pendingOrder.id}/items`,
-          { items: newItems, special_instructions: specialInstructions },
+          {
+            items: newItems,
+            special_instructions: specialInstructions,
+            expected_subtotal: cartExpectedSubtotal(cart, Boolean(pendingOrder.online_platform)),
+          },
           {
             headers: {
               ...liveAuthHeadersFor(originContext),
@@ -2296,6 +2309,7 @@ export default function POSPage() {
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
+          expected_subtotal: cartExpectedSubtotal(cart),
         };
         const baseOrderFingerprint = JSON.stringify(orderPayload);
         const matchesPriorPostpaidOrderAttempt =
@@ -2517,7 +2531,10 @@ export default function POSPage() {
       await printKotIfEnabled(orderForKot, originContext);
     } catch (error) {
       if (!isSessionCurrent()) return;
-      if (error instanceof OrderAttemptStorageError)
+      if (pricesChanged(error)) {
+        if (pendingOrder) dropAppendAttempt();
+        else clearPostpaidAttempt(originUserId);
+      } else if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(
           t('placeOrderFailed'),
           failureOperation === 'order.append' ? 'order.append' : 'order.create',
@@ -2652,6 +2669,7 @@ export default function POSPage() {
         waived_charge_ids: Array.from(cart.waivedChargeIds),
         opted_in_charge_ids: Array.from(cart.optedInChargeIds),
         items: orderItems,
+        expected_subtotal: cartExpectedSubtotal(cart),
       };
       attemptedScheduledFor = orderPayload.scheduled_for;
 
@@ -2757,7 +2775,9 @@ export default function POSPage() {
       }
     } catch (err: unknown) {
       if (!isOriginSessionCurrent()) return;
-      if (err instanceof OrderAttemptStorageError) {
+      if (pricesChanged(err)) {
+        clearPostpaidAttempt(originUserId);
+      } else if (err instanceof OrderAttemptStorageError) {
         reportOrderStorageFailure(t('placeOrderFailed'), 'order.create', null, originContext);
       } else {
         if (attemptedScheduledFor && isDefinitiveScheduleRejection(err, sendToPaymentOperationId)) {
@@ -3066,6 +3086,7 @@ export default function POSPage() {
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
             items: orderItems,
+            expected_subtotal: cartExpectedSubtotal(cart),
           },
           {
             headers: {
@@ -3399,7 +3420,11 @@ export default function POSPage() {
       };
     } catch (error) {
       if (!isSessionCurrent()) return;
-      if (error instanceof OrderAttemptStorageError && committedOrder) {
+      if (pricesChanged(error)) {
+        // The amounts in the checkout window were for the old total: it opens again on the new one.
+        clearPrepaidAttempt(originUserId);
+        closePrepaidCheckoutModal();
+      } else if (error instanceof OrderAttemptStorageError && committedOrder) {
         if (
           failureOperation === 'payment.create' &&
           failureStage === 'retry_state' &&
@@ -3676,6 +3701,7 @@ export default function POSPage() {
         {
           items,
           special_instructions: specialInstructions,
+          expected_subtotal: cartExpectedSubtotal(cart, Boolean(order.online_platform)),
         },
         {
           headers: {
@@ -3739,7 +3765,8 @@ export default function POSPage() {
       refreshTables();
     } catch (error) {
       if (!isSessionCurrent()) return;
-      if (error instanceof OrderAttemptStorageError)
+      if (pricesChanged(error)) dropAppendAttempt();
+      else if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId, originContext);
       else
         reportOrderRequestFailure(

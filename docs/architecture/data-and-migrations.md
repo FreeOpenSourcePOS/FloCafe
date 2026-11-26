@@ -59,18 +59,66 @@ flowchart TB
   C --> D
   D{"packaged start and<br/>flo.db missing but<br/>.flo-db-initialized present?"}
   D -->|"yes"| E["THROW: database missing<br/>refuse silent recreation"]
-  D -->|"no"| P{"non-mutating preflight:<br/>user_version or _flo_meta ><br/>highest MIGRATIONS?"}
+  D -->|"no"| P{"non-mutating preflight:<br/>user_version or _flo_meta ><br/>highest MIGRATIONS,<br/>or pizza version ><br/>highest PIZZA_MIGRATIONS?"}
   P -->|"newer than build"| H["THROW SchemaVersionMismatchError<br/>enter downgrade recovery flow"]
   P -->|"supported"| F["open flo.db<br/>WAL, synchronous NORMAL,<br/>busy_timeout 5000,<br/>foreign_keys OFF"]
-  F --> G{"user_version or _flo_meta ><br/>highest MIGRATIONS?"}
+  F --> G{"same check on the open database"}
   G -->|"newer than build"| H
-  G -->|"equal"| J["integrity checks and repairs"]
-  G -->|"older"| I["checkpoint WAL, copy to backups/<br/>flo-backup-...-pre-vA-to-vB.db"]
+  G -->|"nothing pending"| J["integrity checks and repairs"]
+  G -->|"upstream or pizza<br/>migration pending"| I["checkpoint WAL, copy to backups/<br/>flo-backup-...-pre-vA-to-vB.db"]
   I --> K["for each pending migration:<br/>transaction { up(); user_version = n }"]
-  K --> J
+  K --> N["for each pending pizza migration:<br/>transaction { up(); pizza_schema_version = n }"]
+  N --> J
   J --> L["foreign_keys ON"]
   L --> M["write .flo-db-initialized marker"]
 ```
+
+## The pizza migration list
+
+The pizza tables do not come from `MIGRATIONS`. They come from `PIZZA_MIGRATIONS` in
+[`main/pizza/migrations.ts`](../../main/pizza/migrations.ts), a second append-only list of
+`{ version, name, up }` entries with its own counter, stored as `pizza_schema_version` in the
+`_flo_meta` table. `PRAGMA user_version` is the only cursor of `MIGRATIONS`, so a pizza entry
+numbered there would make a database skip the upstream migration that later takes the same number.
+
+`runMigrations` runs upstream's list and then `runPizzaMigrations`, each pending entry in its own
+transaction together with the counter. Because `buildIdealSchemaDb` goes through `runMigrations`
+too, the reference schema is "upstream at version N plus the pizza list".
+
+| Table | Holds |
+| --- | --- |
+| `pizza_products` | One row per product that is a pizza, the half-and-half product, or a deal. |
+| `pizza_menu` | One row: the catalogue parsed from the last menu file loaded. |
+| `pizza_quick_buttons` | Saved one-tap order lines, shop-wide or for one customer. |
+
+Rules for an entry, on top of the two registry rules above:
+
+- **Idempotent.** `CREATE TABLE IF NOT EXISTS`, and a column check before `ADD COLUMN`. Schema
+  repair can create a missing pizza table before the counter is written, for example on the staged
+  copy of a backup made by upstream FloCafe, and the entry then runs against a table that exists.
+- **Pizza tables only, named `pizza_*`.** The list also runs when the reference schema of an older
+  upstream version is built, so an entry cannot rely on a recent upstream table, and the prefix
+  keeps an upstream table from ever taking the same name.
+- **Never in `MIGRATIONS`.** No pizza table is created anywhere else.
+
+A file is compared against the reference built at its own pizza version, as it is at its own
+upstream version: `getRecoverySchemaReference` reads the candidate's `pizza_schema_version` and
+caches one reference per pair of versions. A backup taken before a later pizza migration, or made
+by upstream FloCafe with no pizza table at all, therefore passes `isHealthyDatabaseFile` and is
+listed as compatible by downgrade discovery. Restoring it brings it to the current pizza version: a restore at the current
+upstream version runs the pizza list on its staged copy before schema repair, so
+`validateDirectBackup` compares that copy against the current reference whatever a pizza migration
+does, and an older backup is migrated after it replaces the live file.
+
+A counter that was never written reads as 0 and the whole list runs. A counter that is present but
+is not a whole number is treated as newer than any build: the database is refused as described
+under the second fail-closed rule and the value is left as it is.
+
+A currency reset recreates the database, so `capturePizzaMenu` and `restorePizzaMenu` carry the
+pizza side of the menu across with the rest of it: `pizza_products` rows whose product survives,
+and the `pizza_menu` catalogue with every `priceCents` set to 0, because those amounts are in the
+old currency. `pizza_quick_buttons` is not carried, shop-wide buttons included: a button stores
+add-on prices, and those are in the old currency.
 
 ## The two fail-closed rules
 
@@ -92,7 +140,15 @@ data:
    encounter a storage error while the effective header is supported), and `runMigrations` enforces
    the same guard. When either `user_version` or canonical `_flo_meta.schema_version` exceeds
    `getLatestSupportedSchemaVersion()`, `SchemaVersionMismatchError` is thrown. An older build never
-   reverse-migrates or opens a newer schema directly.
+   reverse-migrates or opens a newer schema directly. A `pizza_schema_version` above the last entry
+   of `PIZZA_MIGRATIONS` counts as newer in the same way: `readCanonicalMetaVersionInfo` reports
+   such a database as one schema version past the supported one, so the preflight, the
+   `runMigrations` guard and the replay of a retained replacement journal all treat it as a newer
+   database. A pizza-version mismatch is therefore reported as the next upstream version in the
+   error, the recovery dialog and the name of the preserved file; the log line
+   `Requires pizza schema vA (this version supports up to vB)`, written once per process, names the
+   real pizza versions. `isHealthyDatabaseFile` answers false for such a file, and `restoreBackup`
+   refuses such a backup before it touches the live database.
 
    `initialize()` in [`main/index.ts`](../../main/index.ts) intercepts `SchemaVersionMismatchError`
    before the generic startup-error dialog, quiesces database access, and runs
@@ -114,7 +170,9 @@ data:
      candidate `.db` files by SQLite content (`PRAGMA integrity_check`, `PRAGMA user_version`,
      `_flo_meta`, core tables, foreign keys, and the inventory ledger or pre-v85 stock snapshot)
      rather than trusting filenames, and lists all candidates with
-     `schemaVersion <= getLatestSupportedSchemaVersion()`. When no compatible valid backup exists,
+     `schemaVersion <= getLatestSupportedSchemaVersion()` and a pizza version this build supports
+     (a backup at a newer pizza version is classified with the newer backups). When no compatible
+     valid backup exists,
      the dialog reports whether backups are missing, require a newer FloCafe version, or failed
      validation, while keeping update, folder-open, and exit actions available. Restoring a selected
      backup requires explicit confirmation warning that orders, payments, inventory changes, and
@@ -141,7 +199,10 @@ data:
 Before any pending batch runs, `syncBackupBeforeMigration` writes a snapshot into
 `backups/flo-backup-<timestamp>-pre-v<from>-to-v<to>.db`. On a brand-new install, where no source
 file exists yet, it still creates the file so the backup contract holds, and stamps it with the
-pre-migration version.
+pre-migration version. When only a pizza migration is pending the snapshot is still taken, named
+`-pre-v<N>-to-v<N>` with the unchanged upstream version on both sides; when both lists have pending
+entries one snapshot covers the two. The `-pre-v` part of the name is what classifies a file as an
+automatic backup.
 
 The snapshot is a real SQLite file, not a raw copy alone. It is reopened, switched to
 `journal_mode = DELETE` so it is portable away from WAL, and given an `_flo_meta` table recording
@@ -298,6 +359,7 @@ Directory syncing is skipped on Windows, which does not support it.
 | `npm run test:sequence` | Order and bill sequence generation, repair performance, and no-reuse invariants. |
 | `npm run test:issue-278-fail-closed-db` | The missing-database guard. |
 | `npm run test:newer-db-recovery` | Newer-database startup interception, content-based backup discovery, sidecar preservation, journaled downgrade restore, and rollback. |
+| `npm run test:pizza-migrations` | The pizza migration list: a new database, a database written by upstream code, health check and restore, a later upstream migration, backups at an older and a newer pizza version, a missing or unreadable counter, a migration that throws, and the currency reset. |
 
 `isHealthyDatabaseFile` is the predicate that decides whether a candidate file is usable at all. It
 probes legacy rollback-journal files read-only in place and stages WAL-mode or sidecar-accompanied
@@ -307,8 +369,9 @@ without a `-journal` sidecar) so probing never leaves orphaned `-wal` or `-shm` 
 clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a schema version
 above zero and within the supported range, an `_flo_meta` stamp that matches the pragma, and a table
 and column set, plus structural table definitions and normalised index, trigger, and view
-definitions (`getSchemaDefinitions`), that match the ideal schema built by running the whole
-migration pipeline in memory (`getRecoverySchemaReference`, cached across health checks and direct
+definitions (`getSchemaDefinitions`), that match the ideal schema built by running the migration
+pipeline in memory up to the file's own upstream and pizza versions
+(`getRecoverySchemaReference`, cached across health checks and direct
 restores and invalidated on migration registry changes; runtime-ensured indexes in
 `RUNTIME_ENSURED_SCHEMA_OBJECTS` such as `idx_order_items_active_kds` at schema v121+ may be absent
 on an unopened file or direct-restore backup and are created on writable open by
@@ -327,6 +390,10 @@ registry identity changes.
 4. Add test vectors that exercise the migration from a populated database, not from empty.
 5. Run `npm run test:upgrade-path`, `npm run test:upgrade-regression`, and `npm run test:backup`, and
    run `npm run audit:db`.
+
+A pizza table or column goes into `PIZZA_MIGRATIONS` instead, under the rules in
+[The pizza migration list](#the-pizza-migration-list), and is verified with
+`npm run test:pizza-migrations`.
 
 ## Timestamps
 

@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "En az bir sipariş türü seçin"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Kapanış satışları ve ödemeleri özetler. Ürün raporu tüm iş gününü kapsar.",
     "aov": "Ortalama Sipariş Tutarı",
     "avgPrepTime": "Ort. Hazırlık Süresi",
     "avgTableTurn": "Ort. Masa Devir Süresi",
@@ -1799,6 +1800,7 @@
     "success": "Veritabanı başarıyla geri yüklendi. Yeniden başlatılıyor..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Henüz hiçbir personel PIN ile giriş yapamıyor. Yöneticinizden Personel bölümünde hesabınıza bir PIN tanımlamasını isteyin.",
     "addToOrder": "Siparişe Ekle",
     "billPrintFailed": "Sipariş gönderildi, ancak hesap fişi yazdırılamadı",
     "couldNotLoadData": "Garson Uygulaması verileri yüklenemedi",

@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "请至少选择一种订单类型"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "结账报表汇总销售和付款。商品报表涵盖整个营业日。",
     "aov": "客单价",
     "avgPrepTime": "平均出餐时间",
     "avgTableTurn": "平均翻台率",
@@ -1799,6 +1800,7 @@
     "success": "数据库恢复成功。正在重启…"
   },
   "serverApp": {
+    "pinRosterEmpty": "目前没有员工可以使用 PIN 登录。请主管在员工设置中为你的账号设置 PIN。",
     "addToOrder": "加入订单",
     "billPrintFailed": "订单已发送，但账单未打印",
     "couldNotLoadData": "无法加载服务员应用数据",

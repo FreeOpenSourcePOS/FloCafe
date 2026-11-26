@@ -25,6 +25,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
+import { Button } from '@/components/ui/button';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
@@ -210,7 +211,11 @@ export default function ServerStandalonePage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
-  const [pinUsers, setPinUsers] = useState<PinUser[]>([]);
+  const [pinRoster, setPinRoster] = useState<
+    { status: 'loading' | 'error' } | { status: 'ready'; users: PinUser[] }
+  >({ status: 'loading' });
+  const [pinRosterAttempt, setPinRosterAttempt] = useState(0);
+  const pinUsers = pinRoster.status === 'ready' ? pinRoster.users : [];
   const [selectedPinUser, setSelectedPinUser] = useState<PinUser | null>(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
@@ -451,17 +456,20 @@ export default function ServerStandalonePage() {
     api
       .get('/api/auth/pin-users')
       .then((res) => {
-        if (!cancelled && Array.isArray(res.data?.users)) {
-          setPinUsers(res.data.users);
-        }
+        if (cancelled) return;
+        setPinRoster(
+          Array.isArray(res.data?.users)
+            ? { status: 'ready', users: res.data.users }
+            : { status: 'error' },
+        );
       })
       .catch(() => {
-        if (!cancelled) setPinUsers([]);
+        if (!cancelled) setPinRoster({ status: 'error' });
       });
     return () => {
       cancelled = true;
     };
-  }, [api, user, disabled, loading]);
+  }, [api, user, disabled, loading, pinRosterAttempt]);
 
   useEffect(() => {
     if (!api || !userId) return;
@@ -812,6 +820,7 @@ export default function ServerStandalonePage() {
     setPin('');
     setPinError('');
     activeUserIdRef.current = loggedInUser.id;
+    setPinRoster({ status: 'loading' });
     setUser(loggedInUser);
   }
 
@@ -1566,6 +1575,30 @@ export default function ServerStandalonePage() {
             </form>
           )}
 
+          {pinUsers.length === 0 && (
+            <div className="mt-4 space-y-2 text-center text-xs text-muted-foreground">
+              <p role="status">
+                {pinRoster.status === 'loading'
+                  ? tCommon('loading')
+                  : pinRoster.status === 'error'
+                    ? tStaff('failedToLoad')
+                    : t('pinRosterEmpty')}
+              </p>
+              {pinRoster.status === 'error' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPinRoster({ status: 'loading' });
+                    setPinRosterAttempt((attempt) => attempt + 1);
+                  }}
+                >
+                  {tSettings('retry')}
+                </Button>
+              )}
+              {pinRoster.status === 'ready' && <p>{tStaff('pinHint')}</p>}
+            </div>
+          )}
           <p className="mt-4 text-center text-xs text-muted-foreground">{t('loginHint')}</p>
         </div>
       </div>

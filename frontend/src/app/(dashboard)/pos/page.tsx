@@ -2864,7 +2864,6 @@ export default function POSPage() {
     walletAmount: number,
     discount: PrepaidDiscount | null,
   ) => {
-    const isPrepaidCheckout = shouldTakePaymentNow;
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
@@ -3410,7 +3409,7 @@ export default function POSPage() {
 
       await printBillForTenant(
         { ...paidBill, order: paidBill.order ?? bill.order ?? order },
-        isPrepaidCheckout,
+        false,
         undefined,
         originContext,
       );

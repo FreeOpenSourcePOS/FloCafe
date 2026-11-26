@@ -25,6 +25,7 @@ import {
   Receipt,
   Lock,
   KeyRound,
+  Pizza,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -68,7 +69,7 @@ type NavKey = keyof AppConfig['Messages']['nav'];
 
 interface NavItem {
   href: string;
-  labelKey: NavKey;
+  labelKey: NavKey | 'pizzaMenu';
   icon: LucideIcon;
   permission: PermissionId;
   businessTypes: string[] | null;
@@ -103,6 +104,13 @@ const ALL_NAV_ITEMS: NavItem[] = [
     labelKey: 'products',
     icon: Package,
     permission: 'catalog.manage',
+    businessTypes: null,
+  },
+  {
+    href: '/pizza-menu',
+    labelKey: 'pizzaMenu',
+    icon: Pizza,
+    permission: 'catalog.import-export',
     businessTypes: null,
   },
   {
@@ -166,6 +174,7 @@ export default function AppSidebar() {
   const tAuth = useTranslations('auth');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
+  const tPizza = useTranslations('pizza');
   const { confirm, ConfirmDialog } = useConfirm();
   const canManageCloudAccount = tenantCan(currentTenant, 'cloud.account.manage');
   const cloudAttentionTenantId = useCloudAttentionStore((s) => s.tenantId);
@@ -287,9 +296,11 @@ export default function AppSidebar() {
                   const [hrefPath, hrefQuery] = item.href.split('?');
                   const isActive =
                     !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
+                  const label =
+                    item.labelKey === 'pizzaMenu' ? tPizza('menuTitle') : t(item.labelKey);
                   return (
                     <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                      <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
                         <Link
                           href={item.href}
                           onClick={closeMobile}
@@ -309,7 +320,7 @@ export default function AppSidebar() {
                               />
                             )}
                           </span>
-                          <span>{t(item.labelKey)}</span>
+                          <span>{label}</span>
                         </Link>
                       </SidebarMenuButton>
                       {item.href === '/settings' && settingsNeedsAttention && (

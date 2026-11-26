@@ -43,6 +43,8 @@ The Node path is fixed in the units at install time. After upgrading Node, run `
 
 The first time the POS runs, open `http://<pc address>:<PORT>` from a tablet and finish setup there. A new install starts in offline mode (decision D13 in [decisions.md](decisions.md)).
 
+To load the shop's menu, sign in as the owner or a manager, open **Pizza menu** in the sidebar, choose the shop's menu file (`.json`) and confirm. Load the file again whenever it changes: the file is the master copy, so names, prices and what is on sale follow it, and anything it no longer has is switched off.
+
 ### Start at boot
 
 A user service runs only while that user has a session, unless lingering is on. Turn it on once, as the user that owns the service:

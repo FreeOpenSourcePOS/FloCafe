@@ -69,6 +69,49 @@ Order numbers are allocated inside the transaction. Request replay follows the
 The order starts `pending` with its totals snapshotted, and a `dine_in` order with a table marks the
 table `occupied`.
 
+## Recipes on pizza and deal lines
+
+A pizza, a half and half, or a deal carries its recipe in the line's `modifier_selection`: the
+ingredients left off, the two halves, or a deal's pizzas, drinks, and wing flavour.
+`checkLineRecipe()` in [`main/pizza/order-recipe.ts`](../../main/pizza/order-recipe.ts) checks every
+incoming line of `POST /api/orders`, `POST /api/orders/:id/items`, and
+`PATCH /api/orders/:orderId/items/:itemId/edit`, inside the transaction that writes the line:
+
+- `pizza_products` says whether the line's product is a pizza, the half-and-half product, or a
+  deal. A product with no row there keeps whatever `modifier_selection` it sends, except that an
+  object whose `kind` is `pizza` or `deal` is refused.
+- A pizza product may arrive with no recipe. The half-and-half product and every deal product
+  require one.
+- `validateRecipe()` in [`shared/pizza/recipe.ts`](../../shared/pizza/recipe.ts) checks the recipe
+  against the catalogue stored in `pizza_menu` and returns the form that is stored: removed
+  ingredients sorted with repeats dropped, pop counts sorted with zero counts dropped.
+- The recipe has to agree with the line. The variant id is the product id, a hyphen, and the
+  recipe's `sizeId`. `whole` names the pizza product's own menu id and never appears on the
+  half-and-half product; `halves` appears only there. `dealId` is the deal product's menu id.
+- A refusal answers `400` with the recipe's message as `error`, and the transaction writes nothing.
+- The catalogue is read once per request, and only when a line carries a recipe to check. When the
+  `pizza_menu` row is missing or is not valid JSON, such a line answers `503` with "The pizza menu
+  is not loaded. Load the menu file again." Lines without a recipe are not affected.
+- A recipe never changes a price. The unit price is the variant's or product's catalog price, as
+  for any other line.
+
+Later changes to the line keep the recipe:
+
+- A quantity reduction copies the stored recipe without checking it again. A quantity increase and
+  a replacement check it against the current menu.
+- A replacement that leaves `modifier_selection` out keeps the recipe stored on the line it
+  replaces when the product is unchanged (`keepStoredRecipe()`). A kept pizza recipe takes its
+  `sizeId` from the replacement's variant, so changing the size keeps the removals and halves. The
+  kept recipe is then checked like any other.
+- A replacement that sends `modifier_selection: null` sends no recipe: it clears the recipe of a
+  pizza product, and is refused on the half-and-half product and on a deal.
+- A replacement by another product does not carry the recipe over, and a line whose
+  `modifier_selection` is not a recipe is replaced by exactly what the request sends.
+- The adjustment rows a void and an item refund write copy the line's `modifier_selection`.
+
+Restricted kitchen display payloads carry a line's recipe: `projectKdsItem()` in `main/db.ts`
+projects `modifier_selection` when it holds a pizza or deal recipe and as `null` otherwise.
+
 ## Scheduled orders and kitchen release
 
 Takeaway and delivery orders in the main POS (desktop and browser) can defer kitchen release by
@@ -481,4 +524,5 @@ npm run test:refunds                          # refund window and approvals
 npm run test:kds-contract                     # KDS item-to-order status reconciliation across write paths
 npm run test:customer-display-feed            # pickup board projection and board_status pagination
 npm run test:scheduled-orders                 # scheduled orders, DST, sweep, stock hold, prepay/refund rules
+npm run test:pizza-order-recipe               # recipe validation on create, add items, edits, void, refund
 ```

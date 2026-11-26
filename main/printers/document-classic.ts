@@ -76,6 +76,7 @@ import {
 } from '../../shared/print';
 import { receiptChargeLines } from '../../shared/charges';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
+import { withRecipeDetailLines } from '../pizza/order-recipe';
 
 // Direction facts (registry-derived, no language unions).
 
@@ -1311,7 +1312,8 @@ export function renderClassicReceiptViaDocument(
         customer_phone: maskPhoneOnReceipt(String(business?.customer_phone ?? '')),
       }
     : business;
-  const printData = buildBillPrintData(order, bill, semanticBusiness, opts.isReprint);
+  const items = withRecipeDetailLines(order?.items, opts.columns);
+  const printData = buildBillPrintData({ ...order, items }, bill, semanticBusiness, opts.isReprint);
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,

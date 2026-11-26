@@ -118,7 +118,7 @@ All of FloCafe's id columns here are text, and an id is unique across its whole 
 
 Tax: drinks get the tax category with code `soda` when `drinksPst`; every other imported product gets `food`. Lane C's setup profile creates both. If a category does not exist (tax not set up), the import does not write the product's tax category: a new product has none, which FloCafe treats as untaxed, a product that already has one keeps it, and the import summary says so.
 
-`importMenu` also writes the parsed catalogue to `pizza_menu`, with the list of catalogue rows the load owns (`owned_rows`), and one `pizza_products` row per pizza, for the half-and-half product, and per deal. The next load switches off the rows on that list that it no longer writes. That stored catalogue is what the server validates recipes against.
+`importMenu` also writes the parsed catalogue to `pizza_menu`, with the list of catalogue rows the load owns (`owned_rows`), and one `pizza_products` row per pizza, for the half-and-half product, and per deal. The next load switches off the rows on that list that it no longer writes. That stored catalogue is what the server validates recipes against. A pizza's row has the pizza's menu id as `menu_id` and kind `pizza`. The half-and-half product's row has `menu_id` `half-and-half` and kind `half-and-half`. A deal's row has the deal's menu id and kind `deal`.
 
 ## Tables (lane B1, `main/pizza/migrations.ts`)
 
@@ -164,8 +164,11 @@ CREATE TABLE IF NOT EXISTS pizza_quick_buttons (
 - A recipe travels as `modifier_selection` on the order line. The server validates and normalises it with `validateRecipe` against the catalogue stored in `pizza_menu`, at order create, add items and replacement edit.
 - A recipe is optional on a pizza product: a plain pizza is just the product, its size variant and its dips. A half-and-half product and a deal product require one.
 - The line's product and variant must agree with the recipe, checked through `pizza_products` and the derived ids: `sizeId` matches the variant; `whole.pizzaId` is the product's menu id and `whole` is never on the half-and-half product; `halves` only on the half-and-half product; `dealId` is the deal product's menu id.
-- A replacement edit that sends no recipe keeps the stored one.
-- Print data gets `detailLines` and the heading from `ticketLines`.
+- A replacement edit keeps the stored recipe only when the `modifier_selection` field is absent and the product is unchanged. A kept pizza recipe takes its `sizeId` from the replacement's variant (the variant id with the `<product id>-` prefix removed) and is then validated as usual. An explicit `modifier_selection: null` means no recipe: it clears the recipe of a plain pizza and is refused, as any missing recipe is, on the half-and-half product and on deals.
+- When the `pizza_menu` row is missing or unreadable, a line with a recipe answers 503 with "The pizza menu is not loaded. Load the menu file again."; lines without a recipe are unaffected.
+- A recipe is not validated against the menu at print time: an order sold before a menu change still prints, with an id the menu no longer has printed as the id. A recipe that cannot be printed (the stored menu cannot be read, `ticketLines` throws, or a pizza lacks one whole or two halves each with a `removed` list) prints the one detail line `RECIPE NOT PRINTED - CHECK ORDER`, never nothing.
+- A restricted kitchen display station gets `modifier_selection` only when it is a recipe, and `null` otherwise.
+- Print data gets `detailLines` from `ticketLines`, called with the printer's layout column count. The item heading stays FloCafe's own product and variant name.
 
 ## Lanes and file ownership
 

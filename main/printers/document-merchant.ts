@@ -12,6 +12,7 @@ import { buildEscPos, type PrintWarning } from './formatting-helpers';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
+import { withRecipeDetailLines } from '../pizza/order-recipe';
 
 export interface MerchantDocumentRenderResult {
   readonly data: Buffer;
@@ -42,6 +43,7 @@ export function renderMerchantReceiptViaDocument(
     capabilities?: ThermalPrinterCapabilities;
   },
 ): MerchantDocumentRenderResult {
+  order = { ...order, items: withRecipeDetailLines(order.items, opts.columns) };
   const warnings: PrintWarning[] = [];
   const printContext = buildBillPrintContext({
     columns: opts.columns,

@@ -1,6 +1,7 @@
 /** PrintDocument v1 compact thermal receipt renderer; maps print blocks to ESC/POS token lines. */
 
 import { parseDbTimestamp } from '../db';
+import { withRecipeDetailLines } from '../pizza/order-recipe';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import {
@@ -904,7 +905,8 @@ export function renderCompactReceiptViaDocument(
         customer_phone: maskPhoneOnReceipt(String(business?.customer_phone ?? '')),
       }
     : business;
-  const printData = buildBillPrintData(order, bill, semanticBusiness, opts.isReprint);
+  const items = withRecipeDetailLines(order?.items, opts.columns);
+  const printData = buildBillPrintData({ ...order, items }, bill, semanticBusiness, opts.isReprint);
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,

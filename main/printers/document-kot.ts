@@ -33,6 +33,7 @@ import {
   readDetailLines,
 } from '../../shared/print/detail-lines';
 import { kotContactLines } from '../../shared/print/kot-contact';
+import { withRecipeDetailLines } from '../pizza/order-recipe';
 import {
   buildKotDocument,
   isKotItemPending,
@@ -617,7 +618,8 @@ export function renderKotViaDocument(
     capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
   },
 ): KotDocumentRenderResult {
-  const printData = buildKotPrintData(order, items, stationName);
+  const ticketItems = withRecipeDetailLines(items, opts.columns);
+  const printData = buildKotPrintData(order, ticketItems, stationName);
   const printContext = buildKotPrintContext({
     columns: opts.columns,
     language: opts.language,

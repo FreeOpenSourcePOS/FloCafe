@@ -146,9 +146,17 @@ runCases('pizza-deal-state', {
       ],
       'the ticket lines of each tab',
     );
+    same(
+      line.includes,
+      ['INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS'],
+      'what comes with the deal, once, after the tabs',
+    );
     for (const columns of [42, 48]) {
       same(
-        dealLine(catalog, state, columns).tabs.flatMap((tab: any) => tab.lines),
+        [
+          ...dealLine(catalog, state, columns).tabs.flatMap((tab: any) => tab.lines),
+          ...dealLine(catalog, state, columns).includes,
+        ],
         ticketLines(catalog, THREE_LARGE, columns).detailLines,
         `together they are the ticket's lines, at ${columns} columns`,
       );

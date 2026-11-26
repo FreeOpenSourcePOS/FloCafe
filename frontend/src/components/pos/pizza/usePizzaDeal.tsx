@@ -27,6 +27,8 @@ export function usePizzaDeal(catalog: PizzaCatalog | null) {
     catalog?.deals.find((deal) => DEAL_PRODUCT_PREFIX + deal.id === product.id);
 
   return {
+    /** The menu's deal a product sells, if it is one. */
+    of: dealOf,
     /** True for a cart line the configurator edits. */
     isDealLine: (item: CartItem) => Boolean(dealOf(item.product)),
     /** Opens the configurator on a deal product with nothing chosen; false for any other product. */

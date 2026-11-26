@@ -582,9 +582,11 @@ export function QuickButtonsArea({
   const rights = useQuickButtonRights();
   const customer = useCartStore((state) => state.customer);
   const customerId = customer?.id ?? null;
+  // The route refuses a customer's list to someone who may not keep their buttons.
+  const listedFor = rights.customers ? customerId : null;
   useEffect(() => {
-    void load(customerId);
-  }, [load, customerId]);
+    void load(listedFor);
+  }, [load, listedFor]);
 
   // Until the list for a new customer arrives, the last customer's buttons must not show.
   const theirs = buttons.filter(

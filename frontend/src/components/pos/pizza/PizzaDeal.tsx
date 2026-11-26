@@ -401,6 +401,11 @@ export default function PizzaDeal({
                       </div>
                     ),
                   )}
+                  {line.includes.map((text, at) => (
+                    <div key={at} data-testid="deal-summary-line" className="whitespace-pre">
+                      {text}
+                    </div>
+                  ))}
                 </div>
               </div>
 

@@ -59,6 +59,10 @@ const THREE_LINES = [
   '3) LARGE CLASSIC PEPPERONI',
   'WINGS: SWEET CHILI',
 ];
+/** What comes with the three-pizza deal: the ticket's last line, as the summary and the narrower cart wrap it. */
+const THREE_INCLUDES = ['INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS'];
+const THREE_INCLUDES_CART = ['INCLUDES: ANY 3 LARGE PIZZAS', '& 12 WINGS'];
+const COMBO_INCLUDES_CART = ['INCLUDES: 1 LARGE PIZZA,', '1 PASTA, 2 POPS,', '1 GARLIC TOAST'];
 
 /** Screenshots are saved only when a folder outside the checkout is named. */
 const EVIDENCE_DIR = process.env.E2E_EVIDENCE_DIR;
@@ -140,6 +144,21 @@ test.describe('the deal configurator', () => {
     await expect(page.getByTestId('pizza-category-blocks')).toBeVisible();
     await page.getByRole('button', { name: 'Takeaway' }).click();
     await page.getByTestId('pizza-category-blocks').getByRole('button', { name: 'Deals' }).click();
+  });
+
+  test('a deal tile after a quantity search adds that many of the deal', async ({ page }) => {
+    await page.getByTestId('pos-product-grid').getByRole('textbox').first().fill(`3*${COMBO.name}`);
+    await expect(dealTile(page, COMBO.name)).toHaveCount(1);
+    const dialog = await openDeal(page, COMBO.name);
+    await wholePizza(dialog, 'Island').click();
+    await dialog.getByRole('button', { name: 'Next: Pops' }).click();
+    const cola = panel(dialog).getByRole('button', { name: 'One more Cola' });
+    await cola.click();
+    await cola.click();
+    await addButton(dialog).click();
+    await expect(dialog).toBeHidden();
+    await expect(cartLines(page)).toHaveCount(1);
+    await expect(cartLines(page).first().getByTestId('pizza-line-quantity')).toHaveText('3');
   });
 
   test('a deal tile opens the configurator with a tab for each choice', async ({ page }) => {
@@ -227,7 +246,11 @@ test.describe('the deal configurator', () => {
     const line = cartLines(page).first();
     await expect(line).toContainText(COMBO.name);
     await expect(line).toContainText(money(COMBO.price));
-    await expect(details(line)).toHaveText(['1) LARGE GARDEN', 'POP: 1 COLA, 1 GINGER ALE']);
+    await expect(details(line)).toHaveText([
+      '1) LARGE GARDEN',
+      'POP: 1 COLA, 1 GINGER ALE',
+      ...COMBO_INCLUDES_CART,
+    ]);
   });
 
   test('three pizzas and wings: the summary, then the cart line', async ({ page }) => {
@@ -242,6 +265,7 @@ test.describe('the deal configurator', () => {
       ...THREE_LINES.slice(0, 5),
       '3) Choose a pizza',
       'WINGS: Choose a flavour',
+      ...THREE_INCLUDES,
     ]);
     await expect(addButton(dialog)).toHaveText('2 choices left to add');
     await shot(page, 'deal-configurator.png');
@@ -256,7 +280,11 @@ test.describe('the deal configurator', () => {
       'true',
     );
     await expect(tab(dialog, 'Wing flavour')).toContainText('Sweet Chili');
-    await expect(summary(dialog)).toHaveText([THREE.name.toUpperCase(), ...THREE_LINES]);
+    await expect(summary(dialog)).toHaveText([
+      THREE.name.toUpperCase(),
+      ...THREE_LINES,
+      ...THREE_INCLUDES,
+    ]);
     await expect(dialog.getByTestId('deal-chosen')).toHaveText('4 of 4 chosen');
     await expect(addButton(dialog)).toContainText(money(THREE.price));
 
@@ -266,7 +294,7 @@ test.describe('the deal configurator', () => {
     const line = cartLines(page).first();
     await expect(line).toContainText(THREE.name);
     await expect(line).toContainText(money(THREE.price));
-    await expect(details(line)).toHaveText(THREE_LINES);
+    await expect(details(line)).toHaveText([...THREE_LINES, ...THREE_INCLUDES_CART]);
     await shot(page, 'deal-cart-line.png');
   });
 
@@ -298,7 +326,11 @@ test.describe('the deal configurator', () => {
     await cartLines(page).first().getByRole('button', { name: 'Edit' }).click();
     const dialog = page.getByRole('dialog', { name: THREE.name });
     await expect(dialog.getByTestId('deal-chosen')).toHaveText('4 of 4 chosen');
-    await expect(summary(dialog)).toHaveText([THREE.name.toUpperCase(), ...THREE_LINES]);
+    await expect(summary(dialog)).toHaveText([
+      THREE.name.toUpperCase(),
+      ...THREE_LINES,
+      ...THREE_INCLUDES,
+    ]);
     await expect(addButton(dialog)).toHaveText(/^Save/);
     await expect(addButton(dialog)).toContainText(money(THREE.price));
     await expect(panel(dialog).getByRole('button', { name: 'NO Olives' })).toHaveAttribute(
@@ -307,6 +339,8 @@ test.describe('the deal configurator', () => {
     );
 
     await tab(dialog, 'Pizza 3').click();
+    // The tab shows the pizza it holds; Change lists them all again.
+    await panel(dialog).getByRole('button', { name: 'Change' }).click();
     await wholePizza(dialog, 'Smokehouse Chicken').click();
     await panel(dialog)
       .getByRole('group', { name: 'Cook' })
@@ -324,6 +358,7 @@ test.describe('the deal configurator', () => {
       '3) LARGE SMOKEHOUSE CHICKEN',
       'WELL DONE',
       'WINGS: SWEET CHILI',
+      ...THREE_INCLUDES_CART,
     ]);
     // The line was saved under a new identity, so its own Edit button takes the focus.
     await expect(line.getByRole('button', { name: 'Edit' })).toBeFocused();
@@ -334,7 +369,9 @@ test.describe('the deal configurator', () => {
     await panel(dialog).getByRole('button', { name: 'Hot', exact: true }).click();
     await dialog.getByRole('button', { name: 'Close' }).click();
     await expect(dialog).toBeHidden();
-    await expect(details(cartLines(page).first()).last()).toHaveText('WINGS: SWEET CHILI');
+    await expect(details(cartLines(page).first()).filter({ hasText: 'WINGS:' })).toHaveText(
+      'WINGS: SWEET CHILI',
+    );
 
     // A deal line of two: "Customize 1" takes one off, and closing puts it back.
     const quantity = (at: number) => cartLines(page).nth(at).getByTestId('pizza-line-quantity');
@@ -360,8 +397,12 @@ test.describe('the deal configurator', () => {
     await expect(cartLines(page)).toHaveCount(2);
     await expect(quantity(0)).toHaveText('1');
     await expect(quantity(1)).toHaveText('1');
-    await expect(details(cartLines(page).nth(0)).last()).toHaveText('WINGS: SWEET CHILI');
-    await expect(details(cartLines(page).nth(1)).last()).toHaveText('WINGS: HOT');
+    await expect(details(cartLines(page).nth(0)).filter({ hasText: 'WINGS:' })).toHaveText(
+      'WINGS: SWEET CHILI',
+    );
+    await expect(details(cartLines(page).nth(1)).filter({ hasText: 'WINGS:' })).toHaveText(
+      'WINGS: HOT',
+    );
     await expect(cartLines(page).nth(1).getByRole('button', { name: 'Edit' })).toBeFocused();
   });
 
@@ -493,7 +534,7 @@ test.describe('the deal configurator', () => {
     await panel(dialog).getByRole('button', { name: 'One 2L bottle' }).click();
     await panel(dialog).getByRole('button', { name: 'Ginger Ale 2L' }).click();
     await expect(tab(dialog, 'Drinks')).toContainText('2L Ginger Ale');
-    await expect(summary(dialog).last()).toHaveText('2L: GINGER ALE');
+    await expect(summary(dialog).filter({ hasText: '2L:' })).toHaveText('2L: GINGER ALE');
     await fits(dialog);
     await shot(page, 'deal-party-bottle.png');
     // The other side was cleared: going back to cans starts from none.
@@ -506,7 +547,7 @@ test.describe('the deal configurator', () => {
     await expect(dialog).toBeHidden();
     const line = cartLines(page).first();
     await expect(line).toContainText(money(PARTY.price));
-    await expect(details(line).last()).toHaveText('2L: COLA');
+    await expect(details(line).filter({ hasText: '2L:' })).toHaveText('2L: COLA');
     expect(await tooSmall(line.getByTestId('pizza-line-actions'))).toEqual([]);
     expect(
       await page.evaluate(
@@ -581,6 +622,7 @@ test.describe('the deal configurator', () => {
       'NO PINEAPPLE',
       'UNCUT',
       'POP: 2 LEMON LIME',
+      ...COMBO_INCLUDES_CART,
     ]);
   });
 });

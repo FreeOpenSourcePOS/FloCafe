@@ -8,7 +8,7 @@ import { awaitPrintPolicyBootstrap } from '@/lib/print-policy-bootstrap';
 import { defaultPrintLanguagePolicy, resolveKotLanguage } from '@print/policy';
 import { directionalText, isKotItemPending, type DirectionalText } from '@print/document';
 import { orderItemDetailLines } from '@/lib/pizza/detail-lines';
-import { kotContactLines } from '@print/kot-contact';
+import { kotContactLines, kotScheduleLine } from '@print/kot-contact';
 import { containsRtlScript } from '@print/direction';
 import {
   layoutColumnsForTextSize,
@@ -39,7 +39,9 @@ export interface KotWebPrintOptions {
   /** Print the Order Number in a large bold callout banner on KOT. Default: true */
   showLargeOrderNumber?: boolean;
   /** Print the customer's phone, delivery address and delivery note. Default: false */
-  showCustomerContact?: boolean;
+  showCustomerContact?: boolean | 'delivery';
+  /** Print a scheduled order's time: the store has scheduled orders on. Default: false */
+  showScheduledTime?: boolean;
 }
 
 /** Resolve the KOT ticket language: fixed policy language or the UI language. */
@@ -237,11 +239,13 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
         : null,
     }));
 
-  const contactRows = kotContactLines(order, opts.showCustomerContact === true)
+  const schedule = kotScheduleLine(order, opts.showScheduledTime, locale, timezone);
+  const contactRows = kotContactLines(order, opts.showCustomerContact)
     .map(
       (line) =>
         `<p style="margin:2px 0;">${escapeHtml(tr(line.concept))}: ${directionalValue(directionalText(line.text, base), base)}</p>`,
     )
+    .concat(schedule ? `<p style="margin:2px 0;font-weight:bold;">${escapeHtml(schedule)}</p>` : [])
     .join('');
 
   const itemRows =

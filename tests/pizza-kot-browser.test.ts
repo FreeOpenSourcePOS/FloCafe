@@ -278,6 +278,7 @@ runCases('pizza-kot-browser', {
         '   2ND: PLAIN CHEESE',
         '3) LARGE CLASSIC PEPPERONI',
         'WINGS: SWEET CHILI',
+        'INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS',
       ]),
       'the three-pizza deal',
     );

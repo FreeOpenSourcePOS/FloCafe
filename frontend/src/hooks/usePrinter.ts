@@ -891,6 +891,17 @@ export const usePrinterStore = create<PrinterState>()(
           throwIfTenantChanged();
           const hydratedLargeOrderNumber = usePosSettingsStore.getState().billShowLargeOrderNumber;
           const showCustomerContact = usePosSettingsStore.getState().kotShowCustomerContact;
+          // Asked at print time through the route order staff may read, so a change in Settings
+          // counts at once; a failed or stalled read prints no time and never holds the ticket.
+          const showScheduledTime = order.scheduled_for
+            ? await api
+                .get<{ setting?: { value?: string } }>('/settings/scheduled_orders_enabled', {
+                  timeout: 2000,
+                })
+                .then((res) => res.data?.setting?.value === 'true')
+                .catch(() => false)
+            : false;
+          throwIfTenantChanged();
 
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
@@ -949,6 +960,7 @@ export const usePrinterStore = create<PrinterState>()(
                 timezone: tenantTimezone ?? opts?.timezone,
                 showLargeOrderNumber: opts?.showLargeOrderNumber ?? hydratedLargeOrderNumber,
                 showCustomerContact,
+                showScheduledTime,
                 capabilities: useRaster
                   ? nativeFallbackCapabilities(webusbCapabilities)
                   : webusbCapabilities,
@@ -972,6 +984,7 @@ export const usePrinterStore = create<PrinterState>()(
                     language: kotLanguage,
                     showLargeOrderNumber: opts?.showLargeOrderNumber ?? hydratedLargeOrderNumber,
                     showCustomerContact,
+                    showScheduledTime,
                     ...((tenantTimezone ?? opts?.timezone)
                       ? { timezone: tenantTimezone ?? opts?.timezone }
                       : {}),
@@ -1059,6 +1072,7 @@ export const usePrinterStore = create<PrinterState>()(
             timezone: tenantTimezone ?? opts?.timezone,
             showLargeOrderNumber: opts?.showLargeOrderNumber ?? hydratedLargeOrderNumber,
             showCustomerContact,
+            showScheduledTime,
           });
           await printerService.printViaBrowser(html, paperWidth);
           throwIfTenantChanged();

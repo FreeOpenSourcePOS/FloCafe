@@ -89,26 +89,36 @@ detail:   1) LARGE GARDEN
              2ND: PLAIN CHEESE
           3) LARGE CLASSIC PEPPERONI
           WINGS: SWEET CHILI
+          INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS
 
 heading:  PARTY PACK                      (the customer chose cans)
 detail:   1) LARGE GARDEN
           ... 2) to 6) ...
           POP: 2 COLA, 1 GINGER ALE, 1 LEMON LIME
+          INCLUDES: ANY 6 LARGE PIZZAS & 4 CAN
+          POPS OR A 2L BOTTLE
 
 heading:  PARTY PACK                      (the customer chose the bottle)
 detail:   1) LARGE GARDEN
           ... 2) to 6) ...
           2L: COLA
+          INCLUDES: ANY 6 LARGE PIZZAS & 4 CAN
+          POPS OR A 2L BOTTLE
 
 heading:  PASTA NIGHT                     (a deal with no pizzas)
 detail:   POP: 3 COLA
+          INCLUDES: 3 PASTA,
+          3 GARLIC TOASTS & 3 POPS
 ```
+
+The deals are drawn at 42 columns. At 48 the party pack's last two lines are
+`INCLUDES: ANY 6 LARGE PIZZAS & 4 CAN POPS OR` and `A 2L BOTTLE`, and Pasta Night's are one line.
 
 Layout rules behind the examples:
 
 - A whole pizza: removals on one line (`NO A, NO B`), then cook and cut on one line (`WELL DONE, SQUARE CUT`). Either line is left out when empty.
 - A half and half: `1ST: NAME`, that half's removals indented by 2, `2ND: NAME`, its removals indented by 2, then cook and cut.
-- A deal: each pizza as `n) SIZE NAME` (or `n) SIZE HALF & HALF`), followed by that pizza's own detail lines indented by 3. Then, in this order and only when the deal has them: `POP: n NAME, ...`, `2L: NAME`, `WINGS: FLAVOUR`. The labels `POP`, `2L` and `WINGS` are fixed words, not taken from the menu.
+- A deal: each pizza as `n) SIZE NAME` (or `n) SIZE HALF & HALF`), followed by that pizza's own detail lines indented by 3. Then, in this order and only when the deal has them: `POP: n NAME, ...`, `2L: NAME`, `WINGS: FLAVOUR`. The labels `POP`, `2L` and `WINGS` are fixed words, not taken from the menu. Last comes `INCLUDES: ` and the deal's `description` from the stored menu, with runs of white space made one space: what comes with the deal whatever is chosen, such as a pasta or garlic toast, which no pick names. It wraps as any line does, its continuation lines at no indent. A deal whose description is empty, and a deal in a catalogue stored without descriptions, has no such line; nor has a deal the menu no longer has.
 
 Quantity (`2x`) is added by the print layer, not by `ticketLines`.
 
@@ -132,7 +142,11 @@ All of FloCafe's id columns here are text, and an id is unique across its whole 
 
 Tax: drinks get the tax category with code `soda` when `drinksPst`; every other imported product gets `food`. Lane C's setup profile creates both. If a category does not exist (tax not set up), the import does not write the product's tax category: a new product has none, which FloCafe treats as untaxed, a product that already has one keeps it, and the import summary says so.
 
-`importMenu` also writes the parsed catalogue to `pizza_menu`, with the list of catalogue rows the load owns (`owned_rows`), and one `pizza_products` row per pizza, for the half-and-half product, and per deal. The next load switches off the rows on that list that it no longer writes. That stored catalogue is what the server validates recipes against. A pizza's row has the pizza's menu id as `menu_id` and kind `pizza`. The half-and-half product's row has `menu_id` `half-and-half` and kind `half-and-half`. A deal's row has the deal's menu id and kind `deal`.
+`importMenu` also writes the parsed catalogue to `pizza_menu`, with the list of catalogue rows this load or an earlier one made (`owned_rows`), and one `pizza_products` row per pizza, for the half-and-half product, and per deal. A row stays on the list after it leaves the menu, so that a later file can bring it back.
+
+The next load switches off the rows the previous load wrote that it no longer writes, worked out from the stored catalogue. A row that left the file and was switched on again by hand therefore stays on. While the stored catalogue is unreadable, every row on the list that the load does not write is switched off.
+
+The file is the master of the rows on that list while it has them: a load puts back a name or price changed by hand, switches on a row switched off by hand, restores one deleted in the back office and makes again one removed from the database. A load never takes over a row that is not on the list. When the menu derives the id of a category, product, variant, add-on group or add-on that exists and no load made, `importMenu` throws a `MenuImportError` that names it ("A product with the id pz-garden already exists and was not made by a menu load. Give that item a different id in the menu file, then load it again.") and writes nothing; a row deleted in the back office still exists and still refuses. For a row under an id reserved for a section of the menu (`cat-pizzas`, `cat-sides`, `cat-drinks`, `cat-deals`, `pz-half-and-half`, `ag-dips`) the message names the section and says instead that support has to rename or remove the row. A product with a `pizza_products` row counts as made by a load, with its variants, even when the list does not name it. Those are the only rows from before the list kept what left the menu that a load adopts: a pizza, the half-and-half product or a deal, and the sizes of one. A side, a drink or its size, an add-on group or an add-on that left the menu before then is not adopted, and a file that has it again is refused.
 
 ## Tables (lane B1, `main/pizza/migrations.ts`)
 
@@ -149,11 +163,11 @@ CREATE TABLE IF NOT EXISTS pizza_products (
   updated_at  TEXT NOT NULL
 );
 
--- One row: the catalogue parsed from the last menu file loaded, and the catalogue rows that load owns.
+-- One row: the catalogue parsed from the last menu file loaded, and the catalogue rows menu loads have made.
 CREATE TABLE IF NOT EXISTS pizza_menu (
   id          INTEGER PRIMARY KEY CHECK (id = 1),
   catalog     TEXT NOT NULL,   -- JSON PizzaCatalog
-  owned_rows  TEXT NOT NULL DEFAULT '[]',   -- JSON array of "<table>:<id>", sorted: the categories, products, variants, add-on groups and add-ons the load wrote
+  owned_rows  TEXT NOT NULL DEFAULT '[]',   -- JSON array of "<table>:<id>", sorted: the categories, products, variants, add-on groups and add-ons a load wrote
   imported_at TEXT NOT NULL
 );
 

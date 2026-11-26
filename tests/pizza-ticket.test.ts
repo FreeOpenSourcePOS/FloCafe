@@ -46,6 +46,25 @@ const PARTY_LINES = [
   '1) LARGE GARDEN',
   ...[2, 3, 4, 5, 6].map((n) => `${n}) LARGE CLASSIC PEPPERONI`),
 ];
+/** What comes with each sample deal, as the last lines of its ticket at each paper width. */
+const INCLUDES: Record<string, Record<number, string[]>> = {
+  'large-combo': {
+    42: ['INCLUDES: 1 LARGE PIZZA, 1 PASTA,', '2 POPS, 1 GARLIC TOAST'],
+    48: ['INCLUDES: 1 LARGE PIZZA, 1 PASTA, 2 POPS,', '1 GARLIC TOAST'],
+  },
+  'three-large-wings': {
+    42: ['INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS'],
+    48: ['INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS'],
+  },
+  party: {
+    42: ['INCLUDES: ANY 6 LARGE PIZZAS & 4 CAN', 'POPS OR A 2L BOTTLE'],
+    48: ['INCLUDES: ANY 6 LARGE PIZZAS & 4 CAN POPS OR', 'A 2L BOTTLE'],
+  },
+  'pasta-night': {
+    42: ['INCLUDES: 3 PASTA,', '3 GARLIC TOASTS & 3 POPS'],
+    48: ['INCLUDES: 3 PASTA, 3 GARLIC TOASTS & 3 POPS'],
+  },
+};
 
 /** Display cells of a line: a full-width character takes two. */
 const cells = (line: string) =>
@@ -165,6 +184,7 @@ runCases('Pizza ticket', {
           '   2ND: PLAIN CHEESE',
           '3) LARGE CLASSIC PEPPERONI',
           'WINGS: SWEET CHILI',
+          ...INCLUDES['three-large-wings'][columns],
         ],
         'three pizzas and wings',
       );
@@ -172,21 +192,21 @@ runCases('Pizza ticket', {
         deal('party', PARTY_PIZZAS, { pops: { cola: 2, 'ginger-ale': 1, 'lemon-lime': 1 } }),
         columns,
         'PARTY PACK',
-        [...PARTY_LINES, 'POP: 2 COLA, 1 GINGER ALE, 1 LEMON LIME'],
+        [...PARTY_LINES, 'POP: 2 COLA, 1 GINGER ALE, 1 LEMON LIME', ...INCLUDES.party[columns]],
         'the party pack with cans',
       );
       prints(
         deal('party', PARTY_PIZZAS, { twoLitre: 'cola' }),
         columns,
         'PARTY PACK',
-        [...PARTY_LINES, '2L: COLA'],
+        [...PARTY_LINES, '2L: COLA', ...INCLUDES.party[columns]],
         'the party pack with a bottle',
       );
       prints(
         deal('pasta-night', [], { pops: { cola: 3 } }),
         columns,
         'PASTA NIGHT',
-        ['POP: 3 COLA'],
+        ['POP: 3 COLA', ...INCLUDES['pasta-night'][columns]],
         'a deal with no pizzas',
       );
       prints(
@@ -209,8 +229,63 @@ runCases('Pizza ticket', {
           '   2ND: CLASSIC PEPPERONI',
           '   WELL DONE, UNCUT',
           'POP: 1 COLA, 1 GINGER ALE',
+          ...INCLUDES['large-combo'][columns],
         ],
         "a deal pizza's own lines are indented by three",
+      );
+    }
+  },
+
+  'Case 3b: a deal ends with what comes with it, when its menu entry says': () => {
+    const pasta = deal('pasta-night', [], { pops: { cola: 3 } });
+    const described = (description: unknown) => {
+      const menu = catalog();
+      menu.deals.find((entry: { id: string }) => entry.id === 'pasta-night').description =
+        description;
+      return menu;
+    };
+    for (const columns of COLUMNS) {
+      for (const none of ['', '   ']) {
+        prints(
+          pasta,
+          columns,
+          'PASTA NIGHT',
+          ['POP: 3 COLA'],
+          'a deal with no description has no INCLUDES line',
+          described(none),
+        );
+      }
+      // A catalogue stored before deals carried a description has none on any deal.
+      const old = catalog();
+      for (const entry of old.deals) delete entry.description;
+      prints(pasta, columns, 'PASTA NIGHT', ['POP: 3 COLA'], 'an old stored catalogue', old);
+
+      const long = described(
+        'Three sample pastas, three sample garlic toasts, a sample-supercalifragilistic-salad-of-the-day & three pops\n  of any kind',
+      );
+      obeysTheRules(pasta, columns, 'a long description', long);
+      prints(
+        pasta,
+        columns,
+        'PASTA NIGHT',
+        {
+          42: [
+            'POP: 3 COLA',
+            'INCLUDES: THREE SAMPLE PASTAS,',
+            'THREE SAMPLE GARLIC TOASTS, A',
+            'SAMPLE-SUPERCALIFRAGILISTIC-SALAD-OF-TH',
+            'E-DAY & THREE POPS OF ANY KIND',
+          ],
+          48: [
+            'POP: 3 COLA',
+            'INCLUDES: THREE SAMPLE PASTAS,',
+            'THREE SAMPLE GARLIC TOASTS, A',
+            'SAMPLE-SUPERCALIFRAGILISTIC-SALAD-OF-THE-DAY',
+            '& THREE POPS OF ANY KIND',
+          ],
+        }[columns]!,
+        'a long description wraps by the same rules',
+        long,
       );
     }
   },
@@ -244,6 +319,7 @@ runCases('Pizza ticket', {
         '     NO MUSHROOMS, NO OLIVES,',
         '     NO ONIONS, NO TOMATO SAUCE',
         'POP: 2 COLA',
+        ...INCLUDES['large-combo'][42],
       ],
       'a continuation line starts at the indent of the line it continues',
     );
@@ -296,6 +372,7 @@ runCases('Pizza ticket', {
         'PIZZA NAME FOR TESTING ONLY',
         '   NO OLIVES',
         'POP: 2 COLA',
+        ...INCLUDES['large-combo'][42],
       ],
       'a long pizza name inside a deal',
       longName,
@@ -310,6 +387,7 @@ runCases('Pizza ticket', {
         '   2ND: EXTRAORDINARILY LONG MADE-UP',
         '   PIZZA NAME FOR TESTING ONLY',
         'POP: 2 COLA',
+        ...INCLUDES['large-combo'][42],
       ],
       'a long pizza name on a half',
       longName,
@@ -320,14 +398,15 @@ runCases('Pizza ticket', {
       'the heading is left for the print layer to wrap',
     );
 
+    const longIngredient = withMenu((menu) => {
+      pizzasOf(menu)[0].description =
+        'Thirty-one letter made-up thing, a made-up topping with a name far too long to fit on one line of paper & supercalifragilisticexpialidocious-style-pepperoncini';
+    });
     const removed = [
       'A made-up topping with a name far too long to fit on one line of paper',
       'Thirty-one letter made-up thing',
       'Supercalifragilisticexpialidocious-style-pepperoncini',
     ];
-    // Together these are longer than a menu file's description may be, so they are set after parsing.
-    const longIngredient = catalog();
-    longIngredient.pizzas[0].ingredients = [removed[1], removed[0], removed[2]];
     prints(
       whole('garden', [removed[0], removed[1]]),
       42,

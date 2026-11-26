@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, ChevronRight } from 'lucide-react';
+import { Check, SlidersHorizontal } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { getCategoryColorClasses } from '@/components/pos/ProductGrid';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
@@ -10,9 +10,15 @@ import { QuickButtonsBlock } from './useQuickButtons';
 
 const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
+/** The outline drawn inside, for a control whose tile clips what leaves it. */
+const FOCUS_INSET =
+  'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-foreground';
 
-/** The grid the pizza home lays its tiles on: as many columns as fit three size buttons each. */
-export const PIZZA_GRID_CLASS = 'grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))]';
+/**
+ * The grid the pizza home lays its tiles on: as many columns as fit three size buttons each,
+ * close together, so twelve pizzas fit a tablet screen.
+ */
+export const PIZZA_GRID_CLASS = 'grid-cols-[repeat(auto-fill,minmax(11.5rem,1fr))] gap-1!';
 
 /**
  * The top-level categories as large colour-coded blocks. It takes the props
@@ -74,18 +80,15 @@ export function PizzaCategoryBlocks({
   );
 }
 
-/** The line under a tile's name, with how many of that product the order holds. */
-function TileHint({ text, inCart }: { text: string; inCart: number }) {
+/** How many of that product the order holds. */
+function InOrder({ count }: { count: number }) {
   const t = useTranslations('pizza');
+  if (count <= 0) return null;
   return (
-    <div className="flex items-center gap-2">
-      <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{text}</p>
-      {inCart > 0 && (
-        <span className="shrink-0 rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-white">
-          {t('inOrder', { count: inCart })}
-        </span>
-      )}
-    </div>
+    <span className="flex h-4 shrink-0 items-center rounded-full bg-brand px-1.5 text-[11px] font-bold tabular-nums text-white">
+      <span aria-hidden>{count}</span>
+      <span className="sr-only">{t('inOrder', { count })}</span>
+    </span>
   );
 }
 
@@ -94,15 +97,18 @@ function SizeButtons({
   disabled,
   fmt,
   onSize,
+  className,
 }: {
   product: Product;
   disabled: boolean;
   fmt: (amount: number) => string;
   onSize: (variant: ProductVariant) => void;
+  className?: string;
 }) {
   const t = useTranslations('pizza');
   return (
-    <div className="mt-auto flex gap-1.5">
+    // More sizes than a tile is wide wrap to a second row; each button keeps its 48 px.
+    <div className={cn('flex flex-wrap', className)}>
       {activeVariants(product.variants).map((variant) => (
         <button
           key={variant.id}
@@ -115,12 +121,12 @@ function SizeButtons({
             price: fmt(Number(variant.price)),
           })}
           className={cn(
-            'flex min-h-12 min-w-12 flex-1 flex-col items-center justify-center rounded-lg border border-border bg-card px-1 text-sm font-bold leading-tight text-foreground transition-colors hover:border-brand/40 active:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
-            FOCUS,
+            'flex min-h-12 min-w-12 flex-1 flex-col items-center justify-center border-s border-border px-1 text-[13px] font-bold leading-tight text-foreground transition-colors first:border-s-0 hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
+            FOCUS_INSET,
           )}
         >
           {variant.name}
-          <span className="text-xs tabular-nums text-brand dark:text-indigo-300">
+          <span className="text-[11px] tabular-nums text-brand dark:text-indigo-300">
             {fmt(Number(variant.price))}
           </span>
         </button>
@@ -129,7 +135,10 @@ function SizeButtons({
   );
 }
 
-/** A pizza on the home screen: a size button adds it plain, Customize opens the sheet. */
+/**
+ * A pizza on the home screen, two rows of 48 px: the name, which opens the sheet,
+ * and a size button for each size, which adds the pizza plain.
+ */
 export function PizzaTile({
   product,
   number,
@@ -151,38 +160,47 @@ export function PizzaTile({
   return (
     <div
       data-testid="pizza-tile"
-      className="flex min-h-36 flex-col gap-1 rounded-xl border border-border bg-card p-2.5"
+      className="flex flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
-      <div className="flex items-center gap-2">
-        {number != null && (
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-50 text-xs font-bold tabular-nums text-red-700 dark:bg-red-950/40 dark:text-red-300">
-            {number}
+      <div className="relative flex min-h-12 flex-1 items-center px-1.5 py-1">
+        {/* The number and the icon float, no taller than a line, so the name's second line has the whole width. */}
+        <div className={cn('min-w-0 flex-1', disabled && 'opacity-50')}>
+          {number != null && (
+            <span className="float-start me-1.5 flex h-4 min-w-5 items-center justify-center rounded bg-red-50 px-0.5 text-[11px] font-bold tabular-nums text-red-700 dark:bg-red-950/40 dark:text-red-300">
+              {number}
+            </span>
+          )}
+          <span className="float-end ms-1 flex items-center gap-1">
+            <InOrder count={inCart} />
+            <SlidersHorizontal size={14} aria-hidden className="text-brand dark:text-indigo-300" />
           </span>
-        )}
-        <h3 className="min-w-0 flex-1 text-base font-bold leading-tight text-foreground line-clamp-2">
-          {product.name}
-        </h3>
+          <h3 className="text-[13px] font-semibold leading-tight break-words text-foreground">
+            {product.name}
+          </h3>
+        </div>
         <button
           type="button"
           disabled={disabled}
           onClick={onCustomize}
           aria-label={t('customizeNamed', { name: product.name })}
           className={cn(
-            '-me-1.5 flex min-h-12 min-w-12 shrink-0 items-center rounded-lg px-1.5 text-sm font-semibold text-brand hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300',
-            FOCUS,
+            'absolute inset-0 rounded-t-xl hover:bg-foreground/5 disabled:cursor-not-allowed disabled:hover:bg-transparent',
+            FOCUS_INSET,
           )}
-        >
-          {t('customize')}
-          <ChevronRight size={14} className="rtl-flip" />
-        </button>
+        />
       </div>
-      <TileHint text={product.description || t('noIngredients')} inCart={inCart} />
-      <SizeButtons product={product} disabled={disabled} fmt={fmt} onSize={onSize} />
+      <SizeButtons
+        product={product}
+        disabled={disabled}
+        fmt={fmt}
+        onSize={onSize}
+        className="border-t border-border"
+      />
     </div>
   );
 }
 
-/** The half-and-half tile: a size button opens the sheet as a half and half at that size. */
+/** The half-and-half row, first on the home screen: a size button opens the sheet as a half and half at that size. */
 export function HalfAndHalfTile({
   product,
   inCart,
@@ -200,16 +218,23 @@ export function HalfAndHalfTile({
   return (
     <div
       data-testid="pizza-half-tile"
-      className="flex min-h-36 flex-col gap-1 rounded-xl border-2 border-dashed border-orange-400 bg-orange-50 p-2.5 dark:border-orange-700 dark:bg-orange-950/30"
+      className="col-span-full flex items-center gap-2 overflow-hidden rounded-xl border-2 border-dashed border-orange-400 bg-orange-50 ps-2 dark:border-orange-700 dark:bg-orange-950/30"
     >
-      <div className="flex min-h-12 items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-orange-100 text-xs font-bold text-orange-800 dark:bg-orange-900/60 dark:text-orange-200">
-          ½
-        </span>
-        <h3 className="text-base font-bold leading-tight text-foreground">{product.name}</h3>
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-orange-100 text-xs font-bold text-orange-800 dark:bg-orange-900/60 dark:text-orange-200">
+        ½
+      </span>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-bold leading-tight text-foreground">{product.name}</h3>
+        <p className="truncate text-xs text-muted-foreground">{t('halfTileHint')}</p>
       </div>
-      <TileHint text={t('halfTileHint')} inCart={inCart} />
-      <SizeButtons product={product} disabled={disabled} fmt={fmt} onSize={onSize} />
+      <InOrder count={inCart} />
+      <SizeButtons
+        product={product}
+        disabled={disabled}
+        fmt={fmt}
+        onSize={onSize}
+        className="w-56 shrink-0 border-s border-orange-400 dark:border-orange-700"
+      />
     </div>
   );
 }

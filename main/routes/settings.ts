@@ -296,7 +296,14 @@ function businessShape(s: Record<string, string>) {
       s.bill_delivery_show_customer_phone_always !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
     bill_show_large_order_number: s.bill_show_large_order_number !== 'false',
-    kot_show_customer_contact: s.kot_show_customer_contact === 'true',
+    kot_show_customer_contact:
+      s.kot_show_customer_contact === 'delivery'
+        ? 'delivery'
+        : s.kot_show_customer_contact === 'true',
+    pos_order_types: (s.pos_order_types || '')
+      .split(',')
+      .map((type) => type.trim())
+      .filter(Boolean),
     bill_show_logo: s.bill_show_logo === 'true',
     receipt_logo: s.receipt_logo || '',
     receipt_logo_raster: s.receipt_logo_raster || '',
@@ -2030,6 +2037,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'bill_show_table_number',
   'bill_show_large_order_number',
   'kot_show_customer_contact',
+  'pos_order_types',
   'tax_scheme',
   'taxes_enabled',
   'loyalty_enabled',

@@ -88,7 +88,7 @@ too, the reference schema is "upstream at version N plus the pizza list".
 | Table | Holds |
 | --- | --- |
 | `pizza_products` | One row per product that is a pizza, the half-and-half product, or a deal. |
-| `pizza_menu` | One row: the catalogue parsed from the last menu file loaded, and the catalogue rows that load owns (`owned_rows`, an empty list by default). |
+| `pizza_menu` | One row: the catalogue parsed from the last menu file loaded, and the catalogue rows menu loads have made (`owned_rows`, an empty list by default). |
 | `pizza_quick_buttons` | Saved one-tap order lines, shop-wide or for one customer. |
 
 Rules for an entry, on top of the two registry rules above:

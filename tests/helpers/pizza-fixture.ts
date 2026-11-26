@@ -9,13 +9,15 @@ const { seedCategory, seedProduct } = require('./test-setup');
 
 type PizzaCatalog = import('../../shared/pizza/types').PizzaCatalog;
 
-/** Writes the one `pizza_menu` row. Every pizza test that needs the row goes through here. */
+/**
+ * Writes the catalogue of the one `pizza_menu` row, leaving the rows a load owns as they are.
+ * Every pizza test that needs the row goes through here.
+ */
 function writePizzaMenu(db: any, catalogText: string): void {
-  const row = { id: 1, catalog: catalogText, imported_at: now() };
-  const columns = Object.keys(row);
   db.prepare(
-    `INSERT OR REPLACE INTO pizza_menu (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
-  ).run(...Object.values(row));
+    `INSERT INTO pizza_menu (id, catalog, imported_at) VALUES (1, @catalog, @at)
+     ON CONFLICT(id) DO UPDATE SET catalog = @catalog, imported_at = @at`,
+  ).run({ catalog: catalogText, at: now() });
 }
 
 /** Seeds pizzas, the half-and-half product, deals and one plain side. Returns the catalogue. */

@@ -16,6 +16,7 @@ import {
 } from '@/lib/pizza/sheet-state';
 import { cn } from '@/lib/utils';
 import type { CookNote, CutNote, PizzaCatalog } from '@shared/pizza/types';
+import { PizzaChoice } from './PizzaChoice';
 import { QuickButtonSaveAction } from './useQuickButtons';
 
 export const FOCUS =
@@ -137,44 +138,8 @@ function HalfColumn({
       aria-label={label}
       className={cn('rounded-xl border border-border p-3', wide && 'col-span-2')}
     >
-      <p className="mb-2 flex items-baseline gap-2">
-        <span className={HEADING}>{label}</span>
-        <span className="text-base font-bold text-foreground">{pizza?.name}</span>
-      </p>
-      <div className={cn('grid gap-2', wide ? 'grid-cols-4' : 'grid-cols-2')}>
-        {catalog.pizzas.map((entry) => {
-          const chosen = entry.id === half.pizzaId;
-          return (
-            <button
-              key={entry.id}
-              type="button"
-              aria-pressed={chosen}
-              onClick={() => onPizza(entry.id)}
-              className={cn(
-                'flex min-h-12 items-center gap-2 rounded-lg border px-2 text-start text-sm font-semibold leading-tight transition-colors',
-                FOCUS,
-                chosen
-                  ? 'border-brand bg-brand text-white'
-                  : 'border-border bg-card text-foreground hover:border-brand/40',
-              )}
-            >
-              {entry.number != null && (
-                <span
-                  className={cn(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
-                    chosen
-                      ? 'bg-white text-brand'
-                      : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-                  )}
-                >
-                  {entry.number}
-                </span>
-              )}
-              {entry.name}
-            </button>
-          );
-        })}
-      </div>
+      <p className={cn(HEADING, 'mb-2')}>{label}</p>
+      <PizzaChoice pizzas={catalog.pizzas} chosen={pizza} wide={wide} onChoose={onPizza} />
       {pizza && (
         <>
           <p className={cn(HEADING, 'mt-3 mb-2')}>
@@ -365,7 +330,10 @@ export default function PizzaSheet({
           </DialogClose>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[1fr_1fr_18rem] items-start gap-3 overflow-y-auto p-4">
+        <div
+          data-testid="pizza-sheet-body"
+          className="grid min-h-0 flex-1 grid-cols-[1fr_1fr_18rem] items-start gap-3 overflow-y-auto p-4"
+        >
           <PizzaHalves catalog={catalog} state={state} dispatch={dispatch} />
 
           <div className="space-y-3">

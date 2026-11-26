@@ -707,6 +707,39 @@ test("a cashier adds buttons and manages a customer's, and cannot change the sho
   expect(refused.status()).toBe(403);
 });
 
+test("someone who may not take orders is never refused the shop's buttons", async ({ page }) => {
+  // This spec's own cashier loses the right to take orders, and with it a customer's buttons.
+  const AUTHORIZATION = `${BASE}/api/authorization/users/${cashier.id}`;
+  const setOverrides = (overrides: object[]) =>
+    withApi(async (api) => {
+      const current = await api.get(AUTHORIZATION, { headers: ownerHeaders() });
+      const saved = await api.put(AUTHORIZATION, {
+        headers: ownerHeaders(),
+        data: { overrides, revision: (await current.json()).revision },
+      });
+      expect(saved.status(), await saved.text()).toBe(200);
+    });
+  await seedButton('LG GARDEN', 'green', GARDEN);
+  await setOverrides([{ permission_id: 'orders.create', effect: 'deny' }]);
+  try {
+    const lists: string[] = [];
+    page.on('response', (response) => {
+      if (response.request().method() === 'GET' && response.url().startsWith(BUTTONS))
+        lists.push(`${response.status()} ${new URL(response.url()).search}`);
+    });
+    await openPos(page, cashier.email);
+    await attachCustomer(page, CASEY);
+    await page.waitForLoadState('networkidle');
+    await openQuickPage(page);
+    await expect(shopSection(page).getByTestId('quick-button')).toHaveCount(1);
+    expect(lists.length).toBeGreaterThan(0);
+    // The list is asked for without the customer, so the server has nothing to refuse.
+    expect(lists.filter((list) => list !== '200 ')).toEqual([]);
+  } finally {
+    await setOverrides([]);
+  }
+});
+
 test('a refusal from the server shows its message', async ({ page }) => {
   await seedButton('LG GARDEN', 'green', GARDEN);
   await openPos(page);

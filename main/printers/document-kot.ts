@@ -32,7 +32,7 @@ import {
   detailLineRows,
   readDetailLines,
 } from '../../shared/print/detail-lines';
-import { kotContactLines } from '../../shared/print/kot-contact';
+import { kotContactLines, kotScheduleLine } from '../../shared/print/kot-contact';
 import { withRecipeDetailLines } from '../pizza/order-recipe';
 import {
   buildKotDocument,
@@ -70,7 +70,10 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
         [order?.special_instructions, order?.order_notes, order?.orderNotes, order?.notes]
           .find((val: unknown) => typeof val === 'string' && val.trim().length > 0)
           ?.trim() ?? '',
-      contactLines: kotContactLines(order, order?.show_customer_contact === true),
+      contactLines: kotContactLines(order, order?.show_customer_contact),
+      ...(order?.show_scheduled_time === true && order?.scheduled_for
+        ? { scheduledFor: String(order.scheduled_for) }
+        : {}),
     },
     items: ticketItems.map((item: any) => ({
       productName: formatVariantItemHeading(
@@ -420,6 +423,18 @@ function kotHeaderLines(
     lines.push(...wrapped);
     sourceLines?.push(...wrapped);
     sourceControlLines?.push(...wrapped);
+  }
+  const scheduled = { scheduled_for: header.scheduledFor };
+  const schedule = kotScheduleLine(scheduled, true, options.locale ?? 'en-US', options.timezone);
+  if (schedule) {
+    const printable = thermalSafeText(
+      schedule,
+      kotScheduleLine(scheduled, true, 'en-US', options.timezone) ?? schedule,
+      options.language,
+      options.arabicShaping,
+      options.capabilities,
+    );
+    for (const list of [lines, sourceLines, sourceControlLines]) list?.push(printable);
   }
   lines.push(
     truncateShapedLine(

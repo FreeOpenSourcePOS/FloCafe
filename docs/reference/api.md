@@ -191,7 +191,9 @@ Router: `main/routes/auth.ts`. Full path: `/api/auth`.
 | `kds_enabled`, `server_app_enabled` | `false` |
 | `auto_print_kot` | `true` |
 | `cash_drawer_pulse_enabled`, `cash_drawer_pulse_methods` | `true`, `["cash"]` |
-| `kot_show_customer_contact` | `true` |
+| `kot_show_customer_contact` | `delivery`: [kitchen tickets](../architecture/printing.md#customer-contact-on-kitchen-tickets) print the phone number and address on delivery orders only |
+| `scheduled_orders_enabled` | `true`: the POS offers "Send to kitchen at", and the ticket prints [the scheduled time](../architecture/printing.md#scheduled-time-on-kitchen-tickets) |
+| `pos_order_types` | `takeaway,delivery`: [the order types the POS offers](../architecture/frontend.md#order-types-the-pos-offers) |
 | `taxes_enabled` | `true` |
 
 It seeds no products, printers, kitchen stations, or permission overrides, and it does not write `offline_mode`. Country, currency, and timezone come from the request for every profile. The `pizza` profile is refused with a `400`, and nothing is written, unless `country` is `CA` and `state_code` is absent or `BC`.
@@ -714,15 +716,30 @@ such category the load does not write the product's tax category: a new product 
 tax engine treats as untaxed, a product that already has one keeps it, and `untaxed` is `true`.
 
 The load stores the parsed catalogue in `pizza_menu`, together with `owned_rows`: the sorted list of
-the categories, products, variants, add-on groups and add-ons it wrote, each as `"<table>:<id>"`. It
-also writes one `pizza_products` row per pizza, for the half-and-half product, and per deal.
+the categories, products, variants, add-on groups and add-ons that this load or an earlier one
+wrote, each as `"<table>:<id>"`. It also writes one `pizza_products` row per pizza, for the
+half-and-half product, and per deal.
 
-A row the previous load owned and this one does not is switched off (`is_active = 0`) and counted in
+A load never takes over a row it does not own. When the menu derives the id of a category, product,
+variant, add-on group or add-on that exists and is not in `owned_rows`, for example a product made by
+hand or by a CSV import, the load is refused with a `400` that names it ("A product with the id
+pz-garden already exists and was not made by a menu load. Give that item a different id in the menu
+file, then load it again.") and nothing is written. For an id reserved for a section of the menu
+(`cat-pizzas`, `cat-sides`, `cat-drinks`, `cat-deals`, `pz-half-and-half`, `ag-dips`) no change to
+an id in the file helps, so the message names the section and says that support has to rename or
+remove the row. A row deleted in the back office still exists,
+so it still refuses the load. A product that has a `pizza_products` row counts as a load's own
+whether or not the list names it, and so do its variants.
+
+A row the previous load wrote and this one does not is switched off (`is_active = 0`) and counted in
 `deactivated`; it is not deleted, because orders point at it, and its `pizza_products` row stays. A
 side that loses its modifier keeps the link to its add-on group; the group is switched off, so the
 side sells without the choice. A category the menu no longer uses stays on while it still holds an
-active product. A later file that has the entry again switches it back on. Rows no load owned, such
-as a product or a variant added by hand, are never touched.
+active product. A later file that has the entry again switches it back on. A row that left the file and was
+switched on again by hand stays on through later loads, until a file has it again. The previous
+load's rows are worked out from the catalogue it stored; while that catalogue is unreadable, every
+row in `owned_rows` that the load does not write is switched off. Rows no load owned, such
+as a product or a variant added by hand under an id no menu derives, are never touched.
 
 | Method | Path           | Authorization           | Parameters                                         | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------ | -------------- | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

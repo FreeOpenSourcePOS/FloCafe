@@ -61,6 +61,7 @@ const DEAL_LINES = [
   '   2ND: PLAIN CHEESE',
   '3) LARGE CLASSIC PEPPERONI',
   'WINGS: SWEET CHILI',
+  'INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS',
 ];
 
 const headers = () => ({ Authorization: `Bearer ${getE2eToken()}` });
@@ -251,11 +252,12 @@ test.describe('pizza recipe lines on the kitchen display', () => {
     }
   });
 
-  test('with the stored menu removed, the warning line shows and stands out', async ({
+  test('with the stored menu unreadable, the warning line shows and stands out', async ({
     page,
     request,
   }) => {
-    // No route removes the stored menu, so the row is deleted in the server's database file.
+    // No route damages the stored menu, so its catalogue is blanked in the server's database file.
+    // The row stays: it also lists the rows menu loads made, which the next load needs.
     // tests/e2e-server.cjs answers every Electron path with one temporary folder: getDbPath() in
     // main/db.ts puts flo.db in it, and getLocalBackupDir() reports <folder>/FloCafe/Backups.
     const backups = await request.get(`${E2E_BASE_URL}/api/db-tools/local-backup`, {
@@ -272,7 +274,7 @@ test.describe('pizza recipe lines on the kitchen display', () => {
     ).toBe(true);
     const db = new DatabaseSync(database);
     try {
-      db.exec('PRAGMA busy_timeout = 5000; DELETE FROM pizza_menu');
+      db.exec("PRAGMA busy_timeout = 5000; UPDATE pizza_menu SET catalog = ''");
     } finally {
       db.close();
     }

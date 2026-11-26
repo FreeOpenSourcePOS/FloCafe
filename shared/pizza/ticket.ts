@@ -88,5 +88,10 @@ export function ticketLines(
     add(0, `WINGS: ${flavour?.label ?? recipe.wingFlavour}`);
   }
   const deal = catalog.deals.find((entry) => entry.id === recipe.dealId);
+  // What comes with the deal whatever is chosen. A stored deal with no description gets no line.
+  const includes = String(deal?.description ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (includes) add(0, `INCLUDES: ${includes}`);
   return { heading: (deal?.name ?? recipe.dealId).toUpperCase(), detailLines };
 }

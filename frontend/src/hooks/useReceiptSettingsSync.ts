@@ -58,6 +58,8 @@ useAuthStore.subscribe((state) => {
     lastObservedTenantId = nextTenantId;
     activeRequestId += 1;
     invalidateReceiptSettingsHydration();
+    // The next store, or the next person to sign in, starts with every order type offered.
+    usePosSettingsStore.setState({ posOrderTypes: [] });
   }
 });
 

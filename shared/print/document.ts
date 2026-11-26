@@ -896,6 +896,8 @@ export interface KotOrderSnapshot {
   readonly orderNotes?: string;
   /** Customer contact lines, when the merchant prints them on the ticket. */
   readonly contactLines?: readonly KotContactLine[];
+  /** The instant a scheduled order goes to the kitchen, when it has one. */
+  readonly scheduledFor?: string;
 }
 
 /**
@@ -933,6 +935,8 @@ export interface KotHeaderBlock {
     readonly label: SemanticLabel;
     readonly text: DirectionalText;
   }[];
+  /** The instant a scheduled order goes to the kitchen; the renderer prints it as a time. */
+  readonly scheduledFor?: string;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -1592,6 +1596,7 @@ function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
           value.contactLines.every(
             (line) => isRecord(line) && isSemanticLabel(line.label) && isDirectionalText(line.text),
           ))) &&
+      (value.scheduledFor === undefined || typeof value.scheduledFor === 'string') &&
       isSemanticLabel(value.timeLabel) &&
       isDirectionalText(value.timestamp) &&
       (value.orderNotes === undefined ||
@@ -1693,6 +1698,7 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
           ),
         }
       : {}),
+    ...(printData.order?.scheduledFor ? { scheduledFor: printData.order.scheduledFor } : {}),
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
     orderNotes:

@@ -62,6 +62,8 @@ export interface DealTab {
 export interface DealLine {
   heading: string;
   tabs: DealTab[];
+  /** The ticket's closing `INCLUDES:` lines, which belong to the deal and to no tab. */
+  includes: string[];
   /** The cans the deal asks for and how many are chosen; null for a deal without drinks. */
   cans: { asked: number; chosen: number } | null;
   /** Null until every choice is made and the core accepts the deal. */
@@ -158,8 +160,13 @@ export function dealLine(catalog: PizzaCatalog, state: DealState, columns = 42):
   const deal = catalog.deals.find((entry) => entry.id === state.dealId);
   const asked = deal && dealPickCount(deal);
   const base = { kind: 'deal', v: 1, dealId: state.dealId } as const;
-  const printed = (part: Partial<DealRecipe>) =>
+  const whole = (part: Partial<DealRecipe>) =>
     ticketLines(catalog, { ...base, pizzas: [], ...part }, columns);
+  // With nothing chosen the ticket is only what comes with the deal; a tab's lines leave that out.
+  const { heading, detailLines: includes } = whole({});
+  const printed = (part: Partial<DealRecipe>) => ({
+    detailLines: whole(part).detailLines.slice(0, -includes.length || undefined),
+  });
 
   const drafts = state.pizzas.map(sheetDraft);
   const tabs: DealTab[] = drafts.map((draft, index) => {
@@ -223,8 +230,9 @@ export function dealLine(catalog: PizzaCatalog, state: DealState, columns = 42):
     });
 
   return {
-    heading: printed({}).heading,
+    heading,
     tabs,
+    includes,
     cans: hasDrinks ? { asked: cansAsked, chosen } : null,
     ...checked<DealRecipe>(catalog, {
       ...base,

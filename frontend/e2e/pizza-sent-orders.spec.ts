@@ -51,7 +51,9 @@ const COMBO_RECIPE = {
   pops: { cola: 2 },
 };
 const HALVES_LINES = ['1ST: GARDEN', '  NO OLIVES', '2ND: CLASSIC PEPPERONI'];
-const COMBO_LINES = ['1) LARGE GARDEN', 'POP: 2 COLA'];
+/** What comes with the deal, from its description, wrapped at the width sent lines are shown at. */
+const COMBO_INCLUDES = ['INCLUDES: 1 LARGE PIZZA,', '1 PASTA, 2 POPS,', '1 GARLIC TOAST'];
+const COMBO_LINES = ['1) LARGE GARDEN', 'POP: 2 COLA', ...COMBO_INCLUDES];
 
 /** Screenshots are saved only when a folder outside the checkout is named. */
 const EVIDENCE_DIR = process.env.E2E_EVIDENCE_DIR;
@@ -311,12 +313,18 @@ test.describe('a sent pizza and a sent deal', () => {
     const cart = await reopenInPos(page, order);
     await sentLines(cart).nth(1).getByRole('button', { name: 'Change deal' }).click();
     const dialog = page.getByRole('dialog', { name: COMBO.name as string });
+    // The chosen pizza shows alone; Change lists the menu's pizzas again.
+    await dialog.getByRole('tabpanel').getByRole('button', { name: 'Change' }).click();
     await dialog.getByRole('tabpanel').getByRole('button', { name: 'Island' }).click();
     await dialog.getByRole('button', { name: /^Save/ }).click();
     await expect(dialog).toBeHidden();
 
     const changed = sentLines(cart).filter({ hasText: 'POP: 2 COLA' });
-    await expect(detailsOf(changed)).toHaveText(['1) LARGE ISLAND', 'POP: 2 COLA']);
+    await expect(detailsOf(changed)).toHaveText([
+      '1) LARGE ISLAND',
+      'POP: 2 COLA',
+      ...COMBO_INCLUDES,
+    ]);
     await expect(sentLines(cart)).toHaveCount(2);
 
     const stored = await readOrder(order.id);

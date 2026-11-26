@@ -55,7 +55,9 @@ export interface PosSettingsState {
   billShowTableNumber: boolean;
   billShowLargeOrderNumber: boolean;
   /** Kitchen tickets print the customer's phone, delivery address and delivery note. */
-  kotShowCustomerContact: boolean;
+  kotShowCustomerContact: boolean | 'delivery';
+  /** The order types the POS offers; empty offers them all. */
+  posOrderTypes: string[];
   // Thermal printer unicode support
   printerUseUnicode: boolean;
   // Printer firmware Arabic/Persian shaping; disabled by default for generic hardware.
@@ -141,6 +143,7 @@ export interface ReceiptSettingsHydrationData {
   bill_show_large_order_number?: boolean | string | null;
   billShowLargeOrderNumber?: boolean | string | null;
   kot_show_customer_contact?: boolean | string | null;
+  pos_order_types?: string[] | null;
   receipt_logo?: string | null;
   receiptLogo?: string | null;
   receipt_logo_raster?: string | null;
@@ -199,6 +202,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowTableNumber: true,
       billShowLargeOrderNumber: true,
       kotShowCustomerContact: false,
+      posOrderTypes: [],
       printerUseUnicode: false,
       printerArabicShaping: false,
       printerTrimDecimals: false,
@@ -309,8 +313,11 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           }
           if (d.kot_show_customer_contact !== undefined && d.kot_show_customer_contact !== null) {
             updates.kotShowCustomerContact =
-              d.kot_show_customer_contact === true || d.kot_show_customer_contact === 'true';
+              d.kot_show_customer_contact === 'delivery'
+                ? 'delivery'
+                : d.kot_show_customer_contact === true || d.kot_show_customer_contact === 'true';
           }
+          if (Array.isArray(d.pos_order_types)) updates.posOrderTypes = d.pos_order_types;
           const logo = d.receipt_logo ?? d.receiptLogo;
           if (logo !== undefined) {
             updates.receiptLogo = logo || '';
@@ -381,7 +388,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
               k !== 'whatsappEnabled' &&
               k !== 'billLanguagePolicy' &&
               k !== 'kotLanguagePolicy' &&
-              k !== 'autoLockMinutes',
+              k !== 'autoLockMinutes' &&
+              // A list kept from an earlier visit would move a new cart before the store answers.
+              k !== 'posOrderTypes',
           ),
         ) as PosSettingsState,
       // Migrates legacy store keys (GSTIN rename, removed A4/A5 paper sizes).

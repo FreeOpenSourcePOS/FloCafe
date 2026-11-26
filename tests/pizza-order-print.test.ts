@@ -81,6 +81,7 @@ const DEAL_LINES = [
   '   2ND: PLAIN CHEESE',
   '3) LARGE CLASSIC PEPPERONI',
   'WINGS: SWEET CHILI',
+  'INCLUDES: ANY 3 LARGE PIZZAS & 12 WINGS',
 ];
 
 /** Paper and text size as stored on a printer, and the columns layout gets for them. */

@@ -11,7 +11,9 @@ const SHOP_SETTINGS = {
   auto_print_kot: 'true',
   cash_drawer_pulse_enabled: 'true',
   cash_drawer_pulse_methods: '["cash"]',
-  kot_show_customer_contact: 'true',
+  kot_show_customer_contact: 'delivery',
+  scheduled_orders_enabled: 'true',
+  pos_order_types: 'takeaway,delivery',
   taxes_enabled: 'true',
 };
 

@@ -549,9 +549,15 @@ export default function ProductGrid({
         <div
           className={`grid gap-3 ${gridClassName ?? pizza?.gridClassName ?? (sidebarOpen ? 'grid-cols-4' : 'grid-cols-5')}`}
         >
-          {filtered.map((product) => {
+          {(pizza?.sorted(filtered) ?? filtered).map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
-            const pizzaTile = pizza?.tile(product, inCartQty, disabled, fmt);
+            const clickProduct = () => {
+              if (disabled) return;
+              const quantity = parsedSearch?.quantity ?? 1;
+              if (!validateSelectionQuantity(product, quantity)) return;
+              onProductClick(product, quantity);
+            };
+            const pizzaTile = pizza?.tile(product, inCartQty, disabled, fmt, clickProduct);
             if (pizzaTile) return pizzaTile;
 
             return (
@@ -560,12 +566,7 @@ export default function ProductGrid({
                 data-testid="pos-product-card"
                 type="button"
                 disabled={disabled}
-                onClick={() => {
-                  if (disabled) return;
-                  const quantity = parsedSearch?.quantity ?? 1;
-                  if (!validateSelectionQuantity(product, quantity)) return;
-                  onProductClick(product, quantity);
-                }}
+                onClick={clickProduct}
                 className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {!!product.track_inventory && (

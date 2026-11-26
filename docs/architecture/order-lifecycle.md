@@ -123,7 +123,8 @@ by default, configurable in Settings > POS; rejected with `409 SCHEDULED_ORDERS_
 disabled). In the POS interface, kitchen scheduling creation controls are shown when
 `scheduled_orders_enabled` is enabled, while the scheduled orders queue remains visible whenever
 `scheduled_orders_enabled` is enabled or active scheduled/blocked orders exist. Scheduling is
-rejected (`400`) on `dine_in` and `online` orders.
+rejected (`400`) on `dine_in` and `online` orders. The kitchen ticket of a scheduled order prints
+the time as [`SCHEDULED <time>`](printing.md#scheduled-time-on-kitchen-tickets).
 
 Scheduling separates kitchen release from order status via four columns on `orders`:
 

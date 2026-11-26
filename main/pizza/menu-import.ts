@@ -29,6 +29,23 @@ export class MenuImportError extends Error {}
 
 /** The catalogue tables a menu owns rows in; the stored `owned_rows` names rows in these only. */
 const SWITCHABLE = ['categories', 'products', 'product_variants', 'addon_groups', 'addons'];
+/** What the owner is told a row of each is. */
+const NOUN: Record<string, string> = {
+  categories: 'A category',
+  products: 'A product',
+  product_variants: 'A product variant',
+  addon_groups: 'An add-on group',
+  addons: 'An add-on',
+};
+/** Rows whose id is set by a section of the menu, not by an id in the file. */
+const RESERVED: Record<string, string> = {
+  'categories:cat-pizzas': 'the Pizzas section',
+  'categories:cat-sides': 'the Sides section',
+  'categories:cat-drinks': 'the Drinks section',
+  'categories:cat-deals': 'the Deals section',
+  'products:pz-half-and-half': 'the half and half pizza',
+  'addon_groups:ag-dips': 'the dips',
+};
 const LINKS = ['category_addon_groups', 'addon_group_product'];
 /** The column a derived id is tied to: a variant to its product, an add-on to its group. */
 const PARENT: Record<string, string> = {
@@ -201,7 +218,7 @@ function menuRows(
   return rows;
 }
 
-/** The `"<table>:<id>"` entries the last load stored, or none before the first load. */
+/** The `"<table>:<id>"` entries of every row a load made, or none before the first load. */
 function lastOwnedRows(db: Database.Database): string[] {
   const stored = db.prepare('SELECT owned_rows FROM pizza_menu WHERE id = 1').get() as
     | { owned_rows: string }
@@ -224,6 +241,26 @@ function lastOwnedRows(db: Database.Database): string[] {
   throw new MenuImportError(
     'The stored menu record is unreadable (pizza_menu.owned_rows), so the menu was not loaded.',
   );
+}
+
+/** The `"<table>:<id>"` entries of the switchable rows among a menu's rows, sorted. */
+const switchable = (rows: Row[]): string[] =>
+  rows
+    .filter((row) => SWITCHABLE.includes(row.table))
+    .map((row) => `${row.table}:${row.key.id}`)
+    .sort();
+
+/** What the previous load wrote, worked out from the catalogue it stored; null when that cannot be read. */
+function previousLoadRows(db: Database.Database): string[] | null {
+  const stored = db.prepare('SELECT catalog FROM pizza_menu WHERE id = 1').get() as
+    | { catalog: string }
+    | undefined;
+  if (!stored) return [];
+  try {
+    return switchable(menuRows(JSON.parse(stored.catalog), Number, { food: null, drinks: null }));
+  } catch {
+    return null;
+  }
 }
 
 /** `food` and `soda` as the store's active tax pack knows them, or null where it has no such category. */
@@ -299,7 +336,8 @@ function writeRow(
 
 /**
  * Loads a menu in one transaction. A row the last load owned and this one does not is switched
- * off, not deleted, because orders point at it; a row no load owned is never touched.
+ * off, not deleted, because orders point at it; a row no load owned is never touched, so a menu
+ * that derives the id of one is refused.
  */
 export function importMenu(db: Database.Database, catalog: PizzaCatalog): ImportSummary {
   const currency = getTenantCurrency(db);
@@ -312,19 +350,22 @@ export function importMenu(db: Database.Database, catalog: PizzaCatalog): Import
   const { food, soda } = taxCategories(db);
   const tax = { food, drinks: catalog.drinksPst ? soda : food };
   const rows = menuRows(catalog, money, tax);
-  const owned = rows
-    .filter((row) => SWITCHABLE.includes(row.table))
-    .map((row) => `${row.table}:${row.key.id}`)
-    .sort();
+  const owned = switchable(rows);
+  const ownedBefore = lastOwnedRows(db);
+  // A row that leaves the menu stays in the list, so the load that brings it back still owns it.
+  const everOwned = [...new Set([...ownedBefore, ...owned])].sort();
+  // Only what the previous load wrote is switched off, so a row switched back on by hand stays on.
+  // With that load's catalogue unreadable, everything a load ever made stands in for it.
+  const previous = previousLoadRows(db) ?? ownedBefore;
   rows.push({
     table: 'pizza_menu',
     key: { id: 1 },
-    values: { catalog: JSON.stringify(catalog), owned_rows: JSON.stringify(owned) },
+    values: { catalog: JSON.stringify(catalog), owned_rows: JSON.stringify(everOwned) },
   });
   // Categories last: one is judged after the menu's own products in it are switched off.
   const isCategory = (entry: string): number => Number(entry.startsWith('categories:'));
-  const gone = lastOwnedRows(db)
-    .filter((entry) => !owned.includes(entry))
+  const gone = previous
+    .filter((entry) => ownedBefore.includes(entry) && !owned.includes(entry))
     .sort((a, b) => isCategory(a) - isCategory(b));
   const summary: ImportSummary = {
     created: 0,
@@ -335,6 +376,31 @@ export function importMenu(db: Database.Database, catalog: PizzaCatalog): Import
   };
 
   db.transaction(() => {
+    const ours = new Set(ownedBefore);
+    // A pizza or deal loaded before the list kept rows that left the menu: its `pizza_products` row
+    // says a load made it, and its sizes with it.
+    const madeBefore = (productId: unknown): boolean =>
+      !ours.has(`products:${productId}`) &&
+      Boolean(db.prepare('SELECT 1 FROM pizza_products WHERE product_id = ?').get(productId));
+    for (const entry of owned) {
+      const table = entry.split(':', 1)[0];
+      const id = entry.slice(table.length + 1);
+      if (ours.has(entry)) continue;
+      const found = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as
+        | { product_id?: string }
+        | undefined;
+      const known =
+        (table === 'products' && madeBefore(id)) ||
+        (table === 'product_variants' && madeBefore(found?.product_id));
+      if (found && !known)
+        throw new MenuImportError(
+          `${NOUN[table]} with the id ${id} already exists and was not made by a menu load. ${
+            RESERVED[entry]
+              ? `That id is reserved for ${RESERVED[entry]} of the menu, so the menu cannot be loaded until support renames or removes that ${NOUN[table].replace(/^An? /, '')}.`
+              : 'Give that item a different id in the menu file, then load it again.'
+          }`,
+        );
+    }
     const stamp = now();
     for (const row of rows) summary[writeRow(db, row, stamp)] += 1;
     for (const entry of gone) {

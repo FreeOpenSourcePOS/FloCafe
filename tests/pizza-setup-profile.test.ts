@@ -197,7 +197,9 @@ async function main() {
         auto_print_kot: 'true',
         cash_drawer_pulse_enabled: 'true',
         cash_drawer_pulse_methods: '["cash"]',
-        kot_show_customer_contact: 'true',
+        kot_show_customer_contact: 'delivery',
+        scheduled_orders_enabled: 'true',
+        pos_order_types: 'takeaway,delivery',
         taxes_enabled: 'true',
       };
       for (const [key, value] of Object.entries(expected)) {
@@ -214,6 +216,35 @@ async function main() {
         'the drawer opens for cash only',
       );
       assertEqualOrThrow(printing.data.kds_enabled, false, 'the kitchen display is off');
+
+      const business = await api(baseUrl, '/api/settings/business', { headers: ownerAuth });
+      assertEqualOrThrow(
+        business.data.kot_show_customer_contact,
+        'delivery',
+        'the POS is told contact prints on delivery tickets only',
+      );
+      assertEqualOrThrow(
+        JSON.stringify(business.data.pos_order_types),
+        '["takeaway","delivery"]',
+        'the POS is told to offer takeaway and delivery, takeaway first',
+      );
+    });
+
+    await testCase('2a. Order types written with spaces are read without them', async () => {
+      const write = (value: string) =>
+        api(baseUrl, '/api/settings/pos_order_types', {
+          method: 'PUT',
+          headers: ownerAuth,
+          body: { value },
+        });
+      assertEqualOrThrow((await write(' takeaway , delivery,, ')).status, 200, 'the list is saved');
+      const business = await api(baseUrl, '/api/settings/business', { headers: ownerAuth });
+      assertEqualOrThrow(
+        JSON.stringify(business.data.pos_order_types),
+        '["takeaway","delivery"]',
+        'the POS is told takeaway and delivery',
+      );
+      await write('takeaway,delivery');
     });
 
     await testCase('2b. The manual Canada tax pack is the active one', () => {

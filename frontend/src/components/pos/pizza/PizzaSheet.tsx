@@ -16,6 +16,7 @@ import {
 } from '@/lib/pizza/sheet-state';
 import { cn } from '@/lib/utils';
 import type { CookNote, CutNote, PizzaCatalog } from '@shared/pizza/types';
+import { QuickButtonSaveAction } from './useQuickButtons';
 
 export const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
@@ -299,6 +300,7 @@ export default function PizzaSheet({
   initial,
   editing,
   onSave,
+  onSaveButton,
   onClose,
   returnFocus,
 }: {
@@ -307,6 +309,8 @@ export default function PizzaSheet({
   /** True when the sheet changes a line already in the cart. */
   editing: boolean;
   onSave: (line: SheetLine, state: SheetState) => void;
+  /** Saves what the sheet holds as a quick button, leaving the order as it is. */
+  onSaveButton?: (line: SheetLine, state: SheetState) => void;
   onClose: () => void;
   /** Where the focus goes on close when the control that opened the sheet is gone. */
   returnFocus: () => HTMLElement | null;
@@ -444,6 +448,9 @@ export default function PizzaSheet({
             ))}
           </dl>
           <div className="ms-auto flex items-center gap-3">
+            {!editing && line.canAdd && onSaveButton && (
+              <QuickButtonSaveAction onClick={() => onSaveButton(line, state)} />
+            )}
             <p
               id={messageId}
               role="status"

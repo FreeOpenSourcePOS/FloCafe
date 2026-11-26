@@ -46,6 +46,7 @@ import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import { PizzaLineActions, PizzaLineDetails } from './pizza/PizzaCartLine';
 import type { PizzaPos } from './pizza/usePizzaPos';
+import { QuickButtonLineAction } from './pizza/useQuickButtons';
 
 interface Props {
   tables: Table[];
@@ -1024,6 +1025,7 @@ export default function CartPanel({
                       onCustomizeOne={pizza.customizeOne}
                     />
                   )}
+                  {pizza && <QuickButtonLineAction item={item} />}
                 </div>
               );
             })}

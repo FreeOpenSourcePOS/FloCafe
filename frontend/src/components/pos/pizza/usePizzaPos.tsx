@@ -13,6 +13,8 @@ import { HalfAndHalfTile, PIZZA_GRID_CLASS, PizzaCategoryBlocks, PizzaTile } fro
 import PizzaSheet from './PizzaSheet';
 import { usePizzaCatalog } from './usePizzaCatalog';
 import { PizzaDealDialog, usePizzaDeal } from './usePizzaDeal';
+import { QuickButtonsArea } from './QuickButtons';
+import { useQuickButtonSheet } from './useQuickButtons';
 
 const HALF_AND_HALF = `${PIZZA_PRODUCT_PREFIX}half-and-half`;
 const PIZZAS_CATEGORY = 'cat-pizzas';
@@ -45,6 +47,8 @@ export interface PizzaPos {
   customizeOne: (item: CartItem) => void;
   /** The open sheet or deal configurator, or null. */
   sheet: ReactNode;
+  /** Sits above the grid's tiles: the quick buttons page, or a customer's favourites. */
+  above: (category: string | null) => ReactNode;
 }
 
 interface Session {
@@ -62,6 +66,7 @@ export function usePizzaPos(
   const t = useTranslations('pizza');
   const catalog = usePizzaCatalog();
   const deal = usePizzaDeal(catalog);
+  const quick = useQuickButtonSheet();
   const [session, setSession] = useState<Session | null>(null);
   /** The line "Customize 1" split off, merged back unless the sheet saves it. */
   const split = useRef<CartItem | null>(null);
@@ -110,7 +115,7 @@ export function usePizzaPos(
     catalog.pizzas.find((pizza) => PIZZA_PRODUCT_PREFIX + pizza.id === product.id);
   const sizeOf = (product: Product, variantId: string) => variantId.slice(product.id.length + 1);
 
-  const save = (line: SheetLine, state: SheetState) => {
+  const save = (line: SheetLine, state: SheetState, asButton = false) => {
     const product = products.find((entry) => entry.id === line.productId);
     const variant = product?.variants?.find((entry) => entry.id === line.variantId);
     const onSale = (product?.addon_groups ?? []).flatMap((group) => group.addons ?? []);
@@ -125,6 +130,14 @@ export function usePizzaPos(
     }
     const cart = useCartStore.getState();
     const note = state.note.trim();
+    const held = {
+      product,
+      variant,
+      addons: dips,
+      special_instructions: note,
+      recipe: line.recipe,
+    };
+    if (quick.takes(held, asButton || session?.lineId, () => setSession(null))) return;
     const source = cart.items.find((item) => item.id === session?.lineId);
     if (source) {
       writeCart(
@@ -203,15 +216,22 @@ export function usePizzaPos(
       openLine(result.line);
       split.current = result.line.id === item.id ? null : result.line;
     },
-    sheet: session && (
+    above: (category) => (
+      <QuickButtonsArea category={category} products={products} onEditItem={openLine} />
+    ),
+    sheet: session ? (
       <PizzaSheet
         catalog={catalog}
         initial={session.initial}
         editing={session.lineId !== null}
         onSave={save}
+        onSaveButton={(line, state) => save(line, state, true)}
         onClose={close}
         returnFocus={() => pizzaLineEditButton(written.current)}
       />
+    ) : (
+      // True while a quick button dialog is open, so the POS page counts it as a modal.
+      quick.dialogOpen
     ),
   };
   const dealDialog = deal.session && (

@@ -151,7 +151,7 @@ function isValidProductQuantity(product: Product, quantity: number): boolean {
   return step !== null && Math.abs(quantity / step - Math.round(quantity / step)) <= 1e-8;
 }
 
-const CATEGORY_COLORS: Record<
+export const CATEGORY_COLORS: Record<
   string,
   {
     bg: string;
@@ -545,6 +545,7 @@ export default function ProductGrid({
         data-testid="pos-catalog-scroll"
         className="flex-1 min-h-0 overflow-y-auto pb-20 md:pb-0"
       >
+        {pizza?.above(selectedCategory)}
         <div
           className={`grid gap-3 ${gridClassName ?? pizza?.gridClassName ?? (sidebarOpen ? 'grid-cols-4' : 'grid-cols-5')}`}
         >

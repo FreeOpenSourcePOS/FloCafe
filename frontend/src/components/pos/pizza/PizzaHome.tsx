@@ -6,6 +6,7 @@ import { getCategoryColorClasses } from '@/components/pos/ProductGrid';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { QuickButtonsBlock } from './useQuickButtons';
 
 const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
@@ -68,6 +69,7 @@ export function PizzaCategoryBlocks({
           </button>
         );
       })}
+      <QuickButtonsBlock selected={selectedCategory} onSelect={setSelectedCategory} />
     </div>
   );
 }

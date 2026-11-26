@@ -9,13 +9,11 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'Flo Server App',
   description: 'Tableside ordering for FloCafe',
+  // The root manifest starts at /dashboard, which the Server App cannot back.
+  manifest: '/server-manifest.json',
 };
 
-export default function ServerStandaloneLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ServerStandaloneLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className="h-full">
       <body className={`${inter.className} h-full bg-slate-50 dark:bg-background`}>

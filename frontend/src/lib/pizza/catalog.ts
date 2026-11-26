@@ -2,7 +2,8 @@
  * The pizza menu the server holds, kept for the tenant it was fetched for until
  * someone signs in or out. `refreshPizzaCatalog()` asks again, which is how a
  * till notices a menu another device loaded; the screen that loads a new menu
- * calls `reloadPizzaCatalog()`.
+ * calls `reloadPizzaCatalog()`. A menu that replaces one a screen already shows
+ * is published together with the lists that screen shows beside it, never before.
  */
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
@@ -18,9 +19,24 @@ export const REFRESH_MS = 30_000;
 let held: { scope: Scope; catalog: PizzaCatalog | null } | null = null;
 let request: { scope: Scope; fetching: Promise<PizzaCatalog | null> } | null = null;
 let fetchedAt = -Infinity;
+/** Loads the lists a screen shows beside the menu, and answers what puts them on screen. */
+type Companion = () => Promise<() => void>;
+
+/** A changed menu that is not published yet. */
+interface Waiting {
+  scope: Scope;
+  catalog: PizzaCatalog | null;
+  /** Puts the lists that go with this menu on screen; null until they have loaded. */
+  apply: (() => void) | null;
+  asking: boolean;
+  retry?: ReturnType<typeof setTimeout>;
+}
+
 /** True while a sheet or configurator is open: a changed menu waits in `waiting`. */
 let holding = false;
-let waiting: { scope: Scope; catalog: PizzaCatalog | null } | null = null;
+let waiting: Waiting | null = null;
+let companion: Companion | null = null;
+let companionRetryMs = 3000;
 const listeners = new Set<Listener>();
 
 /** Whose menu this is: the tenant of the session, as the POS page scopes its own data. */
@@ -51,26 +67,98 @@ export function onPizzaCatalogChange(listener: Listener): () => void {
   };
 }
 
-/** Makes `answer` the catalogue held for `tenant` and tells every screen. */
-function publish(tenant: Scope, answer: PizzaCatalog | null): void {
+/**
+ * Makes `answer` the catalogue held for `tenant`, puts the lists that go with
+ * it on screen, and then tells every screen: one step, so a screen never
+ * renders a menu beside the lists of another.
+ */
+function publish(tenant: Scope, answer: PizzaCatalog | null, apply?: () => void): void {
   const known = held?.scope === tenant;
   held = { scope: tenant, catalog: answer };
+  apply?.();
   for (const listener of listeners) listener(known);
+}
+
+/** Forgets the menu that waits, and the retry it may have pending. */
+function dropWaiting(): void {
+  clearTimeout(waiting?.retry);
+  waiting = null;
+}
+
+/**
+ * Publishes the menu that waits once nothing holds it back: no sheet is open,
+ * its lists have loaded, and the tenant it was fetched for is the one signed in.
+ */
+function settle(): void {
+  const waited = waiting;
+  if (!waited || holding || !waited.apply || waited.scope !== scope()) return;
+  waiting = null;
+  publish(waited.scope, waited.catalog, waited.apply);
+}
+
+/**
+ * Asks for the lists that go with the menu that waits. A request that fails is
+ * sent again after `companionRetryMs`, with no focus change needed; meanwhile
+ * the menu and the lists on screen stay the old ones, which agree.
+ */
+function loadCompanion(): void {
+  const waited = waiting;
+  if (!waited || waited.apply || waited.asking || waited.scope !== scope()) return;
+  if (!companion) {
+    waited.apply = () => {};
+    settle();
+    return;
+  }
+  clearTimeout(waited.retry);
+  waited.asking = true;
+  companion().then(
+    (apply) => {
+      waited.asking = false;
+      // A newer menu, a sign-out or another tenant took this one's place meanwhile.
+      if (waiting !== waited) return;
+      waited.apply = apply;
+      settle();
+    },
+    () => {
+      waited.asking = false;
+      if (waiting === waited) waited.retry = setTimeout(loadCompanion, companionRetryMs);
+    },
+  );
+}
+
+/**
+ * Names what loads the lists a screen shows beside the menu, which the POS page
+ * does for its products and categories; null when that screen goes away. While
+ * one is named, a menu that replaces the one held waits until its lists have
+ * loaded, and the three are swapped together.
+ */
+export function setPizzaMenuCompanion(load: Companion | null, retryMs = 3000): void {
+  companion = load;
+  companionRetryMs = retryMs;
+  loadCompanion();
+}
+
+/**
+ * Asks again, at once, for lists that failed to load, and publishes a menu that waited for its
+ * tenant to be signed in again: the POS calls it when it mounts and when its window comes back.
+ */
+export function retryPizzaMenuLists(): void {
+  loadCompanion();
+  settle();
 }
 
 /**
  * While held back, a changed menu is not published, whatever fetched it: a
  * refresh, a fetch already in flight, or the reload after a refused order. The
  * POS holds back while a sheet or configurator is open, so the menu does not
- * change under the cashier; letting go publishes the menu that waited, unless
- * the tenant changed meanwhile.
+ * change under the cashier; letting go publishes the menu that waited with its
+ * lists, once they have loaded, unless the tenant changed meanwhile.
  */
 export function holdPizzaCatalog(hold: boolean): void {
   holding = hold;
-  const waited = waiting;
-  if (hold || !waited) return;
-  waiting = null;
-  if (waited.scope === scope()) publish(waited.scope, waited.catalog);
+  if (hold || !waiting) return;
+  if (waiting.scope !== scope()) dropWaiting();
+  else settle();
 }
 
 /**
@@ -96,12 +184,24 @@ export function reloadPizzaCatalog(now = Date.now()): Promise<PizzaCatalog | nul
     .then((answer) => {
       if (request?.fetching !== fetching) return answer;
       const known = held?.scope === tenant ? held : null;
-      if (known && JSON.stringify(known.catalog) === JSON.stringify(answer)) {
-        waiting = null;
+      const body = JSON.stringify(answer);
+      if (known && JSON.stringify(known.catalog) === body) {
+        dropWaiting();
         return known.catalog;
       }
-      if (holding) waiting = { scope: tenant, catalog: answer };
-      else publish(tenant, answer);
+      // The first answer for a tenant has no lists to wait for: the screen loads its own.
+      if (!known && !holding) {
+        dropWaiting();
+        publish(tenant, answer);
+        return answer;
+      }
+      // The same menu as the one that waits keeps its lists, loaded or on their way.
+      if (waiting?.scope !== tenant || JSON.stringify(waiting.catalog) !== body) {
+        dropWaiting();
+        waiting = { scope: tenant, catalog: answer, apply: known ? null : () => {}, asking: false };
+      }
+      loadCompanion();
+      settle();
       return answer;
     });
   request = { scope: tenant, fetching };
@@ -155,7 +255,7 @@ onSessionBoundary((event) => {
   if (event !== 'login' && event !== 'logout') return;
   held = null;
   request = null;
-  waiting = null;
+  dropWaiting();
   fetchedAt = -Infinity;
   for (const listener of listeners) listener(false);
 });

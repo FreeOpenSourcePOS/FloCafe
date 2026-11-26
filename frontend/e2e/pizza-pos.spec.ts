@@ -155,13 +155,35 @@ test.describe('with the sample menu loaded', () => {
     page,
     request,
   }) => {
+    // "All" shows a pizza, whose price is the product's, beside a deal, whose words are the menu's.
+    await page
+      .getByTestId('pizza-category-blocks')
+      .getByRole('button', { name: 'All', exact: true })
+      .click();
     const large = tile(page, 'Garden').getByRole('button', { name: /Large/ });
     await expect(large).toContainText(money(LARGE));
+    const combo = itemsOf('deals').find((deal) => deal.id === 'large-combo')!;
+    const WORDS = 'One large pizza with everything on the side';
+    const descriptions = page.getByTestId('pizza-deal-description');
+    await expect(descriptions.filter({ hasText: combo.description as string })).toHaveCount(1);
 
     const edited = sampleMenu();
     (edited.sizes as { pizza: { id: string; price: number }[] }).pizza.find(
       (size) => size.id === 'large',
     )!.price = LARGE + 2;
+    edited.categories
+      .find((category) => category.id === 'deals')!
+      .items.find((deal) => deal.id === 'large-combo')!.description = WORDS;
+    // The product list that goes with the new menu is slow to answer.
+    let release = () => {};
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      (url) => url.pathname === '/api/products',
+      async (route) => {
+        await slow;
+        await route.continue();
+      },
+    );
     try {
       await loadSampleMenu(request, edited);
       // A refresh asks at most every 30 seconds, so the till's clock moves on a minute.
@@ -169,9 +191,19 @@ test.describe('with the sample menu loaded', () => {
       const asked = page.waitForResponse(
         (response) => new URL(response.url()).pathname === '/api/pizza/catalog',
       );
+      const listsAsked = page.waitForRequest(
+        (sent) => new URL(sent.url()).pathname === '/api/products',
+      );
       await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       await asked;
+      await listsAsked;
 
+      // The new menu has answered and its products have not: the till stays on the old pair.
+      await page.waitForTimeout(500);
+      await expect(descriptions.filter({ hasText: WORDS })).toHaveCount(0);
+      await expect(large).toContainText(money(LARGE));
+      release();
+      await expect(descriptions.filter({ hasText: WORDS })).toHaveCount(1);
       await expect(large).toContainText(money(LARGE + 2));
       await tile(page, 'Garden').getByRole('button', { name: 'Customize Garden' }).click();
       const sheet = sheetOf(page);

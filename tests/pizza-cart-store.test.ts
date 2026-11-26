@@ -881,107 +881,219 @@ runCases('pizza-cart-store', {
     }
   },
 
-  'Case 10h: the lists that follow a menu change are scoped, and a failed one is asked again':
+  'Case 10h: the lists that go with a menu load together, for the session and tenant that asked':
     async () => {
-      const { menuListSync } = require('../frontend/src/lib/pizza/menu-lists');
+      const { menuListLoader } = require('../frontend/src/lib/pizza/menu-lists');
       const { notifySessionBoundary } = require('../frontend/src/store/session-events');
       const { useAuthStore } = frontend.auth;
       const tenant = (id: number | null) =>
         useAuthStore.setState({ currentTenant: id === null ? null : ({ id } as any) });
       const originalGet = frontend.api.get;
-      const calls: string[] = [];
       let answer: (url: string) => Promise<unknown> = async (url) => ({ data: { from: url } });
-      frontend.api.get = (url: string) => {
-        calls.push(url);
-        return answer(url);
-      };
+      frontend.api.get = (url: string) => answer(url);
       const got: Record<string, unknown[]> = { products: [], categories: [] };
-      const sync = menuListSync([
+      const load = menuListLoader([
         { url: '/products?active=1', apply: (data: unknown) => got.products.push(data) },
         { url: '/categories?active=1', apply: (data: unknown) => got.categories.push(data) },
       ]);
+      const refused = (loading: Promise<unknown>) =>
+        loading.then(
+          () => false,
+          () => true,
+        );
       try {
         tenant(1);
-        await sync.run();
-        same(calls, [], 'with no menu change nothing is fetched');
+        const apply = await load();
+        same([got.products.length, got.categories.length], [0, 0], 'loading shows nothing yet');
+        apply();
+        same(
+          [got.products, got.categories],
+          [[{ from: '/products?active=1' }], [{ from: '/categories?active=1' }]],
+          'the lists are put on screen together, when asked',
+        );
 
         answer = (url) =>
           url.startsWith('/products')
             ? Promise.reject({ response: { status: 500 } })
             : Promise.resolve({ data: { from: url } });
-        sync.markAll();
-        await sync.run();
-        assertEqualOrThrow(got.categories.length, 1, 'the list that answered is applied');
-        assertEqualOrThrow(got.products.length, 0, 'the one that failed is not');
-
-        answer = async (url) => ({ data: { from: url } });
-        calls.length = 0;
-        await sync.run();
-        same(calls, ['/products?active=1'], 'the next trigger asks for the failed list alone');
-        assertEqualOrThrow(got.products.length, 1, 'and applies it');
-        calls.length = 0;
-        await sync.run();
-        same(calls, [], 'after which nothing is pending');
+        assertOrThrow(
+          await refused(load()),
+          'one list failing fails the load, so none is shown alone',
+        );
 
         const slow = deferred();
         answer = () => slow.promise as Promise<unknown>;
-        sync.markAll();
-        const running = sync.run();
+        const leaving = refused(load());
         tenant(2);
         slow.resolve({ data: { from: 'tenant 1' } });
-        await running;
-        assertEqualOrThrow(got.products.length, 1, 'an answer for the tenant left is dropped');
-        assertEqualOrThrow(got.categories.length, 1, 'for each list');
+        assertOrThrow(await leaving, 'an answer for the tenant left is refused');
 
         const late = deferred();
         answer = () => late.promise as Promise<unknown>;
-        const again = sync.run();
+        const before = refused(load());
         notifySessionBoundary('login');
         late.resolve({ data: { from: 'the session before' } });
-        await again;
-        assertEqualOrThrow(got.products.length, 1, 'and so is one from before a sign-in');
-
-        answer = async (url) => ({ data: { from: url } });
-        await sync.run();
-        assertEqualOrThrow(got.products.length, 2, 'the lists are asked again for the session now');
-        assertEqualOrThrow(got.categories.length, 2, 'both of them');
-
-        // The menu changes a second time while the lists of the first change are on their way.
-        const first = deferred();
-        const second = deferred();
-        const answers: Record<string, Promise<unknown>[]> = {};
-        answer = (url) => {
-          answers[url] ??= [first.promise as Promise<unknown>, second.promise as Promise<unknown>];
-          return answers[url].shift() ?? Promise.resolve({ data: { from: 'a third request' } });
-        };
-        calls.length = 0;
-        sync.markAll();
-        const older = sync.run();
-        sync.markAll();
-        first.resolve({ data: { from: 'the first change' } });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        assertEqualOrThrow(
-          got.products.length,
-          2,
-          'an answer older than the last change is dropped',
-        );
-        assertEqualOrThrow(calls.length, 4, 'and each list is asked for again when it settles');
-        second.resolve({ data: { from: 'the second change' } });
-        await older;
-        same(
-          [got.products.at(-1), got.categories.at(-1)],
-          [{ from: 'the second change' }, { from: 'the second change' }],
-          'the lists shown are those of the last change',
-        );
-        calls.length = 0;
-        await sync.run();
-        same(calls, [], 'and nothing is left pending');
+        assertOrThrow(await before, 'and so is one from before a sign-in');
+        same([got.products.length, got.categories.length], [1, 1], 'neither reached the screen');
       } finally {
         frontend.api.get = originalGet;
         tenant(null);
         notifySessionBoundary('logout');
       }
     },
+
+  'Case 10j: a changed menu and the lists that go with it are published in one step': async () => {
+    const {
+      getPizzaCatalog,
+      holdPizzaCatalog,
+      onPizzaCatalogChange,
+      reloadPizzaCatalog,
+      setPizzaMenuCompanion,
+    } = pizzaCatalog();
+    const { notifySessionBoundary } = require('../frontend/src/store/session-events');
+    const { useAuthStore } = frontend.auth;
+    const tenant = (id: number | null) =>
+      useAuthStore.setState({ currentTenant: id === null ? null : ({ id } as any) });
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    /** The menu as the server holds it at version `v`, and the lists that go with it. */
+    const menuAt = (v: number) => ({
+      ...catalog,
+      sizes: catalog.sizes.map((size: any) => ({ ...size, priceCents: size.priceCents + v })),
+    });
+    const versionOf = (held: any) => held.sizes[0].priceCents - catalog.sizes[0].priceCents;
+    let server = 1;
+    const route = stubCatalogRoute(async () => ({ data: menuAt(server) }));
+    /** What the till shows: the lists the page holds, beside the catalogue held. */
+    const shown = { products: 1, categories: 1 };
+    let listAnswers: Array<() => Promise<number>> = [];
+    let listRequests = 0;
+    const companion = async () => {
+      listRequests += 1;
+      const next = listAnswers.shift() ?? (async () => server);
+      const version = await next();
+      return () => {
+        shown.products = version;
+        shown.categories = version;
+      };
+    };
+    const agrees = (expected: number, step: string) =>
+      same(
+        [versionOf(getPizzaCatalog()), shown.products, shown.categories],
+        [expected, expected, expected],
+        `${step}: the menu, the products and the categories are of one version`,
+      );
+    const told: boolean[] = [];
+    const stop = onPizzaCatalogChange((replaced: boolean) => {
+      told.push(replaced);
+      const version = versionOf(getPizzaCatalog());
+      same(
+        [shown.products, shown.categories],
+        [version, version],
+        'a screen told of a menu sees its lists',
+      );
+    });
+    try {
+      tenant(1);
+      await reloadPizzaCatalog();
+      setPizzaMenuCompanion(companion, 5);
+      told.length = 0;
+      agrees(1, 'the first load');
+
+      // Another device loads a menu; the lists for it are slow.
+      const lists = deferred();
+      listAnswers = [() => lists.promise as Promise<number>];
+      server = 2;
+      await reloadPizzaCatalog();
+      agrees(1, 'the new catalogue has answered, its lists have not');
+      await tick();
+      agrees(1, 'still waiting for the lists');
+      same(told, [], 'no screen is told yet');
+      lists.resolve(2);
+      await tick();
+      agrees(2, 'the lists arrived');
+      same(told, [true], 'the screens are told once');
+
+      // The list requests fail, then work: no focus, no refresh, only the timer.
+      server = 3;
+      listRequests = 0;
+      const failing = () => Promise.reject(new Error('offline'));
+      listAnswers = [failing, failing];
+      await reloadPizzaCatalog();
+      await tick();
+      agrees(2, 'a failed list request leaves the old menu and the old lists');
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      agrees(3, 'the request is tried again on a timer, and the three change together');
+      assertEqualOrThrow(listRequests, 3, 'after two failures and one answer');
+
+      // A sheet is open: the swap waits for it, lists and all.
+      server = 4;
+      holdPizzaCatalog(true);
+      await reloadPizzaCatalog();
+      await tick();
+      agrees(3, 'under an open sheet nothing changes, though the lists have loaded');
+      holdPizzaCatalog(false);
+      agrees(4, 'closing it swaps the three in one step');
+
+      // The sheet opens while the lists are on their way.
+      const underway = deferred();
+      listAnswers = [() => underway.promise as Promise<number>];
+      server = 5;
+      await reloadPizzaCatalog();
+      holdPizzaCatalog(true);
+      underway.resolve(5);
+      await tick();
+      agrees(4, 'lists that arrive under an open sheet wait too');
+      holdPizzaCatalog(false);
+      agrees(5, 'and go on screen with the menu when it closes');
+
+      // The menu changes again before the first lists arrive: those lists are for an older menu.
+      const older = deferred();
+      const newer = deferred();
+      listAnswers = [
+        () => older.promise as Promise<number>,
+        () => newer.promise as Promise<number>,
+      ];
+      server = 6;
+      await reloadPizzaCatalog();
+      server = 7;
+      await reloadPizzaCatalog();
+      older.resolve(6);
+      await tick();
+      agrees(5, 'lists asked for before the last menu change are not shown');
+      newer.resolve(7);
+      await tick();
+      agrees(7, 'the lists of the last change are');
+
+      // Tenant and session: a late answer changes nothing for whoever is signed in now.
+      const leaving = deferred();
+      listAnswers = [() => leaving.promise as Promise<number>];
+      server = 8;
+      await reloadPizzaCatalog();
+      tenant(2);
+      leaving.resolve(8);
+      await tick();
+      same([shown.products, shown.categories], [7, 7], 'lists for the tenant left are not applied');
+      tenant(1);
+      agrees(7, 'and that tenant still has a menu and lists that agree');
+
+      const signedOut = deferred();
+      listAnswers = [() => signedOut.promise as Promise<number>];
+      server = 9;
+      await reloadPizzaCatalog();
+      notifySessionBoundary('logout');
+      signedOut.resolve(9);
+      await tick();
+      same([shown.products, shown.categories], [7, 7], 'nor are lists from before a sign-out');
+      assertEqualOrThrow(getPizzaCatalog(), null, 'and no menu is held for the new session');
+    } finally {
+      stop();
+      setPizzaMenuCompanion(null);
+      holdPizzaCatalog(false);
+      route.restore();
+      tenant(null);
+      notifySessionBoundary('logout');
+    }
+  },
 
   'Case 10i: opening a sheet, a configurator, a dialog or a sent line holds the menu at once':
     async () => {

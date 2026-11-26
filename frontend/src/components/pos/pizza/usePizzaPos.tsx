@@ -11,6 +11,7 @@ import { useCartStore } from '@/store/cart';
 import { pizzaLineEditButton } from './PizzaCartLine';
 import { HalfAndHalfTile, PIZZA_GRID_CLASS, PizzaCategoryBlocks, PizzaTile } from './PizzaHome';
 import PizzaSheet from './PizzaSheet';
+import { SmallItemBlocks, useSmallItems, type SmallItemsPos } from './SmallItems';
 import { usePizzaCatalog } from './usePizzaCatalog';
 import { PizzaDealDialog, usePizzaDeal } from './usePizzaDeal';
 import { QuickButtonsArea } from './QuickButtons';
@@ -26,7 +27,7 @@ function mergedBack(split: CartItem): CartItem[] {
 }
 
 /** What the POS page, the product grid and the cart panel hook the pizza screens in with. */
-export interface PizzaPos {
+export interface PizzaPos extends SmallItemsPos {
   /** Takes the place of the product grid's category row. */
   Categories: typeof PizzaCategoryBlocks;
   gridClassName: string;
@@ -67,6 +68,7 @@ export function usePizzaPos(
   const catalog = usePizzaCatalog();
   const deal = usePizzaDeal(catalog);
   const quick = useQuickButtonSheet();
+  const small = useSmallItems(catalog, products);
   const [session, setSession] = useState<Session | null>(null);
   /** The line "Customize 1" split off, merged back unless the sheet saves it. */
   const split = useRef<CartItem | null>(null);
@@ -165,7 +167,8 @@ export function usePizzaPos(
   };
 
   const pos: PizzaPos = {
-    Categories: PizzaCategoryBlocks,
+    Categories: SmallItemBlocks,
+    ...small,
     gridClassName: PIZZA_GRID_CLASS,
     tile: (product, inCart, disabled, fmt) => {
       if (product.id === HALF_AND_HALF)

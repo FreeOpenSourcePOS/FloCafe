@@ -5,6 +5,7 @@ import { cartLineDetailLines } from '@/lib/pizza/detail-lines';
 import type { CartItem } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { PizzaStepper } from './PizzaSheet';
+import { PizzaLineFold, usePizzaLineFolded } from './SmallItems';
 
 const ACTION =
   'min-h-12 min-w-12 rounded-lg border border-border bg-card px-2 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
@@ -47,6 +48,8 @@ export function PizzaLineActions({
   const t = useTranslations('pizza');
   const tCommon = useTranslations('common');
   const updateQuantity = useCartStore((cart) => cart.updateQuantity);
+  const folded = usePizzaLineFolded(item.id);
+  if (folded) return <PizzaLineFold item={item} />;
   return (
     <div
       data-testid="pizza-line-actions"

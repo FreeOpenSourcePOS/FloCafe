@@ -929,7 +929,11 @@ export default function CartPanel({
               const hasSubtext = item.addons.length > 0 || Boolean(item.special_instructions);
               const pizzaLine = Boolean(pizza?.isPizzaLine(item));
               return (
-                <div key={item.id} data-testid="cart-item" className="py-1.5 first:pt-0 last:pb-0">
+                <div
+                  key={item.id}
+                  data-testid="cart-item"
+                  className={`py-1.5 first:pt-0 last:pb-0 ${pizza?.lineClass(item) ?? ''}`}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <button
                       type="button"
@@ -945,6 +949,7 @@ export default function CartPanel({
                       {item.variant
                         ? `${item.product.name} (${item.variant.name})`
                         : item.product.name}
+                      {pizza?.lineMark(item)}
                     </p>
                     <div className="flex items-baseline gap-1.5 shrink-0">
                       {item.quantity > 1 && (

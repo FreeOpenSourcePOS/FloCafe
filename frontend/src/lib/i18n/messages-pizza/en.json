@@ -1,5 +1,6 @@
 {
   "addToOrder": "Add to order · {total}",
+  "added": "added",
   "cook": "Cook",
   "cookLightBake": "Light bake",
   "cookWellDone": "Well done",
@@ -44,6 +45,8 @@
   "halfTileHint": "Two pizzas on one pie, at the size price",
   "inOrder": "{count} in order",
   "ingredientsHint": "Ingredients: tap to remove, no charge",
+  "justAdded": "just added",
+  "lineQuantity": "{count}x",
   "menuConfirmButton": "Load this menu",
   "menuConfirmFollows": "Names, prices and which items are on sale follow the file.",
   "menuConfirmHeading": "Load {name}?",
@@ -117,8 +120,12 @@
   "setupProfileLabel": "Pizza shop",
   "setupProfileNeedsCanada": "The pizza shop profile sets up British Columbia tax. Choose Canada in the first step, or pick another option here.",
   "sheetTitle": "Pizza",
+  "showLineActions": "{count}x {name}. Show actions",
   "size": "Size",
   "sizeOf": "{pizza}, {size}, {price}",
+  "smallItemsHint": "Tap a tile to add one. It goes straight into the order.",
+  "smallItemsTitle": "Dips & drinks",
+  "soldOut": "Sold out",
   "wholeOrHalf": "Whole or half and half",
   "wholePizza": "Whole pizza"
 }

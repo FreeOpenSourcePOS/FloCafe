@@ -20,7 +20,12 @@ import {
 } from '@/lib/order-item-edit-attempt';
 import { isOrderItemEditLocked } from '@/lib/order-payment-state';
 import { tenantCan } from '@/lib/permissions';
-import { getPizzaCatalog, hasPizzaMenu, loadPizzaCatalog } from '@/lib/pizza/catalog';
+import {
+  getPizzaCatalog,
+  hasPizzaMenu,
+  holdPizzaCatalog,
+  loadPizzaCatalog,
+} from '@/lib/pizza/catalog';
 import { newDeal } from '@/lib/pizza/deal-state';
 import { CART_DETAIL_COLUMNS } from '@/lib/pizza/detail-lines';
 import { PIZZA_PRODUCT_PREFIX } from '@/lib/pizza/line-recipe';
@@ -31,14 +36,17 @@ import {
   sentLineChangeable,
   sentLineEdit,
   sentLineRepriced,
+  sentLineReprices,
+  sentPriceGate,
   sheetSentLine,
   sheetSource,
+  soldPrices,
   type SentItem,
   type SentLine,
   type SentLineEdit,
 } from '@/lib/pizza/sent-line';
 import { newSheet, sheetReducer } from '@/lib/pizza/sheet-state';
-import type { Order, OrderItem } from '@/lib/types';
+import type { Order, OrderItem, Product } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { RECIPE_NOT_PRINTED } from '@shared/pizza/ticket';
 import type { CatalogDeal, PizzaCatalog } from '@shared/pizza/types';
@@ -50,11 +58,23 @@ import { usePizzaCatalog } from './usePizzaCatalog';
 const CHANGE =
   'mt-1 min-h-12 min-w-12 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
 
+/** How long the sent-line editor waits before it asks for the product prices again. */
+const PRICE_RETRY_MS = 3000;
+
 /** The sent item whose sheet or configurator is open, and the one whose button takes the focus when it appears. */
 const useSentEdit = create<{ open: number | null; focus: number | null }>(() => ({
   open: null,
   focus: null,
 }));
+
+/**
+ * Opens the sheet or the configurator on that sent item. The menu is held from
+ * here, before anything renders, so no answer on its way changes it under the editor.
+ */
+export function openSentLine(itemId: number): void {
+  holdPizzaCatalog(true);
+  useSentEdit.setState({ open: itemId });
+}
 
 /** True while a sent line is open in the sheet or the configurator, so the POS page counts a modal. */
 export const useSentLineOpen = (): boolean => useSentEdit((state) => state.open !== null);
@@ -188,9 +208,30 @@ function SentLineEditor({
   onSaved: (order: Order) => void;
   returnFocus: () => HTMLElement | null;
 }) {
+  const t = useTranslations('pizza');
   const tOrders = useTranslations('orders');
   const sending = useRef(false);
   const [was] = useState(() => sentLine(item));
+  // What a changed size or dip is charged at. A request that fails is sent again while the editor is open.
+  const [products, setProducts] = useState<Product[]>();
+  const [failures, setFailures] = useState(0);
+  useEffect(() => {
+    if (deal) return;
+    let current = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    api.get('/products?active=1').then(
+      (response) => {
+        if (current) setProducts(response.data.products || []);
+      },
+      () => {
+        retry = setTimeout(() => current && setFailures((count) => count + 1), PRICE_RETRY_MS);
+      },
+    );
+    return () => {
+      current = false;
+      clearTimeout(retry);
+    };
+  }, [deal, failures]);
   const close = () => useSentEdit.setState({ open: null });
 
   /** Hands the order as it now stands to the screen, and the focus to the line that took this one's place. */
@@ -239,6 +280,8 @@ function SentLineEditor({
     <PizzaDeal
       catalog={catalog}
       deal={deal}
+      // The configurator changes the deal's choices only, which keeps the price it was sold at.
+      product={{ price: soldPrices(item).price }}
       initial={newDeal(deal, was.recipe?.kind === 'deal' ? was.recipe : null)}
       editing
       quantity={was.quantity}
@@ -249,6 +292,19 @@ function SentLineEditor({
   ) : (
     <PizzaSheet
       catalog={catalog}
+      products={products}
+      online={order.type === 'online' && Boolean(order.online_platform?.trim())}
+      soldPrices={(line, state) =>
+        sentLineReprices(was, sheetSentLine(was, line, state)) ? null : soldPrices(item)
+      }
+      refusal={(line, state) => {
+        const { blocked, notice } = sentPriceGate({
+          reprices: sentLineReprices(was, sheetSentLine(was, line, state)),
+          held: products !== undefined,
+          failed: failures > 0,
+        });
+        return notice ? { message: t('sentPricesNotLoaded'), blocks: blocked } : null;
+      }}
       initial={sheetReducer(newSheet(), { type: 'load', line: sheetSource(was) })}
       editing
       onSave={(line, state) => void save(sheetSentLine(was, line, state))}
@@ -299,6 +355,9 @@ export function SentPizzaLine({
     [item.id],
   );
 
+  // The hold `openSentLine` took ends when this line is no longer the open one, on the Orders page as in the POS.
+  useEffect(() => (open ? () => holdPizzaCatalog(false) : undefined), [open]);
+
   const lines = sentDetailLines(catalog, sent, CART_DETAIL_COLUMNS);
   const unreadable = lines.length === 1 && lines[0] === RECIPE_NOT_PRINTED;
   if (unreadable && !answered) return null;
@@ -344,7 +403,7 @@ export function SentPizzaLine({
               return;
             }
             if (sentLineRepriced(sent)) toast(t('sentPriceReset'), { icon: '⚠️', duration: 8000 });
-            useSentEdit.setState({ open: item.id });
+            openSentLine(item.id);
           }}
         >
           {deal ? t('sentChangeDeal') : t('sentChangePizza')}

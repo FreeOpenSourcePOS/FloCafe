@@ -7,6 +7,7 @@ import { useTranslations } from 'use-intl';
 import { create } from 'zustand';
 import { getCategoryColorClasses } from '@/components/pos/ProductGrid';
 import { tenantCan } from '@/lib/permissions';
+import { holdPizzaCatalog } from '@/lib/pizza/catalog';
 import {
   buttonContents,
   fetchQuickButtons,
@@ -19,6 +20,7 @@ import type { CartItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
+import { onSessionBoundary } from '@/store/session-events';
 import type { QuickButton } from '@shared/pizza/types';
 
 /** The id the Quick Buttons block selects in place of a category; no product has it. */
@@ -48,7 +50,11 @@ export const useQuickButtonStore = create<QuickButtonState>((set, get) => ({
   buttons: [],
   dialog: null,
   customerId: null,
-  open: (dialog) => set({ dialog }),
+  open: (dialog) => {
+    // Before the dialog renders, so no answer on its way changes the menu under it.
+    if (dialog) holdPizzaCatalog(true);
+    set({ dialog });
+  },
   load: async (customerId = get().customerId) => {
     set({ customerId });
     const request = fetchQuickButtons(customerId);
@@ -62,6 +68,30 @@ export const useQuickButtonStore = create<QuickButtonState>((set, get) => ({
     }
   },
 }));
+
+/** Forgets the buttons, the open dialog and any list on its way: they belong to one session and tenant. */
+function forget() {
+  latest = null;
+  useQuickButtonStore.setState({ buttons: [], dialog: null, customerId: null });
+}
+
+// Locking and unlocking with a PIN keep the store, so its buttons stay.
+onSessionBoundary((event) => {
+  if (event === 'login' || event === 'logout') forget();
+});
+
+// Selecting another tenant changes the session with no sign-in; a locked screen has no tenant.
+let tenantId = useAuthStore.getState().currentTenant?.id ?? null;
+useAuthStore.subscribe((state) => {
+  const id = state.currentTenant?.id ?? null;
+  if (id === null || id === tenantId) return;
+  if (tenantId !== null) forget();
+  tenantId = id;
+});
+
+/** True while the order is for an online platform, as the cart decides which price a line has. */
+export const useOnlineOrder = () =>
+  useCartStore((cart) => cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0);
 
 /** Whose buttons this user may save, change and delete, as the routes decide it. */
 export function useQuickButtonRights() {

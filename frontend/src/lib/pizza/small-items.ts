@@ -5,6 +5,7 @@
  */
 import { addonStockCeiling } from '@/lib/addon-inventory';
 import { generateCartItemId } from '@/lib/cart-identity';
+import { cartVariantUnitPrice } from '@/lib/cart-price';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import type { Addon, CartItem, Product, ProductVariant } from '@/lib/types';
 import type { PizzaCatalog } from '../../../../shared/pizza/types';
@@ -72,9 +73,15 @@ function row(
 /**
  * The popup's rows: the dips, then one row per drink size. An item is on a
  * tile only when the menu has it and the POS sells it, found by the ids the
- * menu load derives. A row with no tile is left out.
+ * menu load derives. A row with no tile is left out. A drink costs what the
+ * cart charges for its size: the online price while `online`, which is an
+ * order for an online platform.
  */
-export function smallItemRows(catalog: PizzaCatalog | null, products: Product[]): SmallItemRow[] {
+export function smallItemRows(
+  catalog: PizzaCatalog | null,
+  products: Product[],
+  online = false,
+): SmallItemRow[] {
   if (!catalog) return [];
   const sold = (id: string) => products.find((product) => product.id === id);
 
@@ -106,7 +113,15 @@ export function smallItemRows(catalog: PizzaCatalog | null, products: Product[])
             (entry) => entry.id === `${DRINK_PRODUCT_PREFIX}${drink.id}-${size.id}`,
           );
           return product && variant
-            ? [tile(product.name, Number(variant.price), product, variant, [])]
+            ? [
+                tile(
+                  product.name,
+                  cartVariantUnitPrice({ product, variant }, online),
+                  product,
+                  variant,
+                  [],
+                ),
+              ]
             : [];
         }),
       ),

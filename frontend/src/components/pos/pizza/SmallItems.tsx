@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { useCartStore } from '@/store/cart';
 import type { PizzaCatalog } from '@shared/pizza/types';
 import { PizzaCategoryBlocks } from './PizzaHome';
+import { useOnlineOrder } from './useQuickButtons';
 
 const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
@@ -87,7 +88,8 @@ export interface SmallItemsPos {
 export function useSmallItems(catalog: PizzaCatalog | null, products: Product[]): SmallItemsPos {
   const t = useTranslations('pizza');
   const added = useSmallItemsStore((state) => state.added);
-  const rows = useMemo(() => smallItemRows(catalog, products), [catalog, products]);
+  const online = useOnlineOrder();
+  const rows = useMemo(() => smallItemRows(catalog, products, online), [catalog, products, online]);
   useEffect(
     () => useSmallItemsStore.setState({ rows, opens: popupCategory(rows, products) }),
     [rows, products],

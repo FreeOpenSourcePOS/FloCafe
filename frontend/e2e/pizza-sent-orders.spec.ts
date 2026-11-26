@@ -30,6 +30,10 @@ const menu = sampleMenu();
 const LARGE = (menu.sizes as { pizza: { id: string; price: number }[] }).pizza.find(
   (size) => size.id === 'large',
 )!.price;
+const sizes = (from: typeof menu) =>
+  (from.sizes as { pizza: { id: string; price: number }[] }).pizza;
+const MEDIUM = sizes(menu).find((size) => size.id === 'medium')!.price;
+const money = (amount: number) => new RegExp(amount.toFixed(2).replace('.', '\\.'));
 const COMBO = menu.categories
   .find((category) => category.id === 'deals')!
   .items.find((deal) => deal.id === 'large-combo')!;
@@ -305,6 +309,79 @@ test.describe('a sent pizza and a sent deal', () => {
     expect(Number(item.unit_price)).toBe(LARGE);
     expect(item.quantity).toBe(1);
     expect(stored.total).toBe(order.total);
+  });
+
+  test('the sheet on a sent pizza quotes the sold price until its size changes', async ({
+    page,
+  }) => {
+    const order = await placeOrder();
+    // The menu's Large costs more now than when the order was placed.
+    const edited = sampleMenu();
+    sizes(edited).find((size) => size.id === 'large')!.price = LARGE + 2;
+    try {
+      await loadSampleMenu(api, edited);
+      await signIn(page);
+      const cart = await reopenInPos(page, order);
+      await sentLines(cart).first().getByRole('button', { name: 'Change pizza' }).click();
+      const sheet = page.getByRole('dialog', { name: 'Pizza' });
+      const save = sheet.getByRole('button', { name: /^Save/ });
+      const size = sheet.getByRole('group', { name: 'Size' });
+      await expect(save).toContainText(money(LARGE));
+      await sheet
+        .getByRole('group', { name: '1st half' })
+        .getByRole('button', { name: 'Onions', exact: true })
+        .click();
+      await expect(save, 'a change of recipe keeps the sold price').toContainText(money(LARGE));
+      await size.getByRole('button', { name: /Medium/ }).click();
+      await expect(save, 'another size is charged at the price of today').toContainText(
+        money(MEDIUM),
+      );
+      await size.getByRole('button', { name: /Large/ }).click();
+      await expect(save, 'the size it was sold in: the sold price again').toContainText(
+        money(LARGE),
+      );
+      await page.keyboard.press('Escape');
+      await expect(sheet).toBeHidden();
+    } finally {
+      await loadSampleMenu(api);
+    }
+  });
+
+  test('a sent pizza whose prices cannot be loaded takes a recipe change only, until they load', async ({
+    page,
+  }) => {
+    const order = await placeOrder();
+    await signIn(page);
+    const cart = await reopenInPos(page, order);
+    let failing = true;
+    await page.route(
+      (url) => url.pathname === '/api/products',
+      (route) => (failing ? route.abort() : route.continue()),
+    );
+    await sentLines(cart).first().getByRole('button', { name: 'Change pizza' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Pizza' });
+    const save = sheet.getByRole('button', { name: /^Save/ });
+    const message = sheet.getByTestId('pizza-sheet-message');
+    await expect(message).toContainText('Prices could not be loaded');
+    await sheet
+      .getByRole('group', { name: '1st half' })
+      .getByRole('button', { name: 'Onions', exact: true })
+      .click();
+    await expect(save, 'a recipe change keeps the sold price and needs no prices').toBeEnabled();
+    await expect(save).toContainText(money(LARGE));
+    await sheet
+      .getByRole('group', { name: 'Size' })
+      .getByRole('button', { name: /Medium/ })
+      .click();
+    await expect(save, 'another size is not offered without prices').toBeDisabled();
+    await expect(save).not.toContainText(money(MEDIUM));
+
+    failing = false;
+    await expect(save, 'the request is tried again').toBeEnabled({ timeout: 15_000 });
+    await expect(save).toContainText(money(MEDIUM));
+    await expect(message).toBeEmpty();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
   });
 
   test('a sent deal is changed from the POS at the same price', async ({ page }) => {

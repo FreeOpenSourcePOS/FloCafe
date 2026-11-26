@@ -18,7 +18,10 @@ const {
   sentLineChangeable,
   sentLineEdit,
   sentLineRepriced,
+  sentLineReprices,
+  sentPriceGate,
   sheetSentLine,
+  soldPrices,
   sheetSource,
 } = require('../frontend/src/lib/pizza/sent-line');
 
@@ -299,4 +302,66 @@ runCases('pizza-sent-line', {
       'no discount',
     );
   },
+
+  'Case 13: a change of recipe or note keeps the sold prices; size, quantity or add-ons re-price':
+    () => {
+      const sold = item({ ...HALF_AND_HALF, unit_price: 21.5 });
+      const was = sentLine(sold);
+      same(
+        soldPrices(sold),
+        { price: 21.5, dips: { ranch: 1.25 } },
+        'what the line was sold at: the pizza, and each dip by its menu id',
+      );
+      const after = (...actions: object[]) => {
+        const opened = sheetReducer(newSheet(), { type: 'load', line: sheetSource(was) });
+        const state = actions.reduce((current, action) => sheetReducer(current, action), opened);
+        return sentLineReprices(was, sheetSentLine(was, sheetLine(catalog, state), state));
+      };
+      assertEqualOrThrow(after(), false, 'untouched');
+      assertEqualOrThrow(
+        after({ type: 'ingredient', half: 0, name: 'Onions' }),
+        false,
+        'an ingredient taken off: the recipe only',
+      );
+      assertEqualOrThrow(after({ type: 'note', note: 'Side door' }), false, 'the note only');
+      assertEqualOrThrow(after({ type: 'cook', cook: 'well-done' }), false, 'the cook note');
+      assertEqualOrThrow(after({ type: 'size', sizeId: 'medium' }), true, 'another size');
+      assertEqualOrThrow(after({ type: 'quantity', quantity: 3 }), true, 'another quantity');
+      assertEqualOrThrow(after({ type: 'dip', dipId: 'garlic', count: 1 }), true, 'a dip added');
+      assertEqualOrThrow(after({ type: 'dip', dipId: 'ranch', count: 1 }), true, 'a dip fewer');
+      assertEqualOrThrow(
+        sentLineReprices(sentLine(GARDEN), { ...sentLine(GARDEN), productId: 'pz-island' }),
+        true,
+        'another product',
+      );
+    },
+
+  'Case 14: until the product prices are held, only a change that keeps the sold price is saved':
+    () => {
+      same(
+        sentPriceGate({ reprices: false, held: false, failed: false }),
+        { blocked: false, notice: false },
+        'prices on their way, recipe or note changed: saved, and nothing to say yet',
+      );
+      same(
+        sentPriceGate({ reprices: false, held: false, failed: true }),
+        { blocked: false, notice: true },
+        'the request failed: still saved, and the sheet says prices could not be loaded',
+      );
+      same(
+        sentPriceGate({ reprices: true, held: false, failed: true }),
+        { blocked: true, notice: true },
+        'a change of size, quantity or dips is not offered without prices',
+      );
+      same(
+        sentPriceGate({ reprices: true, held: false, failed: false }),
+        { blocked: true, notice: true },
+        'nor while the first request has not answered',
+      );
+      same(
+        sentPriceGate({ reprices: true, held: true, failed: true }),
+        { blocked: false, notice: false },
+        'once a request succeeded everything is offered again',
+      );
+    },
 });

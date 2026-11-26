@@ -173,11 +173,14 @@ test('adding an item to an occupied table only prints the newly appended item on
     expect(kotRequestBody!.items).toHaveLength(1);
     expect(kotRequestBody!.items![0].id).not.toBe(originalItemId);
   } finally {
-    if (seeded) await cleanupDineInFixture(page.request, authHeaders, seeded);
-    await page.request.put(`${BASE}/api/settings/business`, {
-      headers: authHeaders,
-      data: originalBusiness,
-    });
+    try {
+      if (seeded) await cleanupDineInFixture(page.request, authHeaders, seeded);
+    } finally {
+      await page.request.put(`${BASE}/api/settings/business`, {
+        headers: authHeaders,
+        data: originalBusiness,
+      });
+    }
   }
 });
 

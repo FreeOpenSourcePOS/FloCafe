@@ -151,6 +151,102 @@ test.describe('with the sample menu loaded', () => {
     expect((await response.json()).pizzas).toHaveLength(itemsOf('pizzas').length);
   });
 
+  test('a menu loaded on another device reaches the open POS when its window comes to the front', async ({
+    page,
+    request,
+  }) => {
+    const large = tile(page, 'Garden').getByRole('button', { name: /Large/ });
+    await expect(large).toContainText(money(LARGE));
+
+    const edited = sampleMenu();
+    (edited.sizes as { pizza: { id: string; price: number }[] }).pizza.find(
+      (size) => size.id === 'large',
+    )!.price = LARGE + 2;
+    try {
+      await loadSampleMenu(request, edited);
+      // A refresh asks at most every 30 seconds, so the till's clock moves on a minute.
+      await page.clock.setFixedTime(Date.now() + 60_000);
+      const asked = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === '/api/pizza/catalog',
+      );
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await asked;
+
+      await expect(large).toContainText(money(LARGE + 2));
+      await tile(page, 'Garden').getByRole('button', { name: 'Customize Garden' }).click();
+      const sheet = sheetOf(page);
+      const size = sheet
+        .getByRole('group', { name: 'Size' })
+        .getByRole('button', { name: /Large/ });
+      await expect(size).toContainText(money(LARGE + 2));
+      await size.click();
+      await sheet.getByRole('button', { name: /^Add to order/ }).click();
+      await expect(cartLines(page).first()).toContainText(money(LARGE + 2));
+    } finally {
+      await loadSampleMenu(request);
+    }
+  });
+
+  test('an online order with a platform quotes the online price in the sheet, and the cart agrees', async ({
+    page,
+    request,
+  }) => {
+    const ONLINE = LARGE + 4;
+    const product = `${BASE}/api/products/pz-garden`;
+    const stored = (await (await request.get(product, { headers: ownerHeaders })).json())
+      .product as { variants: { id: string; name: string; price: number; sort_order: number }[] };
+    /** The product's sizes as they are, with this online price on Large. */
+    const priced = (online: number | null) =>
+      request.put(product, {
+        headers: ownerHeaders,
+        data: {
+          variants: stored.variants.map(({ id, name, price, sort_order }) => ({
+            id,
+            name,
+            price,
+            sort_order,
+            online_price: id === 'pz-garden-large' ? online : null,
+          })),
+        },
+      });
+    try {
+      expect((await priced(ONLINE)).status(), 'Large gets an online price').toBe(200);
+      await page.reload();
+      await expect(page.getByTestId('pizza-category-blocks')).toBeVisible();
+      await page.getByRole('button', { name: 'Online' }).click();
+      await page.getByTestId('pos-order-details-edit-btn').click();
+      await page.getByTestId('pos-online-platform-input').fill('Example Eats');
+      await page.getByTestId('pos-order-details-done-btn').click();
+
+      // The size button of the tile quotes the same price, to the eye and to a screen reader.
+      const tileLarge = tile(page, 'Garden').getByRole('button', { name: /Large/ });
+      await expect(tileLarge).toContainText(money(ONLINE));
+      await expect(tileLarge).toHaveAccessibleName(money(ONLINE));
+
+      await tile(page, 'Garden').getByRole('button', { name: 'Customize Garden' }).click();
+      const sheet = sheetOf(page);
+      const size = sheet
+        .getByRole('group', { name: 'Size' })
+        .getByRole('button', { name: /Large/ });
+      await expect(size).toContainText(money(ONLINE));
+      await size.click();
+      await sheet.getByRole('button', { name: 'One more Garlic' }).click();
+      const add = sheet.getByRole('button', { name: /^Add to order/ });
+      await expect(add).toContainText(money(ONLINE + DIP));
+      await add.click();
+      await expect(sheet).toBeHidden();
+
+      const line = cartLines(page).first();
+      await expect(line).toContainText(money(ONLINE + DIP));
+      await line.getByRole('button', { name: 'Edit' }).click();
+      await expect(sheetOf(page).getByRole('button', { name: /^Save/ })).toContainText(
+        money(ONLINE + DIP),
+      );
+    } finally {
+      await priced(null);
+    }
+  });
+
   test('categories are blocks and one tap on Large adds a plain large pizza', async ({ page }) => {
     await expect(page.getByTestId('pos-category-row')).toHaveCount(0);
     const blocks = page.getByTestId('pizza-category-blocks');

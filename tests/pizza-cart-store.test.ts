@@ -13,7 +13,7 @@ const {
 } = require('./helpers/pizza-print-harness');
 const { isDeepStrictEqual } = require('node:util');
 const { parseMenuFile } = require('../shared/pizza/menu');
-const { ticketLines } = require('../shared/pizza/ticket');
+const { RECIPE_NOT_PRINTED, ticketLines } = require('../shared/pizza/ticket');
 const sample = require('./fixtures/pizza-sample-menu.json');
 
 const frontend = loadFrontend();
@@ -611,6 +611,454 @@ runCases('pizza-cart-store', {
       }
     },
 
+  'Case 10d: the catalogue belongs to the tenant it was fetched for': async () => {
+    const { getPizzaCatalog, loadPizzaCatalog, reloadPizzaCatalog } = pizzaCatalog();
+    const { useAuthStore } = frontend.auth;
+    const tenant = (id: number | null) =>
+      useAuthStore.setState({ currentTenant: id === null ? null : ({ id } as any) });
+    const noMenu = () => Promise.reject({ response: { status: 404 } });
+    let answer: () => Promise<unknown> = async () => ({ data: catalog });
+    const route = stubCatalogRoute(() => answer());
+    try {
+      tenant(1);
+      assertOrThrow((await loadPizzaCatalog()) === catalog, 'the first tenant has a pizza menu');
+      tenant(2);
+      assertEqualOrThrow(getPizzaCatalog(), null, 'another tenant does not read it');
+      answer = noMenu;
+      const calls = route.calls.length;
+      assertEqualOrThrow(await loadPizzaCatalog(), null, 'its own load says it has no menu');
+      assertEqualOrThrow(route.calls.length, calls + 1, 'with a request of its own');
+      assertEqualOrThrow(getPizzaCatalog(), null, 'and nothing is held for it');
+
+      tenant(1);
+      const slow = deferred();
+      answer = () => slow.promise as Promise<unknown>;
+      const before = reloadPizzaCatalog();
+      tenant(2);
+      answer = noMenu;
+      const asked = route.calls.length;
+      assertEqualOrThrow(
+        await loadPizzaCatalog(),
+        null,
+        'a fetch in flight for the tenant left does not answer the next tenant',
+      );
+      assertEqualOrThrow(route.calls.length, asked + 1, 'which asks for itself');
+      slow.resolve({ data: catalog });
+      await before;
+      assertEqualOrThrow(getPizzaCatalog(), null, "and its late answer is not this tenant's menu");
+
+      tenant(1);
+      answer = async () => ({ data: catalog });
+      await reloadPizzaCatalog();
+      tenant(null);
+      assertEqualOrThrow(
+        getPizzaCatalog(),
+        null,
+        'a locked screen has no tenant and reads nothing',
+      );
+      tenant(1);
+      const kept = route.calls.length;
+      assertOrThrow((await loadPizzaCatalog()) === catalog, 'the same tenant back reads it again');
+      assertEqualOrThrow(route.calls.length, kept, 'from memory');
+    } finally {
+      route.restore();
+      tenant(null);
+      require('../frontend/src/store/session-events').notifySessionBoundary('logout');
+    }
+  },
+
+  'Case 10e: a refresh asks at most every 30 seconds and says whether the menu changed':
+    async () => {
+      const {
+        getPizzaCatalog,
+        onPizzaCatalogChange,
+        refreshPizzaCatalog,
+        reloadPizzaCatalog,
+        REFRESH_MS,
+      } = pizzaCatalog();
+      const edited = {
+        ...catalog,
+        sizes: catalog.sizes.map((size: any) => ({ ...size, priceCents: size.priceCents + 100 })),
+      };
+      let answer: () => Promise<unknown> = async () => ({ data: catalog });
+      const route = stubCatalogRoute(() => answer());
+      const replaced: boolean[] = [];
+      const stop = onPizzaCatalogChange((known: boolean) => replaced.push(known));
+      try {
+        assertEqualOrThrow(await refreshPizzaCatalog(0), false, 'nothing held, nothing to refresh');
+        assertEqualOrThrow(route.calls.length, 0, 'and no request');
+
+        await reloadPizzaCatalog(1_000);
+        same(replaced, [false], 'the first answer replaces nothing');
+        assertEqualOrThrow(
+          await refreshPizzaCatalog(1_000 + REFRESH_MS - 1),
+          false,
+          'within 30 seconds of the last fetch a refresh does nothing',
+        );
+        assertEqualOrThrow(route.calls.length, 1, 'and asks nothing');
+
+        answer = async () => ({ data: JSON.parse(JSON.stringify(catalog)) });
+        assertEqualOrThrow(
+          await refreshPizzaCatalog(1_000 + REFRESH_MS),
+          false,
+          'the same menu again is no change',
+        );
+        assertEqualOrThrow(route.calls.length, 2, 'though it was fetched');
+        assertOrThrow(getPizzaCatalog() === catalog, 'and the catalogue held is the same object');
+        same(replaced, [false], 'so no screen is told');
+
+        answer = async () => ({ data: edited });
+        assertEqualOrThrow(await refreshPizzaCatalog(100_000), true, 'an edited menu is a change');
+        assertOrThrow(getPizzaCatalog() === edited, 'which is held');
+        same(replaced, [false, true], 'and the screens are told a menu they knew was replaced');
+
+        answer = () => Promise.reject({ response: { status: 500 } });
+        assertEqualOrThrow(await refreshPizzaCatalog(200_000), false, 'a failed refresh');
+        assertOrThrow(getPizzaCatalog() === edited, 'keeps the catalogue held');
+
+        answer = async () => ({ data: { ...catalog, pizzas: [] } });
+        await reloadPizzaCatalog(250_000);
+        const emptied = route.calls.length;
+        assertEqualOrThrow(await refreshPizzaCatalog(290_000), false, 'a menu with no pizzas');
+        assertEqualOrThrow(route.calls.length, emptied, 'is not asked again by a refresh either');
+
+        answer = () => Promise.reject({ response: { status: 404 } });
+        await reloadPizzaCatalog(300_000);
+        const calls = route.calls.length;
+        assertEqualOrThrow(await refreshPizzaCatalog(400_000), false, 'a shop with no menu');
+        assertEqualOrThrow(route.calls.length, calls, 'is not asked again by a refresh');
+      } finally {
+        stop();
+        route.restore();
+        require('../frontend/src/store/session-events').notifySessionBoundary('logout');
+      }
+    },
+
+  'Case 10f: an order refused because the menu changed reloads the catalogue': async () => {
+    const { getPizzaCatalog, isStaleMenuRefusal, reloadPizzaCatalog } = pizzaCatalog();
+    const refusal = (status: number, error: unknown) => ({ response: { status, data: { error } } });
+    for (const message of [
+      'That pizza is not on the menu. Pick another pizza',
+      'Pizza 2: That size is not on the menu. Pick a size',
+      'That deal is not on the menu. Pick another deal',
+      'That drink is not on the menu. Pick another drink',
+      'Garden does not have that ingredient. Choose what to remove again',
+    ]) {
+      assertOrThrow(isStaleMenuRefusal(refusal(400, message)), `stale: ${message}`);
+    }
+    assertOrThrow(
+      isStaleMenuRefusal(refusal(503, 'The pizza menu is not loaded. Load the menu file again.')),
+      'a menu the server cannot read is stale too',
+    );
+    for (const other of [
+      refusal(400, 'Pick a size'),
+      refusal(400, 'Both halves are the same. Choose a whole pizza instead'),
+      refusal(500, 'That pizza is not on the menu. Pick another pizza'),
+      refusal(400, undefined),
+      new Error('Network Error'),
+    ]) {
+      assertOrThrow(!isStaleMenuRefusal(other), `not stale: ${JSON.stringify(other)}`);
+    }
+
+    const smaller = { ...catalog, deals: [] };
+    let answer: () => Promise<unknown> = async () => ({ data: catalog });
+    const route = stubCatalogRoute(() => answer());
+    const refusedWith = (status: number, error: string) =>
+      frontend.api
+        .post(
+          '/orders',
+          {},
+          {
+            adapter: (config: unknown) =>
+              Promise.reject(
+                Object.assign(new Error('refused'), { config, ...refusal(status, error) }),
+              ),
+          },
+        )
+        .then(
+          () => assertOrThrow(false, 'the request is refused'),
+          (error: any) => error.response.data.error,
+        );
+    try {
+      await reloadPizzaCatalog();
+      answer = async () => ({ data: smaller });
+      assertEqualOrThrow(
+        await refusedWith(400, 'Pick a size'),
+        'Pick a size',
+        'an ordinary refusal',
+      );
+      assertEqualOrThrow(route.calls.length, 1, 'asks for no menu');
+      const said = await refusedWith(400, 'That deal is not on the menu. Pick another deal');
+      assertEqualOrThrow(
+        said,
+        'That deal is not on the menu. Pick another deal',
+        'the caller still gets the refusal',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assertEqualOrThrow(route.calls.length, 2, 'and the catalogue is fetched again');
+      assertOrThrow(getPizzaCatalog() === smaller, 'so the till holds the menu the server has');
+    } finally {
+      route.restore();
+      require('../frontend/src/store/session-events').notifySessionBoundary('logout');
+    }
+  },
+
+  'Case 10g: a changed menu is held back while a sheet is open, whatever fetched it': async () => {
+    const { getPizzaCatalog, holdPizzaCatalog, onPizzaCatalogChange, reloadPizzaCatalog } =
+      pizzaCatalog();
+    const { useAuthStore } = frontend.auth;
+    const edited = { ...catalog, deals: [] };
+    let answer: () => Promise<unknown> = async () => ({ data: catalog });
+    const route = stubCatalogRoute(() => answer());
+    const told: boolean[] = [];
+    const stop = onPizzaCatalogChange((replaced: boolean) => told.push(replaced));
+    try {
+      await reloadPizzaCatalog();
+      told.length = 0;
+
+      const slow = deferred();
+      answer = () => slow.promise as Promise<unknown>;
+      const inFlight = reloadPizzaCatalog();
+      holdPizzaCatalog(true);
+      slow.resolve({ data: edited });
+      await inFlight;
+      assertOrThrow(
+        getPizzaCatalog() === catalog,
+        'a fetch already in flight does not swap the menu',
+      );
+      same(told, [], 'and no screen is told');
+      holdPizzaCatalog(false);
+      assertOrThrow(getPizzaCatalog() === edited, 'the new menu applies when the sheet closes');
+      same(told, [true], 'and the screens are told then, once');
+
+      holdPizzaCatalog(true);
+      answer = async () => ({ data: catalog });
+      await frontend.api
+        .post(
+          '/orders',
+          {},
+          {
+            adapter: (config: unknown) =>
+              Promise.reject(
+                Object.assign(new Error('refused'), {
+                  config,
+                  response: {
+                    status: 400,
+                    data: { error: 'That deal is not on the menu. Pick another deal' },
+                  },
+                }),
+              ),
+          },
+        )
+        .catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assertOrThrow(getPizzaCatalog() === edited, 'nor does the reload after a refused order');
+      answer = async () => ({ data: JSON.parse(JSON.stringify(edited)) });
+      await reloadPizzaCatalog();
+      holdPizzaCatalog(false);
+      assertOrThrow(
+        getPizzaCatalog() === edited,
+        'a menu that went back to the one held changes nothing',
+      );
+      same(told, [true], 'and tells nobody');
+
+      holdPizzaCatalog(true);
+      answer = async () => ({ data: catalog });
+      await reloadPizzaCatalog();
+      useAuthStore.setState({ currentTenant: { id: 9 } as any });
+      holdPizzaCatalog(false);
+      assertEqualOrThrow(
+        getPizzaCatalog(),
+        null,
+        "a menu held back for the tenant left is not the next tenant's",
+      );
+    } finally {
+      holdPizzaCatalog(false);
+      stop();
+      route.restore();
+      useAuthStore.setState({ currentTenant: null });
+      require('../frontend/src/store/session-events').notifySessionBoundary('logout');
+    }
+  },
+
+  'Case 10h: the lists that follow a menu change are scoped, and a failed one is asked again':
+    async () => {
+      const { menuListSync } = require('../frontend/src/lib/pizza/menu-lists');
+      const { notifySessionBoundary } = require('../frontend/src/store/session-events');
+      const { useAuthStore } = frontend.auth;
+      const tenant = (id: number | null) =>
+        useAuthStore.setState({ currentTenant: id === null ? null : ({ id } as any) });
+      const originalGet = frontend.api.get;
+      const calls: string[] = [];
+      let answer: (url: string) => Promise<unknown> = async (url) => ({ data: { from: url } });
+      frontend.api.get = (url: string) => {
+        calls.push(url);
+        return answer(url);
+      };
+      const got: Record<string, unknown[]> = { products: [], categories: [] };
+      const sync = menuListSync([
+        { url: '/products?active=1', apply: (data: unknown) => got.products.push(data) },
+        { url: '/categories?active=1', apply: (data: unknown) => got.categories.push(data) },
+      ]);
+      try {
+        tenant(1);
+        await sync.run();
+        same(calls, [], 'with no menu change nothing is fetched');
+
+        answer = (url) =>
+          url.startsWith('/products')
+            ? Promise.reject({ response: { status: 500 } })
+            : Promise.resolve({ data: { from: url } });
+        sync.markAll();
+        await sync.run();
+        assertEqualOrThrow(got.categories.length, 1, 'the list that answered is applied');
+        assertEqualOrThrow(got.products.length, 0, 'the one that failed is not');
+
+        answer = async (url) => ({ data: { from: url } });
+        calls.length = 0;
+        await sync.run();
+        same(calls, ['/products?active=1'], 'the next trigger asks for the failed list alone');
+        assertEqualOrThrow(got.products.length, 1, 'and applies it');
+        calls.length = 0;
+        await sync.run();
+        same(calls, [], 'after which nothing is pending');
+
+        const slow = deferred();
+        answer = () => slow.promise as Promise<unknown>;
+        sync.markAll();
+        const running = sync.run();
+        tenant(2);
+        slow.resolve({ data: { from: 'tenant 1' } });
+        await running;
+        assertEqualOrThrow(got.products.length, 1, 'an answer for the tenant left is dropped');
+        assertEqualOrThrow(got.categories.length, 1, 'for each list');
+
+        const late = deferred();
+        answer = () => late.promise as Promise<unknown>;
+        const again = sync.run();
+        notifySessionBoundary('login');
+        late.resolve({ data: { from: 'the session before' } });
+        await again;
+        assertEqualOrThrow(got.products.length, 1, 'and so is one from before a sign-in');
+
+        answer = async (url) => ({ data: { from: url } });
+        await sync.run();
+        assertEqualOrThrow(got.products.length, 2, 'the lists are asked again for the session now');
+        assertEqualOrThrow(got.categories.length, 2, 'both of them');
+
+        // The menu changes a second time while the lists of the first change are on their way.
+        const first = deferred();
+        const second = deferred();
+        const answers: Record<string, Promise<unknown>[]> = {};
+        answer = (url) => {
+          answers[url] ??= [first.promise as Promise<unknown>, second.promise as Promise<unknown>];
+          return answers[url].shift() ?? Promise.resolve({ data: { from: 'a third request' } });
+        };
+        calls.length = 0;
+        sync.markAll();
+        const older = sync.run();
+        sync.markAll();
+        first.resolve({ data: { from: 'the first change' } });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        assertEqualOrThrow(
+          got.products.length,
+          2,
+          'an answer older than the last change is dropped',
+        );
+        assertEqualOrThrow(calls.length, 4, 'and each list is asked for again when it settles');
+        second.resolve({ data: { from: 'the second change' } });
+        await older;
+        same(
+          [got.products.at(-1), got.categories.at(-1)],
+          [{ from: 'the second change' }, { from: 'the second change' }],
+          'the lists shown are those of the last change',
+        );
+        calls.length = 0;
+        await sync.run();
+        same(calls, [], 'and nothing is left pending');
+      } finally {
+        frontend.api.get = originalGet;
+        tenant(null);
+        notifySessionBoundary('logout');
+      }
+    },
+
+  'Case 10i: opening a sheet, a configurator, a dialog or a sent line holds the menu at once':
+    async () => {
+      const { getPizzaCatalog, holdPizzaCatalog, reloadPizzaCatalog } = pizzaCatalog();
+      const React = require('../frontend/node_modules/react');
+      const { renderToString } = require('../frontend/node_modules/react-dom/server');
+      const { IntlProvider } = require('../frontend/node_modules/use-intl');
+      const { usePizzaPos } = require('../frontend/src/components/pos/pizza/usePizzaPos');
+      const {
+        useQuickButtonStore,
+      } = require('../frontend/src/components/pos/pizza/useQuickButtons');
+      const { openSentLine } = require('../frontend/src/components/pos/pizza/SentPizzaLine');
+      const messages = { pizza: require('../frontend/src/lib/i18n/messages-pizza/en.json') };
+      const edited = { ...catalog, deals: [] };
+      const products = [
+        { id: 'pz-garden', name: 'Garden', price: 0, variants: [] },
+        { id: 'dl-party', name: 'Party Pack', price: 118.4 },
+      ];
+      const nothing = () => {};
+
+      /** Renders the POS hook on the server, where no effect runs, and calls `open` during it. */
+      const duringRender = (open: (pos: any) => void) => () => {
+        let called = false;
+        const Probe = () => {
+          const pos = usePizzaPos(products, [], nothing, nothing, nothing);
+          assertOrThrow(pos !== null, 'the pizza screens are on');
+          if (!called) {
+            called = true;
+            open(pos);
+          }
+          return null;
+        };
+        renderToString(
+          React.createElement(IntlProvider, { locale: 'en', messages }, React.createElement(Probe)),
+        );
+        assertOrThrow(called, 'the opener was called');
+      };
+      const openers: Record<string, () => void> = {
+        'the pizza sheet': duringRender((pos) => pos.open(products[0])),
+        'the deal configurator': duringRender((pos) => pos.open(products[1])),
+        'a quick button dialog': () =>
+          useQuickButtonStore.getState().open({ type: 'save', line: null, forCustomer: false }),
+        'a sent line': () => openSentLine(41),
+      };
+
+      let answer: () => Promise<unknown> = async () => ({ data: catalog });
+      const route = stubCatalogRoute(() => answer());
+      try {
+        for (const [name, open] of Object.entries(openers)) {
+          answer = async () => ({ data: catalog });
+          await reloadPizzaCatalog();
+          assertOrThrow(getPizzaCatalog() === catalog, `${name}: the menu held before it opens`);
+          const slow = deferred();
+          answer = () => slow.promise as Promise<unknown>;
+          const inFlight = reloadPizzaCatalog();
+          open();
+          // No effect has run: the answer arrives in the same turn the opener was called in.
+          slow.resolve({ data: edited });
+          await inFlight;
+          assertOrThrow(
+            getPizzaCatalog() === catalog,
+            `${name}: an answer arriving right after it opens does not change the menu it reads`,
+          );
+          holdPizzaCatalog(false);
+          assertOrThrow(
+            getPizzaCatalog() === edited,
+            `${name}: the new menu applies once it closes`,
+          );
+        }
+      } finally {
+        holdPizzaCatalog(false);
+        useQuickButtonStore.setState({ dialog: null });
+        route.restore();
+        require('../frontend/src/store/session-events').notifySessionBoundary('logout');
+      }
+    },
+
   'Case 11: a cart line gives its detail lines at the cart panel width': async () => {
     const { cartLineDetailLines, CART_DETAIL_COLUMNS } = detailLines();
     const { reloadPizzaCatalog } = pizzaCatalog();
@@ -619,7 +1067,12 @@ runCases('pizza-cart-store', {
       part('smokehouse', ['Red onions']),
       { cook: 'well-done', cut: 'square-cut' },
     );
-    same(cartLineDetailLines(lineOf(long)), [], 'with no catalogue a line shows nothing extra');
+    same(
+      cartLineDetailLines(lineOf(long)),
+      [RECIPE_NOT_PRINTED],
+      'with no catalogue a recipe shows the warning words',
+    );
+    same(cartLineDetailLines(lineOf(undefined)), [], 'and a line without a recipe nothing');
 
     const route = stubCatalogRoute(async () => ({ data: catalog }));
     try {
@@ -646,6 +1099,11 @@ runCases('pizza-cart-store', {
       'no line is wider than ticketLines allows at that width',
     );
     same(cartLineDetailLines(lineOf(undefined)), [], 'a line without a recipe shows nothing extra');
+    same(
+      cartLineDetailLines(lineOf({ kind: 'deal' })),
+      [RECIPE_NOT_PRINTED],
+      'a recipe that cannot be written out shows the warning words',
+    );
   },
 
   'Case 12: a pizza moved to another size takes its recipe with it': () => {

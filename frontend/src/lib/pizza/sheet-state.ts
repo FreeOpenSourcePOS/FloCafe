@@ -8,7 +8,8 @@ import type {
   PizzaRecipe,
   TicketLines,
 } from '../../../../shared/pizza/types';
-import type { CartItem } from '@/lib/types';
+import type { CartItem, Product } from '@/lib/types';
+import { cartLineUnitPrice } from '../cart-price';
 import { lineRecipe, PIZZA_PRODUCT_PREFIX as PRODUCT_PREFIX } from './line-recipe';
 
 /** One side of the sheet: the pizza picked there and the ingredients taken off it. */
@@ -217,5 +218,80 @@ export function sheetLine(catalog: PizzaCatalog, state: SheetState, columns = 42
     printsAs: pizza && ticketLines(catalog, pizza, columns),
     canAdd: pizza !== null,
     message,
+  };
+}
+
+/** What a line of an order already placed was sold at: one pizza without add-ons, and each dip by its menu id. */
+export interface SoldPrices {
+  price: number;
+  dips: Record<string, number>;
+}
+
+/** What the sheet shows as money, in the currency's own units. */
+export interface SheetQuote {
+  /** What one pizza costs in each size, by the size's menu id. */
+  sizes: Record<string, number>;
+  /** What one of each dip costs, by the dip's menu id. */
+  dips: Record<string, number>;
+  /** One pizza at the size chosen, without its dips; null until a size is chosen. */
+  pizza: number | null;
+  /** One of the line: the pizza and its dips. */
+  unit: number | null;
+  /** True when the line keeps a price set by hand, whatever size is chosen. */
+  kept: boolean;
+}
+
+/**
+ * What the cart charges for the pizza the sheet holds, by the cart's own rule:
+ * the size variant of the POS product, at its online price when `online`, the
+ * product's dips, and a line's price override in place of the size price.
+ * Until a pizza is chosen the half-and-half product stands in, because every
+ * pizza costs its size price. Anything the product list does not sell, and a
+ * sheet given no list, is quoted from the menu. `sold` is given for a line of
+ * an order already placed while saving keeps its prices: the pizza and the
+ * dips it has are then quoted at what they were sold for.
+ */
+export function sheetQuote(
+  catalog: PizzaCatalog,
+  state: SheetState,
+  products: Product[] | undefined,
+  online: boolean,
+  override?: { price: number } | null,
+  sold?: SoldPrices | null,
+): SheetQuote {
+  const pizzaId = state.split ? null : state.halves[0].pizzaId;
+  const product =
+    products?.find((entry) => entry.id === PRODUCT_PREFIX + pizzaId) ??
+    products?.find((entry) => entry.id === `${PRODUCT_PREFIX}half-and-half`);
+  const onSale = (product?.addon_groups ?? []).flatMap((group) => group.addons ?? []);
+  const sizes = Object.fromEntries(
+    catalog.sizes.map((size) => {
+      const variant = product?.variants?.find((entry) => entry.id === `${product.id}-${size.id}`);
+      return [
+        size.id,
+        product && variant
+          ? cartLineUnitPrice({ product, variant }, online)
+          : size.priceCents / 100,
+      ];
+    }),
+  );
+  const dips = Object.fromEntries(
+    catalog.dips.map((dip) => {
+      const addon = onSale.find((entry) => entry.id === DIP_PREFIX + dip.id);
+      return [dip.id, sold?.dips[dip.id] ?? (addon ? Number(addon.price) : dip.priceCents / 100)];
+    }),
+  );
+  const pizza =
+    state.sizeId === null ? null : (sold?.price ?? override?.price ?? sizes[state.sizeId] ?? null);
+  const dipTotal = Object.entries(state.dips).reduce(
+    (sum, [dipId, count]) => sum + (dips[dipId] ?? 0) * count,
+    0,
+  );
+  return {
+    sizes,
+    dips,
+    pizza,
+    unit: pizza === null ? null : pizza + dipTotal,
+    kept: Boolean(override),
   };
 }

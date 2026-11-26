@@ -74,6 +74,18 @@ export function buttonSoldOut(button: QuickButton, products: Product[]): boolean
 }
 
 /**
+ * Why a button cannot be added, as its tile and its preview say it: the reason
+ * the server gave, else that its size is sold out, else that the POS does not sell it.
+ */
+export function buttonRefusal(
+  button: QuickButton,
+  products: Product[],
+  words: { soldOut: string; notOnPos: string },
+): string {
+  return button.reason ?? (buttonSoldOut(button, products) ? words.soldOut : words.notOnPos);
+}
+
+/**
  * The cart line a tap on the button adds, built from the POS's own products so
  * that it is the line the button was saved from. Null when the button cannot
  * be added: the menu changed under it, the POS does not sell what it holds, or

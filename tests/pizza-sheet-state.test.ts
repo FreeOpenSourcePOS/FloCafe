@@ -10,7 +10,12 @@ const { parseMenuFile } = require('../shared/pizza/menu');
 const { recipeKey, validateRecipe } = require('../shared/pizza/recipe');
 const { ticketLines } = require('../shared/pizza/ticket');
 const sample = require('./fixtures/pizza-sample-menu.json');
-const { newSheet, sheetReducer, sheetLine } = require('../frontend/src/lib/pizza/sheet-state');
+const {
+  newSheet,
+  sheetReducer,
+  sheetLine,
+  sheetQuote,
+} = require('../frontend/src/lib/pizza/sheet-state');
 
 const catalog = parseMenuFile(sample);
 const json = (value: unknown) => JSON.stringify(value);
@@ -505,5 +510,76 @@ runCases('pizza-sheet-state', {
     assertEqualOrThrow(json(state), before, 'deriving the line leaves the state alone');
     same(line.recipe.whole.removed, ['Olives'], 'loading a line leaves the line alone');
     same(line.addons, [dipAddon('garlic', 1)], 'and its add-ons');
+  },
+
+  'Case 10: the sheet quotes what the cart charges: the product, its size and its add-ons': () => {
+    const sized = (id: string, price: number, online: number | null) =>
+      catalog.sizes.map((size: { id: string }) => ({
+        id: `${id}-${size.id}`,
+        price: size.id === 'large' ? price : 1,
+        online_price: size.id === 'large' ? online : null,
+      }));
+    const dips = [{ addons: [{ id: 'ad-dips-garlic', price: 1.5 }] }];
+    const products = [
+      { id: 'pz-garden', price: 0, variants: sized('pz-garden', 24, 30), addon_groups: dips },
+      { id: 'pz-half-and-half', price: 0, variants: sized('pz-half-and-half', 26, null) },
+    ];
+    const withDips = after(largeGarden(), { type: 'dip', dipId: 'garlic', count: 2 });
+
+    const menu = sheetQuote(catalog, withDips, undefined, false);
+    same(menu.sizes, { small: 15, medium: 19, large: 23 }, 'with no product list: the menu sizes');
+    same(menu.dips, { ranch: 1.25, garlic: 1.25 }, 'and the menu dips');
+    assertEqualOrThrow(menu.unit, 23 + 2.5, 'which is what the sheet quoted before');
+
+    const counter = sheetQuote(catalog, withDips, products, false);
+    assertEqualOrThrow(counter.sizes.large, 24, 'at the counter: the price of the product size');
+    assertEqualOrThrow(counter.dips.garlic, 1.5, 'and of the product dip');
+    assertEqualOrThrow(
+      counter.dips.ranch,
+      1.25,
+      'a dip the product does not offer: the menu price',
+    );
+    assertEqualOrThrow(counter.pizza, 24, 'the pizza line');
+    assertEqualOrThrow(counter.unit, 24 + 3, 'the pizza and its dips');
+    assertEqualOrThrow(counter.kept, false, 'no price is kept');
+
+    const online = sheetQuote(catalog, withDips, products, true);
+    assertEqualOrThrow(online.sizes.large, 30, 'for an online platform: the size online price');
+    assertEqualOrThrow(online.sizes.small, 1, 'a size with no online price keeps its own');
+    assertEqualOrThrow(online.unit, 30 + 3, 'as the cart charges it');
+
+    const kept = sheetQuote(catalog, withDips, products, true, { price: 10 });
+    assertEqualOrThrow(kept.pizza, 10, 'a line with a price set by hand keeps that price');
+    assertEqualOrThrow(kept.unit, 10 + 3, 'with its dips on top, as the cart charges it');
+    assertEqualOrThrow(kept.kept, true, 'and the sheet is told so');
+
+    assertEqualOrThrow(
+      sheetQuote(catalog, largeHalves(), products, true).pizza,
+      26,
+      'a half and half is quoted from its own product',
+    );
+    assertEqualOrThrow(
+      sheetQuote(catalog, newSheet({ sizeId: 'large' }), products, false).pizza,
+      26,
+      'with no pizza chosen yet: the half-and-half product stands in',
+    );
+    assertEqualOrThrow(
+      sheetQuote(catalog, largeGarden(), [], false).pizza,
+      23,
+      'a pizza the POS does not sell: the menu price',
+    );
+    const sold = sheetQuote(catalog, withDips, products, true, null, {
+      price: 20,
+      dips: { garlic: 1 },
+    });
+    assertEqualOrThrow(sold.pizza, 20, 'a sent line unchanged in size: the price it was sold at');
+    assertEqualOrThrow(sold.dips.garlic, 1, 'and its dips at the price they were sold at');
+    assertEqualOrThrow(sold.unit, 20 + 2, 'which is what saving charges');
+    assertEqualOrThrow(sold.kept, false, 'with no word about a price set by hand');
+    assertEqualOrThrow(sold.sizes.large, 30, 'another size still shows what choosing it charges');
+
+    const unsized = sheetQuote(catalog, newSheet({ pizzaId: 'garden' }), products, false);
+    assertEqualOrThrow(unsized.pizza, null, 'no size chosen: no pizza price');
+    assertEqualOrThrow(unsized.unit, null, 'and no total');
   },
 });

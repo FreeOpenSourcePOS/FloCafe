@@ -280,6 +280,44 @@ async function main() {
         assertEqualOrThrow(opens([]), null, 'and no rows open nothing');
       },
 
+    'Case 8: for an online platform a drink tile shows the online price of its size': () => {
+      const { smallItemRows } = smallItems();
+      const priced = products.map((product) =>
+        product.id !== 'dr-cola'
+          ? product
+          : {
+              ...product,
+              variants: product.variants.map((variant: any) =>
+                variant.id === 'dr-cola-can' ? { ...variant, online_price: 2.5 } : variant,
+              ),
+            },
+      );
+      const cans = (online?: boolean) =>
+        smallItemRows(catalog, priced, online).find((row: any) => row.id === 'can');
+      const price = (row: any, name: string) =>
+        row.tiles.find((tile: any) => tile.name === name).price;
+      const can = dollars(menu.drinkVariants.find((size: any) => size.id === 'can').priceCents);
+
+      assertEqualOrThrow(price(cans(true), 'Cola'), 2.5, 'online: the online price of the size');
+      assertEqualOrThrow(price(cans(true), 'Ginger Ale'), can, 'a size with none keeps its price');
+      assertEqualOrThrow(cans(true).price, null, 'so the row names no one price');
+      assertEqualOrThrow(price(cans(false), 'Cola'), can, 'at the counter: the counter price');
+      assertEqualOrThrow(cans().price, can, 'which is the default, and the row names it');
+      same(
+        smallItemRows(catalog, priced, true).find((row: any) => row.id === 'dips').tiles,
+        smallItemRows(catalog, priced).find((row: any) => row.id === 'dips').tiles,
+        'a dip has one price either way',
+      );
+      const tile = cans(true).tiles.find((entry: any) => entry.name === 'Cola');
+      cart().clearCart();
+      cart().setOrderType('online');
+      cart().setOnlinePlatform('Example Eats');
+      tap(tile);
+      assertEqualOrThrow(cart().subtotal(), tile.price, 'the cart charges what the tile shows');
+      cart().clearCart();
+      cart().setOrderType('takeaway');
+    },
+
     'Case 5: past three lines a pizza line folds unless it was the last one touched': () => {
       const { touchedLine, foldsActions } = smallItems();
       const line = (id: string, quantity = 1): any => ({ id, quantity });

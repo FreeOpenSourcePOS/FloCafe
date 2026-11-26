@@ -375,6 +375,26 @@ async function main() {
       );
       assertEqualOrThrow(quick().buttonSoldOut(button, soldOut), true, 'the size is sold out');
       assertEqualOrThrow(quick().buttonLine(button, soldOut), null, 'so a tap adds nothing');
+      const words = { soldOut: 'Sold out', notOnPos: 'Not on sale' };
+      assertEqualOrThrow(
+        quick().buttonRefusal(button, soldOut, words),
+        'Sold out',
+        'its tile and its preview say so',
+      );
+      assertEqualOrThrow(
+        quick().buttonRefusal({ ...button, product_id: 'pz-gone' }, soldOut, words),
+        'Not on sale',
+        'a button the POS does not sell says that',
+      );
+      assertEqualOrThrow(
+        quick().buttonRefusal(
+          { ...button, usable: false, reason: 'From the server' },
+          soldOut,
+          words,
+        ),
+        'From the server',
+        'and the reason the server gave comes first',
+      );
       assertEqualOrThrow(quick().buttonSoldOut(button, products), false, 'in stock: not sold out');
       assertOrThrow(quick().buttonLine(button, products) !== null, 'and it adds');
       assertEqualOrThrow(
@@ -491,6 +511,78 @@ async function main() {
         false,
         'and refuses it until a pizza on the menu is picked',
       );
+    },
+
+    'Case 12: the buttons belong to the session and tenant they were listed for': async () => {
+      const {
+        useQuickButtonStore,
+      } = require('../frontend/src/components/pos/pizza/useQuickButtons');
+      const { notifySessionBoundary } = require('../frontend/src/store/session-events');
+      const { useAuthStore } = frontend.auth;
+      const store = () => useQuickButtonStore.getState();
+      const tenant = (id: number | null) =>
+        useAuthStore.setState({ currentTenant: id === null ? null : ({ id } as any) });
+      const button = (id: string) => ({ id, customer_id: null });
+      const ids = () => store().buttons.map((entry: any) => entry.id);
+      const dialog = { type: 'save', line: null, forCustomer: false };
+      const originalGet = frontend.api.get;
+      let answer: () => Promise<unknown> = async () => ({ data: { buttons: [button('a')] } });
+      frontend.api.get = () => answer();
+      try {
+        tenant(1);
+        await store().load(null);
+        same(ids(), ['a'], 'the first tenant lists its button');
+
+        store().open(dialog);
+        notifySessionBoundary('logout');
+        same(ids(), [], 'signing out clears the buttons');
+        assertEqualOrThrow(store().dialog, null, 'and the open dialog');
+
+        await store().load(null);
+        store().open(dialog);
+        notifySessionBoundary('login');
+        same(ids(), [], 'signing in clears them too');
+        assertEqualOrThrow(store().dialog, null, 'and the open dialog');
+
+        await store().load(null);
+        store().open(dialog);
+        notifySessionBoundary('lock');
+        notifySessionBoundary('pin-login');
+        same(ids(), ['a'], 'locking and unlocking with a PIN keep them');
+        store().open(null);
+
+        tenant(2);
+        answer = () => Promise.reject({ response: { status: 500 } });
+        await store().load(null);
+        same(ids(), [], 'a failed fetch shows another tenant none of the buttons held');
+
+        tenant(1);
+        answer = async () => ({ data: { buttons: [button('a')] } });
+        await store().load(null);
+        answer = () => Promise.reject({ response: { status: 500 } });
+        await store().load(null);
+        same(ids(), ['a'], 'a failed fetch for the same tenant keeps its buttons');
+
+        let arrive: (value: unknown) => void = () => {};
+        answer = () => new Promise((resolve) => (arrive = resolve));
+        const slow = store().load(null);
+        tenant(2);
+        arrive({ data: { buttons: [button('late')] } });
+        await slow;
+        same(ids(), [], 'an answer for the tenant left is not shown to the next');
+
+        answer = () => new Promise((resolve) => (arrive = resolve));
+        tenant(1);
+        const before = store().load(null);
+        notifySessionBoundary('logout');
+        arrive({ data: { buttons: [button('late')] } });
+        await before;
+        same(ids(), [], 'nor is an answer from before a sign-out');
+      } finally {
+        frontend.api.get = originalGet;
+        tenant(null);
+        notifySessionBoundary('logout');
+      }
     },
   });
 }

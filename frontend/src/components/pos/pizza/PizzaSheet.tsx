@@ -7,17 +7,21 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import {
+  DIP_PREFIX,
   sheetLine,
+  sheetQuote,
   sheetReducer,
   type SheetAction,
   type SheetHalf,
   type SheetLine,
   type SheetState,
+  type SoldPrices,
 } from '@/lib/pizza/sheet-state';
+import type { Product } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import type { CookNote, CutNote, PizzaCatalog } from '@shared/pizza/types';
 import { PizzaChoice } from './PizzaChoice';
-import { QuickButtonSaveAction } from './useQuickButtons';
+import { QuickButtonSaveAction, useOnlineOrder } from './useQuickButtons';
 
 export const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
@@ -262,6 +266,11 @@ export function CookAndCut({ state, dispatch }: EditorProps) {
  */
 export default function PizzaSheet({
   catalog,
+  products,
+  priceOverride,
+  online: onlineOrder,
+  soldPrices,
+  refusal,
   initial,
   editing,
   onSave,
@@ -270,6 +279,19 @@ export default function PizzaSheet({
   returnFocus,
 }: {
   catalog: PizzaCatalog;
+  /** The POS's products, which the prices are quoted from; without them the menu's prices show. */
+  products?: Product[];
+  /** The price set by hand on the cart line the sheet changes, which that line keeps. */
+  priceOverride?: { price: number } | null;
+  /** Whether the order is for an online platform; by default as the cart has it. */
+  online?: boolean;
+  /**
+   * For a line of an order already placed: what the line was sold at while saving the sheet as
+   * it stands keeps those prices, and null once saving prices it again.
+   */
+  soldPrices?: (line: SheetLine, state: SheetState) => SoldPrices | null;
+  /** Something to say beside Save about the sheet as it stands; `blocks` also switches Save off. */
+  refusal?: (line: SheetLine, state: SheetState) => { message: string; blocks: boolean } | null;
   initial: SheetState;
   /** True when the sheet changes a line already in the cart. */
   editing: boolean;
@@ -283,15 +305,26 @@ export default function PizzaSheet({
   const t = useTranslations('pizza');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
-  // The menu load takes only currencies counted in hundredths.
-  const money = (cents: number) => fmt(cents / 100);
+  const cartOnline = useOnlineOrder();
+  const online = onlineOrder ?? cartOnline;
   const [state, dispatch] = useReducer(sheetReducer, initial);
   // The dialog has no trigger of its own, so it hands the focus back to whatever opened it.
   const [opener] = useState(() => document.activeElement as HTMLElement | null);
   const messageId = useId();
   const line = sheetLine(catalog, state);
   const size = catalog.sizes.find((entry) => entry.id === state.sizeId);
-  const total = line.unitPriceCents === null ? '—' : money(line.unitPriceCents * state.quantity);
+  // What the cart charges, so the sheet and the order agree.
+  const quote = sheetQuote(
+    catalog,
+    state,
+    products,
+    online,
+    priceOverride,
+    soldPrices?.(line, state),
+  );
+  const refused = refusal?.(line, state) ?? null;
+  // A sheet that cannot be saved as it stands has no price to promise.
+  const total = quote.unit === null || refused?.blocks ? '—' : fmt(quote.unit * state.quantity);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -314,7 +347,7 @@ export default function PizzaSheet({
             options={catalog.sizes.map((entry) => ({
               id: entry.id,
               label: entry.label,
-              hint: money(entry.priceCents),
+              hint: fmt(quote.sizes[entry.id]),
             }))}
             onChange={(sizeId) => dispatch({ type: 'size', sizeId })}
           />
@@ -341,7 +374,7 @@ export default function PizzaSheet({
             {catalog.dips.length > 0 && (
               <div role="group" aria-label={t('dips')} className="space-y-2">
                 <p className={HEADING}>
-                  {t('dipsEach', { price: money(catalog.dips[0].priceCents) })}
+                  {t('dipsEach', { price: fmt(quote.dips[catalog.dips[0].id]) })}
                 </p>
                 {catalog.dips.map((dip) => (
                   <div key={dip.id} className="flex items-center justify-between gap-2">
@@ -402,18 +435,25 @@ export default function PizzaSheet({
             </div>
           </div>
           <dl className="grid grid-cols-[auto_auto] gap-x-4 text-sm text-foreground">
-            {size && (
+            {size && quote.pizza !== null && !refused?.blocks && (
               <>
                 <dt>{t('pizzaLine', { size: size.label })}</dt>
-                <dd className="text-end tabular-nums">{money(size.priceCents)}</dd>
+                <dd className="text-end tabular-nums">{fmt(quote.pizza)}</dd>
               </>
             )}
             {line.dips.map((dip) => (
               <div key={dip.addonId} className="contents">
                 <dt>{t('dipLine', { count: dip.quantity, name: dip.name })}</dt>
-                <dd className="text-end tabular-nums">{money(dip.priceCents * dip.quantity)}</dd>
+                <dd className="text-end tabular-nums">
+                  {fmt(quote.dips[dip.addonId.slice(DIP_PREFIX.length)] * dip.quantity)}
+                </dd>
               </div>
             ))}
+            {quote.kept && (
+              <dt data-testid="pizza-price-kept" className="col-span-2 text-xs font-semibold">
+                {t('linePriceKept')}
+              </dt>
+            )}
           </dl>
           <div className="ms-auto flex items-center gap-3">
             {!editing && line.canAdd && onSaveButton && (
@@ -425,11 +465,11 @@ export default function PizzaSheet({
               data-testid="pizza-sheet-message"
               className="max-w-56 text-end text-sm font-semibold text-red-700 dark:text-red-300"
             >
-              {line.message}
+              {line.message ?? refused?.message}
             </p>
             <Button
               aria-describedby={messageId}
-              disabled={!line.canAdd}
+              disabled={!line.canAdd || refused?.blocks}
               onClick={() => onSave(line, state)}
               className="h-12 min-w-48 bg-brand px-6 text-base font-bold text-white hover:bg-brand-hover"
             >

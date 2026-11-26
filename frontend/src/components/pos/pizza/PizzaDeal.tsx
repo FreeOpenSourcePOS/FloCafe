@@ -8,8 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Tabs } from '@/components/ui/tabs';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { dealLine, dealReducer, type DealState, type DealTab } from '@/lib/pizza/deal-state';
+import {
+  dealLine,
+  dealQuote,
+  dealReducer,
+  type DealState,
+  type DealTab,
+} from '@/lib/pizza/deal-state';
 import type { SheetAction } from '@/lib/pizza/sheet-state';
+import type { Product } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { dealPickCount } from '@shared/pizza/recipe';
 import type { CatalogDeal, DealRecipe, PizzaCatalog } from '@shared/pizza/types';
@@ -62,6 +69,8 @@ function Choice({
 export default function PizzaDeal({
   catalog,
   deal,
+  product,
+  priceOverride,
   initial,
   editing,
   quantity,
@@ -71,6 +80,10 @@ export default function PizzaDeal({
 }: {
   catalog: PizzaCatalog;
   deal: CatalogDeal;
+  /** The POS product the deal is sold as, which the price is quoted from; without it the menu's price shows. */
+  product?: Pick<Product, 'price'>;
+  /** The price set by hand on the cart line the configurator changes, which that line keeps. */
+  priceOverride?: { price: number } | null;
   initial: DealState;
   /** True when the configurator changes a line already in the cart. */
   editing: boolean;
@@ -84,8 +97,6 @@ export default function PizzaDeal({
   const t = useTranslations('pizza');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
-  // The menu load takes only currencies counted in hundredths.
-  const money = (cents: number) => fmt(cents / 100);
   const [state, dispatch] = useReducer(dealReducer, initial);
   // The dialog has no trigger of its own, so it hands the focus back to whatever opened it.
   const [opener] = useState(() => document.activeElement as HTMLElement | null);
@@ -97,7 +108,9 @@ export default function PizzaDeal({
   const cans = line.cans ?? { asked: 0, chosen: 0 };
   const missing = line.tabs.flatMap((tab, index) => (tab.done ? [] : [index]));
   const open = line.tabs[state.tab];
-  const total = money(deal.priceCents * quantity);
+  // What the cart charges, so the configurator and the order agree.
+  const quote = dealQuote(deal, product, priceOverride);
+  const total = fmt(quote.price * quantity);
   const flavours = catalog.sides.find((side) => side.id === 'wings')?.modifier?.options ?? [];
 
   // Pizza tabs come first, so a pizza's place among the tabs is its number in the deal.
@@ -257,7 +270,7 @@ export default function PizzaDeal({
             data-testid="deal-price"
             className="rounded-full border border-border px-3 py-1 text-sm text-foreground"
           >
-            {t('dealFixedPrice')} <b className="text-base tabular-nums">{money(deal.priceCents)}</b>
+            {t('dealFixedPrice')} <b className="text-base tabular-nums">{fmt(quote.price)}</b>
           </p>
           <p
             data-testid="deal-chosen"
@@ -440,8 +453,16 @@ export default function PizzaDeal({
               <div className="mt-auto shrink-0 space-y-2">
                 <p className="flex items-baseline justify-between text-base font-bold text-foreground">
                   <span>{t('dealPrice')}</span>
-                  <span className="tabular-nums">{money(deal.priceCents)}</span>
+                  <span className="tabular-nums">{fmt(quote.price)}</span>
                 </p>
+                {quote.kept && (
+                  <p
+                    data-testid="deal-price-kept"
+                    className="text-xs font-semibold text-foreground"
+                  >
+                    {t('linePriceKept')}
+                  </p>
+                )}
                 <p
                   id={messageId}
                   role="status"

@@ -3,10 +3,11 @@
 import { Check, SlidersHorizontal } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { getCategoryColorClasses } from '@/components/pos/ProductGrid';
+import { cartVariantUnitPrice } from '@/lib/cart-price';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { QuickButtonsBlock } from './useQuickButtons';
+import { QuickButtonsBlock, useOnlineOrder } from './useQuickButtons';
 
 const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground';
@@ -106,6 +107,8 @@ function SizeButtons({
   className?: string;
 }) {
   const t = useTranslations('pizza');
+  // What the cart charges for the size: its online price on an order for an online platform.
+  const online = useOnlineOrder();
   return (
     // More sizes than a tile is wide wrap to a second row; each button keeps its 48 px.
     <div className={cn('flex flex-wrap', className)}>
@@ -118,7 +121,7 @@ function SizeButtons({
           aria-label={t('sizeOf', {
             pizza: product.name,
             size: variant.name,
-            price: fmt(Number(variant.price)),
+            price: fmt(cartVariantUnitPrice({ product, variant }, online)),
           })}
           className={cn(
             'flex min-h-12 min-w-12 flex-1 flex-col items-center justify-center border-s border-border px-1 text-[13px] font-bold leading-tight text-foreground transition-colors first:border-s-0 hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
@@ -127,7 +130,7 @@ function SizeButtons({
         >
           {variant.name}
           <span className="text-[11px] tabular-nums text-brand dark:text-indigo-300">
-            {fmt(Number(variant.price))}
+            {fmt(cartVariantUnitPrice({ product, variant }, online))}
           </span>
         </button>
       ))}

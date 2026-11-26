@@ -8,7 +8,13 @@ import { RECIPE_NOT_PRINTED, ticketLines } from '../../../../shared/pizza/ticket
 import type { OrderLineRecipe, PizzaCatalog } from '../../../../shared/pizza/types';
 import type { OrderItemEditAttemptBody } from '../order-item-edit-attempt';
 import { lineRecipe, PIZZA_PRODUCT_PREFIX, sentRecipe } from './line-recipe';
-import { DIP_PREFIX, type SheetLine, type SheetSourceLine, type SheetState } from './sheet-state';
+import {
+  DIP_PREFIX,
+  type SheetLine,
+  type SheetSourceLine,
+  type SheetState,
+  type SoldPrices,
+} from './sheet-state';
 
 /** Product ids of deals start with this. */
 export const DEAL_PRODUCT_PREFIX = 'dl-';
@@ -24,6 +30,7 @@ export interface SentItem {
     | null;
   special_instructions?: string | null;
   edit_version?: number;
+  unit_price?: number | string | null;
   modifier_selection?: unknown;
   price_overridden?: number | boolean;
   discount_amount?: number | null;
@@ -121,6 +128,50 @@ export function sentLineChangeable(item: SentItem): boolean {
  */
 export function sentLineRepriced(item: SentItem): boolean {
   return Boolean(item.price_overridden) || Number(item.discount_amount ?? 0) > 0;
+}
+
+/** What the line was sold at: one of it without add-ons, and each of its dips by the dip's menu id. */
+export function soldPrices(item: SentItem): SoldPrices {
+  return {
+    price: Number(item.unit_price ?? 0),
+    dips: Object.fromEntries(
+      sentLine(item)
+        .addons.filter((addon) => addon.id.startsWith(DIP_PREFIX))
+        .map((addon) => [addon.id.slice(DIP_PREFIX.length), addon.price]),
+    ),
+  };
+}
+
+/**
+ * True when saving `now` over the sent line `was` prices it again from the
+ * catalogue as it is today: its product, its size, its quantity or its add-ons
+ * changed. A change of recipe or note alone keeps the unit price, the add-on
+ * prices, the discount and the override the line was sold with.
+ */
+export function sentLineReprices(was: SentLine, now: SentLine): boolean {
+  const priced = (line: SentLine) =>
+    JSON.stringify([
+      line.productId,
+      line.variantId,
+      line.quantity,
+      line.addons.map((addon) => `${addon.id}x${addon.quantity}`).sort(),
+    ]);
+  return priced(was) !== priced(now);
+}
+
+/**
+ * What the sheet on a sent line does until the product prices are held. A
+ * change that prices the line again cannot be quoted without them, so it is
+ * `blocked`; a change of recipe or note keeps the sold price and is saved.
+ * `notice` is true when the sheet says that prices could not be loaded: after
+ * a failed request, and beside a blocked change.
+ */
+export function sentPriceGate(now: { reprices: boolean; held: boolean; failed: boolean }): {
+  blocked: boolean;
+  notice: boolean;
+} {
+  if (now.held) return { blocked: false, notice: false };
+  return { blocked: now.reprices, notice: now.reprices || now.failed };
 }
 
 /** The line the sheet's `load` action reads; it looks at ids, counts, the note and the recipe only. */

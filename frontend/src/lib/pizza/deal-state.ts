@@ -8,6 +8,8 @@ import type {
   PizzaCatalog,
   PizzaRecipe,
 } from '../../../../shared/pizza/types';
+import type { Product } from '@/lib/types';
+import { cartLineUnitPrice } from '../cart-price';
 import { PIZZA_PRODUCT_PREFIX } from './line-recipe';
 import {
   newSheet,
@@ -240,5 +242,23 @@ export function dealLine(catalog: PizzaCatalog, state: DealState, columns = 42):
       ...drinks,
       ...(asked?.wingFlavour && flavour ? { wingFlavour: flavour.id } : {}),
     }),
+  };
+}
+
+/**
+ * What the cart charges for one of a deal: the price of its POS product, or
+ * the price a line keeps when one was set by hand. A configurator given no
+ * product is quoted from the menu.
+ */
+export function dealQuote(
+  deal: CatalogDeal,
+  product: Pick<Product, 'price'> | undefined,
+  override?: { price: number } | null,
+): { price: number; kept: boolean } {
+  return {
+    price: product
+      ? cartLineUnitPrice({ product, price_override: override }, false)
+      : deal.priceCents / 100,
+    kept: Boolean(product && override),
   };
 }

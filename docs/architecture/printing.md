@@ -225,17 +225,21 @@ item and keeps its non-blank strings. The backend data builders (`buildKotPrintD
 backend `buildBillPrintData`) copy it onto the document row. An item with no lines produces a row
 without a `detailLines` field and prints nothing extra.
 
-The browser paths build the lines themselves. `orderItemDetailLines(item, columns)` in
-`frontend/src/lib/pizza/detail-lines.ts` reads the recipe in the item's `modifier_selection` and
+The browser paths go through `orderItemDetailLines(item, columns)` in
+`frontend/src/lib/pizza/detail-lines.ts`. An item that carries non-blank `detailLines` prints those
+as they are: they are what the server wrote for the order, and the catalogue the browser holds does
+not replace them. For an item with none it reads the recipe in the item's `modifier_selection` and
 formats it with `ticketLines()` against the pizza catalogue the browser holds, at the column count
 of the ticket or receipt being printed. `buildFrontendKotDocument`, the frontend
 `buildBillPrintData`, the browser kitchen-ticket encoder, and the HTML renderer all call it. The
 HTML ticket has no column grid, so it wraps for `KotWebPrintOptions.columns`, or for the paper
 size's own count when that is absent, reduced by `layoutColumnsForTextSize()` for the ticket's
-text size as on the ESC/POS path. When no catalogue is loaded, or the item has no recipe, the
-helper answers `readDetailLines(item)`, and the output is byte for byte what it is without pizza
-logic. A recipe on the item takes the place of any `detailLines` it also carries; the two are
-never both printed.
+text size as on the ESC/POS path. An item with no recipe gets `readDetailLines(item)`, and the output is byte for byte what it is
+without pizza logic. Ready-made lines and a written-out recipe are never both printed. A recipe the
+helper cannot write out, because no catalogue is loaded, `ticketLines()` throws, or a pizza lacks
+one whole or two halves each with a `removed` list, prints the one line
+`RECIPE NOT PRINTED - CHECK ORDER` (`RECIPE_NOT_PRINTED` in `shared/pizza/ticket.ts`), as the
+server's paths do, so no browser path prints a pizza or deal as a bare name.
 
 These paths print the lines under the item heading and before the add-ons:
 

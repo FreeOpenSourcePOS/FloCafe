@@ -20,8 +20,8 @@ import {
   buttonLine,
   buttonName,
   buttonPrice,
+  buttonRefusal,
   buttonSheetLine,
-  buttonSoldOut,
   buttonSummary,
   deleteQuickButton,
   isPizzaButton,
@@ -37,6 +37,7 @@ import type { QuickButton } from '@shared/pizza/types';
 import { PizzaLineDetails } from './PizzaCartLine';
 import {
   QUICK_BUTTONS_CATEGORY,
+  useOnlineOrder,
   useQuickButtonRights,
   useQuickButtonStore,
   type QuickButtonDialog,
@@ -54,10 +55,6 @@ const HOME_CATEGORIES: (string | null)[] = [null, 'cat-pizzas'];
 const OPEN_BLOCK = '[data-testid="pizza-category-blocks"] [aria-pressed="true"]';
 
 type EditItem = (line: CartItem) => void;
-
-/** True while the order is for an online platform, as the cart decides which price a line has. */
-const useOnlineOrder = () =>
-  useCartStore((cart) => cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0);
 
 /** A tile's frame: the button's colour, or grey for one that cannot be added. */
 function tileClass(color: string, usable: boolean): string {
@@ -221,10 +218,10 @@ function Tile({
           label={button.label}
           color={button.color}
           line={line}
-          reason={
-            button.reason ??
-            (buttonSoldOut(button, products) ? t('quickSoldOut') : t('quickNotOnPos'))
-          }
+          reason={buttonRefusal(button, products, {
+            soldOut: t('quickSoldOut'),
+            notOnPos: t('quickNotOnPos'),
+          })}
         />
       </button>
       {(button.customer_id === null ? rights.shop : rights.customers) && (
@@ -442,7 +439,14 @@ function QuickButtonDialogs({
                         label={label}
                         color={color}
                         line={line}
-                        reason={saved?.reason ?? t('quickNotOnPos')}
+                        reason={
+                          saved
+                            ? buttonRefusal(saved, products, {
+                                soldOut: t('quickSoldOut'),
+                                notOnPos: t('quickNotOnPos'),
+                              })
+                            : t('quickNotOnPos')
+                        }
                       />
                     </div>
                   </div>

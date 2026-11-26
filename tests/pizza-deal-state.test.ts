@@ -10,7 +10,12 @@ const { parseMenuFile } = require('../shared/pizza/menu');
 const { validateRecipe } = require('../shared/pizza/recipe');
 const { ticketLines } = require('../shared/pizza/ticket');
 const sample = require('./fixtures/pizza-sample-menu.json');
-const { newDeal, dealReducer, dealLine } = require('../frontend/src/lib/pizza/deal-state');
+const {
+  newDeal,
+  dealReducer,
+  dealLine,
+  dealQuote,
+} = require('../frontend/src/lib/pizza/deal-state');
 
 const catalog = parseMenuFile(sample);
 const json = (value: unknown) => JSON.stringify(value);
@@ -409,5 +414,17 @@ runCases('pizza-deal-state', {
     same(state.pizzas[3].halves[0], { pizzaId: 'island', removed: ['Ham'] }, 'one pizza changed');
     same(state.pizzas[2], start.pizzas[2], 'the others are the same objects');
     same(missing(state), ['pizza-1', 'pizza-2', 'pizza-3', 'pizza-5', 'pizza-6'], 'five to go');
+  },
+
+  'Case 8: the fixed price shown is the price of the product the cart charges': () => {
+    const deal = dealOf('party');
+    assertEqualOrThrow(dealQuote(deal, undefined).price, 118.4, 'with no product: the menu price');
+    const product = { id: 'dl-party', price: 120 };
+    same(dealQuote(deal, product), { price: 120, kept: false }, 'the product price');
+    same(
+      dealQuote(deal, product, { price: 99 }),
+      { price: 99, kept: true },
+      'a line with a price set by hand keeps that price',
+    );
   },
 });

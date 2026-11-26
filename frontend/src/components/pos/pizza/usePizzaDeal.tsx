@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { replaceCartLine } from '@/lib/pizza/cart-lines';
+import { holdPizzaCatalog } from '@/lib/pizza/catalog';
 import { newDeal, type DealState } from '@/lib/pizza/deal-state';
 import type { CartItem, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
@@ -23,6 +24,11 @@ interface Session {
 /** The deal configurator of the POS page: which products and cart lines are deals, and the one that is open. */
 export function usePizzaDeal(catalog: PizzaCatalog | null) {
   const [session, setSession] = useState<Session | null>(null);
+  /** Holds the menu before the configurator renders, so no answer on its way changes it. */
+  const begin = (opened: Session) => {
+    holdPizzaCatalog(true);
+    setSession(opened);
+  };
   const dealOf = (product: Product) =>
     catalog?.deals.find((deal) => DEAL_PRODUCT_PREFIX + deal.id === product.id);
 
@@ -34,14 +40,14 @@ export function usePizzaDeal(catalog: PizzaCatalog | null) {
     /** Opens the configurator on a deal product with nothing chosen; false for any other product. */
     open: (product: Product, quantity: number) => {
       const deal = dealOf(product);
-      if (deal) setSession({ deal, product, initial: newDeal(deal), quantity, lineId: null });
+      if (deal) begin({ deal, product, initial: newDeal(deal), quantity, lineId: null });
       return Boolean(deal);
     },
     /** Opens the configurator on a deal line of the cart; false for any other line. */
     edit: (item: CartItem) => {
       const deal = dealOf(item.product);
       if (deal)
-        setSession({
+        begin({
           deal,
           product: item.product,
           initial: newDeal(deal, item.recipe?.kind === 'deal' ? item.recipe : null),
@@ -80,6 +86,10 @@ export function PizzaDealDialog({
     <PizzaDeal
       catalog={catalog}
       deal={session.deal}
+      product={session.product}
+      priceOverride={
+        useCartStore.getState().items.find((item) => item.id === session.lineId)?.price_override
+      }
       initial={session.initial}
       editing={session.lineId !== null}
       quantity={session.quantity}

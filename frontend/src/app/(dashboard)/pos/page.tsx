@@ -1938,7 +1938,7 @@ export default function POSPage() {
     [t],
   );
 
-  const pizza = usePizzaPos(products, categories, setSelectedCategory);
+  const pizza = usePizzaPos(products, categories, setSelectedCategory, setProducts, setCategories);
 
   const handleProductClick = (product: Product, quantity = 1) => {
     if (pizza?.open(product, quantity)) return;

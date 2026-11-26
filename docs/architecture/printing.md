@@ -221,10 +221,21 @@ the callout banner.
 
 An order item can carry `detailLines`: a list of ready-formatted text lines, such as the halves and
 toppings of a pizza. `readDetailLines()` in `shared/print/detail-lines.ts` reads the list from a raw
-item and keeps its non-blank strings. The data builders (`buildKotPrintData`, both
-`buildBillPrintData` functions, and `buildFrontendKotDocument`) copy it onto the document row; the
-browser kitchen-ticket encoder and HTML renderer read it from the raw item. An item with no lines
-produces a row without a `detailLines` field and prints nothing extra.
+item and keeps its non-blank strings. The backend data builders (`buildKotPrintData` and the
+backend `buildBillPrintData`) copy it onto the document row. An item with no lines produces a row
+without a `detailLines` field and prints nothing extra.
+
+The browser paths build the lines themselves. `orderItemDetailLines(item, columns)` in
+`frontend/src/lib/pizza/detail-lines.ts` reads the recipe in the item's `modifier_selection` and
+formats it with `ticketLines()` against the pizza catalogue the browser holds, at the column count
+of the ticket or receipt being printed. `buildFrontendKotDocument`, the frontend
+`buildBillPrintData`, the browser kitchen-ticket encoder, and the HTML renderer all call it. The
+HTML ticket has no column grid, so it wraps for `KotWebPrintOptions.columns`, or for the paper
+size's own count when that is absent, reduced by `layoutColumnsForTextSize()` for the ticket's
+text size as on the ESC/POS path. When no catalogue is loaded, or the item has no recipe, the
+helper answers `readDetailLines(item)`, and the output is byte for byte what it is without pizza
+logic. A recipe on the item takes the place of any `detailLines` it also carries; the two are
+never both printed.
 
 These paths print the lines under the item heading and before the add-ons:
 
@@ -269,7 +280,8 @@ recipes are normalised when the order is written.
 The detailed receipt (`buildDetailedReceiptBytes`), the tax bill, compliance line templates, the
 browser HTML receipt (`web-print.ts`), the delivery slip, the payment ticket slip, and the kitchen
 display do not print detail lines. `tests/pizza-print-detail-lines.test.ts` covers the paths that
-print detail lines, and `tests/pizza-order-print.test.ts` covers the lines written from a recipe.
+print detail lines, `tests/pizza-order-print.test.ts` covers the lines the server writes from a
+recipe, and `tests/pizza-kot-browser.test.ts` covers the lines the browser paths build from one.
 
 ### Customer contact on kitchen tickets
 

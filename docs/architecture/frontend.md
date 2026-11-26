@@ -462,7 +462,7 @@ notifications), and the printer store lives with the printer hook because it car
 | Store                                                           | Holds                                                                                                                                                                                                                                    | Persistence                                                                                                                                                                                                                                       |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`auth.ts`](../../frontend/src/store/auth.ts)                   | `user`, `token`, `tenants`, `currentTenant`, `loading`, `isLocked`, and the locales that failed to warm at bootstrap                                                                                                                     | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable                                                                                                                                                  |
-| [`cart.ts`](../../frontend/src/store/cart.ts)                   | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors                                                           | none                                                                                                                                                                                                                                              |
+| [`cart.ts`](../../frontend/src/store/cart.ts)                   | cart items with their addons, instructions, selected product variant and pizza recipe, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors                                                           | none                                                                                                                                                                                                                                              |
 | [`charges.ts`](../../frontend/src/store/charges.ts)             | `charges`, `loading`, `error`, and the `load` and `save` actions over `/settings/charges`                                                                                                                                                | none in the store (persisted via `PUT /api/settings/charges`)                                                                                                                                                                                     |
 | [`cloud-attention.ts`](../../frontend/src/store/cloud-attention.ts) | per-tenant `emailNeedsAttention`, `deletionNeedsAttention`, and `anyNeedsAttention` indicators shared by the sidebar Settings badge and Settings sub-navigation (`Account`, `Privacy`), derived from `/settings/cloud/account` and `/settings/cloud` | none (reset on session boundaries via `session-events.ts`)                                                                                                                                                                                        |
 | [`held-orders.ts`](../../frontend/src/store/held-orders.ts)     | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders`                                                                                                                            | none                                                                                                                                                                                                                                              |
@@ -473,6 +473,52 @@ notifications), and the printer store lives with the printer hook because it car
 
 `held-orders.ts` exports `createHeldOrdersStore(apiClient)`, so a test can pass its own client
 instead of the shared one.
+
+### Cart line identity
+
+A cart line's `id` is a digest of what the line holds, built by `generateCartItemId` in
+[`cart-identity.ts`](../../frontend/src/lib/cart-identity.ts): the product, the selected variant,
+the add-ons in any order, the note, an owner price override, and the recipe of a pizza or deal.
+Two adds that produce the same id are one line with a higher quantity, and every cart action that
+changes a line rebuilds its id from the same fields. The recipe enters the digest as its
+`recipeKey` (`shared/pizza/recipe.ts`), so the same pizza is the same line whatever order its
+removals were tapped in, and two different pizzas of one product and size stay on two lines. A line
+without a recipe has the id it would have if recipes did not exist. `lineRecipe` treats the recipe
+of a plain pizza, a whole pizza with nothing removed and no cook or cut note, as no recipe, so such
+a line has that same id and merges with a line that carries no recipe.
+
+`updateItemDetails` can change a line's variant, which for a pizza is its size. A pizza recipe
+names its size too, so the store rewrites the recipe's `sizeId` from the new variant id with
+`recipeForVariant`, for a whole pizza and for a half and half, and the line's id follows.
+
+`normalizeCartItems` gives restored lines their ids again and merges the ones that match; a held
+order resumed into the cart keeps two different pizzas apart because it reads each line's recipe.
+`cartItemToOrderItem` in [`cart-order-item.ts`](../../frontend/src/lib/cart-order-item.ts) is the
+only cart-to-request projection, and it sends the recipe as `modifier_selection`. A pizza line
+with no recipe, which is a product whose id starts with `pz-`, sends `modifier_selection: null`,
+so that saving an edited pizza as plain clears a recipe the order already stores; a line for any
+other product sends no such field. The retry
+fingerprint in `order-attempt.ts` is built from that projection, so two carts that differ only in
+a recipe are two different attempts. The displayed unit price is the variant price plus the
+add-ons; a recipe never changes it.
+
+### Pizza logic
+
+[`frontend/src/lib/pizza/`](../../frontend/src/lib/pizza) holds the logic the pizza screens stand
+on, with no React in it:
+
+| Module | Contents |
+| --- | --- |
+| `catalog.ts` | `loadPizzaCatalog()` requests `GET /api/pizza/catalog` once and keeps the answer; `getPizzaCatalog()` reads it synchronously; `reloadPizzaCatalog()` fetches it again. A 404 means the shop has no pizza menu, and the catalogue is then `null`. A failed fetch keeps the catalogue already held, and only the latest fetch changes it, whatever order the answers arrive in. A login or a logout clears the catalogue and any fetch in flight, so the next `loadPizzaCatalog()` asks again; locking the screen and unlocking it with a PIN keep the catalogue, because the store and its menu are the same. A screen that needs the catalogue calls `loadPizzaCatalog()` when it mounts and again after a sign-in, because the login cleared what was held. The screen that loads a new menu calls `reloadPizzaCatalog()`. |
+| `sheet-state.ts` | `newSheet`, `sheetReducer`, and `sheetLine`: the state of the pizza sheet, one action per control, and the cart line that state describes. `sheetLine` runs the state through `validateRecipe` in `shared/pizza/recipe.ts`, so Add is off, with that function's message, until the recipe is valid against the catalogue. A plain pizza has no recipe. The `load` action opens a cart line whose product id starts with `pz-`; any other line leaves the state as it is. |
+| `cart-lines.ts` | `customizeOne` takes one off a line of several and gives it a line of its own; `replaceCartLine` saves an edited line where it stood, and merges it into a line it has become identical to. Both return a new item list and change nothing. "Customize 1" gives the split line a temporary id, because it holds the same pizza as the line it came from. When the sheet is closed without saving, the screen calls `replaceCartLine(items, temporaryId, line)` to merge it back. |
+| `line-recipe.ts` | `lineRecipe` and `recipeForVariant`: the recipe a line is identified and sent by, and a pizza recipe at the size of the line's variant. |
+| `detail-lines.ts` | `orderItemDetailLines` and `cartLineDetailLines`: the lines under a pizza or deal, from its recipe and the loaded catalogue. See [item detail lines](printing.md#item-detail-lines). |
+
+`tests/pizza-sheet-state.test.ts`, `tests/pizza-cart-store.test.ts`, and
+`tests/pizza-kot-browser.test.ts` cover these modules and the cart and print hooks that call them.
+`tests/pizza-pos-order-seam.test.ts` posts the requests these modules build to the real order routes
+of a store with the sample menu loaded, and reads the catalogue through `GET /api/pizza/catalog`.
 
 ## Printing
 
@@ -705,6 +751,7 @@ frontend/src/
 ├── hooks/                      Printer, KDS, theme, update, cash, approver, and formatting hooks
 ├── lib/
 │   ├── i18n/                   Language registry, loader, and the 32 message files
+│   ├── pizza/                  Pizza catalogue, sheet state, cart line changes, detail lines
 │   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,
 │   │                           and the delivery-slip encoder and browser renderer
 │   ├── updates/                Beta channel, auto-check, and restart-and-install helpers

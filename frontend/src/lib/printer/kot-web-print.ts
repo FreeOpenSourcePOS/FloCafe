@@ -7,10 +7,15 @@ import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/langu
 import { awaitPrintPolicyBootstrap } from '@/lib/print-policy-bootstrap';
 import { defaultPrintLanguagePolicy, resolveKotLanguage } from '@print/policy';
 import { directionalText, isKotItemPending, type DirectionalText } from '@print/document';
-import { readDetailLines } from '@print/detail-lines';
+import { orderItemDetailLines } from '@/lib/pizza/detail-lines';
 import { kotContactLines } from '@print/kot-contact';
 import { containsRtlScript } from '@print/direction';
-import { normalizePrinterTextSize, type PrinterTextSize } from '@print/text-size';
+import {
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+  type PrinterTextSize,
+} from '@print/text-size';
+import { columnsForReceiptPaperSize } from '@print/width';
 import type { TextDirection } from '@print/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
@@ -21,6 +26,8 @@ import { formatItemHeading } from './item-heading';
 export interface KotWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
   paperWidth?: 58 | 80;
+  /** Columns at normal text size, for wrapping a pizza's detail lines. Default: the paper's own. */
+  columns?: number;
   /** Per-printer text size ('normal' | 'large' | 'extra_large'). Default: 'normal'. */
   textSize?: PrinterTextSize;
   /** UI/receipt language (defaults to the client KOT language policy). */
@@ -220,7 +227,10 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
         base,
       ),
       quantity: Number(item.quantity) || 0,
-      detailLines: readDetailLines(item),
+      detailLines: orderItemDetailLines(
+        item,
+        layoutColumnsForTextSize(opts.columns ?? columnsForReceiptPaperSize(paperWidth), textSize),
+      ),
       addons: (Array.isArray(item.addons) ? item.addons : []).filter((addon) => addon?.name),
       specialInstructions: item.special_instructions
         ? directionalText(String(item.special_instructions), base)

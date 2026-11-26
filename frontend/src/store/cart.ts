@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
+import type { OrderLineRecipe } from '../../../shared/pizza/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 import { cartLineUnitPrice, normalizeOverridePrice } from '@/lib/cart-price';
+import { recipeForVariant } from '@/lib/pizza/line-recipe';
 import { onSessionBoundary } from './session-events';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
@@ -34,6 +36,7 @@ interface CartState {
     addons?: Addon[],
     specialInstructions?: string,
     variant?: ProductVariant | null,
+    recipe?: OrderLineRecipe | null,
   ) => void;
   updateItemDetails: (
     cartItemId: string,
@@ -127,9 +130,23 @@ export const useCartStore = create<CartState>((set, get) => ({
   resetCharges: () =>
     set({ waivedChargeIds: new Set<string>(), optedInChargeIds: new Set<string>() }),
 
-  addItem: (product, quantity = 1, addons = [], specialInstructions = '', variant = null) => {
+  addItem: (
+    product,
+    quantity = 1,
+    addons = [],
+    specialInstructions = '',
+    variant = null,
+    recipe,
+  ) => {
     const items = get().items;
-    const itemId = generateCartItemId(product.id, variant?.id ?? null, addons, specialInstructions);
+    const itemId = generateCartItemId(
+      product.id,
+      variant?.id ?? null,
+      addons,
+      specialInstructions,
+      null,
+      recipe,
+    );
     const existing = items.find((i) => i.id === itemId);
 
     if (existing) {
@@ -147,6 +164,7 @@ export const useCartStore = create<CartState>((set, get) => ({
             addons,
             special_instructions: specialInstructions,
             variant,
+            ...(recipe ? { recipe } : {}),
           },
         ],
       });
@@ -160,12 +178,14 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     // Omitting the variant keeps the one already chosen on the line.
     const nextVariant = variant === undefined ? (target.variant ?? null) : variant;
+    const recipe = recipeForVariant(target.recipe, target.product.id, nextVariant?.id);
     const newId = generateCartItemId(
       target.product.id,
       nextVariant?.id ?? null,
       addons,
       specialInstructions,
       target.price_override,
+      recipe,
     );
     if (newId === cartItemId) {
       set({
@@ -203,6 +223,7 @@ export const useCartStore = create<CartState>((set, get) => ({
                 addons,
                 special_instructions: specialInstructions,
                 variant: nextVariant,
+                ...(recipe ? { recipe } : {}),
               }
             : i,
         ),
@@ -227,6 +248,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       target.addons,
       target.special_instructions,
       nextOverride,
+      target.recipe,
     );
     const updated = { ...target, id: newId, price_override: nextOverride };
     const collision = items.find((i) => i.id === newId && i.id !== cartItemId);
@@ -252,6 +274,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         item.addons,
         item.special_instructions,
         null,
+        item.recipe,
       );
       const existing = merged.find((m) => m.id === cleanId);
       if (existing) {

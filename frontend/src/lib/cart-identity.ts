@@ -1,5 +1,8 @@
 import type { Addon, CartItem } from './types';
 import { normalizeOverridePrice } from './cart-price';
+import { recipeKey } from '../../../shared/pizza/recipe';
+import { lineRecipe } from './pizza/line-recipe';
+import type { OrderLineRecipe } from '../../../shared/pizza/types';
 
 /** Serializes cart identity into a typed, sorted canonical representation. */
 function canonicalize(value: unknown): string {
@@ -64,6 +67,7 @@ export function generateCartItemId(
   addons: Addon[],
   specialInstructions: string,
   priceOverride?: { price: number; reason: string } | null,
+  recipe?: OrderLineRecipe | null,
 ): string {
   const normalizedAddons = addons.map((addon) => ({
     ...addon,
@@ -77,7 +81,9 @@ export function generateCartItemId(
     return 0;
   });
 
-  return `cart-v3:${lineDigest(canonicalize({ productId, variantId, addons: sortedAddons, specialInstructions, ...(priceOverride ? { priceOverride: { price: normalizeOverridePrice(priceOverride.price), reason: priceOverride.reason } } : {}) }))}`;
+  const keyed = lineRecipe(recipe);
+
+  return `cart-v3:${lineDigest(canonicalize({ productId, variantId, addons: sortedAddons, specialInstructions, ...(priceOverride ? { priceOverride: { price: normalizeOverridePrice(priceOverride.price), reason: priceOverride.reason } } : {}), ...(keyed ? { recipe: recipeKey(keyed) } : {}) }))}`;
 }
 
 /** Normalize persisted/held cart lines to the current identity format. */
@@ -96,6 +102,7 @@ export function normalizeCartItems(items: CartItem[]): CartItem[] {
       item.addons || [],
       item.special_instructions || '',
       normalizedOverride,
+      item.recipe,
     );
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {

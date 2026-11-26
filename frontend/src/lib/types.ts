@@ -1,6 +1,7 @@
 import type { Language } from '@/lib/i18n';
 import type { CurrencyDisplay, DigitMode, CalendarMode } from '@/lib/countries';
 import type { PermissionId } from '../../../shared/permissions';
+import type { OrderLineRecipe } from '../../../shared/pizza/types';
 
 export interface User {
   id: number;
@@ -467,6 +468,8 @@ export interface CartItem {
   variant?: ProductVariant | null;
   /** Owner-set selling price for this line, sent to the server when the order is placed. */
   price_override?: { price: number; reason: string } | null;
+  /** How a pizza or deal is made; lines with different recipes never merge. */
+  recipe?: OrderLineRecipe | null;
 }
 
 export interface Counter {

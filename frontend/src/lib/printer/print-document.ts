@@ -29,7 +29,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@countries';
 import { resolveTaxComponents } from './tax-components';
 import { shouldShowCustomerNumber } from '@print/document';
-import { readDetailLines } from '@print/detail-lines';
+import { orderItemDetailLines } from '@/lib/pizza/detail-lines';
 import { kotContactLines } from '@print/kot-contact';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { formatItemHeading } from './item-heading';
@@ -161,7 +161,10 @@ function parsePaymentDetails(raw: Bill['payment_details']): PaymentSnapshot[] {
 }
 
 /** Normalize a Bill and nested Order into authoritative PrintData. */
-export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): PrintData {
+export function buildBillPrintData(
+  bill: Bill,
+  opts: BillBusinessOptions & { columns?: number } = {},
+): PrintData {
   const order = bill.order;
   const billCustomer = (
     bill as Bill & { customer?: { name?: unknown; phone?: unknown; country_code?: unknown } }
@@ -207,7 +210,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
           };
         }),
         specialInstructions: String(item?.special_instructions ?? ''),
-        detailLines: readDetailLines(item),
+        detailLines: orderItemDetailLines(item, opts.columns ?? 42),
       })),
     },
     bill: {
@@ -400,7 +403,7 @@ export function buildFrontendKotDocument(
             : {}),
         })),
         specialInstructions: String(item.special_instructions ?? ''),
-        detailLines: readDetailLines(item),
+        detailLines: orderItemDetailLines(item, opts.columns),
       })),
   };
   const printContext: PrintContext = {

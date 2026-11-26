@@ -25,7 +25,8 @@ import {
 } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
-import { detailLineRows, readDetailLines } from '@print/detail-lines';
+import { detailLineRows } from '@print/detail-lines';
+import { orderItemDetailLines } from '@/lib/pizza/detail-lines';
 import { kotContactLines } from '@print/kot-contact';
 import { layoutStyledUnit } from '@print/layout';
 import { formatItemHeading } from './item-heading';
@@ -363,7 +364,7 @@ export function buildKotBytes(
     }
     enc.bold(false);
 
-    for (const detail of readDetailLines(item)) {
+    for (const detail of orderItemDetailLines(item, cols)) {
       for (const row of detailLineRows(normalizeThermalText(detail, thermalCapabilities), cols)) {
         safePrinterText(
           enc,

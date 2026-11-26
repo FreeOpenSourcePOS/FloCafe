@@ -134,6 +134,10 @@ export interface AppendAttempt {
   specialInstructions?: string;
   orderNumber?: string;
   createdAt: number;
+  /** The amount the till quoted for these lines, replayed with the key. */
+  expectedSubtotal?: number;
+  /** The cart lines sent, given back to the cart when a replay is refused for its prices. */
+  lines?: unknown[];
 }
 
 export interface AppendAttemptStorage {
@@ -265,6 +269,8 @@ interface AppendAttemptOptions {
   orderNumber?: string;
   now?: number;
   maxAgeMs?: number;
+  expectedSubtotal?: number;
+  lines?: unknown[];
 }
 
 /** Matches request shape for POST /orders/:id/items;
@@ -794,6 +800,8 @@ export function getOrCreateAppendAttempt(
     specialInstructions: options.specialInstructions,
     orderNumber: options.orderNumber,
     createdAt: now,
+    expectedSubtotal: options.expectedSubtotal,
+    lines: options.lines,
   };
   storage.setItem(getAppendAttemptStorageKey(options.userId), JSON.stringify(attempt));
   return attempt;

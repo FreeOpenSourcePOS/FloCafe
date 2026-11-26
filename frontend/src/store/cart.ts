@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
 import type { OrderLineRecipe } from '../../../shared/pizza/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
-import { cartLineUnitPrice, normalizeOverridePrice } from '@/lib/cart-price';
+import { cartLinesTotal, normalizeOverridePrice } from '@/lib/cart-price';
 import { recipeForVariant } from '@/lib/pizza/line-recipe';
 import { onSessionBoundary } from './session-events';
 
@@ -85,7 +85,8 @@ interface CartState {
   toggleOptedInCharge: (chargeId: string) => void;
   resetCharges: () => void;
 
-  subtotal: () => number;
+  /** `online` is the pricing context: by default the cart's own, the order's when adding to one. */
+  subtotal: (online?: boolean) => number;
   itemCount: () => number;
 }
 
@@ -387,19 +388,12 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderNotes: (notes) => set({ orderNotes: notes }),
   setScheduledFor: (value) => set({ scheduledFor: value }),
 
-  subtotal: () => {
+  subtotal: (online) => {
     const state = get();
-    const onlinePlatformSelected =
-      state.orderType === 'online' && state.onlinePlatform.trim().length > 0;
-    return state.items.reduce((sum, item) => {
-      const itemPrice = cartLineUnitPrice(item, onlinePlatformSelected);
-      const itemQty = Number(item.quantity) || 1;
-      const addonTotal = (item.addons || []).reduce(
-        (a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1),
-        0,
-      );
-      return normalizeOverridePrice(sum + (itemPrice + addonTotal) * itemQty);
-    }, 0);
+    return cartLinesTotal(
+      state.items,
+      online ?? (state.orderType === 'online' && state.onlinePlatform.trim().length > 0),
+    );
   },
 
   itemCount: () => {

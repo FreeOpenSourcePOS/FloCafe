@@ -30,7 +30,13 @@ import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
 import { usePizzaPos } from '@/components/pos/pizza/usePizzaPos';
 import { usePriceGuard } from '@/components/pos/pizza/usePriceGuard';
-import { cartExpectedSubtotal } from '@/lib/pizza/price-guard';
+import { cartExpectedSubtotal, giveBackAppend, isPricesChanged } from '@/lib/pizza/price-guard';
+import {
+  appendBody,
+  quotedLines,
+  retryFingerprint,
+  sameRequestApartFromPrices,
+} from '@/lib/pizza/quoted-retry';
 import { printKotWithRefresh } from '@/lib/pizza/kot-refresh';
 import { menuListsCurrentSince } from '@/lib/pizza/catalog';
 import CustomerSearch from '@/components/pos/CustomerSearch';
@@ -139,6 +145,7 @@ interface PostpaidAttempt {
   idempotencyKey: string;
   operationId?: string;
   order?: Order;
+  expectedSubtotal?: number;
 }
 
 interface PrepaidAttempt {
@@ -152,6 +159,7 @@ interface PrepaidAttempt {
   orderIdempotencyKey: string;
   paymentIdempotencyKey: string;
   operationId?: string;
+  expectedSubtotal?: number;
 }
 
 interface PrepaidPaymentRequest {
@@ -1557,19 +1565,12 @@ export default function POSPage() {
     appendRecoveryStartedUsersRef.current.add(activeUserId);
     addItemsAttemptRef.current = pendingAttempt;
     api
-      .post(
-        `/orders/${pendingAttempt.orderId}/items`,
-        {
-          items: pendingAttempt.items,
-          special_instructions: pendingAttempt.specialInstructions,
+      .post(`/orders/${pendingAttempt.orderId}/items`, appendBody(pendingAttempt), {
+        headers: {
+          'Idempotency-Key': pendingAttempt.idempotencyKey,
+          ...operationHeaders(operationId),
         },
-        {
-          headers: {
-            'Idempotency-Key': pendingAttempt.idempotencyKey,
-            ...operationHeaders(operationId),
-          },
-        },
-      )
+      })
       .then(() => {
         const storage = getAppendAttemptStorage();
         const cleared = clearAppendAttempt(storage, pendingAttempt!);
@@ -1602,7 +1603,18 @@ export default function POSPage() {
         }
         refreshTables();
       })
-      .catch((error) => {
+      .catch(async (error) => {
+        if (isPricesChanged(error)) {
+          // Refused, so nothing was added: the lines go back to the cart for the cashier.
+          clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+          const order = await api.get(`/orders/${pendingAttempt!.orderId}`).then(
+            (response) => response.data.order as Order,
+            () => null,
+          );
+          if (order && giveBackAppend(pendingAttempt!, order)) setPendingOrder(order);
+          pricesChanged(error);
+          return;
+        }
         reportOrderRequestFailure(
           error,
           t('addItemsFailed'),
@@ -2153,7 +2165,7 @@ export default function POSPage() {
           storedAttempt &&
           storedAttempt.userId === activeUserId &&
           doesAttemptMatchStore(storedAttempt, currentStoreId, initialStoreIdRef.current) &&
-          fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
+          sameRequestApartFromPrices(storedAttempt.cartFingerprint, cartFingerprint) &&
           storedAttempt.orderIdempotencyKey &&
           storedAttempt.paymentIdempotencyKey
         ) {
@@ -2193,12 +2205,11 @@ export default function POSPage() {
         // Add new items to an existing order with a durable retry key.
         const newItems = cart.items.map(cartItemToOrderItem);
         const specialInstructions = cart.orderNotes || undefined;
-        const itemFingerprint = buildAppendItemsFingerprint(
-          pendingOrder.id,
-          newItems,
-          specialInstructions,
-        );
         const storage = getAppendAttemptStorage();
+        const itemFingerprint = retryFingerprint(
+          readAppendAttempt(storage, { userId: originUserId || '' })?.fingerprint,
+          buildAppendItemsFingerprint(pendingOrder.id, newItems, specialInstructions),
+        );
         const candidateOperationId = createOperationReference() || undefined;
         failureCorrelationId = candidateOperationId || null;
         let itemAttempt = getOrCreateAppendAttempt(storage, {
@@ -2210,6 +2221,8 @@ export default function POSPage() {
           specialInstructions,
           orderNumber: pendingOrder.order_number,
           operationId: candidateOperationId,
+          expectedSubtotal: cartExpectedSubtotal(cart, Boolean(pendingOrder.online_platform)),
+          lines: cart.items,
         });
         if (!itemAttempt.operationId) {
           const operationId = createOperationReference();
@@ -2232,11 +2245,7 @@ export default function POSPage() {
         failureStage = 'append_items';
         const { data } = await api.post(
           `/orders/${pendingOrder.id}/items`,
-          {
-            items: newItems,
-            special_instructions: specialInstructions,
-            expected_subtotal: cartExpectedSubtotal(cart, Boolean(pendingOrder.online_platform)),
-          },
+          appendBody(itemAttempt),
           {
             headers: {
               ...liveAuthHeadersFor(originContext),
@@ -2318,15 +2327,11 @@ export default function POSPage() {
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
-          expected_subtotal: cartExpectedSubtotal(cart),
         };
         const baseOrderFingerprint = JSON.stringify(orderPayload);
         const matchesPriorPostpaidOrderAttempt =
           priorPostpaidMatchesStore &&
-          fingerprintsMatchAcrossScheduleToggle(
-            priorOrderAttempt.fingerprint,
-            baseOrderFingerprint,
-          );
+          sameRequestApartFromPrices(priorOrderAttempt.fingerprint, baseOrderFingerprint);
         if (matchesPriorPostpaidOrderAttempt) {
           orderPayload.scheduled_for = resolveRetryScheduledFor({
             orderType: cart.orderType,
@@ -2341,7 +2346,7 @@ export default function POSPage() {
           : baseOrderFingerprint;
         if (
           priorPostpaidMatchesStore &&
-          fingerprintsMatchAcrossScheduleToggle(priorOrderAttempt.fingerprint, cartFingerprint)
+          sameRequestApartFromPrices(priorOrderAttempt.fingerprint, cartFingerprint)
         ) {
           const completedOrder = priorOrderAttempt.order;
           reportOrderFailure({
@@ -2395,6 +2400,7 @@ export default function POSPage() {
               fingerprint: orderFingerprint,
               idempotencyKey: newIdempotencyKey(),
               operationId: createOperationReference() || undefined,
+              expectedSubtotal: cartExpectedSubtotal(cart),
             };
         const operationId = orderAttempt.operationId || createOperationReference();
         postpaidOperationId = operationId || null;
@@ -2411,9 +2417,16 @@ export default function POSPage() {
             });
           throw new OrderAttemptStorageError();
         }
+        const postpaidBody = {
+          ...orderPayload,
+          ...quotedLines(
+            attemptWithOperationId.fingerprint,
+            attemptWithOperationId.expectedSubtotal,
+          ),
+        };
         const { data } = attemptWithOperationId.order
           ? { data: { order: attemptWithOperationId.order } }
-          : await api.post('/orders', orderPayload, {
+          : await api.post('/orders', postpaidBody, {
               headers: {
                 ...liveAuthHeadersFor(originContext),
                 'Idempotency-Key': attemptWithOperationId.idempotencyKey,
@@ -2619,7 +2632,7 @@ export default function POSPage() {
       const storedAttemptMatchesCart =
         storedAttempt?.userId === originUserId &&
         doesAttemptMatchStore(storedAttempt, originContext.storeId, initialStoreIdRef.current) &&
-        fingerprintsMatchAcrossScheduleToggle(storedAttempt.fingerprint, cartFingerprint);
+        sameRequestApartFromPrices(storedAttempt.fingerprint, cartFingerprint);
       if (storedAttemptMatchesCart && storedAttempt.order) {
         reportOrderFailure({
           code: 'order.retry_state.cleanup_failed',
@@ -2652,6 +2665,7 @@ export default function POSPage() {
             fingerprint: cartFingerprint,
             idempotencyKey: newIdempotencyKey(),
             operationId: attemptOperationId,
+            expectedSubtotal: cartExpectedSubtotal(cart),
           };
       const preservedScheduledFor = storedAttemptMatchesCart
         ? parseStoredAttemptScheduledFor(storedAttempt.fingerprint)
@@ -2678,11 +2692,14 @@ export default function POSPage() {
         waived_charge_ids: Array.from(cart.waivedChargeIds),
         opted_in_charge_ids: Array.from(cart.optedInChargeIds),
         items: orderItems,
-        expected_subtotal: cartExpectedSubtotal(cart),
       };
       attemptedScheduledFor = orderPayload.scheduled_for;
 
-      const { data } = await api.post('/orders', orderPayload, {
+      const body = {
+        ...orderPayload,
+        ...quotedLines(attempt.fingerprint, attempt.expectedSubtotal),
+      };
+      const { data } = await api.post('/orders', body, {
         headers: {
           ...liveAuthHeadersFor(originContext),
           'Idempotency-Key': attempt.idempotencyKey,
@@ -2911,7 +2928,7 @@ export default function POSPage() {
       storedAttempt &&
       storedAttempt.userId === originUserId &&
       doesAttemptMatchStore(storedAttempt, currentStoreId, initialStoreIdRef.current) &&
-      fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
+      sameRequestApartFromPrices(storedAttempt.cartFingerprint, cartFingerprint) &&
       storedAttempt.orderIdempotencyKey &&
       storedAttempt.paymentIdempotencyKey
         ? storedAttempt
@@ -3028,6 +3045,7 @@ export default function POSPage() {
           orderIdempotencyKey: newIdempotencyKey(),
           paymentIdempotencyKey: newIdempotencyKey(),
           operationId: createOperationReference() || undefined,
+          expectedSubtotal: cartExpectedSubtotal(cart),
         };
     const operationId = attempt.operationId || createOperationReference();
     if (operationId && attempt.operationId !== operationId) attempt = { ...attempt, operationId };
@@ -3094,8 +3112,7 @@ export default function POSPage() {
             scheduled_for: resolvedPrepaidScheduledFor,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-            items: orderItems,
-            expected_subtotal: cartExpectedSubtotal(cart),
+            ...quotedLines(attempt.cartFingerprint, attempt.expectedSubtotal),
           },
           {
             headers: {
@@ -3690,8 +3707,11 @@ export default function POSPage() {
       const cartFingerprint = buildCurrentCartFingerprint();
       const items = cart.items.map(cartItemToOrderItem);
       const specialInstructions = order.special_instructions || undefined;
-      const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
       const storage = getAppendAttemptStorage();
+      const fingerprint = retryFingerprint(
+        readAppendAttempt(storage, { userId: originUserId || '' })?.fingerprint,
+        buildAppendItemsFingerprint(order.id, items, specialInstructions),
+      );
       const itemAttempt = getOrCreateAppendAttempt(storage, {
         userId: originUserId || '',
         orderId: order.id,
@@ -3701,25 +3721,19 @@ export default function POSPage() {
         specialInstructions,
         orderNumber: order.order_number,
         operationId: operationId || undefined,
+        expectedSubtotal: cartExpectedSubtotal(cart, Boolean(order.online_platform)),
+        lines: cart.items,
       });
       if (originUserId === activeUserId) {
         addItemsAttemptRef.current = itemAttempt;
       }
-      const { data } = await api.post(
-        `/orders/${order.id}/items`,
-        {
-          items,
-          special_instructions: specialInstructions,
-          expected_subtotal: cartExpectedSubtotal(cart, Boolean(order.online_platform)),
+      const { data } = await api.post(`/orders/${order.id}/items`, appendBody(itemAttempt), {
+        headers: {
+          ...liveAuthHeadersFor(originContext),
+          'Idempotency-Key': itemAttempt.idempotencyKey,
+          ...operationHeaders(itemAttempt.operationId),
         },
-        {
-          headers: {
-            ...liveAuthHeadersFor(originContext),
-            'Idempotency-Key': itemAttempt.idempotencyKey,
-            ...operationHeaders(itemAttempt.operationId),
-          },
-        },
-      );
+      });
       if (!isSessionCurrent()) {
         // Items append succeeded on server while session changed. Stop before mutating state.
         if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {

@@ -190,3 +190,184 @@ test('a price changed on another device: refused, told, re-priced, and placed ag
     await loadSampleMenu(page.request);
   }
 });
+
+/** Switches the shop to pay later for one test; answers what puts the settings back. */
+async function payLater(page: Page, tablesRequired: boolean): Promise<() => Promise<void>> {
+  const read = await page.request.get(`${BASE}/api/settings/business`, { headers: ownerHeaders });
+  expect(read.ok()).toBeTruthy();
+  const business = await read.json();
+  const put = (data: object) =>
+    page.request.put(`${BASE}/api/settings/business`, { headers: ownerHeaders, data });
+  const changed = await put({
+    ...business,
+    billing_type: 'postpaid',
+    tables_required: tablesRequired,
+  });
+  expect(changed.ok(), await changed.text()).toBeTruthy();
+  return async () => {
+    const restored = await put(business);
+    expect(restored.ok(), await restored.text()).toBeTruthy();
+  };
+}
+
+const cancelOrder = async (page: Page, id: number) => {
+  const cancelled = await page.request.patch(`${BASE}/api/orders/${id}/status`, {
+    headers: ownerHeaders,
+    data: { status: 'cancelled', reason: 'E2E price guard cleanup' },
+  });
+  expect(cancelled.ok(), await cancelled.text()).toBeTruthy();
+};
+
+const ordersSince = async (page: Page, id: number) => {
+  const read = await page.request.get(`${BASE}/api/orders`, { headers: ownerHeaders });
+  expect(read.ok()).toBeTruthy();
+  const { orders } = await read.json();
+  return orders.filter((order: { id: number }) => Number(order.id) > id);
+};
+
+test('an append lost on its way is refused after a price change and a reload; its lines come back', async ({
+  page,
+}) => {
+  const restoreSettings = await payLater(page, true);
+  const tableNumber = `PG-${Date.now()}`;
+  const table = await page.request.post(`${BASE}/api/tables`, {
+    headers: ownerHeaders,
+    data: { number: tableNumber },
+  });
+  expect(table.ok(), await table.text()).toBeTruthy();
+  const tableId = (await table.json()).table.id as string;
+  const created = await page.request.post(`${BASE}/api/orders`, {
+    headers: ownerHeaders,
+    data: {
+      table_id: tableId,
+      type: 'dine_in',
+      items: [{ product_id: 'pz-garden', variant_id: 'pz-garden-medium', quantity: 1 }],
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const order = (await created.json()).order;
+  try {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await loginWithPassword(page, 'owner@flo.local');
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pizza-category-blocks')).toBeVisible();
+    await page.getByRole('button', { name: /Select Table|Table: / }).click();
+    await page.getByRole('button').filter({ hasText: tableNumber }).click();
+    await page.getByRole('button', { name: 'Add Items', exact: true }).click();
+    await expect(page.getByTestId('cart-items-scroll').getByText('Already ordered')).toBeVisible();
+    await tile(page, 'Garden').getByRole('button', { name: /Large/ }).click();
+    await expect(cartLines(page)).toHaveCount(1);
+
+    // The add-items request never reaches the server.
+    const appendPath = `/api/orders/${order.id}/items`;
+    const dropped = page.waitForEvent(
+      'requestfailed',
+      (request) => request.method() === 'POST' && new URL(request.url()).pathname === appendPath,
+    );
+    await page.route(`**${appendPath}`, (route) =>
+      route.request().method() === 'POST' ? route.abort('connectionreset') : route.fallback(),
+    );
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    expect((await dropped).postDataJSON().expected_subtotal).toBe(LARGE);
+    await page.unroute(`**${appendPath}`);
+
+    const dearer = sampleMenu();
+    sizes(dearer).find((size) => size.id === 'large')!.price = DEARER;
+    await loadSampleMenu(page.request, dearer);
+
+    const replayed = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && new URL(response.url()).pathname === appendPath,
+    );
+    await page.reload();
+    const replay = await replayed;
+    expect(replay.status(), 'the replay is refused').toBe(409);
+    expect(replay.request().postDataJSON().expected_subtotal, 'with the quote first sent').toBe(
+      LARGE,
+    );
+    await expect(page.getByText(MESSAGE), 'the cashier is told').toBeVisible();
+    await expect(cartLines(page), 'the line is back in the cart').toHaveCount(1);
+    await expect(cartLines(page).nth(0)).toContainText('Garden');
+    await expect(cartLines(page).nth(0), 'at the new price').toContainText(money(DEARER));
+    await expect(
+      page.getByTestId('cart-items-scroll').getByText('Already ordered'),
+      'still adding to the order',
+    ).toBeVisible();
+    const read = await page.request.get(`${BASE}/api/orders/${order.id}`, {
+      headers: ownerHeaders,
+    });
+    const items = (await read.json()).order.items as unknown[];
+    expect(items, 'nothing was added to the order').toHaveLength(1);
+  } finally {
+    await loadSampleMenu(page.request);
+    await cancelOrder(page, order.id);
+    await page.request.patch(`${BASE}/api/tables/${tableId}/status`, {
+      headers: ownerHeaders,
+      data: { status: 'available' },
+    });
+    await page.request.post(`${BASE}/api/tables/${tableId}/deactivate`, {
+      headers: ownerHeaders,
+    });
+    await restoreSettings();
+  }
+});
+
+test('an order placed whose answer was lost is not placed twice after a price change', async ({
+  page,
+}) => {
+  const restoreSettings = await payLater(page, false);
+  const before = await newestOrderId(page);
+  try {
+    await openPos(page);
+    await buildCart(page);
+    // The order is written, but its answer never reaches the till.
+    await page.route('**/api/orders', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      await route.fetch();
+      return route.abort('connectionreset');
+    });
+    const lost = page.waitForRequest((request) => isOrderCreate(request.method(), request.url()));
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    const first = await lost;
+    await expect.poll(() => ordersSince(page, before)).toHaveLength(1);
+    await page.unroute('**/api/orders');
+
+    const dearer = sampleMenu();
+    sizes(dearer).find((size) => size.id === 'large')!.price = DEARER;
+    await loadSampleMenu(page.request, dearer);
+    await page.reload();
+    await expect(page.getByTestId('pizza-category-blocks')).toBeVisible();
+    await page.getByRole('button', { name: 'Takeaway' }).click();
+    await tile(page, 'Garden').getByRole('button', { name: /Large/ }).click();
+    await tile(page, 'Classic Pepperoni')
+      .getByRole('button', { name: /Medium/ })
+      .click();
+    await expect(page.getByTestId('cart-footer'), 'the cart shows the new price').toContainText(
+      money(DEARER + MEDIUM),
+    );
+
+    const again = page.waitForResponse((response) =>
+      isOrderCreate(response.request().method(), response.url()),
+    );
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    const retry = await again;
+    expect(retry.status(), await retry.text()).toBe(200);
+    expect(retry.request().headers()['idempotency-key'], 'under the first key').toBe(
+      first.headers()['idempotency-key'],
+    );
+    expect(retry.request().postDataJSON(), 'with the request first sent').toEqual(
+      first.postDataJSON(),
+    );
+    await expect(page.getByText(/Order #.+ placed!/)).toBeVisible();
+    const orders = await ordersSince(page, before);
+    expect(orders, 'exactly one order exists').toHaveLength(1);
+    expect(orders[0].subtotal, 'at the price the cart showed when it was placed').toBe(
+      LARGE + MEDIUM,
+    );
+  } finally {
+    await loadSampleMenu(page.request);
+    for (const order of await ordersSince(page, before)) await cancelOrder(page, order.id);
+    await restoreSettings();
+  }
+});

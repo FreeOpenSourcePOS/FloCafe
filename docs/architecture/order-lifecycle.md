@@ -80,12 +80,26 @@ Everything monetary is resolved server-side inside one transaction:
   (`cartExpectedSubtotal()` in
   [`frontend/src/lib/pizza/price-guard.ts`](../../frontend/src/lib/pizza/price-guard.ts)): unit
   price, or the owner's override, or the platform price of an online order, plus add-ons, times
-  quantity, each line rounded as `lineSubtotal()` rounds it. The cart holds no item discount. On
-  the refusal it shows the message, fetches the pizza menu, products, and categories again, and
-  prices the cart from the fresh products with every line kept; a line whose product, size, or
+  quantity, each line rounded as `lineSubtotal()` rounds it. The cart's subtotal and line amounts
+  are the same calculation (`cartLinesTotal()` in
+  [`frontend/src/lib/cart-price.ts`](../../frontend/src/lib/cart-price.ts)), so 1.5 kg at 1.13
+  shows and sends 1.70; while it adds to an order the cart shows that order's prices, its
+  platform's when it has one. The cart holds no item discount. The guard compares totals, not
+  lines, so price changes that cancel out pass it.
+- A retry of an order request sends the request its idempotency key was first sent with: the
+  stored attempt keeps the lines and the amount quoted
+  ([`frontend/src/lib/pizza/quoted-retry.ts`](../../frontend/src/lib/pizza/quoted-retry.ts)), and a
+  cart that differs from it only in add-on prices and the quote is the same order. So a create
+  whose answer was lost is answered from the order it placed, never placed again under a new key,
+  and a request that never arrived is refused for its old quote. A reload replays a stored
+  add-items request with its quote; when that is refused its lines go back to an empty cart, on
+  the order they were for.
+- On the refusal the POS shows the message, fetches the pizza menu, products, and categories again,
+  and prices the cart from the fresh products with every line kept; a line whose product, size, or
   add-on is no longer listed keeps its old price and is marked "Not on the menu". The cashier
-  places the order again. The cart's own total can show a weighed line a cent lower than the
-  field (1.5 kg at 1.13 shows 1.69 and is charged 1.70), because it multiplies in binary.
+  places the order again. A published pizza menu re-prices and marks the cart the same way when
+  its lists reach the page, and in a shop with a pizza menu a refusal of a product, size, or
+  add-on that is no longer on sale fetches the lists too.
 - An item discount and an order discount of the same percentage can differ by a cent in tax: an
   item discount taxes the discounted line, while an order discount prorates tax that was already
   rounded per line (1.52 against 1.53 on three at 10.70 with 5% off and 5% tax).

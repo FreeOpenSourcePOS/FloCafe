@@ -35,7 +35,7 @@ import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
-import { cartLineUnitPrice, cartVariantUnitPrice } from '@/lib/cart-price';
+import { cartLineUnitPrice, cartLinesTotal, cartVariantUnitPrice } from '@/lib/cart-price';
 import { tenantCan } from '@/lib/permissions';
 import { CartPriceOverrideModal } from '@/components/pos/CartPriceOverrideModal';
 import { OrderDetailsDrawer } from '@/components/pos/OrderDetailsDrawer';
@@ -49,6 +49,7 @@ import { PizzaLineActions, PizzaLineDetails } from './pizza/PizzaCartLine';
 import { SentPizzaLine } from './pizza/SentPizzaLine';
 import type { PizzaPos } from './pizza/usePizzaPos';
 import { OffSaleMark } from './pizza/usePriceGuard';
+import { cartPricedOnline } from '@/lib/pizza/price-guard';
 import { QuickButtonLineAction } from './pizza/useQuickButtons';
 
 interface Props {
@@ -240,6 +241,7 @@ export default function CartPanel({
   onCancelExistingOrderMode,
 }: Props) {
   const cart = useCartStore();
+  const onlineSelected = cartPricedOnline(cart, existingOrder);
   const heldOrders = useHeldOrdersStore();
   const { user, currentTenant } = useAuthStore();
   const canOverridePrice = tenantCan(currentTenant, 'orders.item.price_override');
@@ -443,7 +445,7 @@ export default function CartPanel({
   const appliedCharges = calculateAppliedCharges({
     definitions: applicableCharges,
     orderType: cart.orderType,
-    subtotal: cart.subtotal(),
+    subtotal: cart.subtotal(onlineSelected),
     discountAmount: 0,
     waivedIds: cart.waivedChargeIds,
     optedInIds: cart.optedInChargeIds,
@@ -943,15 +945,13 @@ export default function CartPanel({
         ) : (
           <div className="divide-y divide-border/60">
             {cart.items.map((item) => {
-              const onlineSelected =
-                cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0;
               const unitPrice = cartLineUnitPrice(item, onlineSelected);
               const addonUnitTotal = item.addons.reduce(
                 (sum, a) => sum + Number(a.price) * (a.quantity || 1),
                 0,
               );
               const effectiveUnitPrice = unitPrice + addonUnitTotal;
-              const lineTotal = effectiveUnitPrice * item.quantity;
+              const lineTotal = cartLinesTotal([item], onlineSelected);
               const hasSubtext = item.addons.length > 0 || Boolean(item.special_instructions);
               const pizzaLine = Boolean(pizza?.isPizzaLine(item));
               return (
@@ -1126,7 +1126,7 @@ export default function CartPanel({
           <span className="ms-auto flex flex-wrap items-baseline justify-end gap-1.5 min-w-0">
             <span className="text-xs font-semibold text-foreground">{t('subtotal')}</span>
             <span className="text-sm font-bold text-brand tabular-nums">
-              {fmt(cart.subtotal())}
+              {fmt(cart.subtotal(onlineSelected))}
             </span>
           </span>
         </div>
@@ -1350,9 +1350,7 @@ export default function CartPanel({
       {priceOverrideTarget && (
         <CartPriceOverrideModal
           item={priceOverrideTarget}
-          onlinePlatformSelected={
-            cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0
-          }
+          onlinePlatformSelected={onlineSelected}
           onApply={(override) => cart.setItemPriceOverride(priceOverrideTarget.id, override)}
           onClose={() => setPriceOverrideItemId(null)}
         />

@@ -39,9 +39,28 @@ const { newDeal, dealReducer, dealLine } = require('../frontend/src/lib/pizza/de
 const { chargedAddons } = require('../frontend/src/lib/pizza/toppings');
 const {
   cartExpectedSubtotal,
+  cartPricedOnline,
+  giveBackAppend,
   isPricesChanged,
+  isStaleSelectionRefusal,
   repricedCart,
+  usePriceGuardStore,
 } = require('../frontend/src/lib/pizza/price-guard');
+const { productsShown } = require('../frontend/src/lib/pizza/price-refresh');
+const {
+  appendBody,
+  quotedLines,
+  retryFingerprint,
+  sameRequestApartFromPrices,
+} = require('../frontend/src/lib/pizza/quoted-retry');
+const {
+  buildAppendItemsFingerprint,
+  createSafeAppendAttemptStorage,
+  getOrCreateAppendAttempt,
+  readAppendAttempt,
+} = require('../frontend/src/lib/append-attempt');
+const { buildCartFingerprintFromState } = require('../frontend/src/lib/order-attempt');
+const { randomUUID } = require('node:crypto');
 
 const MESSAGE = 'Prices have changed. Check the order and place it again.';
 const json = (value: unknown) => JSON.stringify(value);
@@ -348,16 +367,12 @@ async function main() {
       accepted(text, 400, 'text is refused with 400');
     },
 
-    'Case 6: the cart shows the weighed half cent a cent low; the field is the server’s figure':
+    'Case 6: the cart shows the weighed half cent as the server rounds it, and sends the same':
       async () => {
         cart().clearCart();
         cart().addItem(productOf('prod-cheese'), 1.5);
-        assertEqualOrThrow(cart().subtotal(), 1.69, 'the cart total works in binary: 1.69');
-        assertEqualOrThrow(
-          cartExpectedSubtotal(cart()),
-          1.7,
-          'the field is 1.695 rounded up: 1.70',
-        );
+        assertEqualOrThrow(cart().subtotal(), 1.7, 'the cart shows 1.695 rounded up: 1.70');
+        assertEqualOrThrow(cartExpectedSubtotal(cart()), 1.7, 'and sends 1.70');
       },
 
     'Case 7: a line whose request carries an item discount is priced without it': async () => {
@@ -374,6 +389,7 @@ async function main() {
     cases[`Shape: ${shape.name}, created`] = async () => {
       buildShape(shape);
       assertEqualOrThrow(cartExpectedSubtotal(cart()), shape.subtotal, 'the cart figure');
+      assertEqualOrThrow(cart().subtotal(), shape.subtotal, 'is the amount the cart shows');
       const response = await post('/api/orders', createBody());
       accepted(response, 201, 'the order is accepted');
       assertEqualOrThrow(response.data.order.subtotal, shape.subtotal, 'the server agrees');
@@ -387,6 +403,11 @@ async function main() {
       const path = `/api/orders/${order.id}/items`;
       const expected = cartExpectedSubtotal(cart(), Boolean(order.online_platform));
       assertEqualOrThrow(expected, shape.subtotal, 'the cart figure');
+      assertEqualOrThrow(
+        cart().subtotal(cartPricedOnline(cart(), order)),
+        shape.subtotal,
+        'is the amount the cart shows while adding to the order',
+      );
       await refused('a cent off', () => post(path, addBody(cent(shape.subtotal, 1))));
       const response = await post(path, addBody(expected));
       accepted(response, 200, 'the items are added');
@@ -522,6 +543,315 @@ async function main() {
         at = applied;
         await reloadPizzaMenuAndLists();
         assertEqualOrThrow(applied, at, 'with no screen showing lists there is nothing to apply');
+      },
+  });
+
+  const keyedPost = (path: string, body: object, key: string) =>
+    api(baseUrl, path, {
+      method: 'POST',
+      headers: { ...headers, 'Idempotency-Key': key },
+      body,
+    });
+  /** Another device loads the sample with dearer toppings; the till re-prices from the new lists. */
+  const dearerToppings = async () => {
+    const dearer = structuredClone(sample);
+    dearer.toppings.price = 3;
+    accepted(await post('/api/pizza/menu/import', dearer), 200, 'another device loads a menu');
+    await readPos();
+    useCartStore.setState({
+      items: repricedCart(cart().items, products).items,
+    });
+  };
+  const sampleAgain = async () => {
+    accepted(await post('/api/pizza/menu/import', sample), 200, 'the sample loads again');
+    await readPos();
+  };
+  const memoryStorage = () => {
+    const map = new Map<string, string>();
+    return createSafeAppendAttemptStorage({
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => void map.set(key, value),
+      removeItem: (key: string) => void map.delete(key),
+    });
+  };
+  const until = async (done: () => boolean, label: string) => {
+    for (let waited = 0; !done(); waited += 20) {
+      assertOrThrow(waited < 5000, `${label} within five seconds`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  /** A postpaid create request for the cart, as the POS fingerprints it: without the quote. */
+  const postpaidPayload = () => ({
+    table_id: null,
+    customer_id: null,
+    type: 'takeaway',
+    items: cart().items.map(cartItemToOrderItem),
+  });
+  /** The postpaid request the POS sends under a stored attempt: its lines and quote at the end. */
+  const replay = (fingerprint: string, quote: number | undefined) => ({
+    ...postpaidPayload(),
+    ...quotedLines(fingerprint, quote),
+  });
+  const pizzaAndTea = () => {
+    cart().clearCart();
+    addFromSheet(newSheet({ pizzaId: 'garden', sizeId: 'large' }), bacon);
+    cart().addItem(productOf('prod-tea'), 2);
+  };
+
+  Object.assign(cases, {
+    'G1: an append attempt keeps the quote and the cart lines it was sent with': async () => {
+      pizzaAndTea();
+      const storage = memoryStorage();
+      const items = cart().items.map(cartItemToOrderItem);
+      getOrCreateAppendAttempt(storage, {
+        userId: 'cashier',
+        orderId: 7,
+        fingerprint: buildAppendItemsFingerprint(7, items),
+        createKey: randomUUID,
+        items,
+        expectedSubtotal: cartExpectedSubtotal(cart()),
+        lines: cart().items,
+      });
+      const stored = readAppendAttempt(storage, { userId: 'cashier' });
+      assertEqualOrThrow(stored.expectedSubtotal, 32.25, 'the stored attempt holds the quote');
+      same(stored.lines, cart().items, 'and the lines as the cart held them');
+      same(
+        appendBody(stored),
+        { items, expected_subtotal: 32.25 },
+        'a replay sends the stored lines with the stored quote',
+      );
+    },
+
+    'G1: an append replayed after a reload is refused at new prices and its lines come back':
+      async () => {
+        const order = await openOrder();
+        pizzaAndTea();
+        const storage = memoryStorage();
+        const items = cart().items.map(cartItemToOrderItem);
+        getOrCreateAppendAttempt(storage, {
+          userId: 'cashier',
+          orderId: order.id,
+          fingerprint: buildAppendItemsFingerprint(order.id, items),
+          createKey: randomUUID,
+          items,
+          expectedSubtotal: cartExpectedSubtotal(cart()),
+          lines: cart().items,
+          orderNumber: order.order_number,
+        });
+        // The request never reached the server; the till reloads with an empty cart.
+        const stored = readAppendAttempt(storage, { userId: 'cashier' });
+        const lines = cart().items;
+        cart().clearCart();
+        try {
+          await dearerToppings();
+          await refused('the replayed append', () =>
+            keyedPost(`/api/orders/${order.id}/items`, appendBody(stored), stored.idempotencyKey),
+          );
+          assertOrThrow(giveBackAppend(stored, order), 'the lines go back to the empty cart');
+          same(cart().items, lines, 'every line, in its place');
+          same(
+            [cart().orderType, cart().tableId],
+            [order.type, order.table_id],
+            'set up for the order they were for',
+          );
+          assertOrThrow(!giveBackAppend(stored, order), 'never over lines already in the cart');
+        } finally {
+          await sampleAgain();
+        }
+      },
+
+    'G2: what makes two requests different orders leaves out the quote and add-on prices':
+      async () => {
+        pizzaAndTea();
+        const sentCart = buildCartFingerprintFromState(cart());
+        const sentPostpaid = JSON.stringify(postpaidPayload());
+        const legacyPostpaid = JSON.stringify({
+          ...postpaidPayload(),
+          expected_subtotal: 32.25,
+        });
+        const sentAppend = buildAppendItemsFingerprint(7, postpaidPayload().items);
+        await dearerToppings();
+        try {
+          const nowCart = buildCartFingerprintFromState(cart());
+          const nowPostpaid = JSON.stringify(postpaidPayload());
+          assertOrThrow(
+            nowPostpaid !== sentPostpaid,
+            'the re-priced request sends another add-on price',
+          );
+          assertOrThrow(
+            sameRequestApartFromPrices(sentPostpaid, nowPostpaid),
+            'postpaid: same order',
+          );
+          assertOrThrow(
+            sameRequestApartFromPrices(sentCart, nowCart),
+            'prepaid and send to payment',
+          );
+          assertOrThrow(sameRequestApartFromPrices(legacyPostpaid, nowPostpaid), 'a stored quote');
+          const nowAppend = buildAppendItemsFingerprint(7, postpaidPayload().items);
+          assertEqualOrThrow(
+            retryFingerprint(sentAppend, nowAppend),
+            sentAppend,
+            'append: the stored one',
+          );
+          cart().updateQuantity(cart().items[1].id, 3);
+          const more = JSON.stringify(postpaidPayload());
+          assertOrThrow(
+            !sameRequestApartFromPrices(sentPostpaid, more),
+            'another quantity is another order',
+          );
+          assertEqualOrThrow(
+            retryFingerprint(sentAppend, buildAppendItemsFingerprint(7, postpaidPayload().items)),
+            buildAppendItemsFingerprint(7, postpaidPayload().items),
+            'and another append',
+          );
+          cart().setItemPriceOverride(cart().items[1].id, {
+            price: 1,
+            reason: 'Owner price',
+          });
+          const overridden = JSON.stringify(postpaidPayload());
+          assertOrThrow(!sameRequestApartFromPrices(more, overridden), 'so is an owner price');
+          assertOrThrow(
+            !sameRequestApartFromPrices(undefined, more),
+            'no stored attempt, no match',
+          );
+        } finally {
+          await sampleAgain();
+        }
+      },
+
+    'G2: the replayed body is the body first sent under the key': async () => {
+      pizzaAndTea();
+      const first = postpaidPayload();
+      const sent = { ...first, expected_subtotal: 32.25 };
+      await dearerToppings();
+      try {
+        same(replay(JSON.stringify(first), 32.25), sent, 'stored lines and quote');
+        same(replay(JSON.stringify(sent), undefined), sent, 'a quote inside the fingerprint');
+        same(replay(JSON.stringify(first), undefined), first, 'no quote then, none now');
+        const cartFingerprint = buildCartFingerprintFromState(cart());
+        same(
+          quotedLines(cartFingerprint, 34.5),
+          { items: JSON.parse(cartFingerprint).items, expected_subtotal: 34.5 },
+          'the lines of a cart fingerprint',
+        );
+      } finally {
+        await sampleAgain();
+      }
+    },
+
+    'G2: a create whose answer was lost is answered with that order after a re-price': async () => {
+      pizzaAndTea();
+      const fingerprint = JSON.stringify(postpaidPayload());
+      const quote = cartExpectedSubtotal(cart());
+      const key = randomUUID();
+      const first = await keyedPost('/api/orders', replay(fingerprint, quote), key);
+      accepted(first, 201, 'the order is placed; its answer is lost');
+      try {
+        await dearerToppings();
+        const now = JSON.stringify(postpaidPayload());
+        assertOrThrow(sameRequestApartFromPrices(fingerprint, now), 'the till sees the same order');
+        const orders = count('orders');
+        const retried = await keyedPost('/api/orders', replay(fingerprint, quote), key);
+        accepted(retried, 200, 'the retry is answered from the order placed');
+        assertEqualOrThrow(retried.data.order.id, first.data.order.id, 'the same order');
+        assertEqualOrThrow(count('orders'), orders, 'and no second one');
+      } finally {
+        await sampleAgain();
+      }
+    },
+
+    'G2: a create that never arrived is refused for its quote, then placed at the new prices':
+      async () => {
+        pizzaAndTea();
+        const fingerprint = JSON.stringify(postpaidPayload());
+        const quote = cartExpectedSubtotal(cart());
+        const key = randomUUID();
+        try {
+          await dearerToppings();
+          await refused('the retry', () =>
+            keyedPost('/api/orders', replay(fingerprint, quote), key),
+          );
+          const fresh = {
+            ...postpaidPayload(),
+            expected_subtotal: cartExpectedSubtotal(cart()),
+          };
+          const placed = await keyedPost('/api/orders', fresh, randomUUID());
+          accepted(placed, 201, 'placed again under a new key');
+          assertEqualOrThrow(placed.data.order.subtotal, 33, 'at the new price: 23 + 3 + 7');
+        } finally {
+          await sampleAgain();
+        }
+      },
+
+    'G3: adding to an online order shows that order’s platform prices': async () => {
+      const order = await openOrder({
+        type: 'online',
+        online_platform: 'Sample Eats',
+      });
+      cart().clearCart();
+      addFromSheet(newSheet({ pizzaId: 'garden', sizeId: 'large' }));
+      assertOrThrow(!cartPricedOnline(cart(), null), 'a counter cart shows standard prices');
+      assertEqualOrThrow(cart().subtotal(), 23, 'the large Garden at 23.00');
+      const online = cartPricedOnline(cart(), order);
+      assertOrThrow(online, 'adding to the online order prices it for its platform');
+      assertEqualOrThrow(cart().subtotal(online), 26.4, 'the cart shows 26.40');
+      const response = await post(`/api/orders/${order.id}/items`, addBody(undefined, online));
+      accepted(response, 200, 'and the server adds 26.40');
+    },
+
+    'G4: published lists re-price and mark the cart at once; a stale line is a refresh cue':
+      async () => {
+        pizzaAndTea();
+        productsShown(products);
+        const settled = cart().items;
+        productsShown(structuredClone(products));
+        assertOrThrow(cart().items === settled, 'lists that came with no menu change nothing');
+
+        const stale = cart().items;
+        const noToppings = structuredClone(sample);
+        delete noToppings.toppings;
+        setPizzaMenuCompanion(async () => {
+          const list = (await frontend.api.get('/products?active=1')).data.products;
+          return () => productsShown(list);
+        });
+        try {
+          accepted(
+            await post('/api/pizza/menu/import', noToppings),
+            200,
+            'a menu without toppings',
+          );
+          let refusal: any;
+          await frontend.api.post('/orders', createBody()).catch((error: unknown) => {
+            refusal = error;
+          });
+          assertOrThrow(
+            isStaleSelectionRefusal(refusal),
+            `the server refuses the stale topping (${json(refusal?.response?.data?.error)})`,
+          );
+          assertOrThrow(!isPricesChanged(refusal), 'before it compares the prices');
+          assertOrThrow(
+            isStaleSelectionRefusal({
+              response: {
+                status: 400,
+                data: { error: 'Garden is not on the menu. Pick another item' },
+              },
+            }),
+            'and so is a product taken off the menu',
+          );
+          await reloadPizzaCatalog();
+          await until(() => usePriceGuardStore.getState().offSale.length > 0, 'the cart is marked');
+          same(usePriceGuardStore.getState().offSale, [stale[0].id], 'the pizza with a topping');
+          assertEqualOrThrow(cart().items.length, 2, 'every line is kept');
+        } finally {
+          setPizzaMenuCompanion(null);
+          await sampleAgain();
+        }
+        const order = await openOrder();
+        let other: any;
+        await frontend.api
+          .post(`/orders/${order.id}/items`, { items: [] })
+          .catch((error: unknown) => (other = error));
+        assertOrThrow(!isStaleSelectionRefusal(other), 'another refusal is not a stale line');
       },
   });
 

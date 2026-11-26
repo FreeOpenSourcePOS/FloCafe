@@ -239,6 +239,25 @@ export function draftLinesTotal(
   );
 }
 
+/** What the cart shows, and the price guard sends, for these lines: `draftLinesTotal` of each. */
+export function cartLinesTotal(
+  items: ReadonlyArray<
+    Parameters<typeof cartLineUnitPrice>[0] & {
+      quantity: number;
+      addons?: ReadonlyArray<{ price?: number | string | null; quantity?: number | null }>;
+    }
+  >,
+  onlinePlatformSelected: boolean,
+): number {
+  return draftLinesTotal(
+    items.map((item) => ({
+      unitPrice: cartLineUnitPrice(item, onlinePlatformSelected),
+      quantity: Number(item.quantity) || 1,
+      addons: item.addons,
+    })),
+  );
+}
+
 export function clampCartPriceOverride(
   rawPrice: unknown,
   baseUnitPrice?: unknown,

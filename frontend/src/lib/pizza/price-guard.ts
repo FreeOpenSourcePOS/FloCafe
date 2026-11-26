@@ -6,29 +6,29 @@
  */
 import { create } from 'zustand';
 import { normalizeCartItems } from '@/lib/cart-identity';
-import { cartLineUnitPrice, draftLinesTotal } from '@/lib/cart-price';
-import type { CartItem, Product } from '@/lib/types';
+import { cartLinesTotal } from '@/lib/cart-price';
+import type { CartItem, Order, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 
+type PricedCart = { items: CartItem[]; orderType: string; onlinePlatform: string };
+
 /**
- * What the cart shows for its lines before tax, order discounts and charges:
- * unit price (the owner's override, or the platform price of an online order)
- * plus add-ons, times quantity, each line rounded as the server rounds it.
- * `online` is whether the order is priced for a platform; the cart's own answer
- * by default, the order's when lines are added to one.
+ * Whether the cart's lines are priced for a platform: by the order they are being added to, or
+ * by the cart's own order type and platform.
  */
-export function cartExpectedSubtotal(
-  cart: { items: CartItem[]; orderType: string; onlinePlatform: string },
-  online?: boolean,
-): number {
-  const platform = online ?? (cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0);
-  return draftLinesTotal(
-    cart.items.map((item) => ({
-      unitPrice: cartLineUnitPrice(item, platform),
-      quantity: Number(item.quantity) || 1,
-      addons: item.addons,
-    })),
-  );
+export function cartPricedOnline(cart: PricedCart, order?: Order | null): boolean {
+  return order
+    ? Boolean(order.online_platform)
+    : cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0;
+}
+
+/**
+ * What the cart shows for its lines before tax, order discounts and charges, the same figure
+ * `subtotal()` shows: unit price (the owner's override, or the platform price of an online
+ * order) plus add-ons, times quantity, each line rounded as the server rounds it.
+ */
+export function cartExpectedSubtotal(cart: PricedCart, online = cartPricedOnline(cart)): number {
+  return cartLinesTotal(cart.items, online);
 }
 
 /** True for the server's refusal of an order whose prices are not the ones the till showed. */
@@ -36,6 +36,21 @@ export function isPricesChanged(error: unknown): boolean {
   const response = (error as { response?: { status?: number; data?: { code?: unknown } } })
     ?.response;
   return response?.status === 409 && response.data?.code === 'PRICES_CHANGED';
+}
+
+const STALE_SELECTION =
+  /is not on the menu|is not available|was not found|^Product \S+ not found$|is not an option for/;
+
+/** True for the server's refusal of a product, size or add-on that is no longer on sale. */
+export function isStaleSelectionRefusal(error: unknown): boolean {
+  const response = (error as { response?: { status?: number; data?: { error?: unknown } } })
+    ?.response;
+  const said = response?.data?.error;
+  return (
+    (response?.status === 400 || response?.status === 404) &&
+    typeof said === 'string' &&
+    STALE_SELECTION.test(said)
+  );
 }
 
 /**
@@ -70,6 +85,28 @@ export function repricedCart(
 
 /** The cart lines the last refusal found off sale, until they leave the cart. */
 export const usePriceGuardStore = create<{ offSale: string[] }>(() => ({ offSale: [] }));
+
+/**
+ * Puts the lines of an append refused for its prices back in an empty cart, set up for the order
+ * they were for; the lists the refusal fetches price them. False when there is nothing to put
+ * back or the cart already holds lines.
+ */
+export function giveBackAppend(
+  attempt: { lines?: unknown[]; specialInstructions?: string },
+  order: Order,
+): boolean {
+  const cart = useCartStore.getState();
+  if (!attempt.lines?.length || cart.items.length > 0) return false;
+  cart.setOrderType(order.type);
+  cart.loadItems(
+    attempt.lines as CartItem[],
+    order.table_id,
+    cart.customerId,
+    order.guest_count || 1,
+    attempt.specialInstructions,
+  );
+  return true;
+}
 
 useCartStore.subscribe((cart) => {
   const { offSale } = usePriceGuardStore.getState();

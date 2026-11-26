@@ -8,7 +8,12 @@ import {
   withWindowsQueueBypass,
   PRE_SPOOL_REFUSALS,
 } from '../main/printers/windows-queue-bypass';
-import { printViaNetwork, WINSPOOL_HELPER_SOURCE } from '../main/printers/thermal';
+import {
+  printViaNetwork,
+  mapWindowsPrinterStatus,
+  DETECT_WINDOWS_PRINTERS_SCRIPT,
+  WINSPOOL_HELPER_SOURCE,
+} from '../main/printers/thermal';
 import { assertEqualOrThrow, assertOrThrow } from './helpers/test-setup';
 import { start, type FakeEscposPrinter } from './helpers/fake-escpos-printer';
 
@@ -198,6 +203,7 @@ async function main(): Promise<void> {
   }
 
   blockingStateOrder();
+  queueStatusMapping();
   console.log('windows queue bypass tests passed');
 }
 
@@ -230,6 +236,48 @@ function blockingStateOrder(): void {
     );
     assertOrThrow(!refusable(state(status, attributes)), `status ${status} never uses the bypass`);
   }
+
+  assertEqualOrThrow(state(0x2), null, 'the generic error flag alone does not block');
+  for (const [status, attributes, text] of [
+    [0x12, 0, 'printer is out of paper'],
+    [0xa, 0, 'printer has a paper jam'],
+    [0x400002, 0, 'printer cover is open'],
+    [0x2, 0x400, "printer is set to 'Use Printer Offline' in Windows"],
+    [0x82, 0, 'printer is offline'],
+    [0x1002, 0, 'printer is not available'],
+    [0x100002, 0, 'printer needs attention'],
+  ] as const) {
+    assertEqualOrThrow(state(status, attributes), text, `status ${status} still blocks`);
+  }
+}
+
+function queueStatusMapping(): void {
+  for (const [PrinterStatus, expected] of [
+    [1, 'idle'],
+    [2, 'idle'],
+    [3, 'idle'],
+    [4, 'printing'],
+    [5, 'idle'],
+    [6, 'offline'],
+    [7, 'offline'],
+  ] as const) {
+    assertEqualOrThrow(
+      mapWindowsPrinterStatus({ PrinterStatus, WorkOffline: false }),
+      expected,
+      `PrinterStatus ${PrinterStatus} maps to ${expected}`,
+    );
+    assertEqualOrThrow(
+      mapWindowsPrinterStatus({ PrinterStatus, WorkOffline: true }),
+      'offline',
+      `PrinterStatus ${PrinterStatus} with WorkOffline is offline`,
+    );
+  }
+  assertOrThrow(
+    /-Property [\w,]*\bWorkOffline\b[\s\S]*Select-Object [\w,]*\bWorkOffline\b/.test(
+      DETECT_WINDOWS_PRINTERS_SCRIPT,
+    ),
+    'the detection script queries and returns WorkOffline',
+  );
 }
 
 main().catch((error) => {

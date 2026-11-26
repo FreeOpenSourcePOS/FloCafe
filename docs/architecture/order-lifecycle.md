@@ -106,7 +106,8 @@ incoming line of `POST /api/orders`, `POST /api/orders/:id/items`, and
   require one.
 - `validateRecipe()` in [`shared/pizza/recipe.ts`](../../shared/pizza/recipe.ts) checks the recipe
   against the catalogue stored in `pizza_menu` and returns the form that is stored: removed
-  ingredients sorted with repeats dropped, pop counts sorted with zero counts dropped.
+  ingredients sorted with repeats dropped, pop counts sorted with zero counts dropped. A recipe
+  of more than 20,000 bytes of JSON in UTF-8 is refused.
 - The recipe has to agree with the line. The variant id is the product id, a hyphen, and the
   recipe's `sizeId`. `whole` names the pizza product's own menu id and never appears on the
   half-and-half product; `halves` appears only there. `dealId` is the deal product's menu id.
@@ -147,7 +148,8 @@ Later changes to the line keep the recipe:
 - The adjustment rows a void and an item refund write copy the line's `modifier_selection`.
 
 Restricted kitchen display payloads carry a line's recipe: `projectKdsItem()` in `main/db.ts`
-projects `modifier_selection` when it holds a pizza or deal recipe and as `null` otherwise. Every
+projects only the recipe fields of `modifier_selection` when it holds a well-formed pizza or deal
+recipe, dropping anything else stored with them, and projects `null` otherwise. Every
 kitchen display item that holds a recipe, restricted or not, also carries `recipe_lines`: the
 kitchen ticket's lines for it, which the display shows under the item name. See
 [Item detail lines](printing.md#item-detail-lines).

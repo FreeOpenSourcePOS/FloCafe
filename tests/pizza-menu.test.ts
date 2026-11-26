@@ -728,6 +728,161 @@ runCases('Pizza menu', {
     assertEqualOrThrow(catalog.pizzas[199].ingredients.length, 4, 'with its ingredients');
   },
 
+  'Case 16: two entries that would derive the same catalogue id are rejected, naming both': () => {
+    const sideWith = (id: string, modifierId: string, optionId: string) => ({
+      id,
+      name: 'Side',
+      price: 1,
+      modifiers: [
+        {
+          id: modifierId,
+          label: 'Kind',
+          required: true,
+          options: [{ id: optionId, label: 'One' }],
+        },
+      ],
+    });
+    const sized = { name: 'Pie', description: '', sizes: 'pizza' };
+    const clashes: Array<[kind: string, change: (menu: any) => void, id: string, names: string[]]> =
+      [
+        [
+          'pizza and size',
+          (menu) => {
+            menu.sizes.pizza.push(
+              { id: 'b-c', label: 'One', price: 1 },
+              { id: 'c', label: 'Two', price: 1 },
+            );
+            category(menu, 'pizzas').items.push({ ...sized, id: 'a' }, { ...sized, id: 'a-b' });
+          },
+          'pz-a-b-c',
+          ['pizza "a" in size "b-c"', 'pizza "a-b" in size "c"'],
+        ],
+        [
+          'a pizza and the half and half',
+          (menu) => {
+            menu.sizes.pizza.push(
+              { id: 'half-x', label: 'One', price: 1 },
+              { id: 'x', label: 'Two', price: 1 },
+            );
+            category(menu, 'pizzas').items.push({ ...sized, id: 'half-and' });
+          },
+          'pz-half-and-half-x',
+          ['pizza "half-and" in size "half-x"', 'the half and half in size "x"'],
+        ],
+        [
+          'drink and variant',
+          (menu) => {
+            category(menu, 'drinks').variants.push(
+              { id: 'b-c', label: 'One', price: 1 },
+              { id: 'c', label: 'Two', price: 1 },
+            );
+            category(menu, 'drinks').items.push(
+              { id: 'a', name: 'One' },
+              { id: 'a-b', name: 'Two' },
+            );
+          },
+          'dr-a-b-c',
+          ['drink "a" in variant "b-c"', 'drink "a-b" in variant "c"'],
+        ],
+        [
+          'side and modifier',
+          (menu) =>
+            category(menu, 'sides').items.push(
+              sideWith('a', 'b-c', 'x'),
+              sideWith('a-b', 'c', 'y'),
+            ),
+          'ag-a-b-c',
+          ['modifier "b-c" of side "a"', 'modifier "c" of side "a-b"'],
+        ],
+        [
+          'modifier and option',
+          (menu) =>
+            category(menu, 'sides').items.push(
+              sideWith('a', 'b', 'c-x'),
+              sideWith('a-b', 'c', 'x'),
+            ),
+          'ad-a-b-c-x',
+          ['option "c-x" of modifier "b" of side "a"', 'option "x" of modifier "c" of side "a-b"'],
+        ],
+        [
+          'a dip and a side option',
+          (menu) => {
+            category(menu, 'sides').items[3].modifiers[0].options.push({
+              id: 'm-o',
+              label: 'Extra',
+            });
+            category(menu, 'sides').items.push(sideWith('dips', 'm', 'o'));
+          },
+          'ad-dips-m-o',
+          ['dip "m-o"', 'option "o" of modifier "m" of side "dips"'],
+        ],
+      ];
+    for (const [kind, change, id, names] of clashes) {
+      const error = rejected(change, 'menu', kind);
+      assertOrThrow(error.message.includes(`"${id}"`), `${kind}: the message gives the id ${id}`);
+      for (const name of names)
+        assertOrThrow(error.message.includes(name), `${kind}: the message names ${name}`);
+    }
+  },
+
+  'Case 17: a deal holds at most 8 pizzas and 99 cans, so its recipe always fits an order': () => {
+    const picks = (menu: any) => category(menu, 'deals').items[2].picks;
+    const pizzas =
+      (...counts: number[]) =>
+      (menu: any) =>
+        picks(menu).splice(
+          0,
+          1,
+          ...counts.map((count, index) => ({
+            type: 'pizza',
+            size: index % 2 ? 'medium' : 'large',
+            count,
+          })),
+        );
+    const at = 'categories.deals.items[2].picks';
+    const tooMany = rejected(pizzas(500), at, 'a deal of 500 pizzas');
+    assertOrThrow(tooMany.message.includes('at most 8'), 'the message gives the pizza cap');
+    rejected(pizzas(9), at, 'a deal of 9 pizzas');
+    rejected(pizzas(4, 5), at, '9 pizzas over two picks');
+    const most = structuredClone(sample);
+    pizzas(4, 4)(most);
+    assertEqualOrThrow(
+      parseMenuFile(most).deals[2].picks.length,
+      3,
+      'a deal of 8 pizzas over two picks is accepted',
+    );
+
+    const cans = rejected(
+      (menu) => (category(menu, 'deals').items[3].picks[0].count = 100),
+      'categories.deals.items[3].picks[0].count',
+      '100 cans in a pop pick',
+    );
+    assertOrThrow(cans.message.includes('at most 99'), 'the message gives the can cap');
+    rejected(
+      (menu) => (picks(menu)[1].options[0].count = 100),
+      'categories.deals.items[2].picks[1].options[0].count',
+      '100 cans in the pop option of a choice',
+    );
+    const full = structuredClone(sample);
+    category(full, 'deals').items[3].picks[0].count = 99;
+    picks(full)[1].options[0].count = 99;
+    assertEqualOrThrow(parseMenuFile(full).deals[3].picks[0].count, 99, '99 cans are accepted');
+
+    // Half a character pair is written out as six bytes, which no size limit here allows for.
+    rejected(
+      (menu) => (category(menu, 'pizzas').items[0].description = 'Olives, \ud83c & cheese'),
+      'categories.pizzas.items[0].description',
+      'half a character pair in a description',
+    );
+    const emoji = structuredClone(sample);
+    category(emoji, 'pizzas').items[0].description = 'Olives, \ud83c\udf55 & cheese';
+    assertEqualOrThrow(
+      parseMenuFile(emoji).pizzas[0].ingredients[1],
+      '\ud83c\udf55',
+      'a whole character pair is kept',
+    );
+  },
+
   'Case 11: nothing under shared/pizza imports outside shared': () => {
     const pizzaDir = path.resolve(__dirname, '../shared/pizza');
     const sharedDir = path.resolve(__dirname, '../shared') + path.sep;

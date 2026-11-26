@@ -24,14 +24,18 @@ set -a
 # shellcheck disable=SC1090
 . "$env_file"
 set +a
+# The first backup is taken as soon as the database can be copied; health asks for one.
+backed_up=no
 for _ in $(seq 30); do
-  if node "$kit/health.cjs" > /dev/null 2>&1; then
+  if [ "$backed_up" = no ] && node "$kit/backup.cjs" > /dev/null 2>&1; then backed_up=yes; fi
+  if [ "$backed_up" = yes ] && node "$kit/health.cjs" > /dev/null 2>&1; then
     node "$kit/health.cjs"
     echo "Installed. Data: $FLO_DEV_USER_DATA. Settings: $env_file"
     exit 0
   fi
   sleep 2
 done
+[ "$backed_up" = yes ] || node "$kit/backup.cjs" || true
 node "$kit/health.cjs" || true
 echo "The POS did not become healthy within 60 seconds. See: journalctl --user -u pizza-pos.service" >&2
 exit 1

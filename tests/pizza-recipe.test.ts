@@ -530,4 +530,120 @@ runCases('Pizza recipe', {
     const message = refused(whole('<script>alert(1)</script>'), /not on the menu/, 'a hostile id');
     assertOrThrow(!message.includes('script'), 'the message does not repeat what was sent');
   },
+
+  'Case 13: the size limit counts bytes as stored, not characters': () => {
+    const unreadable = /could not be read/;
+    const bytes = (raw: unknown) => Buffer.byteLength(JSON.stringify(raw), 'utf8');
+    const padded = (filler: string) => ({ ...whole('garden'), note: filler });
+    const overhead = bytes(padded(''));
+
+    const wide = padded('\u3042'.repeat(8000));
+    assertOrThrow(JSON.stringify(wide).length < 20_000, 'under 20,000 characters');
+    assertOrThrow(bytes(wide) > 20_000, 'and over 20,000 bytes');
+    refused(wide, unreadable, 'a recipe of 24 KB in three-byte characters');
+
+    const room = 20_000 - overhead;
+    const atLimit = padded('\u00e9'.repeat(Math.floor(room / 2)) + 'x'.repeat(room % 2));
+    assertEqualOrThrow(bytes(atLimit), 20_000, 'a recipe of exactly 20,000 bytes');
+    assertEqualOrThrow(validateRecipe(catalog(), atLimit).kind, 'pizza', 'is accepted');
+    refused(padded(`${atLimit.note}x`), unreadable, 'one byte more');
+  },
+
+  'Case 14: the largest deal a menu can hold fits the size limit': () => {
+    const id = (stem: string) => stem.padEnd(40, 'x');
+    const letter = (index: number) => String.fromCharCode(0x4e00 + index);
+    // 60 ingredients in 240 characters, each starting with a letter that capitalises to three.
+    const description = (pizza: number) =>
+      Array.from(
+        { length: 60 },
+        (_, index) => `\u0390${letter(pizza * 100 + index)}${letter(index)}`,
+      ).join(',') + letter(0);
+    assertEqualOrThrow(description(0).length, 240, 'a description at its cap');
+    const largest = parseMenuFile({
+      tax: { GST: 0.05, PST: 0.07 },
+      sizes: { pizza: [{ id: id('size'), label: 'Size', price: 1 }] },
+      categories: [
+        {
+          id: 'pizzas',
+          items: [0, 1].map((pizza) => ({
+            id: id(`pizza${pizza}`),
+            name: 'Pizza',
+            description: description(pizza),
+            sizes: 'pizza',
+          })),
+        },
+        {
+          id: 'sides',
+          items: [
+            {
+              id: 'wings',
+              name: 'Wings',
+              price: 1,
+              modifiers: [
+                {
+                  id: 'flavour',
+                  label: 'Flavour',
+                  required: true,
+                  options: [{ id: id('flavour'), label: 'Flavour' }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'drinks',
+          variants: [{ id: 'can', label: 'Can', price: 1 }],
+          items: Array.from({ length: 50 }, (_, index) => ({
+            id: id(`drink${index}`),
+            name: 'Drink',
+          })),
+        },
+        {
+          id: 'deals',
+          items: [
+            {
+              id: id('deal'),
+              name: 'Deal',
+              price: 1,
+              description: '',
+              picks: [
+                { type: 'pizza', size: id('size'), count: 8 },
+                { type: 'pop', count: 99 },
+                { type: 'wing-flavour', count: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    assertEqualOrThrow(largest.pizzas[0].ingredients.length, 60, 'a pizza of 60 ingredients');
+    const half = (pizza: number) => ({
+      pizzaId: id(`pizza${pizza}`),
+      removed: largest.pizzas[pizza].ingredients,
+    });
+    // Every pizza a half and half with everything removed, every drink picked, five in double figures.
+    const recipe = {
+      kind: 'deal',
+      v: 1,
+      dealId: id('deal'),
+      pizzas: Array.from({ length: 8 }, () => ({
+        kind: 'pizza',
+        v: 1,
+        sizeId: id('size'),
+        halves: [half(0), half(1)],
+        cook: 'light-bake',
+        cut: 'square-cut',
+      })),
+      pops: Object.fromEntries(
+        Array.from({ length: 50 }, (_, index) => [
+          id(`drink${index}`),
+          index === 0 ? 14 : index < 5 ? 10 : 1,
+        ]),
+      ),
+      wingFlavour: id('flavour'),
+    };
+    const size = Buffer.byteLength(JSON.stringify(recipe), 'utf8');
+    assertOrThrow(size > 18_000 && size <= 20_000, `it comes to ${size} bytes, under the limit`);
+    assertEqualOrThrow(validateRecipe(largest, recipe).pizzas.length, 8, 'and is accepted');
+  },
 });

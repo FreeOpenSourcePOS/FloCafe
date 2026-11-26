@@ -29,6 +29,7 @@ const { getDatabase, resetDatabaseForCurrencyChange } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { pizzaRoutes } = require('../main/routes/pizza');
 const { importMenu } = require('../main/pizza/menu-import');
+const { validateItemNotes } = require('../main/routes/orders-validation');
 const { parseMenuFile } = require('../shared/pizza/menu');
 const { validateRecipe } = require('../shared/pizza/recipe');
 
@@ -436,6 +437,11 @@ async function main() {
         'A note can have at most 140 characters',
       );
       await refused(
+        'a note of 101 characters, one more than an order line takes',
+        pizzaButton('garden', 'large', { note: 'x'.repeat(101) }),
+        'Item notes exceed maximum length of 100 characters',
+      );
+      await refused(
         'an unknown customer',
         pizzaButton('garden', 'large', { customer_id: 'cust-nowhere' }),
         'That customer was not found. Search for the customer again',
@@ -476,10 +482,10 @@ async function main() {
       );
 
       const longest = await save(
-        pizzaButton('garden', 'large', { label: ` ${'x'.repeat(24)} `, note: 'n'.repeat(140) }),
+        pizzaButton('garden', 'large', { label: ` ${'x'.repeat(24)} `, note: 'n'.repeat(100) }),
       );
       assertEqualOrThrow(longest.label.length, 24, 'a label of 24 characters is accepted');
-      assertEqualOrThrow(longest.note.length, 140, 'a note of 140 characters is accepted');
+      assertEqualOrThrow(longest.note.length, 100, 'a note of 100 characters is accepted');
     },
 
     'Case 4: a button whose items left the menu is listed as not usable, with the reason':
@@ -897,6 +903,58 @@ async function main() {
         'The shop already has 48 buttons. Delete one, then save this one',
       );
       assertEqualOrThrow(stored().length, 24 + 1 + 48, 'only the buttons within the limits exist');
+    },
+
+    'Case 12: a note is held to the limit the store sets for an order line': async () => {
+      clear();
+      const limit = (value: string) =>
+        db.prepare("UPDATE settings SET value = ? WHERE key = 'max_item_notes_length'").run(value);
+      const noted = (length: number) =>
+        pizzaButton('garden', 'large', { note: 'n'.repeat(length) });
+      const tooLong = (most: number) => `Item notes exceed maximum length of ${most} characters`;
+      let orderRule = '';
+      try {
+        validateItemNotes(db, 'n'.repeat(101));
+      } catch (error: any) {
+        orderRule = error.message;
+      }
+      assertEqualOrThrow(orderRule, tooLong(100), 'an order line refuses a note of 101 characters');
+
+      const kept = await save(noted(100));
+      assertEqualOrThrow(kept.usable, true, 'a button with a note of 100 characters is usable');
+      await refused(
+        'a change to a note of 101 characters',
+        { note: 'n'.repeat(101) },
+        tooLong(100),
+        {
+          method: 'PUT',
+          rest: `/${kept.id}`,
+        },
+      );
+
+      limit('500');
+      const long = await save(noted(140));
+      await refused(
+        'a note of 141 characters in a store that takes 500',
+        noted(141),
+        'A note can have at most 140 characters',
+      );
+      limit('120');
+      same(
+        (await list()).map((button) => [button.id, button.usable, button.reason]),
+        [
+          [kept.id, true, null],
+          [long.id, false, tooLong(120)],
+        ],
+        'a button whose note an order line no longer takes is listed as not usable',
+      );
+      const relabelled = await call(owner, 'PUT', `/${long.id}`, { label: 'Renamed' });
+      same(
+        [relabelled.status, relabelled.data.button?.usable],
+        [200, false],
+        'it can still be renamed, and stays not usable',
+      );
+      limit('100');
     },
 
     'Case 10: a currency reset leaves no buttons': async () => {

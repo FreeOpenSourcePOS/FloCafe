@@ -4,11 +4,12 @@ This page is for the person who sets up the shop's small Linux PC: no monitor, n
 
 | Script | What it does |
 | :--- | :--- |
-| `install.sh` | Writes the settings file and the units, builds the POS, enables the service and the daily backup timer, waits until healthy |
+| `install.sh` | Writes the settings file and the units, builds the POS, enables the service and the daily backup timer, takes a first backup, waits until healthy |
 | `uninstall.sh` | Stops and removes the service, the timer and the settings file; leaves the data folder alone |
-| `health.cjs` | Fails unless the API, KDS and Server App each answer on their configured port, and the newest backup is under 26 hours old |
+| `health.cjs` | Fails unless the API, KDS and Server App each answer on their configured port, and the newest backup is at most 26 hours old |
 | `backup.cjs` | Takes an online backup of the live database and keeps the newest `BACKUP_KEEP` copies |
-| `restore.cjs` | Restores a chosen backup with the service stopped, after saving a copy of the current database |
+| `restore.cjs` | Restores a chosen backup with the service stopped, after saving a copy of the current database, and takes a fresh backup of the restored one |
+| `serve.cjs` | What the service unit runs: holds the data folder's lock for as long as the server runs |
 | `write-units.cjs` | Writes the settings file and the three unit files; `install.sh` calls it |
 
 ## Install
@@ -33,11 +34,13 @@ The script writes these files and enables the service and the timer:
 | File | Holds |
 | :--- | :--- |
 | `~/.config/pizza-pos/headless.env` | The five settings above. Every unit and script reads them from here. |
-| `~/.config/systemd/user/pizza-pos.service` | Runs `dev-server.js` with the Node that ran the install, by absolute path; restarts it on failure |
+| `~/.config/systemd/user/pizza-pos.service` | Runs `serve.cjs`, which takes the data folder's lock and then loads `dev-server.js`, with the Node that ran the install, by absolute path; restarts it on failure |
 | `~/.config/systemd/user/pizza-pos-backup.service` | Runs `backup.cjs` once |
 | `~/.config/systemd/user/pizza-pos-backup.timer` | Runs the backup service daily, and on the next boot if the PC was off at midnight |
 
-To change a setting, or after pulling new code, run `install.sh` again with the values you want. It rewrites the files and restarts the service, so the running POS picks up the new settings and code.
+As soon as the database can be copied, `install.sh` takes a backup with `backup.cjs`, so the store has one from its first minute and the health check it waits for can find it.
+
+To change a setting, or after pulling new code, run `install.sh` again with the values you want. It rewrites the files and restarts the service, so the running POS picks up the new settings and code, and takes one more backup.
 
 The Node path is fixed in the units at install time. After upgrading Node, run `npm rebuild better-sqlite3` (or `npm ci`) and then `install.sh` again. After moving the repository, run `install.sh` again from its new place.
 
@@ -62,7 +65,7 @@ set -a; . ~/.config/pizza-pos/headless.env; set +a
 node scripts/pizza/headless/health.cjs
 ```
 
-It prints one line per check and exits non-zero if any service is not answering its own health check on its configured port, or if the newest backup is more than 26 hours old:
+It prints one line per check and exits non-zero if any service is not answering its own health check on its configured port, or if the newest backup is more than 26 hours old: the timer's period of 24 hours, and two more for a backup that starts late.
 
 ```text
 ok   PORT=3001 (Flo Local API)
@@ -71,7 +74,9 @@ FAIL SERVER_APP_PORT=3003 (Flo Server App): ECONNREFUSED
 ok   backups: newest pizza-pos-2026-11-25T07-00-03-120Z.db is 3.2 h old (limit 26 h)
 ```
 
-Before the first daily backup there is no backup folder yet, and the backup line says `skip backups: no backup folder yet`. Once the folder exists, a missing or old backup fails the check.
+The newest backup is the newest one not dated in the future. A backup dated ahead of the clock, as after a clock correction, is listed on a `warn backups: not counted` line and left out; the check fails only when no other backup is recent enough. A store's own date counts the same way: one dated in the future is not a new store.
+
+A store with no backup at all fails the check, whether or not the backup folder exists. The one exception is a store set up within the last 26 hours, measured from its oldest setting in the database: its first daily backup is not due yet, and the backup line says so and passes. A store whose database cannot be read counts as old.
 
 Whatever watches the PC should run `health.cjs` on a schedule and alert on a non-zero exit. It is the one check that covers the services, their ports and the backups.
 
@@ -94,6 +99,16 @@ systemctl --user list-timers pizza-pos-backup.timer
 
 Backups are written to `headless-backups/` inside the data folder, named `pizza-pos-<UTC time>.db`. Each one is taken with SQLite's online backup while the POS keeps running, stamped the way the app stamps its own backups, and checked with the app's own database health check before it is kept. A backup that fails that check is deleted and the run fails, so `systemctl --user status pizza-pos-backup.service` shows it. The newest `BACKUP_KEEP` backups are kept and older ones are deleted.
 
+The service, a backup and a restore share one lock: the file `headless-lock.db` in the data folder, locked by the operating system for as long as the process that took it lives. The service and a backup hold it together, so a backup runs beside the POS. A restore needs it alone. Nothing is left to clean up when a process is killed or the PC loses power, and the clock plays no part.
+
+A command that cannot have the lock stops with a non-zero exit and changes nothing: the service and a backup at once, a restore after a tenth of a second, which is what lets one of two restores started in the same instant go ahead. A restore says `<data folder> is in use by the POS, a backup or another restore`. A backup or the service started during a restore says `A restore is replacing the database in <data folder>`. systemd then starts the service again every 5 seconds until the restore has finished. It does not retry a failed backup: the timer runs it again the next day, and until then `systemctl --user status pizza-pos-backup.service` shows the failure and the health check reports the missing backup once the newest is over 26 hours old. Do not start two backups at the same moment: each clears the other's unfinished copy.
+
+The lock holds only while `headless-lock.db` is an ordinary SQLite file in rollback-journal mode, which is how it is made. Every command checks this first, and if the file has been put into WAL mode it stops and says to stop the POS and delete `headless-lock.db` with its `-wal` and `-shm` files.
+
+`serve.cjs` locks the data folder named in `headless.env`, and the server it loads opens the database in that same folder. `dev-server.js` also reads a `.env` file from the repository folder. Under the service, a `FLO_DEV_USER_DATA`, `HOME`, `PORT`, `KDS_PORT` or `SERVER_APP_PORT` in that file is ignored, and the service log says so. `FLO_E2E_DB_PATH`, which the app's own tests use to point it at another database file, is ignored by the service and by every kit script, whether it comes from that file or from the environment they were started in.
+
+Only a POS started through `serve.cjs` holds the lock. One started by hand with `node dev-server.js` does not, and restore then has only its service and port checks.
+
 The backups sit on the same disk as the database. Copy that folder somewhere else if the PC itself may be lost.
 
 **A backup file is a credential.** It holds the secret that signs every login token, the staff PIN hashes and customers' phone numbers and addresses. Anyone who can read one can sign themselves in as the owner. The same is true of the live database and the `pre-restore-` copies. So:
@@ -103,7 +118,7 @@ The backups sit on the same disk as the database. Copy that folder somewhere els
 
 ## Restore
 
-Restore runs with the POS stopped. It refuses while `systemctl --user is-active` reports `pizza-pos.service` or `pizza-pos-backup.service` as anything but inactive or failed, and while anything listens on the three configured ports. Without `systemctl` it says so and relies on the port check.
+Restore runs with the POS stopped. It refuses while `systemctl --user is-active` reports `pizza-pos.service` or `pizza-pos-backup.service` as anything but inactive or failed, and while anything listens on the three configured ports. Without `systemctl` it says so and relies on the port check. It takes the data folder's lock for itself alone before these checks and holds it until it ends, so of two restores started together one runs and the other is refused, and a service started while it works cannot open the database.
 
 ```sh
 set -a; . ~/.config/pizza-pos/headless.env; set +a
@@ -115,6 +130,8 @@ node scripts/pizza/headless/health.cjs
 ```
 
 Before it changes anything, `restore.cjs` saves the current database as `headless-backups/pre-restore-<UTC time>.db` and checks that copy with the app's database health check; if the copy fails, it stops and changes nothing. Retention never deletes these copies. It then runs the app's own `restoreBackup()`, the same sequence as the app's restore-from-file route: it validates the backup, replaces the database, signs everyone out and clears device pairings. Staff log in again on every tablet, and KDS and customer displays are paired again.
+
+Last, it takes a fresh backup of the restored database and prints its path as `fresh backup: <file>`. A restored store and its kept backups can all be older than 26 hours, and without this the health check would fail after a successful restore. If that backup fails, the restore still stands and the output says to run `systemctl --user start pizza-pos-backup.service` once the POS is up.
 
 To undo a restore, restore the `pre-restore-` copy the same way. The app's restore also keeps its own copy of the replaced database in `backups/` inside the data folder, named `flo-backup-<time>-pre-restore-v<schema>.db`.
 
@@ -157,7 +174,8 @@ It stops and disables the service and the timer, deletes the three unit files an
 
 | Step | Checked how |
 | :--- | :--- |
-| Unit files, file modes, health, backup, restore, recovery steps | 22 test cases against a real headless server, with a stand-in for `systemctl` |
+| Unit files, file modes, health, backup, restore, the lock, recovery steps | 33 test cases against a real headless server, with a stand-in for `systemctl` |
+| The first backup `install.sh` takes | **Not run**: the tests only read the script |
 | Install as a user service, health on fixed ports | Run for real on Fedora 45 (systemd 262) |
 | Install again with a changed port | Run for real: the server restarted on the new port |
 | Backup and restore through the real service manager | Run for real with the first version of the kit only |

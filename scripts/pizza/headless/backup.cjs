@@ -7,10 +7,8 @@ const {
   config,
   BACKUP_NAME,
   privateBackupDir,
-  timestamp,
-  appModule,
-  fsync,
-  onlineCopy,
+  dataLock,
+  takeBackup,
   main,
 } = require('./common.cjs');
 
@@ -20,24 +18,13 @@ main(async () => {
   if (!Number.isInteger(keep) || keep < 1)
     throw new Error(`BACKUP_KEEP must be a whole number of at least 1, got ${BACKUP_KEEP}`);
 
+  dataLock(FLO_DEV_USER_DATA, 'shared');
   const dir = privateBackupDir(FLO_DEV_USER_DATA);
   for (const name of fs.readdirSync(dir).filter((n) => /^\.pizza-pos-.*\.partial$/.test(n))) {
     fs.unlinkSync(path.join(dir, name));
     console.log(`removed stale ${name}`);
   }
-  const finalPath = path.join(dir, `pizza-pos-${timestamp()}.db`);
-  const partialPath = path.join(dir, `.${path.basename(finalPath)}.partial`);
-  try {
-    await onlineCopy(path.join(FLO_DEV_USER_DATA, 'flo.db'), partialPath);
-    if (!appModule('main/db').isHealthyDatabaseFile(partialPath)) {
-      throw new Error('The copy failed the app health check (integrity, foreign keys or schema)');
-    }
-    if (fs.existsSync(finalPath)) throw new Error(`Refusing to overwrite ${finalPath}`);
-    fs.renameSync(partialPath, finalPath);
-    fsync(dir);
-  } finally {
-    fs.rmSync(partialPath, { force: true });
-  }
+  const finalPath = await takeBackup(FLO_DEV_USER_DATA);
 
   const backups = fs
     .readdirSync(dir)

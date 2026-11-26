@@ -314,9 +314,25 @@ function writeRow(
       'menu',
       `${table} id "${key.id}" is already used under "${stored[parent]}", so it cannot go under "${values[parent]}"`,
     );
+  // A side's group has no parent column: its side is the one linked to it. Two sides whose ids
+  // spell the same group may not both be linked, whichever link came first.
+  const otherSide =
+    table === 'addon_group_product' &&
+    (db
+      .prepare(
+        `SELECT product_id FROM addon_group_product
+         WHERE addon_group_id = @addon_group_id AND product_id <> @product_id
+           AND product_id LIKE 'sd-%'
+           AND substr(@addon_group_id, 1, length(product_id) + 1) = 'ag-' || substr(product_id, 4) || '-'`,
+      )
+      .get(key) as { product_id: string } | undefined);
+  if (otherSide)
+    throw new MenuError(
+      'menu',
+      `addon_groups id "${key.addon_group_id}" is already used under "${otherSide.product_id}", so it cannot go under "${key.product_id}"`,
+    );
   if (stored && Object.entries(values).every(([column, value]) => stored[column] === value))
     return 'unchanged';
-
   const written: Record<string, Value> = { ...values };
   for (const column of stampColumns(table, !stored)) written[column] = stamp;
   if (stored) {
@@ -364,7 +380,9 @@ export function importMenu(db: Database.Database, catalog: PizzaCatalog): Import
   });
   // Categories last: one is judged after the menu's own products in it are switched off.
   const isCategory = (entry: string): number => Number(entry.startsWith('categories:'));
-  const gone = previous
+  // A category is judged again by every load: one kept on for a hand-made product is switched
+  // off by the load after that product goes, however many loads lie between.
+  const gone = [...new Set([...previous, ...ownedBefore.filter(isCategory)])]
     .filter((entry) => ownedBefore.includes(entry) && !owned.includes(entry))
     .sort((a, b) => isCategory(a) - isCategory(b));
   const summary: ImportSummary = {
@@ -403,16 +421,35 @@ export function importMenu(db: Database.Database, catalog: PizzaCatalog): Import
     }
     const stamp = now();
     for (const row of rows) summary[writeRow(db, row, stamp)] += 1;
+    // A category nested under another by hand is judged before it: the parent then sees whether
+    // its child stayed on.
+    const depth = (entry: string): number => {
+      let id: unknown = entry.slice('categories:'.length);
+      let above = 0;
+      for (; isCategory(entry) && id && above < 32; above++)
+        id = (
+          db.prepare('SELECT parent_id FROM categories WHERE id = ?').get(id) as
+            | { parent_id: string | null }
+            | undefined
+        )?.parent_id;
+      return above;
+    };
+    const depths = new Map(gone.map((entry) => [entry, depth(entry)]));
+    gone.sort((a, b) => (depths.get(b) as number) - (depths.get(a) as number));
+    gone.sort((a, b) => isCategory(a) - isCategory(b));
     for (const entry of gone) {
       const table = entry.split(':', 1)[0];
       const id = entry.slice(table.length + 1);
+      // A sub-category counts: the catalogue shows its products only while this one is on.
       const stillUsed =
         table === 'categories' &&
         db
           .prepare(
-            'SELECT 1 FROM products WHERE category_id = ? AND is_active = 1 AND deleted_at IS NULL',
+            `SELECT 1 FROM products WHERE category_id = @id AND is_active = 1 AND deleted_at IS NULL
+             UNION ALL
+             SELECT 1 FROM categories WHERE parent_id = @id AND is_active = 1 AND deleted_at IS NULL`,
           )
-          .get(id);
+          .get({ id });
       if (stillUsed) continue;
       summary.deactivated += db
         .prepare(`UPDATE ${table} SET is_active = 0, updated_at = ? WHERE id = ? AND is_active = 1`)

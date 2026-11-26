@@ -374,6 +374,77 @@ async function main() {
           `anything that is not a recipe is projected as null: ${JSON.stringify(other)}`,
         );
       }
+
+      // A stored selection that says pizza or deal is not handed over whole.
+      const project = (selection: unknown) =>
+        projectKdsItem({ ...order.items[0], modifier_selection: selection }, true)
+          .modifier_selection;
+      const [first, second] = half.halves;
+      const padded = {
+        ...half,
+        unit_price: 5,
+        customer: { phone: '+16045550100' },
+        halves: [{ ...first, cost: 1 }, second],
+      };
+      assertEqualOrThrow(
+        JSON.stringify(project(padded)),
+        JSON.stringify(half),
+        'only the recipe fields of a selection are projected',
+      );
+      assertEqualOrThrow(
+        project(JSON.stringify(padded)),
+        JSON.stringify(half),
+        'and of one stored as text',
+      );
+      const dealSelection = {
+        kind: 'deal',
+        v: 1,
+        dealId: 'large-combo',
+        pizzas: [{ ...half, margin: 0.4 }],
+        pops: { cola: 2 },
+        total: 35.5,
+      };
+      assertEqualOrThrow(
+        JSON.stringify(project(dealSelection)),
+        JSON.stringify({ ...dealSelection, pizzas: [half], total: undefined }),
+        'a deal keeps its pizzas, pops and choices and nothing else',
+      );
+      const noted = { ...half, cook: 'well-done', cut: 'uncut' };
+      assertEqualOrThrow(
+        JSON.stringify(project(noted)),
+        JSON.stringify(noted),
+        'the cook and cut notes of the format are kept',
+      );
+      const malformed: Array<[why: string, selection: unknown]> = [
+        ['another format version', { ...half, v: 2 }],
+        ['a size that is not text', { ...half, sizeId: { price: 5 } }],
+        [
+          'a pizza id that is not text',
+          { ...half, halves: [{ ...first, pizzaId: { a: 1 } }, second] },
+        ],
+        [
+          'a removal that is not text',
+          { ...half, halves: [{ ...first, removed: [{ a: 1 }] }, second] },
+        ],
+        ['one half', { ...half, halves: [first] }],
+        ['no pizza at all', { kind: 'pizza', v: 1, sizeId: 'large' }],
+        ['a cook note that is not text', { ...half, cook: { a: 1 } }],
+        ['a deal with no pizza list', { kind: 'deal', v: 1, dealId: 'party' }],
+        ['a deal whose pizza is not a recipe', { ...dealSelection, pizzas: [{ kind: 'note' }] }],
+        ['pops that are not counts', { ...dealSelection, pops: { cola: { a: 1 } } }],
+        ['pops as a list', { ...dealSelection, pops: [2] }],
+        ['pops as a number', { ...dealSelection, pops: 5 }],
+        ['pops as text', { ...dealSelection, pops: 'cola' }],
+        ['a count below zero', { ...dealSelection, pops: { cola: -1 } }],
+        ['a count that is not whole', { ...dealSelection, pops: { cola: 1.5 } }],
+        ['a cook note the format does not have', { ...half, cook: 'burnt' }],
+        ['a cut the format does not have', { ...half, cut: 'triangles' }],
+        ['a wing flavour that is not text', { ...dealSelection, wingFlavour: ['hot'] }],
+      ];
+      for (const [why, selection] of malformed) {
+        assertEqualOrThrow(project(selection), null, `${why} is projected as null`);
+        assertEqualOrThrow(project(JSON.stringify(selection)), null, `${why}, as text, too`);
+      }
     },
 
     'Case 4: a recipe that cannot be printed leaves a warning line on the ticket': async () => {

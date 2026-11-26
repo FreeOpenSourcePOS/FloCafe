@@ -47,8 +47,8 @@ void runCases('Pizza headless kit: unit files', [
       assertIncludesOrThrow(service, `EnvironmentFile=${envFile}\n`, 'service: environment file');
       assertIncludesOrThrow(
         service,
-        `ExecStart=${node} ${path.join(repoRoot, 'dev-server.js')}\n`,
-        'service: absolute Node runs dev-server.js',
+        `ExecStart=${node} ${path.join(kitDir, 'serve.cjs')}\n`,
+        'service: absolute Node runs the launcher that holds the data folder lock',
       );
       assertIncludesOrThrow(
         service,
@@ -95,6 +95,21 @@ void runCases('Pizza headless kit: unit files', [
         fs.readFileSync(path.join(kitDir, 'install.sh'), 'utf8'),
         'chmod 700 "$FLO_DEV_USER_DATA"\n',
         'install.sh: data folder mode 700',
+      );
+    },
+  ],
+  [
+    'install.sh takes a first backup before it asks for health, and health allows one timer period',
+    async () => {
+      const install = fs.readFileSync(path.join(kitDir, 'install.sh'), 'utf8');
+      const backup = install.indexOf('node "$kit/backup.cjs"');
+      assertOrThrow(backup > 0, 'install.sh runs backup.cjs');
+      assertOrThrow(backup < install.indexOf('node "$kit/health.cjs"'), 'before the health check');
+      const { BACKUP_TIMER } = require(path.join(kitDir, 'common.cjs'));
+      assertEqualOrThrow(
+        JSON.stringify(BACKUP_TIMER),
+        JSON.stringify({ onCalendar: 'daily', periodHours: 24 }),
+        'the timer and the health limit share one period',
       );
     },
   ],

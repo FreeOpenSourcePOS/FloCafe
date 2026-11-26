@@ -18,6 +18,9 @@ import {
   appDb,
   backupDir,
   headlessEnv,
+  holdLock,
+  kitDir,
+  repoRoot,
   liveDbPath,
   runCases,
   runKit,
@@ -69,6 +72,9 @@ async function storeWithBackup(): Promise<{ env: HeadlessEnv; backup: string }> 
   }
 }
 
+const lockPath = (env: HeadlessEnv) => path.join(env.FLO_DEV_USER_DATA, 'headless-lock.db');
+const IN_USE = 'is in use by the POS, a backup or another restore';
+
 const drivePending = (env: HeadlessEnv) =>
   path.join(env.FLO_DEV_USER_DATA, 'google-drive-restore.pending');
 
@@ -117,6 +123,209 @@ void runCases('Pizza headless kit: restore', [
       assertEqualOrThrow(modeOf(backupDir(env)), '700', 'the backup folder is owner-only');
       assertOrThrow(!fs.existsSync(drivePending(env)), 'no Drive restore intent is left behind');
       await assertServerHealthy(env, 'the server is healthy on the restored database');
+    },
+  ],
+  [
+    'of two restores started together, exactly one runs',
+    async () => {
+      const { env, backup } = await storeWithBackup();
+      const results = await Promise.all([
+        runKit('restore.cjs', [backup], env),
+        runKit('restore.cjs', [backup], env),
+      ]);
+      for (const result of results) console.log(result.output);
+      const refused = results.filter((result) => result.status !== 0);
+      assertEqualOrThrow(results.length - refused.length, 1, 'one restore exits 0');
+      assertEqualOrThrow(refused.length, 1, 'and the other is refused');
+      assertIncludesOrThrow(refused[0].stderr, IN_USE, 'the refusal names the reason');
+      const safety = fs.readdirSync(backupDir(env)).filter((name) => name.startsWith('pre-'));
+      assertEqualOrThrow(safety.length, 1, 'only the one that ran took a safety copy');
+      assertOrThrow(!hasCategory(liveDbPath(env), 'cat-after'), 'the backup was restored');
+      await assertServerHealthy(env, 'the server is healthy on the restored database');
+    },
+  ],
+  [
+    "a restore is refused while a process holds the service's lock, whatever the clock says",
+    async () => {
+      const { env, backup } = await storeWithBackup();
+      const service = await holdLock(env, 'shared');
+      try {
+        await assertRefused(env, backup, IN_USE);
+        // The lock is the kernel's, not a date: a lock file dated long ago or ahead changes nothing.
+        for (const date of [new Date(0), new Date(Date.now() + 365 * 24 * 3600 * 1000)]) {
+          fs.utimesSync(lockPath(env), date, date);
+          await assertRefused(env, backup, IN_USE);
+        }
+        const copies = fs.readdirSync(backupDir(env)).length;
+        const beside = await runKit('backup.cjs', [], env);
+        assertEqualOrThrow(beside.status, 0, `a backup runs beside the service: ${beside.output}`);
+        assertEqualOrThrow(fs.readdirSync(backupDir(env)).length, copies + 1, 'and is kept');
+      } finally {
+        await service.kill();
+      }
+      const result = await runKit('restore.cjs', [backup], env);
+      assertEqualOrThrow(
+        result.status,
+        0,
+        `with the holder gone the restore runs: ${result.output}`,
+      );
+    },
+  ],
+  [
+    'while a restore holds the data folder, the service and a backup stop at once',
+    async () => {
+      const { env } = await storeWithBackup();
+      const restore = await holdLock(env, 'exclusive');
+      try {
+        const copies = fs.readdirSync(backupDir(env)).length;
+        const backup = await runKit('backup.cjs', [], env);
+        assertOrThrow(backup.status !== 0, 'a backup exits non-zero');
+        assertIncludesOrThrow(backup.stderr, 'A restore is replacing the database', 'and says why');
+        assertEqualOrThrow(fs.readdirSync(backupDir(env)).length, copies, 'and writes nothing');
+
+        const before = fs.statSync(liveDbPath(env)).mtimeMs;
+        const service = await runKit('serve.cjs', [], env);
+        assertOrThrow(service.status !== 0, 'the service exits non-zero');
+        assertIncludesOrThrow(
+          service.stderr,
+          'A restore is replacing the database',
+          'and says why',
+        );
+        assertOrThrow(!service.output.includes('[DB]'), 'before it opens the database');
+        assertEqualOrThrow(fs.statSync(liveDbPath(env)).mtimeMs, before, 'which it leaves alone');
+      } finally {
+        await restore.kill();
+      }
+    },
+  ],
+  [
+    'a .env in the repository folder cannot move the service off the folder it locked',
+    async () => {
+      const { env, backup } = await storeWithBackup();
+      // A copy of the repository's entry points beside a .env, so the real folder is not touched.
+      const root = scratchDir('flo-pizza-headless-root-');
+      const kit = path.join(root, 'scripts', 'pizza', 'headless');
+      fs.mkdirSync(kit, { recursive: true });
+      for (const name of ['serve.cjs', 'common.cjs'])
+        fs.copyFileSync(path.join(kitDir, name), path.join(kit, name));
+      for (const name of ['dev-server.js', 'package.json'])
+        fs.copyFileSync(path.join(repoRoot, name), path.join(root, name));
+      for (const name of ['dist', 'node_modules', 'frontend'])
+        fs.symlinkSync(path.join(repoRoot, name), path.join(root, name));
+      const elsewhere = scratchDir('flo-pizza-headless-elsewhere-');
+      fs.writeFileSync(
+        path.join(root, '.env'),
+        `FLO_DEV_USER_DATA=${elsewhere}\nFLO_E2E_DB_PATH=${path.join(elsewhere, 'flo.db')}\nHOME=${elsewhere}\n`,
+      );
+
+      const before = fs.statSync(liveDbPath(env)).mtimeMs;
+      const server = await startHeadless(env, kit);
+      try {
+        assertOrThrow(
+          server.output().includes('[DevServer] Loaded .env'),
+          'the server read the .env beside it',
+        );
+        assertEqualOrThrow(fs.readdirSync(elsewhere).length, 0, 'the other folder is not used');
+        assertOrThrow(
+          server.output().includes(`Opening database at: ${liveDbPath(env)}`),
+          "the server opened the database in the unit's folder",
+        );
+        assertOrThrow(fs.statSync(liveDbPath(env)).mtimeMs >= before, 'which is still there');
+        await assertRefused(env, backup, IN_USE);
+      } finally {
+        await server.stop();
+      }
+    },
+  ],
+  [
+    'an inherited FLO_E2E_DB_PATH cannot move the service or a restore to another database',
+    async () => {
+      const { env, backup } = await storeWithBackup();
+      const elsewhere = scratchDir('flo-pizza-headless-elsewhere-');
+      const redirected = { ...env, FLO_E2E_DB_PATH: path.join(elsewhere, 'flo.db') };
+      const server = await startHeadless(redirected);
+      try {
+        assertOrThrow(
+          server.output().includes(`Opening database at: ${liveDbPath(env)}`),
+          "the server opened the database in the unit's folder",
+        );
+        assertOrThrow(
+          server.output().includes('ignored FLO_E2E_DB_PATH'),
+          'and its log says the variable was ignored',
+        );
+        assertEqualOrThrow(fs.readdirSync(elsewhere).length, 0, 'the other folder is untouched');
+        await assertRefused(env, backup, IN_USE);
+      } finally {
+        await server.stop();
+      }
+      const result = await runKit('restore.cjs', [backup], redirected);
+      assertEqualOrThrow(result.status, 0, `a restore exits 0: ${result.output}`);
+      assertOrThrow(!hasCategory(liveDbPath(env), 'cat-after'), "it restored the unit's folder");
+      assertEqualOrThrow(fs.readdirSync(elsewhere).length, 0, 'and left the other folder alone');
+    },
+  ],
+  [
+    'a lock database in WAL mode, where the lock would not hold, stops every command',
+    async () => {
+      const { env, backup } = await storeWithBackup();
+      const lock = new Database(lockPath(env));
+      lock.pragma('journal_mode = WAL');
+      lock.exec('CREATE TABLE made_wal (id)');
+      lock.close();
+      const refusal = 'is in WAL mode';
+      await assertRefused(env, backup, refusal);
+      for (const script of ['backup.cjs', 'serve.cjs']) {
+        const result = await runKit(script, [], env);
+        assertOrThrow(result.status !== 0, `${script} exits non-zero`);
+        assertIncludesOrThrow(result.stderr, refusal, `${script} says why`);
+      }
+      for (const name of fs.readdirSync(env.FLO_DEV_USER_DATA))
+        if (name.startsWith('headless-lock.db')) fs.rmSync(path.join(env.FLO_DEV_USER_DATA, name));
+      const result = await runKit('restore.cjs', [backup], env);
+      assertEqualOrThrow(
+        result.status,
+        0,
+        `with the lock database removed it runs: ${result.output}`,
+      );
+    },
+  ],
+  [
+    'a holder that is killed leaves nothing to clean up',
+    async () => {
+      const { env, backup } = await storeWithBackup();
+      const restore = await holdLock(env, 'exclusive');
+      await assertRefused(env, backup, IN_USE);
+      await restore.kill('SIGKILL');
+      const result = await runKit('restore.cjs', [backup], env);
+      assertEqualOrThrow(result.status, 0, `the next restore runs: ${result.output}`);
+      assertOrThrow(!hasCategory(liveDbPath(env), 'cat-after'), 'the backup was restored');
+      await assertServerHealthy(env, 'and the service starts');
+    },
+  ],
+  [
+    'after restoring an old backup the store is healthy without another step',
+    async () => {
+      const env = await headlessEnv({ BACKUP_KEEP: '5' });
+      const first = await startHeadless(env);
+      let backup: string;
+      try {
+        // The store was set up long ago, and its only backup is older than a day.
+        withLiveDb(env, (db) =>
+          db.prepare("UPDATE settings SET updated_at = '2000-01-01 00:00:00'").run(),
+        );
+        const taken = await runKit('backup.cjs', [], env);
+        assertEqualOrThrow(taken.status, 0, `backup exits 0: ${taken.output}`);
+        backup = taken.stdout.trim().split('\n').pop()!;
+        const old = new Date(Date.now() - 48 * 3600 * 1000);
+        fs.utimesSync(backup, old, old);
+      } finally {
+        await first.stop();
+      }
+      const result = await runKit('restore.cjs', [backup], env);
+      console.log(result.output);
+      assertEqualOrThrow(result.status, 0, 'restore exits 0');
+      assertIncludesOrThrow(result.stdout, 'fresh backup: ', 'and says it took a fresh backup');
+      await assertServerHealthy(env, 'health passes on the restored store');
     },
   ],
   [

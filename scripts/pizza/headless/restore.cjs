@@ -8,6 +8,8 @@ const path = require('node:path');
 const {
   config,
   privateBackupDir,
+  dataLock,
+  takeBackup,
   timestamp,
   appModule,
   fsync,
@@ -53,6 +55,9 @@ main(async () => {
   const backupPath = path.resolve(process.argv[2]);
   if (!fs.statSync(backupPath).isFile()) throw new Error(`${backupPath} is not a file`);
 
+  // Held from before the checks until this process ends: the service takes the same lock before
+  // it opens the database, so one started after the checks below waits out the restore.
+  dataLock(settings.FLO_DEV_USER_DATA, 'exclusive');
   refuseWhileUnitsRun();
   for (const name of ['PORT', 'KDS_PORT', 'SERVER_APP_PORT']) {
     if (await listening(settings[name])) {
@@ -92,5 +97,14 @@ main(async () => {
     }
   } finally {
     db.closeDatabase();
+  }
+  // What was restored and every kept backup may be days old; health asks for a recent backup.
+  try {
+    console.log(`fresh backup: ${await takeBackup(settings.FLO_DEV_USER_DATA)}`);
+  } catch (error) {
+    console.error(`The restore is done, but a fresh backup failed: ${error?.message ?? error}`);
+    console.error(
+      'Take one once the POS is running: systemctl --user start pizza-pos-backup.service',
+    );
   }
 });

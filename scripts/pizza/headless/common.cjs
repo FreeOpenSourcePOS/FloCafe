@@ -11,6 +11,13 @@ const repoRoot = path.resolve(__dirname, '..', '..', '..');
 // the kit writes is readable by another account, from the first byte of a copy.
 process.umask(0o077);
 
+// The app opens this path instead of the data folder's database when it is set (its own
+// end-to-end tests use it). Headless, the database is the one in the data folder, always.
+if (process.env.FLO_E2E_DB_PATH) {
+  console.error(`[headless] ignored FLO_E2E_DB_PATH=${process.env.FLO_E2E_DB_PATH}`);
+  delete process.env.FLO_E2E_DB_PATH;
+}
+
 function config(...names) {
   const missing = names.filter((name) => !process.env[name]);
   if (missing.length > 0) {
@@ -34,6 +41,47 @@ function privateBackupDir(dataDir) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   fs.chmodSync(dir, 0o700);
   return dir;
+}
+
+/** The backup timer's schedule and its period; the health check allows one period between backups. */
+const BACKUP_TIMER = { onCalendar: 'daily', periodHours: 24 };
+
+let heldLock;
+
+/**
+ * The kernel's lock on a small SQLite file in the data folder, held until this process ends
+ * however it ends. The service and a backup hold it shared, so they run side by side; a restore
+ * holds it exclusive, so it runs alone and the service cannot open the database meanwhile. A
+ * command that cannot have it stops at once.
+ */
+function dataLock(dataDir, mode) {
+  const Database = require('better-sqlite3');
+  const lockPath = path.join(dataDir, 'headless-lock.db');
+  // Two restores that start in the same instant can each stop the other from taking the lock.
+  // A wait of a tenth of a second lets one of them through; the other is still refused, because
+  // a restore holds the lock far longer than that.
+  const lock = new Database(lockPath, { timeout: mode === 'exclusive' ? 100 : 0 });
+  try {
+    // In WAL mode a reader does not keep a writer out, so the lock would not hold. A new lock
+    // database is in rollback mode; one that is not is refused, never used.
+    const journal = lock.pragma('journal_mode', { simple: true });
+    if (journal !== 'delete')
+      throw new Error(
+        `The lock database ${lockPath} is in ${String(journal).toUpperCase()} mode, in which it cannot keep a restore and the POS apart. Stop the POS, delete ${lockPath} and any ${lockPath}-wal and ${lockPath}-shm, then start it again`,
+      );
+    if (mode === 'exclusive') lock.exec('BEGIN EXCLUSIVE');
+    else lock.exec('BEGIN; SELECT count(*) FROM sqlite_master');
+  } catch (error) {
+    lock.close();
+    if (error.code !== 'SQLITE_BUSY') throw error;
+    throw new Error(
+      mode === 'exclusive'
+        ? `${dataDir} is in use by the POS, a backup or another restore. Stop the POS first (systemctl --user stop pizza-pos.service), let a backup finish, then try again`
+        : `A restore is replacing the database in ${dataDir}. Try again when it has finished`,
+    );
+  }
+  // Kept for the life of the process: a connection that is collected gives the lock up.
+  heldLock = lock;
 }
 
 function timestamp() {
@@ -110,6 +158,25 @@ async function onlineCopy(sourcePath, targetPath) {
   fsync(targetPath);
 }
 
+/** One checked backup of the live database in the backup folder; returns its path. */
+async function takeBackup(dataDir) {
+  const dir = privateBackupDir(dataDir);
+  const finalPath = path.join(dir, `pizza-pos-${timestamp()}.db`);
+  const partialPath = path.join(dir, `.${path.basename(finalPath)}.partial`);
+  try {
+    await onlineCopy(path.join(dataDir, 'flo.db'), partialPath);
+    if (!appModule('main/db').isHealthyDatabaseFile(partialPath)) {
+      throw new Error('The copy failed the app health check (integrity, foreign keys or schema)');
+    }
+    if (fs.existsSync(finalPath)) throw new Error(`Refusing to overwrite ${finalPath}`);
+    fs.renameSync(partialPath, finalPath);
+    fsync(dir);
+  } finally {
+    fs.rmSync(partialPath, { force: true });
+  }
+  return finalPath;
+}
+
 function main(run) {
   run().then(
     () => process.exit(0),
@@ -124,6 +191,9 @@ module.exports = {
   repoRoot,
   config,
   BACKUP_NAME,
+  BACKUP_TIMER,
+  dataLock,
+  takeBackup,
   backupDir,
   privateBackupDir,
   timestamp,

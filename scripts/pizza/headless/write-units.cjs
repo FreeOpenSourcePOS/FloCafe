@@ -4,7 +4,7 @@
 // Usage: write-units.cjs <environment file> <unit folder>
 const fs = require('node:fs');
 const path = require('node:path');
-const { repoRoot, config, main } = require('./common.cjs');
+const { repoRoot, config, BACKUP_TIMER, main } = require('./common.cjs');
 
 const SAFE_PATH = /^\/[\w./-]*$/;
 
@@ -57,7 +57,7 @@ Type=simple
 WorkingDirectory=${repoRoot}
 EnvironmentFile=${envFile}
 UMask=0077
-ExecStart=${node} ${path.join(repoRoot, 'dev-server.js')}
+ExecStart=${node} ${path.join(__dirname, 'serve.cjs')}
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -79,7 +79,7 @@ ExecStart=${node} ${path.join(__dirname, 'backup.cjs')}
 Description=Daily Pizza POS database backup
 
 [Timer]
-OnCalendar=daily
+OnCalendar=${BACKUP_TIMER.onCalendar}
 Persistent=true
 Unit=pizza-pos-backup.service
 

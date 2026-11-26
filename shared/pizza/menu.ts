@@ -28,6 +28,16 @@ const CONTROL_BYTE = /[\x00-\x1F\x7F]/;
 const MAX_TEXT = 240;
 const MAX_INGREDIENTS = 60;
 const MAX_ENTRIES = { pizzas: 200, sides: 50, drinks: 50, deals: 50, sizes: 12, other: 30 };
+/**
+ * The most a deal asks for, so that its fullest recipe fits the 20,000 bytes an order line allows.
+ * A half and half with all 60 ingredients of a 240-character description removed from each half
+ * and ids of 40 characters is at most 2,064 bytes; 50 drinks, a wing flavour and the deal's own
+ * fields are at most 2,406 with can counts of two digits. Eight pizzas come to 18,925.
+ */
+const MAX_DEAL_PIZZAS = 8;
+const MAX_DEAL_CANS = 99;
+/** Half of a character pair: it is stored as a six-byte escape, which the sum above leaves out. */
+const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
 
 /** A menu file that cannot be loaded; `path` names the bad entry. */
 export class MenuError extends Error {
@@ -62,6 +72,7 @@ function printable(value: string, path: string): string {
     fail(path, `is ${value.length} characters long; at most ${MAX_TEXT} are allowed`);
   if (CONTROL_BYTE.test(value))
     fail(path, 'must not hold control characters such as a line break or a tab');
+  if (LONE_SURROGATE.test(value)) fail(path, 'holds half of a character pair; type it again');
   return value;
 }
 
@@ -88,9 +99,10 @@ function cents(value: unknown, path: string): number {
   }
 }
 
-function count(value: unknown, path: string): number {
+function count(value: unknown, path: string, max?: number): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1)
     fail(path, 'must be a whole number, 1 or more');
+  if (max !== undefined && value > max) fail(path, `is ${value}; at most ${max} are allowed`);
   return value;
 }
 
@@ -190,7 +202,7 @@ function pick(raw: Entry, at: string, sizeIds: Set<string>): MenuDealPick {
       return { type: 'pizza', size, count: count(raw.count, `${at}.count`) };
     }
     case 'pop':
-      return { type: 'pop', count: count(raw.count, `${at}.count`) };
+      return { type: 'pop', count: count(raw.count, `${at}.count`, MAX_DEAL_CANS) };
     case 'wing-flavour':
       if (raw.count !== 1) fail(`${at}.count`, 'must be 1: a deal has one wing flavour');
       return { type: 'wing-flavour', count: 1 };
@@ -200,7 +212,7 @@ function pick(raw: Entry, at: string, sizeIds: Set<string>): MenuDealPick {
         const { type, count: amount } = entry(value, optionAt);
         if (type !== 'pop' && type !== '2l') fail(`${optionAt}.type`, 'must be "pop" or "2l"');
         if (type === '2l' && amount !== 1) fail(`${optionAt}.count`, 'must be 1: one 2L bottle');
-        return { type, count: count(amount, `${optionAt}.count`) };
+        return { type, count: count(amount, `${optionAt}.count`, MAX_DEAL_CANS) };
       });
       if (options.length !== 2 || options[0].type === options[1].type)
         fail(`${at}.options`, 'must be exactly one "pop" and one "2l" option');
@@ -231,6 +243,9 @@ function deal(raw: Entry, at: string, facts: MenuFacts): CatalogDeal {
     }
     return parsed;
   });
+  const pizzas = picks.reduce((sum, item) => sum + (item.type === 'pizza' ? item.count : 0), 0);
+  if (pizzas > MAX_DEAL_PIZZAS)
+    fail(`${at}.picks`, `asks for ${pizzas} pizzas; at most ${MAX_DEAL_PIZZAS} are allowed`);
   return {
     id: ident(raw.id, `${at}.id`),
     name: text(raw.name, `${at}.name`),
@@ -238,6 +253,36 @@ function deal(raw: Entry, at: string, facts: MenuFacts): CatalogDeal {
     description: printable(description, `${at}.description`),
     picks,
   };
+}
+
+/**
+ * The catalogue ids a menu derives are joined with hyphens, so two different entries can spell
+ * the same one: pizza `a` in size `b-c` and pizza `a-b` in size `c`. Such a menu is refused.
+ */
+function refuseSharedIds(catalog: PizzaCatalog): void {
+  const claimed = new Map<string, string>();
+  const claim = (id: string, entry: string) => {
+    const first = claimed.get(id);
+    if (first)
+      fail('menu', `${first} and ${entry} would both get the id "${id}"; change one of those ids`);
+    claimed.set(id, entry);
+  };
+  for (const size of catalog.sizes) {
+    for (const item of catalog.pizzas)
+      claim(`pz-${item.id}-${size.id}`, `pizza "${item.id}" in size "${size.id}"`);
+    claim(`pz-half-and-half-${size.id}`, `the half and half in size "${size.id}"`);
+  }
+  for (const drink of catalog.drinks)
+    for (const variant of catalog.drinkVariants)
+      claim(`dr-${drink.id}-${variant.id}`, `drink "${drink.id}" in variant "${variant.id}"`);
+  for (const dip of catalog.dips) claim(`ad-dips-${dip.id}`, `dip "${dip.id}"`);
+  for (const item of catalog.sides) {
+    if (!item.modifier) continue;
+    const group = `modifier "${item.modifier.id}" of side "${item.id}"`;
+    claim(`ag-${item.id}-${item.modifier.id}`, group);
+    for (const choice of item.modifier.options)
+      claim(`ad-${item.id}-${item.modifier.id}-${choice.id}`, `option "${choice.id}" of ${group}`);
+  }
 }
 
 /** Validates a menu file; throws a `MenuError` naming the bad entry. */
@@ -292,7 +337,7 @@ export function parseMenuFile(raw: unknown): PizzaCatalog {
     hasDrinks: drinks.length > 0,
     hasWingFlavours: sides.some((item) => item.id === 'wings' && item.modifier !== undefined),
   };
-  return {
+  const catalog: PizzaCatalog = {
     sizes,
     pizzas: items('pizzas', pizza),
     dips: dip?.modifier
@@ -305,6 +350,8 @@ export function parseMenuFile(raw: unknown): PizzaCatalog {
     deals: items('deals', (raw, at) => deal(raw, at, facts)),
     tax: { gst: rate(tax.GST, 'tax.GST'), pst: rate(tax.PST, 'tax.PST') },
   };
+  refuseSharedIds(catalog);
+  return catalog;
 }
 
 /** "Ham, pineapple, cheese & tomato sauce" becomes Ham, Pineapple, Cheese, Tomato sauce. */

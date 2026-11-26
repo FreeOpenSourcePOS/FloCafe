@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import { now } from '../db';
 import { resolveItemAddons } from '../routes/orders';
+import { validateItemNotes } from '../routes/orders-validation';
 import { resolveOrderItemVariant } from '../services/product-variants';
 import { checkLineRecipe, readCatalog } from './order-recipe';
 import { RecipeError } from '../../shared/pizza/recipe';
@@ -102,6 +103,17 @@ function checkedContents(db: Database.Database, lines: object, button: Fields) {
   };
 }
 
+/** A tap sends the note as the line's own, so it is held to the limit the order route sets. */
+function checkNote(db: Database.Database, note: string | null): void {
+  try {
+    validateItemNotes(db, note);
+  } catch (error) {
+    throw (error as { diagnosticCode?: string }).diagnosticCode
+      ? refusal((error as Error).message)
+      : error;
+  }
+}
+
 /** What a stored recipe names that the menu no longer has, in words for a stale button. */
 function leftTheMenu(db: Database.Database, recipe: OrderLineRecipe): string | undefined {
   const { pizzas } = readCatalog(db);
@@ -137,6 +149,7 @@ function present(db: Database.Database, lines: object, row: QuickButtonRow): Qui
   let reason: string | null = null;
   try {
     checkedContents(db, lines, contents);
+    checkNote(db, row.note);
   } catch (error) {
     if (!(error as { statusCode?: number }).statusCode) throw error;
     reason =
@@ -199,8 +212,10 @@ export function saveQuickButton(
       throw refusal('Pick a colour for this button');
     row.color = body.color as string;
   }
-  if (named('note'))
+  if (named('note')) {
     row.note = text(body.note, 140, 'A note can have at most 140 characters') || null;
+    checkNote(db, row.note);
+  }
   if (CONTENTS.some(named)) {
     const contents = checkedContents(db, {}, { ...(stored && contentsOf(stored)), ...body });
     Object.assign(row, contents, {

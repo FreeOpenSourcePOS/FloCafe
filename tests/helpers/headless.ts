@@ -115,9 +115,10 @@ export function appDb(): typeof import('../../main/db') {
 
 export type HeadlessServer = { output: () => string; stop: () => Promise<void> };
 
-export async function startHeadless(env: HeadlessEnv): Promise<HeadlessServer> {
+/** Starts the server the way the unit does: through the kit's launcher, which holds the lock. */
+export async function startHeadless(env: HeadlessEnv, kit = kitDir): Promise<HeadlessServer> {
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn(process.execPath, ['dev-server.js'], {
+  const child = spawn(process.execPath, [path.join(kit, 'serve.cjs')], {
     cwd: repoRoot,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -156,6 +157,37 @@ export async function startHeadless(env: HeadlessEnv): Promise<HeadlessServer> {
     throw error;
   }
   return { output: () => output, stop };
+}
+
+/** A process that holds the data folder's lock as the service (shared) or a restore (exclusive) does. */
+export function holdLock(
+  env: HeadlessEnv,
+  mode: 'shared' | 'exclusive',
+): Promise<{ kill: (signal?: NodeJS.Signals) => Promise<void> }> {
+  const script = `require(${JSON.stringify(path.join(kitDir, 'common.cjs'))}).dataLock(process.env.FLO_DEV_USER_DATA, ${JSON.stringify(mode)}); console.log('held'); setInterval(() => {}, 1000);`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', script], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    children.add(child);
+    const exited = new Promise<void>((done) => child.once('exit', () => done()));
+    let output = '';
+    const collect = (chunk: Buffer) => {
+      output += chunk;
+      if (output.includes('held'))
+        resolve({
+          kill: async (signal = 'SIGTERM') => {
+            child.kill(signal);
+            await exited;
+            children.delete(child);
+          },
+        });
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.once('exit', () => reject(new Error(`the lock holder exited: ${output}`)));
+  });
 }
 
 export type KitResult = { status: number | null; stdout: string; stderr: string; output: string };

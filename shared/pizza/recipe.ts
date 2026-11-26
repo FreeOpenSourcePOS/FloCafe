@@ -13,9 +13,9 @@ export class RecipeError extends Error {}
 
 type Fields = Record<string, unknown>;
 
-// ponytail: a fixed cap on the JSON length. Six half-and-half pizzas with everything
-// removed come to about 3,000; raise it if a menu ever sells a deal of fifty pizzas.
-const MAX_RECIPE_LENGTH = 20_000;
+// ponytail: a fixed cap on the stored bytes. The menu parser keeps a deal small enough to fit
+// (MAX_DEAL_PIZZAS in menu.ts); raise both together if a menu ever sells a bigger deal.
+const MAX_RECIPE_BYTES = 20_000;
 const UNREADABLE = 'This item could not be read. Remove it and add it again';
 
 const some = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -29,7 +29,7 @@ function fields(value: unknown): Fields {
 
 function tooLarge(value: unknown): boolean {
   try {
-    return JSON.stringify(value).length > MAX_RECIPE_LENGTH;
+    return new TextEncoder().encode(JSON.stringify(value)).length > MAX_RECIPE_BYTES;
   } catch {
     return true;
   }

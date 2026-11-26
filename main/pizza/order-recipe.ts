@@ -1,7 +1,7 @@
 /** The recipe on an order line: checked at the API, kept across edits, printed as detail lines. */
 import type Database from 'better-sqlite3';
 import { getDatabase } from '../db';
-import { RecipeError, validateRecipe } from '../../shared/pizza/recipe';
+import { RecipeError, recipeKey, validateRecipe } from '../../shared/pizza/recipe';
 import { RECIPE_NOT_PRINTED, ticketLines } from '../../shared/pizza/ticket';
 import type { OrderLineRecipe, PizzaCatalog, PizzaRecipe } from '../../shared/pizza/types';
 
@@ -129,9 +129,59 @@ export function keepStoredRecipe(
   replacement.modifier_selection = recipe;
 }
 
-/** What a restricted kitchen display station gets: the line's recipe as stored, or null. */
+type Loose = Record<string, unknown> | null | undefined;
+const isText = (value: unknown): boolean => typeof value === 'string';
+const textOrAbsent = (value: unknown): boolean => value == null || isText(value);
+const oneOrAbsent = (value: unknown, ...allowed: string[]): boolean =>
+  value == null || allowed.includes(value as string);
+/** Absent, or a plain record of whole can counts: a list or a number would be copied as something else. */
+function isPops(pops: unknown): boolean {
+  if (pops == null) return true;
+  if (typeof pops !== 'object') return false;
+  const prototype = Object.getPrototypeOf(pops);
+  return (
+    (prototype === Object.prototype || prototype === null) &&
+    Object.values(pops).every((cans) => Number.isInteger(cans) && cans >= 0)
+  );
+}
+const isPart = (raw: unknown): boolean => {
+  const part = raw as Loose;
+  return isText(part?.pizzaId) && Array.isArray(part?.removed) && part.removed.every(isText);
+};
+
+/** True when every field of the versioned recipe format has its own type, so a copy holds no more. */
+function isRecipeShaped(raw: unknown): boolean {
+  const recipe = raw as Loose;
+  if (recipe?.v !== 1) return false;
+  if (recipe.kind === 'deal')
+    return (
+      isText(recipe.dealId) &&
+      Array.isArray(recipe.pizzas) &&
+      recipe.pizzas.every((pizza) => (pizza as Loose)?.kind === 'pizza' && isRecipeShaped(pizza)) &&
+      isPops(recipe.pops) &&
+      textOrAbsent(recipe.twoLitre) &&
+      textOrAbsent(recipe.wingFlavour)
+    );
+  const { whole, halves } = recipe;
+  return (
+    isText(recipe.sizeId) &&
+    (whole == null
+      ? Array.isArray(halves) && halves.length === 2 && halves.every(isPart)
+      : halves == null && isPart(whole)) &&
+    oneOrAbsent(recipe.cook, 'well-done', 'light-bake') &&
+    oneOrAbsent(recipe.cut, 'square-cut', 'uncut')
+  );
+}
+
+/**
+ * What a restricted kitchen display station gets: the recipe fields of the line's selection and
+ * nothing else it was stored with, as text when it is stored text, or null when it is no recipe.
+ */
 export function kdsRecipe(line: Line): unknown {
-  return recipeOf(line) ? line?.modifier_selection : null;
+  const recipe = recipeOf(line);
+  if (!recipe || !isRecipeShaped(recipe)) return null;
+  const projected = recipeKey(recipe);
+  return typeof line?.modifier_selection === 'string' ? projected : JSON.parse(projected);
 }
 
 /**

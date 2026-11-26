@@ -706,8 +706,8 @@ as an image, a barcode or stock, is left as the back office set it.
 
 A name or price edited in the back office is put back by the next load. So is a product deleted
 there, and a product switched off there, for example because it is sold out, is switched on again.
-A variant keeps its product and an add-on keeps its group: a menu whose derived id is already stored
-under another product or group is refused. The link from the "Dips" group to the "Pizzas" category,
+A variant keeps its product, an add-on keeps its group and a side's add-on group keeps its side: a
+menu whose derived id is already stored under another product, group or side is refused. The link from the "Dips" group to the "Pizzas" category,
 and from a side's group to its side, is created when missing and never removed.
 
 Drinks carry the tax category `soda` when the menu's drinks category has `pst: true`; every other
@@ -735,7 +735,9 @@ A row the previous load wrote and this one does not is switched off (`is_active 
 `deactivated`; it is not deleted, because orders point at it, and its `pizza_products` row stays. A
 side that loses its modifier keeps the link to its add-on group; the group is switched off, so the
 side sells without the choice. A category the menu no longer uses stays on while it still holds an
-active product. A later file that has the entry again switches it back on. A row that left the file and was
+active product or an active sub-category, and the first load after the last of them is gone
+switches it off. A later
+file that has the entry again switches it back on. Any other row that left the file and was
 switched on again by hand stays on through later loads, until a file has it again. The previous
 load's rows are worked out from the catalogue it stored; while that catalogue is unreadable, every
 row in `owned_rows` that the load does not write is switched off. Rows no load owned, such
@@ -743,7 +745,7 @@ as a product or a variant added by hand under an id no menu derives, are never t
 
 | Method | Path           | Authorization           | Parameters                                         | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------ | -------------- | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST` | `/menu/import` | `catalog.import-export` | body: the menu file (`tax`, `sizes`, `categories`) | `{ created, updated, unchanged, deactivated, untaxed }`, counting rows. `parseMenuFile()` validates the whole file before anything is written; a file it rejects answers `400` with `{ error, path }`, where `path` names the bad entry, and writes nothing. A menu in which two entries derive the same id, or that would move a stored variant or add-on to another product or group, answers the same way with `path: 'menu'`. A store currency that is not counted in hundredths, or an unreadable `pizza_menu.owned_rows`, answers `400` with `{ error }` and writes nothing. |
+| `POST` | `/menu/import` | `catalog.import-export` | body: the menu file (`tax`, `sizes`, `categories`) | `{ created, updated, unchanged, deactivated, untaxed }`, counting rows. `parseMenuFile()` validates the whole file before anything is written; a file it rejects answers `400` with `{ error, path }`, where `path` names the bad entry, and writes nothing. A menu in which two entries derive the same id, or that would move a stored variant, add-on or side's add-on group to another product, group or side, answers the same way with `path: 'menu'`. So does a deal of more than 8 pizzas or 99 cans, with the path of its picks. A store currency that is not counted in hundredths, or an unreadable `pizza_menu.owned_rows`, answers `400` with `{ error }` and writes nothing. |
 | `GET`  | `/catalog`     | `catalog.view`          | none                                               | The catalogue parsed from the last menu file loaded (`PizzaCatalog` in `shared/pizza/types.ts`, money in whole cents). `404` when no menu has been loaded.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ### Pizza quick buttons
@@ -788,7 +790,9 @@ message for the cashier:
 
 - `label` is required, trimmed, and at most 24 characters. `color` is required and is one of the
   colour names the POS gives categories (`QUICK_BUTTON_COLORS`). `note` is trimmed and at most 140
-  characters; an empty note is stored as `null`.
+  characters; an empty note is stored as `null`. A tap sends the note as the order line's own, so
+  `validateItemNotes()` also holds it to the store's `max_item_notes_length` setting (100 by
+  default).
 - The product exists, is active and is not deleted.
 - The variant goes through `resolveOrderItemVariant()`: a product with active variants needs one,
   and it must be an active variant of that product.
@@ -805,8 +809,8 @@ one. One customer keeps at most 24 buttons and the shop at most 48 shop-wide one
 either limit answers `400` with a message telling the cashier to delete one first.
 
 Nothing rewrites a stored button when the menu changes. Each time a button is returned, the same
-checks run against the current menu: `usable` is `true` when they pass, and otherwise `reason` is
-the refusal's message. When the recipe names a pizza the menu no longer has, or removes an
+checks run against the current menu, and the note check against the current setting: `usable` is
+`true` when they pass, and otherwise `reason` is the refusal's message. When the recipe names a pizza the menu no longer has, or removes an
 ingredient its pizza no longer has, `reason` names that pizza or ingredient.
 
 | Method   | Path                 | Authorization                                                                                | Parameters                                                                                                           | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

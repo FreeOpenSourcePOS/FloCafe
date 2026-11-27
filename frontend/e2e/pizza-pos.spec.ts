@@ -156,12 +156,16 @@ test.describe('with the sample menu loaded', () => {
     request,
   }) => {
     // "All" shows a pizza, whose price is the product's, beside a deal, whose words are the menu's.
+    // Every pizza has the size price, so the Half & Half legend shows it and the tile only names it.
     await page
       .getByTestId('pizza-category-blocks')
       .getByRole('button', { name: 'All', exact: true })
       .click();
     const large = tile(page, 'Garden').getByRole('button', { name: /Large/ });
-    await expect(large).toContainText(money(LARGE));
+    const legend = halfTile(page).getByTestId('pizza-price-legend');
+    await expect(large).toHaveAccessibleName(money(LARGE));
+    await expect(large).toHaveText('L');
+    await expect(legend).toContainText(money(LARGE));
     const combo = itemsOf('deals').find((deal) => deal.id === 'large-combo')!;
     const WORDS = 'One large pizza with everything on the side';
     const descriptions = page.getByTestId('pizza-deal-description');
@@ -201,10 +205,12 @@ test.describe('with the sample menu loaded', () => {
       // The new menu has answered and its products have not: the till stays on the old pair.
       await page.waitForTimeout(500);
       await expect(descriptions.filter({ hasText: WORDS })).toHaveCount(0);
-      await expect(large).toContainText(money(LARGE));
+      await expect(large).toHaveAccessibleName(money(LARGE));
+      await expect(legend).toContainText(money(LARGE));
       release();
       await expect(descriptions.filter({ hasText: WORDS })).toHaveCount(1);
-      await expect(large).toContainText(money(LARGE + 2));
+      await expect(large).toHaveAccessibleName(money(LARGE + 2));
+      await expect(legend).toContainText(money(LARGE + 2));
       await tile(page, 'Garden').getByRole('button', { name: 'Customize Garden' }).click();
       const sheet = sheetOf(page);
       const size = sheet
@@ -250,7 +256,8 @@ test.describe('with the sample menu loaded', () => {
       await page.getByTestId('pos-online-platform-input').fill('Example Eats');
       await page.getByTestId('pos-order-details-done-btn').click();
 
-      // The size button of the tile quotes the same price, to the eye and to a screen reader.
+      // The size button of the tile quotes the same price, to the eye and to a screen reader:
+      // it differs from the Large every other pizza has, so the tile shows it.
       const tileLarge = tile(page, 'Garden').getByRole('button', { name: /Large/ });
       await expect(tileLarge).toContainText(money(ONLINE));
       await expect(tileLarge).toHaveAccessibleName(money(ONLINE));

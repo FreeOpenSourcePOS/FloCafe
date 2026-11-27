@@ -15,9 +15,9 @@ import { E2E_BASE_URL as BASE } from './helpers/urls';
  * the made-up sample here. Every spec shares one database, so this one loads
  * the menu itself, cancels the order it places and clears the menu when it ends.
  *
- * How many tiles fit depends on the rows of category blocks above them, four
- * blocks to a row. So the page is given the shop's categories as a shop with
- * only its menu has them, whatever other specs left in the database.
+ * How many tiles fit depends on the rows of category blocks above them, which
+ * wrap as their names need. So the page is given the shop's categories as a
+ * shop with only its menu has them, whatever other specs left in the database.
  */
 
 const VIEW = { width: 1180, height: 820 };
@@ -48,6 +48,8 @@ for (let number = deals.length + 1; number <= 8; number += 1) {
   });
 }
 const THREE = deals.find((deal) => deal.id === 'three-large-wings')!;
+const SIZES = (menu.sizes as { pizza: { label: string; price: number }[] }).pizza;
+const money = (amount: number) => new RegExp(amount.toFixed(2).replace('.', '\\.'));
 
 /** Screenshots are saved only when a folder outside the checkout is named. */
 const EVIDENCE_DIR = process.env.E2E_EVIDENCE_DIR;
@@ -85,8 +87,15 @@ test.beforeEach(async ({ page }) => {
       const menu = body.categories.filter((entry: { id: string }) =>
         MENU_CATEGORIES.includes(entry.id),
       );
-      const others = otherCategories.map((entry) => ({ ...menu[0], ...entry, children: [] }));
-      await route.fulfill({ response, json: { ...body, categories: [...menu, ...others] } });
+      const others = otherCategories.map((entry) => ({
+        ...menu[0],
+        ...entry,
+        children: [],
+      }));
+      await route.fulfill({
+        response,
+        json: { ...body, categories: [...menu, ...others] },
+      });
     },
   );
   await loginWithPassword(page, 'owner@flo.local');
@@ -98,7 +107,10 @@ test.beforeEach(async ({ page }) => {
 
 async function shot(page: Page, name: string): Promise<void> {
   if (EVIDENCE_DIR)
-    await page.screenshot({ path: path.join(EVIDENCE_DIR, name), animations: 'disabled' });
+    await page.screenshot({
+      path: path.join(EVIDENCE_DIR, name),
+      animations: 'disabled',
+    });
 }
 
 /** A number the report quotes, kept with the test's result. */
@@ -121,7 +133,14 @@ const whollyVisible = (tiles: Locator): Promise<number> =>
           box.left >= frame.left &&
           box.bottom <= frame.bottom &&
           box.right <= frame.right;
-        const frames = [{ top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth }];
+        const frames = [
+          {
+            top: 0,
+            left: 0,
+            bottom: window.innerHeight,
+            right: window.innerWidth,
+          },
+        ];
         for (let up = element.parentElement; up; up = up.parentElement)
           if (getComputedStyle(up).overflowY !== 'visible') frames.push(up.getBoundingClientRect());
         return frames.every(inside);
@@ -221,6 +240,11 @@ test('twelve pizzas fit a screen, Half & Half first, every control 48 px', async
   for (const size of ['Small', 'Medium', 'Large'])
     await expect(first.getByRole('button', { name: new RegExp(`^Garden, ${size}`) })).toBeVisible();
   await shot(page, 'full-menu-home.png');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+  await shot(page, 'full-menu-home-dark.png');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
 
   // The count on a tile is a bare number to the eye and a phrase to a screen reader.
   await first.getByRole('button', { name: /^Garden, Large/ }).click();
@@ -272,9 +296,10 @@ test('a menu with four sizes keeps every size button inside its tile', async ({ 
 });
 
 test('the pizza list is at most about two screens', async ({ page }) => {
-  const { content, room } = await page
-    .getByTestId('pos-catalog-scroll')
-    .evaluate((element) => ({ content: element.scrollHeight, room: element.clientHeight }));
+  const { content, room } = await page.getByTestId('pos-catalog-scroll').evaluate((element) => ({
+    content: element.scrollHeight,
+    room: element.clientHeight,
+  }));
   measured('pizza list height', content);
   measured('pizza list room', room);
   // Nine rows of three tiles under the Half & Half row, each row about 100 px.
@@ -293,17 +318,339 @@ test.describe('a shop with two more categories than its menu', () => {
     otherCategories = [];
   });
 
-  test('a third row of category blocks leaves nine pizzas on a screen', async ({ page }) => {
+  test('nine category blocks still leave twelve pizzas on a screen', async ({ page }) => {
     await expect(page.getByTestId('pizza-category-blocks').getByRole('button')).toHaveCount(9);
     const visible = await whollyVisible(page.getByTestId('pizza-tile'));
     measured('pizza tiles wholly visible with nine category blocks', visible);
-    expect(visible).toBe(9);
+    expect(visible).toBeGreaterThanOrEqual(12);
     expect(await whollyVisible(halfTile(page))).toBe(1);
     const room = await page
       .getByTestId('pos-catalog-scroll')
       .evaluate((element) => element.clientHeight);
     measured('pizza list room with nine category blocks', room);
   });
+});
+
+test('a tap anywhere on the top 48 px of a tile opens the sheet, never a size', async ({
+  page,
+}) => {
+  for (const name of ['Garden', LONG_NAME]) {
+    const tile = page
+      .getByTestId('pizza-tile')
+      .filter({ has: page.getByRole('heading', { name, exact: true }) });
+    const customize = tile.getByRole('button', { name: `Customize ${name}` });
+    await expect(customize).toBeInViewport({ ratio: 1 });
+    // Points along the top, the middle and the lower edge of Customize, and the top edge of each size
+    // clear of its rounded corners.
+    const misses = await tile.evaluate((element) => {
+      const hits = (button: Element, rows: number[], inset: number) => {
+        const box = button.getBoundingClientRect();
+        return rows.flatMap((y) =>
+          [box.left + inset, box.left + box.width / 2, box.right - inset].flatMap((x) => {
+            const hit = document.elementFromPoint(x, y);
+            return hit && button.contains(hit)
+              ? []
+              : [`${button.getAttribute('aria-label')} at ${y}: ${hit?.textContent}`];
+          }),
+        );
+      };
+      const [band, ...sizes] = element.querySelectorAll('button');
+      const box = band.getBoundingClientRect();
+      return [
+        `${box.width}x${box.height}`,
+        ...hits(band, [box.top + 1, box.top + box.height / 2, box.bottom - 1], 1),
+        ...sizes.flatMap((size) => hits(size, [size.getBoundingClientRect().top + 1], 9)),
+      ];
+    });
+    const [size, ...rest] = misses;
+    const [width, height] = size.split('x').map(Number);
+    measured(`customize height, ${name}`, height);
+    expect(width).toBeGreaterThanOrEqual(48);
+    expect(height).toBeGreaterThanOrEqual(48);
+    expect(rest, `${name}: every point hits its own button`).toEqual([]);
+
+    const box = (await customize.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 2);
+    const sheet = page.getByRole('dialog', { name: 'Pizza' });
+    await expect(sheet).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(tile.getByText(/in order$/)).toHaveCount(0);
+  }
+  await expect(page.getByText('Cart is empty')).toBeVisible();
+});
+
+test('a search keeps every price on screen', async ({ page }) => {
+  const search = page.getByTestId('pos-product-search');
+  const legend = page.getByTestId('pizza-price-legend');
+  for (const typed of ['Garden', '3*gar']) {
+    await search.fill(typed);
+    await expect(halfTile(page)).toHaveCount(0);
+    const garden = page.getByTestId('pizza-tile').filter({ hasText: 'Garden' });
+    for (const { label, price } of SIZES)
+      await expect(
+        garden.getByRole('button', { name: new RegExp(`^Garden, ${label}`) }),
+        `${typed}: Garden's ${label} shows its price, with no legend to quote it`,
+      ).toContainText(money(price));
+  }
+  await search.fill('Half');
+  await expect(page.getByTestId('pizza-tile')).toHaveCount(0);
+  await expect(halfTile(page)).toBeVisible();
+  await expect(legend, 'no pizza on screen, so no pizza prices').toHaveCount(0);
+  for (const { label, price } of SIZES)
+    await expect(halfTile(page).getByRole('button', { name: new RegExp(label) })).toContainText(
+      money(price),
+    );
+  await shot(page, 'full-menu-search-half.png');
+});
+
+test('the price legend stays on screen at the end of the list', async ({ page }) => {
+  const legend = page.getByTestId('pizza-price-legend');
+  await expect(legend).toContainText('Most pizzas:');
+  await page.getByTestId('pos-catalog-scroll').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.getByRole('heading', { name: nameOf(PIZZAS), exact: true })).toBeInViewport({
+    ratio: 1,
+  });
+  await expect(legend).toBeInViewport({ ratio: 1 });
+  expect(await whollyVisible(halfTile(page))).toBe(1);
+  const covered = await legend.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return !hit || !element.contains(hit);
+  });
+  expect(covered, 'no tile scrolls over the legend').toBe(false);
+  await shot(page, 'full-menu-scrolled.png');
+});
+
+/**
+ * Shift+Tab from the last control of the list up to the first one below the Half & Half row,
+ * then Tab back down: every control the focus reaches scrolls below that sticky row, uncovered.
+ */
+async function keyboardClearsHalfRow(page: Page): Promise<void> {
+  const list = page.getByTestId('pos-catalog-scroll');
+  const controls = list.locator('button:enabled:not([data-testid="pizza-half-tile"] button)');
+  const names = await controls.evaluateAll((all) =>
+    all.map((control) => control.getAttribute('aria-label') || control.textContent),
+  );
+  await list.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await controls.last().focus();
+  /** Where the focused control sits, or null once focus has left the list below the row. */
+  const focused = () =>
+    page.evaluate(() => {
+      const control = document.activeElement as HTMLElement | null;
+      const half = document.querySelector('[data-testid="pizza-half-tile"]')!;
+      if (!control?.closest('[data-testid="pos-catalog-scroll"]') || half.contains(control))
+        return null;
+      const box = control.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return {
+        name: control.getAttribute('aria-label') || control.textContent,
+        top: box.top,
+        below: half.getBoundingClientRect().bottom,
+        hit: !!hit && control.contains(hit),
+      };
+    });
+  const check = async (key: string) => {
+    const seen: (string | null)[] = [];
+    for (let step = 1; step < names.length; step += 1) {
+      await page.keyboard.press(key);
+      const at = await focused();
+      expect(at, `${key} ${step} stays in the list below the Half & Half row`).not.toBeNull();
+      expect(at!.top, `${at!.name} is below the Half & Half row`).toBeGreaterThanOrEqual(
+        at!.below - 1,
+      );
+      expect(at!.hit, `${at!.name} is not covered`).toBe(true);
+      seen.push(at!.name);
+    }
+    return seen;
+  };
+  const up = await check('Shift+Tab');
+  expect(up.at(-1)).toBe(names[0]);
+  const down = await check('Tab');
+  expect(down.at(-1)).toBe(names.at(-1));
+}
+
+test('a tile control reached by the keyboard is never under the Half & Half row', async ({
+  page,
+}) => {
+  await keyboardClearsHalfRow(page);
+  await shot(page, 'full-menu-keyboard-focus.png');
+});
+
+test('under All, a deal or product reached by the keyboard is never under the Half & Half row', async ({
+  page,
+}) => {
+  await page
+    .getByTestId('pizza-category-blocks')
+    .getByRole('button', { name: 'All', exact: true })
+    .click();
+  await expect(page.getByTestId('pos-product-card').filter({ hasText: 'Green Salad' })).toHaveCount(
+    1,
+  );
+  await keyboardClearsHalfRow(page);
+  await shot(page, 'full-menu-keyboard-focus-all.png');
+});
+
+test("a tap on the Half & Half row lands on it, over a product's badge scrolled beneath", async ({
+  page,
+}) => {
+  await page
+    .getByTestId('pizza-category-blocks')
+    .getByRole('button', { name: 'All', exact: true })
+    .click();
+  const salad = page.getByTestId('pos-product-card').filter({ hasText: 'Green Salad' });
+  await salad.click();
+  const badge = salad.getByText('1', { exact: true });
+  await expect(badge).toBeVisible();
+  const small = halfTile(page).getByRole('button', {
+    name: /^Half & Half, Small/,
+  });
+  const top = (await small.boundingBox())!.y;
+  await page.getByTestId('pos-catalog-scroll').evaluate(
+    (element, { card, to }) => {
+      element.scrollTop += card - to;
+    },
+    { card: (await salad.boundingBox())!.y, to: top + 4 },
+  );
+  const { overlap, misses } = await small.evaluate(
+    (button, badgeBox) => {
+      const box = button.getBoundingClientRect();
+      const left = Math.max(box.left, badgeBox.x);
+      const right = Math.min(box.right, badgeBox.x + badgeBox.width);
+      const y = badgeBox.y + badgeBox.height / 2;
+      const misses: string[] = [];
+      for (let x = box.left + 2; x <= box.right - 2; x += 2) {
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || !button.contains(hit)) misses.push(`${x}: ${hit?.textContent}`);
+      }
+      return {
+        overlap: { x: (left + right) / 2, y, width: right - left },
+        misses,
+      };
+    },
+    (await badge.boundingBox())!,
+  );
+  expect(overlap.width, "the salad's badge lies under the Small button").toBeGreaterThan(0);
+  expect(misses, 'every point across Small hits Small').toEqual([]);
+
+  await page.mouse.click(overlap.x, overlap.y);
+  const sheet = page.getByRole('dialog', { name: 'Pizza' });
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(badge).toHaveText('1');
+});
+
+test('the keyboard also clears a Half & Half row that wraps', async ({ page }) => {
+  const manySizes = structuredClone(menu);
+  (manySizes.sizes as { pizza: object[] }).pizza.push(
+    { id: 'extra-large', label: 'Extra Large', price: 27 },
+    { id: 'family', label: 'Family Feast', price: 31 },
+    { id: 'party', label: 'Party Platter', price: 35 },
+  );
+  const sizes = SIZES.length + 3;
+  const api = await playwrightRequest.newContext();
+  try {
+    await loadSampleMenu(api, manySizes);
+    await page.setViewportSize({ ...VIEW, width: 980 });
+    await page.reload();
+    await expect(page.getByTestId('pizza-tile')).toHaveCount(PIZZAS);
+    await expect(halfTile(page).getByRole('button')).toHaveCount(sizes);
+    const { height, clearance } = await halfTile(page).evaluate((row) => ({
+      height: Math.ceil(row.getBoundingClientRect().height),
+      clearance: parseFloat(
+        getComputedStyle(row.closest('[data-testid="pos-catalog-scroll"]')!).scrollPaddingTop,
+      ),
+    }));
+    measured('wrapped Half & Half height', height);
+    expect(height, 'the row is taller than a fixed 7rem clearance').toBeGreaterThan(112);
+    expect(clearance, 'the list keeps the height of the row clear').toBeGreaterThanOrEqual(height);
+    await keyboardClearsHalfRow(page);
+    await shot(page, 'full-menu-keyboard-focus-wrapped.png');
+  } finally {
+    await loadSampleMenu(api, menu);
+    await api.dispose();
+  }
+});
+
+test("a Half & Half priced apart shows its own prices beside the pizzas' legend", async ({
+  page,
+}) => {
+  await page.route(
+    (url) => url.pathname === '/api/products',
+    async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const product of body.products)
+        if (product.id === 'pz-half-and-half')
+          for (const variant of product.variants) variant.price += 4;
+      await route.fulfill({ response, json: body });
+    },
+  );
+  await page.reload();
+  const legend = page.getByTestId('pizza-price-legend');
+  await expect(legend).toContainText('Most pizzas:');
+  for (const { label, price } of SIZES) {
+    await expect(legend).toContainText(money(price));
+    const half = halfTile(page).getByRole('button', {
+      name: new RegExp(label),
+    });
+    await expect(half).toContainText(money(price + 4));
+    await expect(half).not.toContainText(money(price));
+  }
+  await shot(page, 'full-menu-half-priced-apart.png');
+});
+
+test('a long custom size label wraps in the legend without overflowing sideways', async ({
+  page,
+}) => {
+  const LONG_SIZE =
+    'Super Ultra Mega Party Family Banquet Feast Celebration Special Edition Extra Giant Pizza Size';
+  await page.route(
+    (url) => url.pathname === '/api/products',
+    async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const product of body.products)
+        if (product.id.startsWith('pz-'))
+          for (const variant of product.variants)
+            if (variant.name === 'Large') variant.name = LONG_SIZE;
+      await route.fulfill({ response, json: body });
+    },
+  );
+  await page.reload();
+  const legend = halfTile(page).getByTestId('pizza-price-legend');
+  await expect(legend).toContainText(LONG_SIZE);
+  const scroller = page.getByTestId('pos-catalog-scroll');
+  const overflow = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow, 'the catalog does not scroll sideways').toBeLessThanOrEqual(0);
+  const priceBox = await legend
+    .locator('span')
+    .filter({ hasText: money(SIZES[2].price) })
+    .last()
+    .boundingBox();
+  const scrollerBox = (await scroller.boundingBox())!;
+  expect(priceBox, 'the price amount is rendered').not.toBeNull();
+  expect(priceBox!.x + priceBox!.width, 'the price fits inside the scrollport').toBeLessThanOrEqual(
+    scrollerBox.x + scrollerBox.width + 0.5,
+  );
+  expect(priceBox!.height, 'the price stays on one line').toBeLessThanOrEqual(24);
+});
+
+test('a wide screen stops at five columns', async ({ page }) => {
+  const tiles = page.getByTestId('pizza-tile');
+  for (const width of [1600, 1920, 2560]) {
+    await page.setViewportSize({ width, height: VIEW.height });
+    const columns = await tiles.evaluateAll(
+      (all) => new Set(all.map((tile) => Math.round(tile.getBoundingClientRect().left))).size,
+    );
+    measured(`columns at ${width} px`, columns);
+    expect(columns, `${width} px wide`).toBe(5);
+  }
 });
 
 test('a long name is shown whole, on two lines at most', async ({ page }) => {
@@ -404,7 +751,9 @@ test('the kitchen is told what comes with a deal that has no pizzas', async ({ r
   expect(placed.ok(), `the order is accepted (got ${placed.status()})`).toBeTruthy();
   const { order } = await placed.json();
   try {
-    const kitchen = await request.get(`${BASE}/api/kitchen/orders`, { headers: headers() });
+    const kitchen = await request.get(`${BASE}/api/kitchen/orders`, {
+      headers: headers(),
+    });
     expect(kitchen.ok()).toBeTruthy();
     const body = await kitchen.json();
     const ours = (body.orders ?? body).find((entry: { id: number }) => entry.id === order.id);

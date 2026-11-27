@@ -50,6 +50,7 @@
   "halfAndHalf": "Half & half",
   "halfTileHint": "Two pizzas on one pie, at the size price",
   "halfToppingLine": "{count, plural, one {# half topping} other {# half toppings}}",
+  "standardPrices": "Most pizzas:",
   "inOrder": "{count} in order",
   "ingredientsHint": "Ingredients: tap to remove, no charge",
   "ingredientsHintExtra": "Ingredients: tap for NO, tap again for EXTRA",

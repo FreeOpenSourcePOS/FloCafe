@@ -1,11 +1,10 @@
 'use client';
 
 import { useRef } from 'react';
-import { Check, Star } from 'lucide-react';
+import { Star } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import { create } from 'zustand';
-import { getCategoryColorClasses } from '@/components/pos/ProductGrid';
 import { tenantCan } from '@/lib/permissions';
 import { holdPizzaCatalog } from '@/lib/pizza/catalog';
 import {
@@ -22,6 +21,7 @@ import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
 import { onSessionBoundary } from '@/store/session-events';
 import type { QuickButton } from '@shared/pizza/types';
+import { CategoryPill } from './CategoryPill';
 
 /** The id the Quick Buttons block selects in place of a category; no product has it. */
 export const QUICK_BUTTONS_CATEGORY = 'quick-buttons';
@@ -125,27 +125,17 @@ export function QuickButtonsBlock({
   const count = useQuickButtonStore(
     (state) => state.buttons.filter((button) => button.customer_id === null).length,
   );
-  const color = getCategoryColorClasses('indigo');
-  const pressed = selected === QUICK_BUTTONS_CATEGORY;
   return (
-    <button
-      type="button"
-      aria-pressed={pressed}
+    <CategoryPill
+      selected={selected === QUICK_BUTTONS_CATEGORY}
+      color="indigo"
       onClick={() => onSelect(QUICK_BUTTONS_CATEGORY)}
-      className={cn(
-        'flex min-h-14 flex-col justify-center rounded-xl border border-s-4 px-3 py-1 text-start font-bold leading-tight transition-colors',
-        FOCUS,
-        color && `${color.bg} ${color.text} ${color.border}`,
-        // The ring and the tick mark the open block, as on the category blocks beside it.
-        pressed && 'border-current ring-2 ring-inset ring-current',
-      )}
     >
-      <span className="text-base">{t('quickButtons')}</span>
-      <span className="flex items-center justify-between gap-2 text-xs">
+      <span className="whitespace-nowrap">{t('quickButtons')}</span>
+      <span className="whitespace-nowrap rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground group-aria-pressed:bg-black/25 group-aria-pressed:text-white">
         {t('quickSaved', { count })}
-        {pressed && <Check size={16} className="shrink-0" />}
       </span>
-    </button>
+    </CategoryPill>
   );
 }
 

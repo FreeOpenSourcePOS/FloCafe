@@ -412,6 +412,7 @@ export default function ProductGrid({
     const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
     return matchCat && matchSearch;
   });
+  const shown = pizza?.sorted(filtered) ?? filtered;
 
   return (
     <div
@@ -549,7 +550,7 @@ export default function ProductGrid({
         <div
           className={`grid gap-3 ${gridClassName ?? pizza?.gridClassName ?? (sidebarOpen ? 'grid-cols-4' : 'grid-cols-5')}`}
         >
-          {(pizza?.sorted(filtered) ?? filtered).map((product) => {
+          {shown.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             const clickProduct = () => {
               if (disabled) return;
@@ -557,7 +558,7 @@ export default function ProductGrid({
               if (!validateSelectionQuantity(product, quantity)) return;
               onProductClick(product, quantity);
             };
-            const pizzaTile = pizza?.tile(product, inCartQty, disabled, fmt, clickProduct);
+            const pizzaTile = pizza?.tile(product, inCartQty, disabled, fmt, clickProduct, shown);
             if (pizzaTile) return pizzaTile;
 
             return (

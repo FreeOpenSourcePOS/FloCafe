@@ -148,7 +148,11 @@ test.describe('Pizza prices', () => {
       .getByTestId('pizza-tile')
       .filter({ has: page.getByRole('heading', { name: 'Garden', exact: true }) })
       .getByRole('button', { name: /Large/ });
-    await expect(large).toContainText(new RegExp(money(RAISED)));
+    await expect(
+      page.getByTestId('pizza-half-tile').getByTestId('pizza-price-legend'),
+    ).toContainText(new RegExp(money(RAISED)));
+    await expect(large).toHaveAccessibleName(new RegExp(money(RAISED)));
+    await expect(large).toHaveText('L');
     await large.click();
     await expect(page.getByTestId('cart-item').first()).toContainText(new RegExp(money(RAISED)));
 

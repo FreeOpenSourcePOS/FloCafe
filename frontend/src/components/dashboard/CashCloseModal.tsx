@@ -42,7 +42,13 @@ import { SendWhatsAppReportModal } from '@/components/dashboard/SendWhatsAppRepo
 /** Day-close wizard modal (steps 1 Revisar / 2 Contar / 3 Cerrar).
  *  Pure view over useCashClose: every value and action arrives on
  *  `model`, so this file holds JSX only. */
-export function CashCloseModal({ model }: { model: CashCloseModel }) {
+export function CashCloseModal({
+  model,
+  dailySalesExport,
+}: {
+  model: CashCloseModel;
+  dailySalesExport?: { busy: boolean; exportPdf: (businessDate: string) => void };
+}) {
   const {
     closeOpen,
     setCloseOpen,
@@ -93,6 +99,8 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
   } = model;
   const tPos = useTranslations('pos');
   const blockingOpenShift = xReport?.blockingOpenShift ?? null;
+  const dailySalesDate =
+    closeStep === 3 ? closedZ?.business_date : xReport?.businessDate || (xReport && businessDate);
   const exportMenu = (report: 'x' | 'z') => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -609,6 +617,20 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
             )}
           </div>
 
+          {dailySalesExport && dailySalesDate && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <p className="text-muted-foreground">{t('cashCloseDailySalesHint')}</p>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={dailySalesExport.busy}
+                onClick={() => dailySalesExport.exportPdf(dailySalesDate)}
+              >
+                <FileText size={14} />
+                {t('dailySalesWhatsAppTitle')} ({t('exportPdf')})
+              </Button>
+            </div>
+          )}
           <DialogFooter>
             {closeStep === 3 ? (
               <>

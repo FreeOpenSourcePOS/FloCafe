@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Select at least one order type"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "The closeout summarizes sales and payments. The product report covers the full business day.",
     "aov": "Avg Order Value",
     "avgPrepTime": "Avg Prep Time",
     "avgTableTurn": "Avg Table Turn",
@@ -1799,6 +1800,7 @@
     "success": "Database restored successfully. Restarting..."
   },
   "serverApp": {
+    "pinRosterEmpty": "No staff can sign in with a PIN yet. Ask a manager to set your account PIN in Staff.",
     "addToOrder": "Add to order",
     "billPrintFailed": "Order sent, but the bill didn't print",
     "couldNotLoadData": "Could not load Server App data",

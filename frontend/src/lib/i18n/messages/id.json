@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Pilih setidaknya satu jenis pesanan"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Penutupan merangkum penjualan dan pembayaran. Laporan produk mencakup seluruh hari usaha.",
     "aov": "Rata-rata Nilai Pesanan",
     "avgPrepTime": "Rata-rata Waktu Persiapan",
     "avgTableTurn": "Rata-rata Perputaran Meja",
@@ -1799,6 +1800,7 @@
     "success": "Basis data berhasil dipulihkan. Memulai ulang..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Belum ada staf yang bisa masuk dengan PIN. Minta manajer mengatur PIN akun Anda di menu Staf.",
     "addToOrder": "Tambahkan ke pesanan",
     "billPrintFailed": "Pesanan terkirim, tetapi tagihan tidak tercetak",
     "couldNotLoadData": "Tidak dapat memuat data Server App",

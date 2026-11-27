@@ -19,6 +19,9 @@ test.describe('Cash close phase-1 UI', () => {
 
   test('day close modal shows open-shift block from x-report', async ({ page }) => {
     const today = new Date().toISOString().slice(0, 10);
+    await page.route('**/api/reports/daily-sales/export?*', async (route) => {
+      await route.fulfill({ contentType: 'text/html', body: '<p>Products</p>' });
+    });
     await page.route('**/api/reports/x-report*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -63,6 +66,18 @@ test.describe('Cash close phase-1 UI', () => {
     await expect(blocker).toContainText('42');
     await expect(blocker).toContainText('E2E Cashier');
     await expect(dialog.getByRole('button', { name: /Continuar|Continue/i })).toBeDisabled();
+    await expect(dialog.getByText(/product report covers the full business day/i)).toBeVisible();
+    await page.evaluate(() => {
+      Object.defineProperty(window, 'electronAPI', {
+        value: { saveHtmlAsPdf: async () => ({ success: true }) },
+      });
+    });
+    const request = page.waitForRequest('**/api/reports/daily-sales/export?*');
+    await dialog.getByRole('button', { name: /Daily Sales Report.*PDF/i }).click();
+    const query = new URL((await request).url()).searchParams;
+    expect(query.get('date')).toBe(today);
+    expect(query.get('format')).toBe('html');
+    expect(query.has('session_id')).toBe(false);
   });
 
   test('shift close modal shows unpaid carry-over warning while keeping close button enabled', async ({

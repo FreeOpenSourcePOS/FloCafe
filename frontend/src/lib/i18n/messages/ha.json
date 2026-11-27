@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Zaɓi aƙalla nau’in oda ɗaya"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Rufewar ta taƙaita tallace-tallace da biyan kuɗi. Rahoton kayayyaki ya shafi duk ranar kasuwanci.",
     "aov": "Matsakaicin Kimar Oda",
     "avgPrepTime": "Matsakaicin Lokacin Shiryawa",
     "avgTableTurn": "Matsakaicin Juyawar Tebur",
@@ -1799,6 +1800,7 @@
     "success": "An maido da ma'adanar bayanai cikin nasara. Ana sake kunnawa..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Babu ma'aikacin da zai iya shiga da PIN tukuna. Nemi manaja ya saita PIN na asusunka a sashen Ma'aikata.",
     "addToOrder": "Ƙara zuwa oda",
     "billPrintFailed": "An tura oda, amma lissafin bai bugu ba",
     "couldNotLoadData": "Ba a iya loda bayanan Manhajar Sabis ba",

@@ -293,8 +293,13 @@ export default function DashboardPage() {
   // The store's business day starts at its configured time, not at midnight, so
   // the day picker and its upper bound follow the same rule the cash-close modal
   // and the drawer movements use instead of the plain tenant-local date.
+  const [nowInstant, setNowInstant] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNowInstant(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
   const todayLocal = businessDateForInstant({
-    instant: new Date(),
+    instant: nowInstant,
     timezone: timeZone,
     startTime: currentTenant?.business_day_start_time || '00:00',
   });

@@ -565,7 +565,7 @@ async function runTests(): Promise<void> {
       'savePrinterHw omits default paper_width on new auto-profile add',
     );
 
-    // 12. Issue #1640: PrintersSettingsTab.deletePrinterHw surfaces backend 409 error reason
+    // 12. PrintersSettingsTab.deletePrinterHw surfaces backend 409 error reason
     const frontendRequire = moduleApi.createRequire(
       path.resolve(__dirname, '../frontend/package.json'),
     );

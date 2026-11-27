@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import { getSessionBoundaryEpoch } from '@/store/session-events';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
-import { usePosSettingsStore } from '@/store/pos-settings';
+import { isPrepaidBilling, normalizeServiceModel, usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
@@ -286,9 +286,11 @@ export default function POSPage() {
     autoPrintKot,
     autoPrintBill,
     billingType,
+    serviceModel,
     tablesRequired,
     kotPrintingEnabled,
     setBillingType,
+    setServiceModel,
     setTablesRequired,
     setKotPrintingEnabled,
     setAutoPrintKot,
@@ -404,6 +406,7 @@ export default function POSPage() {
     operationFailure?: SupportOperationFailure;
     ticketCorrelationId: string;
     clientTicketId: string;
+    failureKey?: string;
     context: SupportErrorContextSnapshot;
     presentation: PosFailureSupportMetadata;
     payload: Record<string, unknown>;
@@ -415,6 +418,10 @@ export default function POSPage() {
   } | null>(null);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const supportSubmitTokenRef = useRef<symbol | null>(null);
+  const currentSupportTicketRef = useRef<string | null>(null);
+  const supportTicketsRef = useRef(
+    new Map<string, { id: string; status: 'draft' | 'submitting' | 'queued' }>(),
+  );
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
@@ -468,6 +475,7 @@ export default function POSPage() {
     };
   };
   const clearSupportErrorState = () => {
+    currentSupportTicketRef.current = null;
     supportSubmitTokenRef.current = null;
     setSupportSubmitting(false);
     setSupportError(null);
@@ -507,6 +515,8 @@ export default function POSPage() {
     setPrepaidFailure(null);
     isSendingToPaymentRef.current = false;
     setSubmitting(false);
+    currentSupportTicketRef.current = null;
+    supportTicketsRef.current.clear();
     supportSubmitTokenRef.current = null;
     setSupportSubmitting(false);
     setSupportError(null);
@@ -926,7 +936,23 @@ export default function POSPage() {
       ? entry.correlationId
       : undefined;
     const ticketCorrelationId = correlationId || createOperationReference() || '';
-    const clientTicketId = createOperationReference() || '';
+    const failureKey = correlationId
+      ? JSON.stringify([
+          liveContext.storeId,
+          liveContext.userId,
+          liveContext.sessionEpoch,
+          correlationId,
+          entry.operation,
+          entry.reasonCode || entry.code,
+          entry.displayCode,
+          entry.operationFailure?.capture_point,
+        ])
+      : undefined;
+    const existingTicket = failureKey ? supportTicketsRef.current.get(failureKey) : undefined;
+    const clientTicketId = existingTicket?.id || createOperationReference() || '';
+    if (failureKey && clientTicketId && !existingTicket) {
+      supportTicketsRef.current.set(failureKey, { id: clientTicketId, status: 'draft' });
+    }
     const presentation = resolvePosFailureSupportMetadata({
       operation: entry.operation,
       classification: entry.classification,
@@ -943,11 +969,14 @@ export default function POSPage() {
       correlationId && entry.operationFailure?.operation_id === correlationId
         ? entry.operationFailure
         : undefined;
-    supportSubmitTokenRef.current = null;
-    setSupportSubmitting(false);
-    setSentTicketId(null);
-    setAttachLog(true);
-    supportLogSnapshotRef.current = null;
+    if (currentSupportTicketRef.current !== clientTicketId) {
+      supportSubmitTokenRef.current = null;
+      setSupportSubmitting(existingTicket?.status === 'submitting');
+      setAttachLog(true);
+      supportLogSnapshotRef.current = null;
+      currentSupportTicketRef.current = clientTicketId;
+    }
+    setSentTicketId(existingTicket?.status === 'queued' ? clientTicketId : null);
     setSupportError({
       title: entry.title,
       subject,
@@ -964,6 +993,7 @@ export default function POSPage() {
       operationFailure: matchedOperationFailure,
       ticketCorrelationId,
       clientTicketId,
+      failureKey,
       context: {
         storeId: liveContext.storeId,
         userId: liveContext.userId,
@@ -1226,7 +1256,7 @@ export default function POSPage() {
     getCountryByCode(currentTenant?.country ?? '')?.locale,
   );
   const { printBill, printKot } = usePrinterStore();
-  const billingIsPrepaid = billingType === 'prepaid';
+  const billingIsPrepaid = isPrepaidBilling(billingType, serviceModel, cart.orderType);
   const shouldTakePaymentNow = billingIsPrepaid;
 
   const printKotIfEnabled = async (order: Order, originContext?: SupportErrorContextSnapshot) => {
@@ -1617,6 +1647,7 @@ export default function POSPage() {
           setStoreTimezone(d.timezone.trim());
         }
         setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
+        setServiceModel(normalizeServiceModel(d.service_model));
         const isTablesRequired = typeof d.tables_required === 'boolean' ? d.tables_required : true;
         setTablesRequired(isTablesRequired);
 
@@ -1694,6 +1725,7 @@ export default function POSPage() {
   }, [
     isRestaurant,
     setBillingType,
+    setServiceModel,
     setTablesRequired,
     setKotPrintingEnabled,
     setAutoPrintKot,
@@ -2832,7 +2864,6 @@ export default function POSPage() {
     walletAmount: number,
     discount: PrepaidDiscount | null,
   ) => {
-    const isPrepaidCheckout = shouldTakePaymentNow;
     setSubmitting(true);
     const originContext = readLiveSupportContext();
     const originUserId = originContext.userId;
@@ -3378,7 +3409,7 @@ export default function POSPage() {
 
       await printBillForTenant(
         { ...paidBill, order: paidBill.order ?? bill.order ?? order },
-        isPrepaidCheckout,
+        false,
         undefined,
         originContext,
       );
@@ -3952,7 +3983,7 @@ export default function POSPage() {
           cart.orderType === 'dine_in' &&
           cart.tableId &&
           cart.items.length > 0 &&
-          billingType === 'postpaid'
+          !billingIsPrepaid
         ) {
           const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
           heldOrders
@@ -4303,6 +4334,10 @@ export default function POSPage() {
                       return;
                     }
                     const submitToken = Symbol('pos-support-submit');
+                    const ticket = targetError.failureKey
+                      ? supportTicketsRef.current.get(targetError.failureKey)
+                      : undefined;
+                    if (ticket && ticket.status !== 'draft') return;
                     supportSubmitTokenRef.current = submitToken;
                     setSupportSubmitting(true);
                     try {
@@ -4322,7 +4357,9 @@ export default function POSPage() {
                               : undefined,
                           );
                           if (!checkSessionCurrent(targetError.context)) {
-                            clearSupportErrorState();
+                            if (supportSubmitTokenRef.current === submitToken) {
+                              clearSupportErrorState();
+                            }
                             return;
                           }
                           if (supportSubmitTokenRef.current !== submitToken) {
@@ -4335,7 +4372,8 @@ export default function POSPage() {
                           };
                         }
                         if (!checkSessionCurrent(targetError.context)) {
-                          clearSupportErrorState();
+                          if (supportSubmitTokenRef.current === submitToken)
+                            clearSupportErrorState();
                           return;
                         }
                       }
@@ -4347,29 +4385,36 @@ export default function POSPage() {
                         attachLog,
                         logTail,
                       });
+                      if (ticket) ticket.status = 'submitting';
                       await api.post('/support-ticket', requestBody, {
                         headers: liveAuthHeadersFor(targetError.context),
                       });
                       if (!checkSessionCurrent(targetError.context)) {
-                        clearSupportErrorState();
+                        if (supportSubmitTokenRef.current === submitToken) clearSupportErrorState();
                         return;
+                      }
+                      if (ticket) ticket.status = 'queued';
+                      if (currentSupportTicketRef.current === targetError.clientTicketId) {
+                        setSentTicketId(targetError.clientTicketId);
                       }
                       if (supportSubmitTokenRef.current !== submitToken) {
                         return;
                       }
                       toast.success(tSupport('queued'));
-                      setSentTicketId(targetError.clientTicketId);
                     } catch {
                       if (!checkSessionCurrent(targetError.context)) {
-                        clearSupportErrorState();
+                        if (supportSubmitTokenRef.current === submitToken) clearSupportErrorState();
                         return;
                       }
                       if (supportSubmitTokenRef.current === submitToken) {
                         toast.error(t('supportRequestQueueFailed'));
                       }
                     } finally {
+                      if (ticket?.status === 'submitting') ticket.status = 'draft';
                       if (supportSubmitTokenRef.current === submitToken) {
                         supportSubmitTokenRef.current = null;
+                      }
+                      if (currentSupportTicketRef.current === targetError.clientTicketId) {
                         setSupportSubmitting(false);
                       }
                     }

@@ -39,6 +39,7 @@ function createTranslatorsForLocale(bundle: LocaleBundle): SettingsTranslatorMap
     settings: makeNamespaceTranslator('settings'),
     pos: makeNamespaceTranslator('pos'),
     customerDisplay: makeNamespaceTranslator('customerDisplay'),
+    secureNetwork: makeNamespaceTranslator('secureNetwork'),
     tax: makeNamespaceTranslator('tax'),
     qrMenu: makeNamespaceTranslator('qrMenu'),
     update: makeNamespaceTranslator('update'),

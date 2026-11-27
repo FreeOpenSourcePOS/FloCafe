@@ -20,6 +20,7 @@ import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { usePosSortPreference } from '@/hooks/usePosSort';
 import { POS_CATEGORY_SORTS, POS_ITEM_SORTS } from '@/lib/pos-sort';
 import { CustomerDisplayCard } from '@/components/settings/CustomerDisplayCard';
+import { SecureNetworkCard } from '@/components/settings/SecureNetworkCard';
 import type {
   KotLanguagePolicy,
   PrimaryLanguageSelection,
@@ -430,6 +431,7 @@ export default function SettingsPage() {
   const tUpdate = useTranslations('update');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const tCustomerDisplay = useTranslations('customerDisplay');
+  const tSecureNetwork = useTranslations('secureNetwork');
   const tTax = useTranslations('tax');
   const tQrMenu = useTranslations('qrMenu');
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
@@ -704,6 +706,7 @@ export default function SettingsPage() {
           settings: t,
           pos: tPos,
           customerDisplay: tCustomerDisplay,
+          secureNetwork: tSecureNetwork,
           tax: tTax,
           qrMenu: tQrMenu,
           update: tUpdate,
@@ -1993,6 +1996,7 @@ export default function SettingsPage() {
     businessDayStartTime: '00:00',
     currency: '',
     billingType: 'postpaid',
+    serviceModel: 'finedine',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '',
@@ -2246,6 +2250,8 @@ export default function SettingsPage() {
         businessDayStartTime: d.business_day_start_time || '00:00',
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
+        serviceModel:
+          d.service_model === 'qsr' || d.service_model === 'hybrid' ? d.service_model : 'finedine',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered:
           d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
@@ -2596,6 +2602,10 @@ export default function SettingsPage() {
           businessDayStartTime: d.business_day_start_time || '00:00',
           currency: d.currency || '',
           billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
+          serviceModel:
+            d.service_model === 'qsr' || d.service_model === 'hybrid'
+              ? d.service_model
+              : 'finedine',
           tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
           taxRegistered:
             d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
@@ -4134,6 +4144,7 @@ export default function SettingsPage() {
         currency: form.currency,
         country: form.countryCode,
         billing_type: form.billingType,
+        service_model: form.serviceModel,
         tables_required: form.tablesRequired,
         tax_registered: form.taxRegistered,
         tax_registration_number: form.taxRegistrationNumber,
@@ -4203,6 +4214,7 @@ export default function SettingsPage() {
         business_address: form.businessAddress,
         business_phone: normalizedBusinessPhone,
         billing_type: form.billingType,
+        service_model: form.serviceModel,
         tables_required: form.tablesRequired,
         receipt_logo: form.receiptLogo || '',
         receipt_logo_raster: form.receiptLogoRaster || '',
@@ -6039,6 +6051,8 @@ export default function SettingsPage() {
 
           <TabsContent value="server-app">
             <SettingsTabShell>
+              <SecureNetworkCard canManage={isAdmin} />
+
               <div
                 data-setting-section="server-app-enable"
                 className="bg-card rounded-xl border border-border p-6"

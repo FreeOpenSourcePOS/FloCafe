@@ -22,6 +22,7 @@ import {
 import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
+import { isOrderPrepaidById } from '../services/service-model';
 import { cloudSync } from '../services/cloud-sync';
 import * as whatsapp from '../services/whatsapp';
 import { hasPermission, requirePermission } from '../services/authorization';
@@ -300,13 +301,10 @@ export function checkKitchenDeliveryStatus(
   const kdsEnabled = db.prepare("SELECT value FROM settings WHERE key = 'kds_enabled'").get() as
     | { value: string }
     | undefined;
-  const billingType = db.prepare("SELECT value FROM settings WHERE key = 'billing_type'").get() as
-    | { value: string }
-    | undefined;
   if (
     setting?.value !== 'true' ||
     kdsEnabled?.value === 'false' ||
-    billingType?.value === 'prepaid'
+    isOrderPrepaidById(db, orderId)
   ) {
     return { allowed: true, count: 0, items: [] };
   }
@@ -5531,11 +5529,7 @@ router.patch(
         });
       }
 
-      const clientIp =
-        req.ip ||
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        'unknown';
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       const canonicalIp = normalizeIpForRateLimit(clientIp);
       const rateLimitKey = `pin:${canonicalIp}:payment-method-correction`;
       if (isPinRateLimited(rateLimitKey)) {

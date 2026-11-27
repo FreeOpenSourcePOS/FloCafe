@@ -1,5 +1,6 @@
 import {
   isWithinCompletedKdsProjectionWindow,
+  isKitchenItem,
   projectBoardStatusFromItems,
   type OrderItemStatusLike,
 } from '../../../shared/order-item-status';
@@ -144,6 +145,9 @@ export function resolveOrderBoardStatus(
     return projectBoardStatusFromItems(order.items);
   }
   if (order.status === 'pending' || order.status === 'preparing' || order.status === 'ready') {
+    const items = order.items ?? [];
+    const hasReadyMadeLine = items.some((item) => !isKitchenItem(item));
+    if (hasReadyMadeLine && !items.some((item) => isKitchenItem(item))) return null;
     return order.status;
   }
   return null;

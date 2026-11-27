@@ -26,6 +26,7 @@ const mockPosSettingsStore = {
     kotLanguagePolicy: null as unknown,
     autoLockMinutes: 0,
     tablesRequired: false,
+    autoPrintBill: false,
     setLanguage(language: string) {
       this.language = language;
     },
@@ -326,7 +327,12 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
     };
   }
   if (reqName === '@/store/pos-settings') {
-    return { usePosSettingsStore: mockPosSettingsStoreFn };
+    return {
+      usePosSettingsStore: mockPosSettingsStoreFn,
+      isPrepaidBilling: (billingType: string) => billingType === 'prepaid',
+      normalizeServiceModel: (value: unknown) =>
+        value === 'qsr' || value === 'hybrid' ? value : 'finedine',
+    };
   }
   if (reqName === '@/components/pos/PrepaidCheckoutModal') {
     return { __esModule: true, default: PrepaidCheckoutModalStub };
@@ -1807,7 +1813,12 @@ async function run() {
     },
     get: async () => ({ data: {} }),
   };
-  await managerPrepaidModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  mockPosSettingsStore.state.autoPrintBill = true;
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  const autoPrintModal = findElement(tree, PrepaidCheckoutModalStub);
+  await autoPrintModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  mockPosSettingsStore.state.autoPrintBill = false;
   assertEqualOrThrow(
     capturedPrintedBills.length,
     1,

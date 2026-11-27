@@ -15,9 +15,15 @@ This page is the map. Each server and lifecycle rule has its own page; see the l
 | Kitchen Display | `3002` | [`main/kds-server.ts`](../../main/kds-server.ts) | Standalone KDS page and KDS REST endpoints, for a second screen or a tablet. |
 | Server App | `3003` | [`main/server-app.ts`](../../main/server-app.ts) | A narrow ordering surface for server staff, backed by a filtered proxy to `:3001`. |
 
+Each surface can also be reached over HTTPS from LAN devices; see [Secure Network](#secure-network-https-for-lan-devices).
+
 The KDS WebSocket is served at path `/kds` on **both** `:3001` and `:3002`. Both servers call the
 same handler, `setupKdsWebSocket` in [`main/services/kds.ts`](../../main/services/kds.ts), so a
 KDS client behaves identically whichever port it connects to.
+
+The standalone KDS and Server App pages each link their own web app manifest
+(`frontend/public/kds-manifest.json` and `frontend/public/server-manifest.json`), so an installed
+app opens `/kds-standalone` or `/server-standalone` and not the POS dashboard.
 
 ```mermaid
 flowchart TB
@@ -51,7 +57,8 @@ flowchart TB
 
 ## Every window loads over HTTP
 
-No window loads a `file://` URL. The POS window loads
+The windows stay on HTTP even when Secure Network is on: `localhost` is already a secure context,
+and the desktop app must not depend on a certificate authority. No window loads a `file://` URL. The POS window loads
 `http://localhost:<main port>` so that the browser sees a single HTTP origin, which avoids
 `file://` CORS and routing problems and keeps development and packaged behaviour identical. The
 KDS window loads `http://<LAN IP>:<kds port>/kds`. The server app window loads its own origin on
@@ -76,6 +83,7 @@ Read the live port from the accessor, never from a literal:
 | Main API | `getServerPort()` from [`main/server-state.ts`](../../main/server-state.ts) |
 | KDS | `getKdsPort()` |
 | Server App | `getServerAppPort()` from [`main/server-app-state.ts`](../../main/server-app-state.ts) |
+| HTTPS fronts | `getHttpsPort()`, `getKdsHttpsPort()`, `getServerAppHttpsPort()` from `main/server-state.ts`; each is `null` while Secure Network is off or not bound |
 
 Defaults come from the `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` environment variables.
 
@@ -84,10 +92,44 @@ Defaults come from the `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` environment var
 On startup the app publishes an mDNS service named `Flo` of type `http` on host `flo`, so the POS
 resolves at `flo.local:<main port>` on the LAN. The TXT record carries the app version and the
 paths and ports of the KDS and server app surfaces, and the startup log prints the LAN IP as a
-fallback for networks where mDNS resolution fails.
+fallback for networks where mDNS resolution fails. When Secure Network is serving, the record also
+carries `https_port`, `https_kds_port`, `https_server_app_port`, and `ca_sha256` (the CA fingerprint
+without separators).
 
 mDNS advertisement is skipped when `FLO_E2E_SKIP_OPTIONAL_NETWORK` is `1`, which is how the
 end-to-end suites keep an offline fixture uncontended.
+
+## Secure Network (HTTPS for LAN devices)
+
+Browsers expose WebUSB only on secure origins, so a terminal that opens `http://<host-ip>:3001`
+cannot use a USB receipt printer. Secure Network gives every LAN surface an HTTPS address without
+any proxy or helper process.
+
+- **In-process TLS.** [`main/security/lan-tls/https-front.ts`](../../main/security/lan-tls/https-front.ts)
+  creates one `https.Server` per surface and dispatches each decrypted request and `upgrade` to the
+  existing HTTP server's handlers. `req.socket.remoteAddress` is therefore the real LAN client, so the
+  loopback-only setup guard, the maintenance admission ticket header, and every per-IP rate limit behave
+  exactly as on HTTP. The `/kds` WebSocket works as `wss` on the main and KDS fronts.
+- **Two-tier certificates.** A long-lived local root CA is created once per installation
+  ([`ca-store.ts`](../../main/security/lan-tls/ca-store.ts)); its key is encrypted with Electron
+  `safeStorage` under `userData/secure-network/` and never leaves that folder. A short-lived server
+  certificate ([`x509.ts`](../../main/security/lan-tls/x509.ts)) covers `flo.local`, `localhost`,
+  `127.0.0.1`, and the ranked private LAN addresses. It is reissued in memory when the address set
+  changes or when renewal is due, without any device trusting again.
+- **Ports.** The main surface prefers `443`, then walks `3441` upward; KDS uses `3451` and the Server
+  App `3461` upward. The ranges are fixed, independent of the HTTP ports, so they always sit inside the
+  Windows firewall rule's `443,3441-3470`. A busy port falls through the ladder and an HTTPS failure
+  never affects the HTTP listeners.
+- **Host validation.** The fronts answer `421` unless the `Host` is `localhost`, `flo.local`, `[::1]`,
+  or a private IPv4 literal.
+- **Trust is never silent.** Each device must approve the CA once. The public certificate is served at
+  `/api/secure-network/ca.cer` and walked through at `/trust`; the CA fingerprint is shown on the host
+  for comparison with what the device shows, because the first download travels over HTTP and anything
+  the guide page displays could be altered with it.
+
+The service is [`main/security/lan-tls/secure-network.ts`](../../main/security/lan-tls/secure-network.ts);
+[`main/services/secure-network-wiring.ts`](../../main/services/secure-network-wiring.ts) binds it to the
+real servers. It is skipped under `node dev-server.js` and when `FLO_E2E_SKIP_OPTIONAL_NETWORK` is `1`.
 
 ## The server app is a filtered proxy, not a second API
 

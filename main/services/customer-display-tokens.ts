@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { getDatabase, isKdsEnabled, now } from '../db';
+import { getDatabase, isKdsEnabled, now, orderHasKitchenWorkSql } from '../db';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_KEY,
@@ -346,6 +346,7 @@ export function selectBoardEligibleOrderPage(
             `${selectColumns}
              WHERE o.release_status = 'released'
                AND o.status IN (${placeholders})
+               AND ${orderHasKitchenWorkSql('o')}
                AND +o.type IN (${orderTypePlaceholders})
                AND o.created_at <= ?
                AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
@@ -366,6 +367,7 @@ export function selectBoardEligibleOrderPage(
             `${selectColumns}
              WHERE o.release_status = 'released'
                AND o.status IN (${placeholders})
+               AND ${orderHasKitchenWorkSql('o')}
                AND +o.type IN (${orderTypePlaceholders})
              ORDER BY o.created_at DESC, o.id DESC
              LIMIT ?`,

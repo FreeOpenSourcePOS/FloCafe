@@ -792,7 +792,7 @@ export function buildActiveOrdersSnapshot(
       .prepare(`
       SELECT oi.*, p.category_id
       FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
-      WHERE oi.order_id IN (${placeholders}) ORDER BY oi.order_id, oi.id
+      WHERE oi.order_id IN (${placeholders}) AND oi.requires_kitchen = 1 ORDER BY oi.order_id, oi.id
     `)
       .all(...orderIds) as any[];
     for (const item of rawItems) {
@@ -876,6 +876,7 @@ export function buildActiveOrdersSnapshot(
     LEFT JOIN tables t ON o.table_id = t.id
     WHERE ${activeOrdersCondition()}
       AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment', 'refunded')
+      AND oi.requires_kitchen = 1
       AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
   `;
   const countParams: any[] = [voidedCutoff];

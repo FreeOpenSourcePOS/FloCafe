@@ -215,7 +215,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         FROM order_items oi
         LEFT JOIN products p ON oi.product_id = p.id
         LEFT JOIN categories c ON p.category_id = c.id
-        WHERE oi.order_id IN (${placeholders})
+        WHERE oi.order_id IN (${placeholders}) AND oi.requires_kitchen = 1
         ORDER BY oi.order_id, oi.created_at ASC
       `)
         .all(...orderIds) as any[];
@@ -433,6 +433,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN tables t ON o.table_id = t.id
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment', 'refunded')
+        AND oi.requires_kitchen = 1
         AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
         AND o.release_status = 'released'

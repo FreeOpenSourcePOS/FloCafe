@@ -80,6 +80,16 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     next();
     return;
   }
+  // Public CA certificate for device trust onboarding. Exact paths and GET only; nothing here is secret.
+  if (
+    req.method === 'GET' &&
+    (reqPath === '/api/secure-network/ca.cer' ||
+      reqPath === '/api/secure-network/ca.pem' ||
+      reqPath === '/api/secure-network/trust-info')
+  ) {
+    next();
+    return;
+  }
   // Login-screen support-ticket paths, rate-limited in support-ticket.ts.
   // Matched exactly (not by prefix) so a lookalike path can't skip auth.
   if (req.method === 'POST' && reqPath === '/api/support-ticket/pre-login') {
@@ -134,6 +144,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
+}
+
+/** The live HTTP listener, so the HTTPS front can reuse its request and upgrade handlers. */
+export function getHttpServer(): http.Server | null {
+  return server;
 }
 
 export function isServerRunning(): boolean {
@@ -434,6 +449,7 @@ export function startServer(): Promise<void> {
           if (attempts >= 10) {
             const errorMsg = `[Server] Failed to bind to any port after 10 attempts starting from ${basePort}`;
             console.error(errorMsg);
+            if (server === listeningServer) server = null;
             reject(new Error(errorMsg));
             return;
           }
@@ -442,6 +458,7 @@ export function startServer(): Promise<void> {
           tryListen();
           return;
         }
+        if (server === listeningServer) server = null;
         reject(err);
       };
 

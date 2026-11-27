@@ -91,7 +91,7 @@ router.get('/orders', (req: Request, res: Response) => {
       .prepare(`
       SELECT oi.*, p.category_id
       FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
-      WHERE oi.order_id IN (${placeholders}) ORDER BY oi.order_id, oi.id
+      WHERE oi.order_id IN (${placeholders}) AND oi.requires_kitchen = 1 ORDER BY oi.order_id, oi.id
     `)
       .all(...orderIds) as any[];
 

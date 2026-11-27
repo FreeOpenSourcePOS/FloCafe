@@ -724,7 +724,7 @@ test('a KOT print failure preserves backend failure_class and sanitized detail i
       });
     });
 
-    const kotCorrelationId = '4a8c9d01-1234-4b5c-89ab-cdef01234567';
+    let kotCorrelationId = '4a8c9d01-1234-4b5c-89ab-cdef01234567';
     await page.route('**/api/printers/print-kot', async (route) => {
       await route.fulfill({
         status: 502,
@@ -798,6 +798,25 @@ test('a KOT print failure preserves backend failure_class and sanitized detail i
         connection_type: 'usb',
       },
     });
+    const queued = supportPanel.getByText('Your support request has been queued');
+    const dismiss = supportPanel.getByRole('button', { name: 'Dismiss' });
+    await expect(queued).toBeVisible();
+    await dismiss.click();
+    await addOneProduct(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(queued).toBeVisible();
+    await expect(supportPanel.getByRole('button', { name: 'Get help', exact: true })).toHaveCount(
+      0,
+    );
+    expect(supportSubmissions).toHaveLength(1);
+
+    await dismiss.click();
+    kotCorrelationId = '4a8c9d01-1234-4b5c-89ab-cdef01234568';
+    await addOneProduct(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await supportPanel.getByRole('button', { name: 'Get help', exact: true }).click();
+    await expect.poll(() => supportSubmissions.length).toBe(2);
+    expect(supportSubmissions[1].client_ticket_id).not.toBe(supportSubmissions[0].client_ticket_id);
   } finally {
     await restoreBusiness(page, originalBusiness);
   }

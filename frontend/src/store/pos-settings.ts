@@ -9,6 +9,21 @@ export type PrinterPrintMode = 'escpos' | 'browser';
 export type CoreBillTemplate = 'classic' | 'compact';
 export type BillTemplate = CoreBillTemplate | (string & {});
 export type AutoLockMinutes = 0 | 1 | 5 | 15 | 30;
+export type ServiceModel = 'qsr' | 'finedine' | 'hybrid';
+
+export function normalizeServiceModel(value: unknown): ServiceModel {
+  return value === 'qsr' || value === 'hybrid' ? value : 'finedine';
+}
+
+/** Hybrid venues pay after service only at the table; the global billing type governs every other mode. */
+export function isPrepaidBilling(
+  billingType: 'postpaid' | 'prepaid',
+  serviceModel: ServiceModel,
+  orderType: string | null | undefined,
+): boolean {
+  if (serviceModel === 'hybrid') return orderType !== 'dine_in';
+  return billingType === 'prepaid';
+}
 
 export function normalizeAutoLockMinutesValue(value: unknown): AutoLockMinutes {
   const num = typeof value === 'number' ? value : Number(String(value ?? '0').trim());
@@ -22,6 +37,7 @@ export interface PosSettingsState {
   // Auto-advances phone to name when typed digits form a valid number.
   enforcePhoneLength: boolean;
   billingType: 'postpaid' | 'prepaid';
+  serviceModel: ServiceModel;
   tablesRequired: boolean;
   // UI language synced from tenant on auth load with browser default fallback.
   language: Language;
@@ -103,6 +119,7 @@ export interface PosSettingsState {
   setBillShowTableNumber: (v: boolean) => void;
   setBillShowLargeOrderNumber: (v: boolean) => void;
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
+  setServiceModel: (v: ServiceModel) => void;
   setTablesRequired: (v: boolean) => void;
   setPrinterUseUnicode: (v: boolean) => void;
   setPrinterArabicShaping: (v: boolean) => void;
@@ -151,6 +168,8 @@ export interface ReceiptSettingsHydrationData {
   billTemplateSource?: 'core' | 'pack' | 'merchant' | null;
   billing_type?: string | null;
   billingType?: string | null;
+  service_model?: string | null;
+  serviceModel?: string | null;
   tables_required?: boolean | string | null;
   tablesRequired?: boolean | string | null;
   auto_lock_minutes?: number | string | null;
@@ -164,6 +183,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       customerMandatory: false,
       enforcePhoneLength: false,
       billingType: 'postpaid',
+      serviceModel: 'finedine',
       tablesRequired: true,
       language: 'en',
       // Printer defaults
@@ -243,6 +263,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowTableNumber: (v) => set({ billShowTableNumber: v }),
       setBillShowLargeOrderNumber: (v) => set({ billShowLargeOrderNumber: v }),
       setBillingType: (v) => set({ billingType: v }),
+      setServiceModel: (v) => set({ serviceModel: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
       setPrinterArabicShaping: (v) => set({ printerArabicShaping: v }),
@@ -350,6 +371,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           const billingType = d.billing_type ?? d.billingType;
           if (billingType !== undefined && billingType !== null) {
             updates.billingType = billingType === 'prepaid' ? 'prepaid' : 'postpaid';
+          }
+          const serviceModel = d.service_model ?? d.serviceModel;
+          if (serviceModel !== undefined && serviceModel !== null) {
+            updates.serviceModel = normalizeServiceModel(serviceModel);
           }
           const tablesReq = d.tables_required ?? d.tablesRequired;
           if (tablesReq !== undefined && tablesReq !== null) {

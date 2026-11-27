@@ -4,6 +4,28 @@ import { getE2eToken } from './helpers/test-auth';
 
 const TOKEN_KEY = 'flocafe:server-app-token';
 
+test('Server App explains an empty PIN roster and retries a failed roster request', async ({
+  page,
+}) => {
+  let attempts = 0;
+  await page.route('**/api/auth/pin-users', async (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      await route.fulfill({ status: 503, json: {} });
+      return;
+    }
+    await route.fulfill({ json: { users: [] } });
+  });
+
+  await page.goto(`${E2E_SERVER_APP_BASE_URL}/server-standalone`);
+  await expect(page.getByText('Failed to load staff')).toBeVisible();
+  await expect(page.getByPlaceholder('Password', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByText(/No staff can sign in with a PIN yet/)).toBeVisible();
+  await expect(page.getByTestId('signin-mode-pin')).toHaveCount(0);
+  expect(attempts).toBe(2);
+});
+
 async function openServerApp(page: Page, serverToken: string): Promise<void> {
   await page.goto(`${E2E_SERVER_APP_BASE_URL}/server-standalone`);
   await page.evaluate(

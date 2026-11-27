@@ -21,6 +21,35 @@ export function setKdsPort(port: number): void {
   activeKdsPort = port;
 }
 
+let activeHttpsPort: number | null = null;
+let activeKdsHttpsPort: number | null = null;
+let activeServerAppHttpsPort: number | null = null;
+
+/** Live HTTPS port of the main surface, or null while Secure Network is off or not bound. */
+export function getHttpsPort(): number | null {
+  return activeHttpsPort;
+}
+
+export function setHttpsPort(port: number | null): void {
+  activeHttpsPort = port;
+}
+
+export function getKdsHttpsPort(): number | null {
+  return activeKdsHttpsPort;
+}
+
+export function setKdsHttpsPort(port: number | null): void {
+  activeKdsHttpsPort = port;
+}
+
+export function getServerAppHttpsPort(): number | null {
+  return activeServerAppHttpsPort;
+}
+
+export function setServerAppHttpsPort(port: number | null): void {
+  activeServerAppHttpsPort = port;
+}
+
 /** Helper to check if an IPv4 address is active and valid (excludes loopback & 169.254.x.x link-local APIPA). */
 function isValidLocalIPv4(alias: os.NetworkInterfaceInfo): boolean {
   const isIPv4 = alias.family === 'IPv4' || (alias.family as string | number) === 4;

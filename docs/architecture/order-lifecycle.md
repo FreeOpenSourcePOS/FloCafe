@@ -51,6 +51,11 @@ Everything monetary is resolved server-side inside one transaction:
 - The unit price comes from the catalog: `products.price`, or the variant price for an order with an
   `online_platform`. A client-sent price is never read.
 - Quantity rules are checked per sale unit, including fractional and weight-precision products.
+- Each line copies `products.requires_kitchen` onto `order_items.requires_kitchen`. A ready-made line
+  (`0`) is inserted as `served`, so the status-based kitchen consumers ignore it, and the explicit
+  flag keeps it off the KDS, the kitchen board order list, the customer display board, and
+  order-status derivation. Later catalog edits never rewrite existing lines. See
+  [ready-made items](../reference/product-invariants.md#ready-made-items-never-reach-the-kitchen).
 - Stock deduction and recipe depletion are written in the same transaction for immediate orders
   (scheduled orders defer stock and recipe depletion until kitchen release), so the order and its
   inventory effects commit together.
@@ -332,7 +337,7 @@ Two gates sit between a valid request and the write:
   re-read with the same key after its shift closed. A cash ledger line records the open
   `cash_session_id`.
 - **Kitchen-delivery gate.** When `require_kitchen_delivered_before_settlement` is on, `kds_enabled`
-  is not `false`, and `billing_type` is not `prepaid`, paying while kitchen items are undelivered
+  is not `false`, and the order is not prepaid, paying while kitchen items are undelivered
   is a `409` with code `KITCHEN_ITEMS_UNDELIVERED` unless a manager PIN is supplied as `override_pin`.
   When an approver is explicitly supplied (`approver_id`, `manager_id`, or `user_id`), PIN
   verification is restricted to that active manager without falling back to scanning other managers.
@@ -370,7 +375,7 @@ When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/
 re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds
 equal the updated payable total), auto-settlement to `paid` is gated by kitchen delivery status. When
 `require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not `false`, and
-`billing_type` is not `prepaid`:
+the order is not prepaid:
 
 - If kitchen items remain undelivered (`pending`, `preparing`, or `ready`), auto-settlement is held:
   the discount applies and reduces the balance to zero, but the bill remains in `partial` status
@@ -408,7 +413,7 @@ whenever KDS item statuses change (`PATCH /api/order-items/:id/status`, embedded
 order items are appended, cancelled, edited, refunded, or restored:
 
 - Live items are non-terminal (`cancelled`, `voided`, `void_adjustment`, and `refunded` excluded)
-  positive-quantity lines across the full order, unfiltered by caller station or category scope
+  positive-quantity kitchen lines (`requires_kitchen` not `0`) across the full order, unfiltered by caller station or category scope
   ([`shared/order-item-status.ts`](../../shared/order-item-status.ts)).
 - Starting kitchen work (`preparing`, `ready`, `served`, or `completed` on any live item while
   unfinished items remain) promotes `pending` to `preparing` and sets `cooking_started_at`.

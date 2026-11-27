@@ -165,7 +165,7 @@ print requests are sent.
 
 1. Use **Settings > Printers > Test Print** to verify printer connectivity before live service.
 2. Keep FloCafe's local API and network printers confined to your private business network. The
-   local API is unencrypted; see
+   plain-HTTP local API is unencrypted; see
    [authentication and authorization](architecture/authentication-and-authorization.md).
 
 ### Adding a printer manually by name
@@ -250,11 +250,15 @@ and kitchen stations, and the desktop app always uses the host's printers.
 If the printer is not detected after a fresh install or a permissions reset, click **Connect** again
 to re-grant access.
 
-Browsers expose WebUSB only on secure origins (HTTPS or `localhost`). A terminal that opens
-`http://<host-ip>:3001` needs HTTPS on the host, or Chrome's
-`chrome://flags/#unsafely-treat-insecure-origin-as-secure` set for that address. Sessions, print
-settings, and USB permissions are stored per origin, so `localhost`, the host's IP address, and its
-`.local` name are separate sessions.
+Browsers expose WebUSB only on secure origins (HTTPS or `localhost`). A terminal reaches the host
+over HTTPS through **Settings > Server App > Secure Network**, which shows the HTTPS address (for
+example `https://flo.local`, with the numeric address as a fallback). Each terminal must trust the
+FloCafe certificate once, by following the setup guide at `/trust`; no browser flag is needed and you
+should not click through a certificate warning. Sessions, print settings, and USB permissions are
+stored per origin, so `localhost`, the host's IP address, its `.local` name, and the HTTP and HTTPS
+forms of each are separate sessions: grant the printer again after you move a terminal to the HTTPS
+address, and again if the host's IP address changes and the terminal uses the numeric address.
+Network thermal printers on port `9100` are unrelated to the HTTPS ports.
 
 On Windows, a printer whose vendor driver owns the USB interface cannot be claimed by the browser;
 switch it to the WinUSB driver.

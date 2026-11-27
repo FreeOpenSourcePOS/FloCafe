@@ -42,6 +42,7 @@ import {
   type RegionalSnapshot,
 } from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
+import { VALID_SERVICE_MODELS } from '../services/service-model';
 import {
   cloudSync,
   CloudRequestError,
@@ -114,7 +115,6 @@ export function signFreshSessionToken(
 const INITIAL_ADMIN_ROLE = 'owner';
 const VALID_BUSINESS_TYPES = new Set(['restaurant']);
 const VALID_SETUP_PROFILES = new Set(['empty', 'express', 'demo']);
-const VALID_SERVICE_MODELS = new Set(['qsr', 'finedine']);
 const LOCAL_SETUP_HOSTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 // The secret itself now lives in main/security/jwt-secret.ts, which is the only
@@ -1854,7 +1854,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         state_code,
         tax_registered,
         billing_type: billing_type || (normalizedServiceModel === 'qsr' ? 'prepaid' : 'postpaid'),
-        tables_required: normalizedServiceModel === 'finedine' ? 'true' : 'false',
+        tables_required: normalizedServiceModel === 'qsr' ? 'false' : 'true',
         service_model: normalizedServiceModel,
         setup_profile: pendingCurrencyReset ? 'empty' : normalizedSetupProfile,
         onboarding_completed: 'true',
@@ -1883,7 +1883,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         seedSetupProfile(
           db,
           normalizedSetupProfile,
-          normalizedServiceModel,
+          normalizedServiceModel === 'qsr' ? 'qsr' : 'finedine',
           language,
           resolvedCountry.code,
         );

@@ -66,6 +66,44 @@ authenticated user is subject to the same review as a change to this entry.
 
 ---
 
+## HTTPS keeps the real client address
+
+**Rule:** A LAN device that reaches FloCafe over HTTPS or `wss` is seen with its own source address
+in every backend decision. Secure Network terminates TLS inside the main process and passes the
+decrypted request to the existing handlers on the same socket; nothing sits between the client and the
+API that could present every device as `127.0.0.1`. The CA private key never leaves
+`userData/secure-network/`, is encrypted with `safeStorage`, and is excluded from the database,
+backups, Google Drive, diagnostics, logs, and telemetry. Certificate validation is never disabled. The
+HTTPS listeners bind all interfaces like the HTTP ones, so they are reachable only where the host's
+network and firewall allow it; Secure Network adds no port forwarding, UPnP, or public listener.
+
+**Reason:** The initial-setup and password-recovery guard (`isLocalSetupRequest`), the maintenance
+admission ticket header, and the login, Master PIN, and PIN-switch limits all trust the connection's source
+address. A same-machine reverse proxy would let any LAN device pass the "POS computer only" guards and
+would put every tablet in one lockout bucket.
+
+**Enforced by:** `main/security/lan-tls/https-front.ts` and
+`main/services/secure-network-wiring.ts`. Routes such as `isLocalSetupRequest` read
+`req.socket.remoteAddress` and must keep doing so.
+
+**How to verify:**
+
+```sh
+npm run test:secure-network-lan-integrity
+npm run test:secure-network-service
+```
+
+The first boots the real POS, KDS, and Server App listeners behind HTTPS and shows that a LAN source
+is refused by the local-only guard, cannot consume the loopback-only maintenance admission ticket, and is rate limited
+separately from the POS computer. It is reported as not run on a machine with no private LAN interface.
+
+**Change policy:** a reverse proxy or any layer that changes the apparent source address requires a
+single trusted derivation used by all rate-limit, guard, and audit call sites, and proxy-aware
+versions of these tests. Do not add HSTS or `upgrade-insecure-requests` globally: plain HTTP on
+localhost and the LAN must keep working.
+
+---
+
 ## A selected backup is authoritative during restore
 
 **Rule:** Restoring a valid, supported backup replaces the store state with that backup. FloCafe
@@ -545,6 +583,43 @@ npm run test:issue-248-csv
 **Change policy:** changing the `quote-v1` encoding rules or stripping unmarked apostrophes without
 existing-record proof requires an explicit product decision, because either change can silently
 rename catalog items or create duplicate categories and add-ons during CSV imports.
+
+---
+
+## Ready-made items never reach the kitchen
+
+**Rule:** A catalog item can be marked as not going to the kitchen (`products.requires_kitchen = 0`).
+Each order line copies the flag into `order_items.requires_kitchen` when it is created, and a
+ready-made line is inserted as `served`. Such a line is priced, taxed, stock-tracked, receipted,
+reported, and refundable like any other, but it never appears on the KDS or the kitchen board, never
+prints on a kitchen ticket, never holds back kitchen-delivery settlement or order completion, and
+never drives order-status derivation. An order made only of ready-made lines has no kitchen work and
+is absent from the kitchen board and the customer display. Editing the catalog flag never changes an
+existing line, and `requires_kitchen` defaults to `1`, so existing items behave as before.
+
+When `service_model` is `hybrid`, payment timing follows the order: `dine_in` orders are paid after
+service and every other order type is prepaid. `billing_type` governs every other service model.
+
+**Reason:** A counter selling bottled drinks and a dining room serving cooked dishes run side by side.
+Neither section may force the other into its mode, and an item that is handed over immediately must
+not wait for a kitchen that never sees it.
+
+**Enforced by:** `main/routes/orders.ts` (`insertOrderItems` and `POST /api/orders` set the status and
+the snapshot), `main/db.ts` (`orderHasKitchenWorkSql`, `ACTIVE_RELEASED_KDS_ORDER_IDS_SQL`),
+`main/routes/kds.ts`, `main/services/kds.ts`, `main/routes/kitchen.ts`,
+`main/services/customer-display-tokens.ts`, `shared/order-item-status.ts` (`isKitchenItem`), and
+`main/services/service-model.ts` (`isOrderPrepaid`).
+
+**How to verify:**
+
+```sh
+npm run test:hybrid-service-model
+npm run test:upgrade-path
+```
+
+**Change policy:** a new consumer of kitchen work must filter on `requires_kitchen` or the item status.
+Marking ready-made lines as anything other than `served` at creation requires re-checking every
+kitchen consumer listed above.
 
 ---
 

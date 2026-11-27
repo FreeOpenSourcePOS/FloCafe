@@ -740,11 +740,11 @@ function windowsPowerShellCommandArgs(script: string): string[] {
 }
 
 // Enumerate printers via Get-CimInstance (Win32_Printer) using -EncodedCommand.
-const DETECT_WINDOWS_PRINTERS_SCRIPT = `
+export const DETECT_WINDOWS_PRINTERS_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 try {
-  Get-CimInstance -ClassName Win32_Printer -Property Name,Default,PrinterStatus,DriverName |
-    Select-Object Name,Default,PrinterStatus,DriverName |
+  Get-CimInstance -ClassName Win32_Printer -Property Name,Default,PrinterStatus,WorkOffline,DriverName |
+    Select-Object Name,Default,PrinterStatus,WorkOffline,DriverName |
     ConvertTo-Json -Compress
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
@@ -754,10 +754,14 @@ try {
 `;
 
 // Win32_Printer.PrinterStatus: 1=Other, 2=Unknown, 3=Idle, 4=Printing, 5=Warming Up, 6=Stopped Printing, 7=Offline.
-function mapWindowsPrinterStatus(printerStatus: unknown): 'idle' | 'printing' | 'offline' {
-  if (printerStatus === 3 || printerStatus === 5) return 'idle';
-  if (printerStatus === 4) return 'printing';
-  return 'offline';
+// USB queues often report Other or Unknown while ready, so only explicit offline signals count.
+export function mapWindowsPrinterStatus(entry: {
+  PrinterStatus?: unknown;
+  WorkOffline?: unknown;
+}): 'idle' | 'printing' | 'offline' {
+  const { PrinterStatus: status, WorkOffline: workOffline } = entry;
+  if (workOffline === true || status === 6 || status === 7) return 'offline';
+  return status === 4 ? 'printing' : 'idle';
 }
 
 async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
@@ -796,7 +800,7 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
             connectionType: 'usb',
             deviceUri: name,
             driver,
-            status: mapWindowsPrinterStatus(entry.PrinterStatus),
+            status: mapWindowsPrinterStatus(entry),
             isDefault: entry.Default === true,
             paperWidth: guessPaperWidth(name, makeModel.model),
           }),
@@ -5697,12 +5701,12 @@ public static class FloRawPrinter {
         if ((status & 0x00000080) != 0) return "printer is offline";
         if ((status & 0x00001000) != 0) return "printer is not available";
         if ((status & 0x00100000) != 0) return "printer needs attention";
-        if ((status & 0x00000002) != 0) return "printer reported an error";
+        // The generic error flag (0x2) is not checked: Windows still prints with it set.
         return null;
     }
 
-    // OpenPrinter succeeds against the queue even when the device is unplugged,
-    // so without this the job would silently spool and we would report success.
+    // OpenPrinter succeeds against the queue even when the device is unplugged, so refuse
+    // on offline or fault flags rather than spool silently and report success.
     private static void EnsureReady(IntPtr hPrinter) {
         uint needed = 0;
         GetPrinter(hPrinter, 2, IntPtr.Zero, 0, out needed);

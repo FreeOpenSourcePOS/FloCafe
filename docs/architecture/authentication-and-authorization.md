@@ -211,7 +211,7 @@ All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` 
 
 1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password and PIN changes) use independent rate-limiter instances.
 2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which lowers case, strips `::ffff:` IPv4-mapped IPv6 prefixes, and canonicalizes IPv6 loopback `::1` and `0:0:0:0:0:0:0:1` to `127.0.0.1` so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
-3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
+3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass. Completing either [owner password recovery](#owner-password-recovery) path also calls `resetSuccessfulLogin` for the client IP so a locked-out owner can sign in immediately with the new password.
 4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
 ### PIN quick user switch and terminal lock
@@ -281,7 +281,8 @@ paths. The 4-digit Master PIN and 4-6 digit staff PINs are separate secrets with
 A locked-out owner has two recovery paths, both local-only requests (loopback) with no JWT, and
 both ending in the same write (`applyOwnerRecovery` in
 [`main/routes/auth.ts`](../../main/routes/auth.ts)): the new bcrypt hash, a bumped
-`tokens_valid_after`, and the `last_password_recovery_*` audit settings.
+`tokens_valid_after`, and the `last_password_recovery_*` audit settings, followed by
+`resetSuccessfulLogin` to clear the client IP's failed-login lockout.
 
 - **Master PIN:** `POST /api/auth/recover-password` with the owner email, the Master PIN, and the
   new password. Works offline.

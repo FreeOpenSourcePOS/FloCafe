@@ -448,8 +448,7 @@ test('Orders page browser printing shows unpaid collection and settled payment d
     (window as Window & { __deliverySlipUsbClaimRequested?: boolean }).__deliverySlipUsbClaimRequested ?? false
   ))).toBe(true);
 
-  let signalUsbNativeNoDefault!: () => void;
-  const usbNativeNoDefaultReached = new Promise<void>((resolve) => { signalUsbNativeNoDefault = resolve; });
+  const nativeRequestsBeforeBlockedUsbPrint = nativePrintRequests;
   await page.route(`${BASE}/api/printers/print-delivery-slip`, async (route) => {
     nativePrintRequests += 1;
     await route.fulfill({
@@ -457,7 +456,6 @@ test('Orders page browser printing shows unpaid collection and settled payment d
       contentType: 'application/json',
       body: JSON.stringify({ error: 'No default printer configured. Add a printer in Settings.' }),
     });
-    signalUsbNativeNoDefault();
   });
 
   await page.evaluate(() => {
@@ -485,10 +483,10 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   const blockedUsbPaymentRequest = page.waitForRequest((request) => new URL(request.url()).pathname
     === `/api/printers/delivery-slip-payment/${unpaidOrder.id}`, { timeout: 5000 });
   const blockedUsbPrint = reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
-  await usbNativeNoDefaultReached;
-  expect(await page.evaluate(() => (
+  await expect.poll(() => page.evaluate(() => (
     (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
   ))).toBe(openCountBeforeBlockedUsbPrint + 1);
+  expect(nativePrintRequests).toBe(nativeRequestsBeforeBlockedUsbPrint);
   expect(await page.evaluate(() => (
     (window as Window & { __deliverySlipUsbTransferCount?: number }).__deliverySlipUsbTransferCount ?? 0
   ))).toBe(transferCountBeforeBlockedUsbPrint);
@@ -508,6 +506,7 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   expect(await page.evaluate(() => (
     (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
   ))).toBe(printCountBeforeBlockedUsbPrint);
+  expect(nativePrintRequests).toBe(nativeRequestsBeforeBlockedUsbPrint);
   await page.evaluate(() => {
     (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = false;
   });

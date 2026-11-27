@@ -334,15 +334,19 @@ async function runTests() {
     let unsetRefused: any;
     let deletePostHogError: unknown;
     let putPostHogError: unknown;
+    let deleteLoggedErrors: string[] = [];
+    let putLoggedErrors: string[] = [];
     try {
       refused = await request(app).delete(`/api/printers/${onlyDefault}`);
       deletePostHogError = lastResLocals?.postHogError;
+      deleteLoggedErrors = [...loggedErrors];
 
       loggedErrors.length = 0;
       unsetRefused = await request(app)
         .put(`/api/printers/${onlyDefault}`)
         .send({ is_default: false });
       putPostHogError = lastResLocals?.postHogError;
+      putLoggedErrors = [...loggedErrors];
     } finally {
       console.error = originalConsoleError;
     }
@@ -360,7 +364,7 @@ async function runTests() {
       'deleting the only default printer does not set res.locals.postHogError',
     );
     assert(
-      !loggedErrors.some((msg) => msg.includes('[API] Internal error')),
+      !deleteLoggedErrors.some((msg) => msg.includes('[API] Internal error')),
       'expected 409 on DELETE does not log [API] Internal error',
     );
 
@@ -377,7 +381,7 @@ async function runTests() {
       'unsetting the only default printer does not set res.locals.postHogError',
     );
     assert(
-      !loggedErrors.some((msg) => msg.includes('[API] Internal error')),
+      !putLoggedErrors.some((msg) => msg.includes('[API] Internal error')),
       'expected 409 on PUT does not log [API] Internal error',
     );
   }

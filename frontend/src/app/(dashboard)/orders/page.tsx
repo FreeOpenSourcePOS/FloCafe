@@ -2218,7 +2218,7 @@ export default function OrdersPage() {
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
       <Suspense fallback={null}>
-        <OrdersTableQuerySync onFiltersChange={setFilters} />
+        <OrdersTableQuerySync onFiltersChange={updateFilters} />
       </Suspense>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">

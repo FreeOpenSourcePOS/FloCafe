@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import expressRateLimit from 'express-rate-limit';
+import expressRateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import {
@@ -165,6 +165,19 @@ export function loginAuthRateLimit(options: { max?: number } = {}) {
 export function resetSharedLoginAuthRateLimiter(): void {
   sharedLoginAuthRateLimiter = null;
   sharedLoginAuthRateLimiterEnvMax = undefined;
+}
+
+/** Resets the shared login volume rate-limit bucket for a client IP after verified recovery. */
+export function resetLoginAuthRateLimitForIp(reqOrIp: Request | string): void {
+  if (!sharedLoginAuthRateLimiter) return;
+  const rawIp =
+    typeof reqOrIp === 'string' ? reqOrIp : reqOrIp.ip || reqOrIp.socket?.remoteAddress || '';
+  if (!rawIp) return;
+  sharedLoginAuthRateLimiter.resetKey(ipKeyGenerator(rawIp));
+  if (normalizeIpForRateLimit(rawIp) === '127.0.0.1') {
+    sharedLoginAuthRateLimiter.resetKey('127.0.0.1');
+    sharedLoginAuthRateLimiter.resetKey(ipKeyGenerator('::1'));
+  }
 }
 
 /** Stricter rate limiter for authentication endpoints; private/LAN IPs are not exempt. */

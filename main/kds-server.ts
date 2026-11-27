@@ -891,13 +891,6 @@ export function startKdsServer(): Promise<void> {
             ) {
               return { statusCode: 400, error: 'This terminal item cannot be updated from KDS' };
             }
-            if (Number(item.requires_kitchen ?? 1) === 0) {
-              return {
-                statusCode: 400,
-                error:
-                  'Ready-made items do not go through the kitchen and cannot be updated from KDS',
-              };
-            }
 
             if (currentStationIds.length > 0) {
               const stationCategoryIds = getKdsStationCategoryIds(db, currentStationIds);
@@ -937,6 +930,13 @@ export function startKdsServer(): Promise<void> {
               !currentCategoryIds.includes(String(item.category_id))
             ) {
               return { statusCode: 403, error: 'Not authorized to update this item' };
+            }
+            if (Number(item.requires_kitchen ?? 1) === 0) {
+              return {
+                statusCode: 400,
+                error:
+                  'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+              };
             }
 
             const updatedAt = now();

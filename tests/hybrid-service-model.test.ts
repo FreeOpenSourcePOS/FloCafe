@@ -274,7 +274,7 @@ async function main() {
     assertEqualOrThrow(isOrderPrepaid(db, 'delivery'), true, 'hybrid delivery orders are prepaid');
     assertEqualOrThrow(isOrderPrepaid(db, 'dine_in'), false, 'hybrid table orders are postpaid');
 
-    // F-09: Partial business update and wildcard setting update cannot disable tables_required in hybrid mode
+    // Partial business update and wildcard setting update cannot disable tables_required in hybrid mode
     const partialBusiness = await req({
       path: '/api/settings/business',
       method: 'PUT',
@@ -298,7 +298,7 @@ async function main() {
       'PUT /settings/tables_required coerces to true in hybrid mode',
     );
 
-    console.log('\n--- 7. Standalone KDS excludes ready-made lines & category routing (F-03) ---');
+    console.log('\n--- 7. Standalone KDS excludes ready-made lines & category routing ---');
     // Flip cola back to ready-made in its own drinks category for station routing checks
     seedCategory(db, 'cat-drinks', 'Ready Drinks');
     await req({
@@ -383,7 +383,7 @@ async function main() {
       'main KDS does not route tableless order by ready-made category',
     );
 
-    console.log('\n--- 8. Customer Display keeps paid prepaid mixed orders pending (F-04) ---');
+    console.log('\n--- 8. Customer Display keeps paid prepaid mixed orders pending ---');
     const prepaidMixed = await req({
       path: '/api/orders',
       method: 'POST',
@@ -423,7 +423,7 @@ async function main() {
       'paid prepaid mixed order projects pending (not preparing) before kitchen starts',
     );
 
-    console.log('\n--- 9. All 4 KDS status mutation transports reject ready-made items (F-05) ---');
+    console.log('\n--- 9. All 4 KDS status mutation transports reject ready-made items ---');
     const routedItems = db
       .prepare(
         'SELECT id, product_id, requires_kitchen, status FROM order_items WHERE order_id = ?',
@@ -518,6 +518,94 @@ async function main() {
       'ready-made item remains served after all 4 rejected KDS status writes',
     );
 
+    // Out-of-scope kitchen chef gets authorization denial (not the ready-made error) across all 4 transports
+    db.prepare(
+      `INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+       VALUES ('st-kitchen-only', 'Kitchen Only', ?, 1, ?, ?)`,
+    ).run(JSON.stringify(['cat-hy']), now(), now());
+    db.prepare(
+      `INSERT INTO users (id, name, email, password, role, is_active, category_ids, station_assignments_configured, created_at, updated_at)
+       VALUES ('chef-kitchen-only', 'Kitchen Chef', 'kitchen-chef@flo.local', ?, 'chef', 1, ?, 1, ?, ?)`,
+    ).run(chefPass, JSON.stringify(['cat-hy']), now(), now());
+    db.prepare(
+      `INSERT INTO station_users (user_id, station_id, created_at) VALUES ('chef-kitchen-only', 'st-kitchen-only', ?)`,
+    ).run(now());
+    const kitchenChefLogin = await api(kdsBaseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { email: 'kitchen-chef@flo.local', password: 'ChefPass123!' },
+    });
+    assertEqualOrThrow(kitchenChefLogin.status, 200, 'scoped kitchen chef logs in');
+    const kitchenChefToken = String(kitchenChefLogin.data.access_token);
+    const kitchenChefAuth = { Authorization: `Bearer ${kitchenChefToken}` };
+
+    const scopedOrderItemRes = await api(baseUrl, `/api/order-items/${readyItemRow.id}/status`, {
+      method: 'PATCH',
+      headers: kitchenChefAuth,
+      body: { status: 'pending' },
+    });
+    assertEqualOrThrow(
+      scopedOrderItemRes.status,
+      403,
+      'scoped chef gets 403 (not ready-made 400) on PATCH /api/order-items/:id/status',
+    );
+    const scopedMainKdsRes = await api(baseUrl, `/api/kds/items/${readyItemRow.id}/status`, {
+      method: 'PATCH',
+      headers: kitchenChefAuth,
+      body: { status: 'preparing', expected_status: 'served' },
+    });
+    assertEqualOrThrow(
+      scopedMainKdsRes.status,
+      403,
+      'scoped chef gets 403 (not ready-made 400) on PATCH /api/kds/items/:id/status',
+    );
+    const scopedStandaloneRes = await api(kdsBaseUrl, `/api/kds/items/${readyItemRow.id}/status`, {
+      method: 'PATCH',
+      headers: kitchenChefAuth,
+      body: { status: 'ready', expected_status: 'served' },
+    });
+    assertEqualOrThrow(
+      scopedStandaloneRes.status,
+      403,
+      'scoped chef gets 403 (not ready-made 400) on standalone PATCH /api/kds/items/:id/status',
+    );
+    const scopedWs = new WebSocket(`ws://127.0.0.1:${getKdsPort()}/kds`);
+    await once(scopedWs, 'open');
+    const scopedWsWaitFor = (types: string[]) =>
+      new Promise<any>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`Timed out waiting for ${types.join('/')}`)),
+          5000,
+        );
+        const onMsg = (raw: any) => {
+          const msg = JSON.parse(raw.toString());
+          if (types.includes(msg.type)) {
+            clearTimeout(timer);
+            scopedWs.off('message', onMsg);
+            resolve(msg);
+          }
+        };
+        scopedWs.on('message', onMsg);
+      });
+    const scopedAuthOk = scopedWsWaitFor(['auth_success']);
+    scopedWs.send(JSON.stringify({ type: 'auth', token: kitchenChefToken }));
+    await scopedAuthOk;
+    const scopedWsErrorPromise = scopedWsWaitFor(['error', 'status_updated']);
+    scopedWs.send(
+      JSON.stringify({
+        type: 'status_update',
+        order_item_id: readyItemRow.id,
+        status: 'pending',
+      }),
+    );
+    const scopedWsReply = await scopedWsErrorPromise;
+    scopedWs.close();
+    await once(scopedWs, 'close');
+    assertEqualOrThrow(scopedWsReply.type, 'error', 'scoped chef WS update returns error');
+    assertOrThrow(
+      /not authorized/i.test(String(scopedWsReply.message || '')),
+      `scoped chef WS update returns authorization error instead of ready-made error (got: ${scopedWsReply.message})`,
+    );
+
     const patchKitchenItem = await req({
       path: `/api/order-items/${kitchenItemRow.id}/status`,
       method: 'PATCH',
@@ -531,7 +619,7 @@ async function main() {
     );
 
     console.log(
-      '\n--- 10. Backend /api/printers/print-kot skips ready-made-only orders without printer (F-06) ---',
+      '\n--- 10. Backend /api/printers/print-kot skips ready-made-only orders without printer ---',
     );
     const rmKotRes = await req({
       path: '/api/printers/print-kot',
@@ -549,6 +637,28 @@ async function main() {
       'ready-made-only print-kot reports skipped: true',
     );
 
+    const readyOnlyItemId = (
+      db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(readyOnlyId) as { id: number }
+    ).id;
+    const rmOverrideKotRes = await req({
+      path: '/api/printers/print-kot',
+      method: 'POST',
+      body: {
+        orderId: readyOnlyId,
+        items: [{ id: readyOnlyItemId, product_name: 'Bottled Cola', status: 'pending' }],
+      },
+    });
+    assertEqualOrThrow(
+      rmOverrideKotRes.status,
+      200,
+      'print-kot uses stored requires_kitchen=0 even when request items omit the flag',
+    );
+    assertEqualOrThrow(
+      rmOverrideKotRes.body.skipped,
+      true,
+      'print-kot skips ready-made item when request body omits requires_kitchen',
+    );
+
     const kitchenKotRes = await req({
       path: '/api/printers/print-kot',
       method: 'POST',
@@ -560,7 +670,7 @@ async function main() {
       'kitchen order print-kot still requires a configured printer',
     );
 
-    console.log('\n--- 11. Refund/void adjustment rows stay off KDS (F-07) ---');
+    console.log('\n--- 11. Refund/void adjustment rows stay off KDS ---');
     db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
       bcrypt.hashSync('1234', 10),
       owner.userId,
@@ -704,6 +814,62 @@ async function main() {
     assertOrThrow(
       !activeIdsAfterKitchenRefund.includes(String(servedKitchenId)),
       'completed served refunded kitchen order stays out of ACTIVE_RELEASED_KDS_ORDER_IDS_SQL',
+    );
+
+    // 11d. Completed order with served + voided kitchen items respects the KDS voided visibility window
+    const voidedCompletedOrder = await req({
+      path: '/api/orders',
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: dishId, quantity: 1 },
+          { product_id: dishId, quantity: 1 },
+        ],
+      },
+    });
+    const voidedCompletedId = voidedCompletedOrder.body.order.id;
+    const voidedCompletedItems = db
+      .prepare('SELECT id FROM order_items WHERE order_id = ? ORDER BY id')
+      .all(voidedCompletedId) as Array<{ id: number }>;
+    const recentVoidStamp = new Date(Date.now() - 60_000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    const expiredVoidStamp = new Date(Date.now() - 30 * 60_000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    db.prepare("UPDATE orders SET status = 'completed', completed_at = ? WHERE id = ?").run(
+      now(),
+      voidedCompletedId,
+    );
+    db.prepare("UPDATE order_items SET status = 'served' WHERE id = ?").run(
+      voidedCompletedItems[0].id,
+    );
+    db.prepare("UPDATE order_items SET status = 'voided', voided_at = ? WHERE id = ?").run(
+      recentVoidStamp,
+      voidedCompletedItems[1].id,
+    );
+    const activeIdsRecentVoid = db
+      .prepare(`SELECT id FROM (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})`)
+      .all()
+      .map((r: any) => String(r.id));
+    assertOrThrow(
+      activeIdsRecentVoid.includes(String(voidedCompletedId)),
+      'completed order with recently voided kitchen item remains visible within KDS grace window',
+    );
+    db.prepare('UPDATE order_items SET voided_at = ? WHERE id = ?').run(
+      expiredVoidStamp,
+      voidedCompletedItems[1].id,
+    );
+    const activeIdsExpiredVoid = db
+      .prepare(`SELECT id FROM (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})`)
+      .all()
+      .map((r: any) => String(r.id));
+    assertOrThrow(
+      !activeIdsExpiredVoid.includes(String(voidedCompletedId)),
+      'completed order with only served and expired-voided kitchen items drops from ACTIVE_RELEASED_KDS_ORDER_IDS_SQL',
     );
 
     const results = getResults();

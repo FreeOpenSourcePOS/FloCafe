@@ -272,11 +272,6 @@ router.patch(
         ) {
           throw Object.assign(new Error('TERMINAL_KDS_ITEM'), { diagnosticCode: 'item_terminal' });
         }
-        if (Number(item.requires_kitchen ?? 1) === 0) {
-          throw Object.assign(new Error('NON_KITCHEN_KDS_ITEM'), {
-            diagnosticCode: 'item_immutable',
-          });
-        }
 
         if (
           categoryIds.length > 0 &&
@@ -321,6 +316,11 @@ router.patch(
               diagnosticCode: 'station_scope_denied',
             });
           }
+        }
+        if (Number(item.requires_kitchen ?? 1) === 0) {
+          throw Object.assign(new Error('NON_KITCHEN_KDS_ITEM'), {
+            diagnosticCode: 'item_immutable',
+          });
         }
 
         const updatedAt = now();

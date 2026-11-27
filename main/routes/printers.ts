@@ -1431,9 +1431,18 @@ router.post(
       }
 
       const orderItems: any[] = order ? getEffectiveOrderItems(db, orderId) : [];
-      const kotSourceItems = (Array.isArray(items) ? items : orderItems).filter(
-        (item: any) => isKitchenItem(item) && isKotItemPending(item?.status),
+      const storedItemsById = new Map<string, Record<string, unknown>>(
+        orderItems
+          .filter((row) => row?.id !== undefined && row?.id !== null)
+          .map((row) => [String(row.id), row]),
       );
+      const kotSourceItems = (Array.isArray(items) ? items : orderItems).filter((item: any) => {
+        const stored =
+          item?.id !== undefined && item?.id !== null
+            ? storedItemsById.get(String(item.id))
+            : undefined;
+        return isKitchenItem(stored ?? item) && isKotItemPending(item?.status);
+      });
       if (order && kotSourceItems.length === 0) {
         return res.json({ success: true, skipped: true, warnings: [] });
       }

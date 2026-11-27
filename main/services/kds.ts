@@ -597,11 +597,6 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
       ) {
         return { error: 'This terminal item cannot be updated from KDS' };
       }
-      if (Number(existingItem.requires_kitchen ?? 1) === 0) {
-        return {
-          error: 'Ready-made items do not go through the kitchen and cannot be updated from KDS',
-        };
-      }
 
       const parentOrderState = getKdsItemParentOrderState(db, existingItem.order_id);
       if (parentOrderState === 'missing') {
@@ -643,6 +638,11 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
 
       if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
         return { error: 'Not authorized to update this item' };
+      }
+      if (Number(existingItem.requires_kitchen ?? 1) === 0) {
+        return {
+          error: 'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+        };
       }
 
       const updatedAt = now();

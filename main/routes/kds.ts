@@ -592,9 +592,6 @@ router.patch(
         ) {
           throw new Error('TERMINAL_KDS_ITEM');
         }
-        if (Number(item.requires_kitchen ?? 1) === 0) {
-          throw new Error('NON_KITCHEN_KDS_ITEM');
-        }
 
         if (userCategoryIds.length > 0) {
           const product = db
@@ -633,6 +630,9 @@ router.patch(
           ) {
             throw new Error('STATION_FORBIDDEN');
           }
+        }
+        if (Number(item.requires_kitchen ?? 1) === 0) {
+          throw new Error('NON_KITCHEN_KDS_ITEM');
         }
 
         const updatedAt = now();

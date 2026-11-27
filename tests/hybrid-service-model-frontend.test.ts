@@ -1,9 +1,5 @@
-/**
- * Frontend regression tests for ready-made KOT suppression (F-06) and hybrid
- * settings state sync (F-09).
- *
- * Usage: tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/hybrid-service-model-frontend.test.ts
- */
+// Frontend regression tests for ready-made KOT suppression and hybrid settings sync.
+// Usage: tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/hybrid-service-model-frontend.test.ts
 
 import assert from 'node:assert/strict';
 
@@ -21,7 +17,7 @@ const api = (require('../frontend/src/lib/api') as typeof import('../frontend/sr
   .default;
 
 async function run(): Promise<void> {
-  console.log('Hybrid service model frontend regressions (F-06 & F-09)');
+  console.log('Hybrid service model frontend regressions');
 
   const originalPost = api.post;
   const originalPrint = printerService.print.bind(printerService);
@@ -118,7 +114,19 @@ async function run(): Promise<void> {
     assert.deepEqual(browserWarnings, [], 'ready-made-only browser KOT returns empty warnings');
     assert.equal(browserCalls.length, 0, 'ready-made-only order never calls printViaBrowser');
 
-    // 4. Mixed order with a pending kitchen line still prints only the kitchen item
+    // 3b. Empty item arrays skip printing on Browser Print and WebUSB instead of printing an empty ticket
+    const emptyOverrideWarnings = await usePrinterStore.getState().printKot(readyMadeOrder, {
+      items: [],
+    });
+    assert.deepEqual(emptyOverrideWarnings, [], 'empty opts.items returns empty warnings');
+    const emptyOrderItemsWarnings = await usePrinterStore.getState().printKot({
+      ...readyMadeOrder,
+      items: [],
+    });
+    assert.deepEqual(emptyOrderItemsWarnings, [], 'empty order.items returns empty warnings');
+    assert.equal(browserCalls.length, 0, 'empty item lists never call printViaBrowser');
+
+    // 4. Mixed order with a pending kitchen line prints only the kitchen item, even if a ready-made item carries pending status
     const mixedOrder: any = {
       ...readyMadeOrder,
       id: 102,
@@ -132,7 +140,10 @@ async function run(): Promise<void> {
           status: 'pending',
           requires_kitchen: 1,
         },
-        ...readyMadeOrder.items,
+        {
+          ...readyMadeOrder.items[0],
+          status: 'pending',
+        },
       ],
     };
     await usePrinterStore.getState().printKot(mixedOrder, { items: mixedOrder.items });
@@ -140,7 +151,7 @@ async function run(): Promise<void> {
     assert.ok(browserCalls[0].includes('Grilled Fish'), 'mixed KOT includes the kitchen item');
     assert.ok(!browserCalls[0].includes('Bottled Cola'), 'mixed KOT excludes the ready-made item');
 
-    // 5. F-09 frontend: selecting hybrid forces tablesRequired=true and marks it touched
+    // 5. Selecting hybrid forces tablesRequired=true and marks it touched
     const qsrForm = { serviceModel: 'qsr' as const, tablesRequired: false, businessName: 'Cafe' };
     const hybridTransition = applyServiceModelChange(qsrForm, 'hybrid');
     assert.equal(hybridTransition.nextForm.serviceModel, 'hybrid');
@@ -165,7 +176,7 @@ async function run(): Promise<void> {
     );
     assert.deepEqual(finedineTransition.touchedFields, ['serviceModel']);
 
-    // 6. F-09 frontend: saving business settings hydrates server-authoritative tables_required
+    // 6. Saving business settings hydrates server-authoritative tables_required
     assert.equal(
       resolveSavedTablesRequired(true, 'hybrid', false),
       true,

@@ -856,11 +856,10 @@ export const usePrinterStore = create<PrinterState>()(
           throw err;
         }
         const candidateItems = opts?.items ?? order.items;
-        if (
-          Array.isArray(candidateItems) &&
-          candidateItems.length > 0 &&
-          !candidateItems.some((item) => isKitchenItem(item) && isKotItemPending(item?.status))
-        ) {
+        const eligibleKotItems = Array.isArray(candidateItems)
+          ? candidateItems.filter((item) => isKitchenItem(item) && isKotItemPending(item?.status))
+          : undefined;
+        if (eligibleKotItems && eligibleKotItems.length === 0) {
           return [];
         }
         try {
@@ -871,7 +870,7 @@ export const usePrinterStore = create<PrinterState>()(
                 '/printers/print-kot',
                 {
                   orderId: order.id,
-                  items: opts?.items ?? order.items,
+                  items: eligibleKotItems,
                   stationName: opts?.stationName,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,
@@ -901,7 +900,7 @@ export const usePrinterStore = create<PrinterState>()(
           throwIfTenantChanged();
           const hydratedLargeOrderNumber = usePosSettingsStore.getState().billShowLargeOrderNumber;
 
-          const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
+          const orderForPrint = eligibleKotItems ? { ...order, items: eligibleKotItems } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
           const { resolveReadyKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
           throwIfTenantChanged();

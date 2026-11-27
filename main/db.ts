@@ -11799,7 +11799,12 @@ export const ACTIVE_RELEASED_KDS_ORDER_IDS_SQL = `
   SELECT active_o.id FROM orders active_o
   JOIN order_items active_oi ON active_oi.order_id = active_o.id
     AND active_oi.requires_kitchen = 1
-    AND active_oi.status NOT IN ('served', 'cancelled', 'void_adjustment', 'refunded')
+    AND active_oi.status NOT IN ('served', 'completed', 'cancelled', 'void_adjustment', 'refunded')
+    AND (
+      active_oi.status != 'voided'
+      OR active_oi.voided_at IS NULL
+      OR active_oi.voided_at > datetime('now', '-${Math.floor(KDS_VOIDED_ITEM_VISIBILITY_MS / 60000)} minutes')
+    )
   WHERE active_o.release_status = 'released'
     AND active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
 `;

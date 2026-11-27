@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
@@ -17,6 +16,7 @@ import {
 } from './ca-store';
 import { createHttpsFront, type HttpsFront, type TlsCredentials } from './https-front';
 import {
+  caTrustAnchorPemForNodeTls,
   fingerprintsOf,
   generateKeyPair,
   isPermittedLanIPv4,
@@ -121,42 +121,6 @@ const SELF_CHECK_TIMEOUT_MS = 4000;
 
 function sameSet(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, i) => value === b[i]);
-}
-
-export function verifyLoopbackPeerCertificate(
-  peerRaw: Buffer | undefined,
-  expectedLeafDer: Buffer,
-  caCertificateDer: Buffer,
-  now: Date,
-): void {
-  if (!peerRaw || peerRaw.length === 0) {
-    throw new Error('Missing peer certificate');
-  }
-  if (!peerRaw.equals(expectedLeafDer)) {
-    throw new Error('Peer certificate does not match expected leaf');
-  }
-  const peerCert = new crypto.X509Certificate(peerRaw);
-  const caCert = new crypto.X509Certificate(caCertificateDer);
-  if (!peerCert.verify(caCert.publicKey)) {
-    throw new Error('Peer certificate signature verification failed');
-  }
-  if (!peerCert.checkIssued(caCert)) {
-    throw new Error('Peer certificate issuer mismatch');
-  }
-  const nowMs = now.getTime();
-  const notBeforeMs = Date.parse(peerCert.validFrom);
-  const notAfterMs = Date.parse(peerCert.validTo);
-  if (
-    !Number.isFinite(notBeforeMs) ||
-    !Number.isFinite(notAfterMs) ||
-    nowMs < notBeforeMs ||
-    nowMs > notAfterMs
-  ) {
-    throw new Error('Peer certificate is outside its validity window');
-  }
-  if (!peerCert.checkHost('localhost') || !peerCert.checkIP('127.0.0.1')) {
-    throw new Error('Peer certificate SANs do not cover loopback');
-  }
 }
 
 export class SecureNetworkService {
@@ -552,30 +516,26 @@ export class SecureNetworkService {
     };
   }
 
-  private createPinnedLoopbackSocket(port: number): tls.TLSSocket {
+  private loopbackTlsOptions(): Pick<
+    tls.ConnectionOptions,
+    'ca' | 'servername' | 'checkServerIdentity'
+  > {
     if (!this.ca || !this.leaf) {
       throw new Error('TLS certificate material not loaded');
     }
     const expectedLeafDer = this.leaf.der;
-    const caCertificateDer = this.ca.certificateDer;
-    const caCertificatePem = this.ca.certificatePem;
-    // Electron BoringSSL rejects GEN_IPADD Name Constraints during x509_vfy, so loopback diagnostics pin the exact leaf and verify its CA chain directly.
-    const socket = tls.connect({
-      host: '127.0.0.1',
-      port,
+    return {
+      ca: caTrustAnchorPemForNodeTls(this.ca.certificateDer),
       servername: 'localhost',
-      ca: caCertificatePem,
-      rejectUnauthorized: false,
-    });
-    socket.once('secureConnect', () => {
-      try {
-        const peer = socket.getPeerCertificate(true);
-        verifyLoopbackPeerCertificate(peer?.raw, expectedLeafDer, caCertificateDer, this.now());
-      } catch (error) {
-        socket.destroy(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-    return socket;
+      checkServerIdentity: (hostname, cert) => {
+        const error = tls.checkServerIdentity(hostname, cert);
+        if (error) return error;
+        if (!cert.raw?.equals(expectedLeafDer)) {
+          return new Error('Peer certificate does not match expected leaf');
+        }
+        return undefined;
+      },
+    };
   }
 
   private selfRequest(
@@ -592,12 +552,8 @@ export class SecureNetworkService {
           method: 'GET',
           headers: { Host: 'localhost' },
           timeout: SELF_CHECK_TIMEOUT_MS,
-          ...(useTls
-            ? {
-                servername: 'localhost',
-                createConnection: () => this.createPinnedLoopbackSocket(port),
-              }
-            : { agent: false }),
+          agent: false,
+          ...(useTls ? this.loopbackTlsOptions() : {}),
         };
         const request = useTls ? https.request(options) : http.request(options);
         request.on('response', (response) => {
@@ -618,9 +574,9 @@ export class SecureNetworkService {
       let socket: WebSocket;
       try {
         socket = new WebSocket(`wss://127.0.0.1:${port}/kds`, {
+          ...this.loopbackTlsOptions(),
           headers: { Host: 'localhost' },
           handshakeTimeout: SELF_CHECK_TIMEOUT_MS,
-          createConnection: () => this.createPinnedLoopbackSocket(port),
         });
       } catch {
         resolve('failed');

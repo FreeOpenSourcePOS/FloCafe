@@ -13,11 +13,12 @@ import { isAllowedHostHeader } from '../main/security/lan-tls/https-front';
 import { buildSurfaceAddresses } from '../main/routes/secure-network';
 import {
   SecureNetworkService,
-  verifyLoopbackPeerCertificate,
   type SurfaceDefinition,
   type SurfaceId,
 } from '../main/security/lan-tls/secure-network';
 import {
+  caTrustAnchorPemForNodeTls,
+  derFromPem,
   generateKeyPair,
   issueCaCertificate,
   issueLeafCertificate,
@@ -81,46 +82,8 @@ async function makeSurface(id: SurfaceId, candidatePorts: number[] = [0]): Promi
   return surface;
 }
 
-/**
- * Connects over TLS under Electron's BoringSSL (which rejects GEN_IPADD Name Constraints during
- * x509_vfy) while still strictly verifying the presented certificate against the trusted CA,
- * validity window, and target host/IP SAN.
- */
-function connectWithCa(options: {
-  host: string;
-  port: number;
-  ca: string;
-  servername?: string;
-}): tls.TLSSocket {
-  const caCert = new crypto.X509Certificate(options.ca);
-  const socket = tls.connect({
-    host: options.host,
-    port: options.port,
-    servername: options.servername,
-    ca: options.ca,
-    rejectUnauthorized: false,
-  });
-  socket.once('secureConnect', () => {
-    try {
-      const peer = socket.getPeerCertificate(true);
-      if (!peer?.raw?.length) throw new Error('missing peer certificate');
-      const cert = new crypto.X509Certificate(peer.raw);
-      if (!cert.verify(caCert.publicKey)) throw new Error('unable to verify certificate signature');
-      if (!cert.checkIssued(caCert)) throw new Error('certificate issuer mismatch');
-      const now = Date.now();
-      if (now < Date.parse(cert.validFrom) || now > Date.parse(cert.validTo)) {
-        throw new Error('certificate expired');
-      }
-      if (options.servername && !cert.checkHost(options.servername)) {
-        throw new Error(`certificate host mismatch for ${options.servername}`);
-      } else if (!options.servername && net.isIP(options.host) && !cert.checkIP(options.host)) {
-        throw new Error(`certificate IP mismatch for ${options.host}`);
-      }
-    } catch (error) {
-      socket.destroy(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
-  return socket;
+function trustAnchor(caPem: string): string {
+  return caTrustAnchorPemForNodeTls(derFromPem(caPem));
 }
 
 function request(
@@ -141,19 +104,9 @@ function request(
         port,
         path: options.path ?? '/',
         headers: options.host ? { Host: options.host } : undefined,
-        ca: options.ca,
+        ca: options.ca ? trustAnchor(options.ca) : undefined,
         servername: options.servername,
-        ...(options.ca
-          ? {
-              createConnection: () =>
-                connectWithCa({
-                  host: address,
-                  port,
-                  ca: options.ca!,
-                  servername: options.servername,
-                }),
-            }
-          : { agent: false }),
+        agent: false,
         timeout: 5000,
       },
       (res) => {
@@ -348,8 +301,7 @@ async function main() {
   // ── wss through the front ──────────────────────────────────────────────────
   const message = await new Promise<string>((resolve, reject) => {
     const socket = new WebSocket(`wss://127.0.0.1:${main.httpsPort}/kds`, {
-      createConnection: () =>
-        connectWithCa({ host: '127.0.0.1', port: main.httpsPort!, ca: trusted }),
+      ca: trustAnchor(trusted),
     });
     socket.once('message', (data) => {
       resolve(String(data));
@@ -365,8 +317,7 @@ async function main() {
   await new Promise<void>((resolve) => {
     const socket = new WebSocket(`wss://127.0.0.1:${main.httpsPort}/kds`, {
       headers: { Host: 'evil.example.com' },
-      createConnection: () =>
-        connectWithCa({ host: '127.0.0.1', port: main.httpsPort!, ca: trusted }),
+      ca: trustAnchor(trusted),
     });
     socket.once('error', () => resolve());
     socket.once('unexpected-response', (_req, res) => {
@@ -404,12 +355,7 @@ async function main() {
   cleanups.push(() => plainService.stop());
   const refusal = await new Promise<number>((resolve, reject) => {
     const socket = new WebSocket(`wss://127.0.0.1:${plainHttps}/`, {
-      createConnection: () =>
-        connectWithCa({
-          host: '127.0.0.1',
-          port: plainHttps!,
-          ca: plainService.getPublicCa()!.pem,
-        }),
+      ca: trustAnchor(plainService.getPublicCa()!.pem),
       handshakeTimeout: 3000,
     });
     socket.once('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
@@ -466,10 +412,10 @@ async function main() {
   assert.deepEqual(status.ip_change?.current, ['127.0.0.1', '192.168.1.77']);
   assert.ok(status.ip_change?.previous.includes('192.168.1.20'));
   const presented = await new Promise<crypto.X509Certificate>((resolve, reject) => {
-    const socket = connectWithCa({
+    const socket = tls.connect({
       host: '127.0.0.1',
       port: main.httpsPort!,
-      ca: trusted,
+      ca: trustAnchor(trusted),
       servername: 'localhost',
     });
     socket.once('secureConnect', () => {
@@ -590,10 +536,10 @@ async function main() {
   };
   const presentedFor = async (port: number) =>
     new Promise<crypto.X509Certificate>((resolve, reject) => {
-      const socket = connectWithCa({
+      const socket = tls.connect({
         host: '127.0.0.1',
         port,
-        ca: pf.getPublicCa()!.pem,
+        ca: trustAnchor(pf.getPublicCa()!.pem),
         servername: 'localhost',
       });
       socket.once('secureConnect', () => {
@@ -661,10 +607,10 @@ async function main() {
   assert.equal(rbA.httpsPort, null, 'the front that could not be restored is unpublished');
   await assert.rejects(
     new Promise((resolve, reject) => {
-      const socket = connectWithCa({
+      const socket = tls.connect({
         host: '127.0.0.1',
         port: firstPort,
-        ca: rb.getPublicCa()!.pem,
+        ca: trustAnchor(rb.getPublicCa()!.pem),
         servername: 'localhost',
       });
       socket.once('secureConnect', () => resolve(socket.end()));
@@ -808,76 +754,14 @@ async function main() {
   );
 
   // ── Pinned loopback verification, surface ports, domain profile, state resets ──
-  // verifyLoopbackPeerCertificate rejects missing, mismatched, rogue-CA, expired, and bad-SAN certs.
+  // Live negative checks: loopback diagnostics reject both a rogue-CA server and a mismatched leaf
+  // signed by the same CA, while keeping native TLS certificate validation enabled.
   {
-    const testNow = new Date('2026-06-01T12:00:00Z');
-    const caKeys = generateKeyPair();
-    const caCert = issueCaCertificate(
-      caKeys,
-      { commonName: 'Test CA', organization: 'FloCafe' },
-      testNow,
-    );
     const otherCaKeys = generateKeyPair();
-    const otherCaCert = issueCaCertificate(
-      otherCaKeys,
-      { commonName: 'Other CA', organization: 'Other' },
-      testNow,
-    );
-    const validLeaf = issueLeafCertificate(
-      generateKeyPair(),
-      { dnsNames: ['flo.local', 'localhost'], ipAddresses: ['127.0.0.1', '192.168.1.20'] },
-      { certificateDer: caCert.der, privateKey: caKeys.privateKey },
-      testNow,
-    );
-    const secondLeaf = issueLeafCertificate(
-      generateKeyPair(),
-      { dnsNames: ['flo.local', 'localhost'], ipAddresses: ['127.0.0.1'] },
-      { certificateDer: caCert.der, privateKey: caKeys.privateKey },
-      testNow,
-    );
-    const rogueLeaf = issueLeafCertificate(
-      generateKeyPair(),
-      { dnsNames: ['flo.local', 'localhost'], ipAddresses: ['127.0.0.1'] },
-      { certificateDer: otherCaCert.der, privateKey: otherCaKeys.privateKey },
-      testNow,
-    );
-    const noLoopbackLeaf = issueLeafCertificate(
-      generateKeyPair(),
-      { dnsNames: ['flo.local'], ipAddresses: ['192.168.1.20'] },
-      { certificateDer: caCert.der, privateKey: caKeys.privateKey },
-      testNow,
-    );
-
-    verifyLoopbackPeerCertificate(validLeaf.der, validLeaf.der, caCert.der, testNow);
-    assert.throws(
-      () => verifyLoopbackPeerCertificate(undefined, validLeaf.der, caCert.der, testNow),
-      /Missing peer certificate/,
-    );
-    assert.throws(
-      () => verifyLoopbackPeerCertificate(secondLeaf.der, validLeaf.der, caCert.der, testNow),
-      /does not match expected leaf/,
-    );
-    assert.throws(
-      () => verifyLoopbackPeerCertificate(rogueLeaf.der, rogueLeaf.der, caCert.der, testNow),
-      /signature verification failed/,
-    );
-    assert.throws(
-      () =>
-        verifyLoopbackPeerCertificate(
-          validLeaf.der,
-          validLeaf.der,
-          caCert.der,
-          new Date(validLeaf.notAfter.getTime() + 60_000),
-        ),
-      /outside its validity window/,
-    );
-    assert.throws(
-      () =>
-        verifyLoopbackPeerCertificate(noLoopbackLeaf.der, noLoopbackLeaf.der, caCert.der, testNow),
-      /SANs do not cover loopback/,
-    );
-
-    // Live negative check: a rogue TLS server on loopback fails pinned HTTPS and WebSocket diagnostics.
+    const otherCaCert = issueCaCertificate(otherCaKeys, {
+      commonName: 'Other CA',
+      organization: 'Other',
+    });
     const rogueKeys = generateKeyPair();
     const rogueServerLeaf = issueLeafCertificate(
       rogueKeys,
@@ -900,6 +784,7 @@ async function main() {
         }),
     );
     const internal = service as unknown as {
+      ca: { certificateDer: Buffer; privateKey: crypto.KeyObject };
       selfRequest: (
         port: number,
         requestPath: string,
@@ -909,13 +794,44 @@ async function main() {
     };
     await assert.rejects(
       () => internal.selfRequest(roguePort, '/api/health', true),
-      /does not match expected leaf/,
-      'loopback HTTPS diagnostic rejects a rogue TLS certificate',
+      'loopback HTTPS diagnostic rejects a rogue-CA TLS certificate',
     );
     assert.equal(
       await internal.websocketCheck(roguePort),
       'failed',
-      'loopback WebSocket diagnostic rejects a rogue TLS certificate',
+      'loopback WebSocket diagnostic rejects a rogue-CA TLS certificate',
+    );
+
+    const otherLeafKeys = generateKeyPair();
+    const otherLeaf = issueLeafCertificate(
+      otherLeafKeys,
+      { dnsNames: ['localhost'], ipAddresses: ['127.0.0.1'] },
+      { certificateDer: internal.ca.certificateDer, privateKey: internal.ca.privateKey },
+    );
+    const otherLeafServer = https.createServer(
+      {
+        key: otherLeafKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }) as string,
+        cert: otherLeaf.pem,
+      },
+      (_req, res) => res.end('other-leaf'),
+    );
+    const otherLeafWss = new WebSocketServer({ server: otherLeafServer });
+    const otherLeafPort = await listen(otherLeafServer);
+    cleanups.push(
+      () =>
+        new Promise<void>((r) => {
+          otherLeafWss.close(() => otherLeafServer.close(() => r()));
+        }),
+    );
+    await assert.rejects(
+      () => internal.selfRequest(otherLeafPort, '/api/health', true),
+      /does not match expected leaf/,
+      'loopback HTTPS diagnostic rejects a mismatched leaf signed by the same CA',
+    );
+    assert.equal(
+      await internal.websocketCheck(otherLeafPort),
+      'failed',
+      'loopback WebSocket diagnostic rejects a mismatched leaf signed by the same CA',
     );
   }
 

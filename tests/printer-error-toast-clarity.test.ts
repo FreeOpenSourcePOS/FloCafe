@@ -564,6 +564,195 @@ async function runTests(): Promise<void> {
       ),
       'savePrinterHw omits default paper_width on new auto-profile add',
     );
+
+    // 12. Issue #1640: PrintersSettingsTab.deletePrinterHw surfaces backend 409 error reason
+    const frontendRequire = moduleApi.createRequire(
+      path.resolve(__dirname, '../frontend/package.json'),
+    );
+    const frontendAxios = frontendRequire('axios');
+    const prevLoad = (moduleApi as unknown as { _load: (...args: any[]) => any })._load;
+    const toastErrors: string[] = [];
+    const toastSuccesses: string[] = [];
+    const origDelete = frontendApi.delete;
+    const origWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+
+    const reactStub = {
+      useState: <T>(initial: T | (() => T)) => [
+        typeof initial === 'function' ? (initial as () => T)() : initial,
+        () => {},
+      ],
+      useCallback: <T extends (...args: any[]) => any>(fn: T) => fn,
+      useEffect: () => {},
+    };
+    const jsxNode = (type: any, props: any) => ({ type, props });
+    const toastStub = Object.assign((_msg: string) => {}, {
+      error: (msg: string) => toastErrors.push(msg),
+      success: (msg: string) => toastSuccesses.push(msg),
+    });
+
+    (moduleApi as unknown as { _load: (...args: any[]) => any })._load = function (
+      request: string,
+      parent: any,
+      isMain: boolean,
+    ) {
+      if (request === 'react') return reactStub;
+      if (request === 'react/jsx-runtime') {
+        return { Fragment: 'Fragment', jsx: jsxNode, jsxs: jsxNode };
+      }
+      if (request === 'axios') return frontendAxios;
+      if (request === 'use-intl') {
+        return { useTranslations: () => (key: string) => key };
+      }
+      if (request === 'lucide-react') {
+        return new Proxy({}, { get: () => () => null });
+      }
+      if (request === 'react-hot-toast') {
+        return { __esModule: true, default: toastStub };
+      }
+      if (request === '@/hooks/usePrinter') {
+        return {
+          usePrinterStore: () => ({
+            refreshHardwarePrinter: () => {},
+            setPrintMethod: () => {},
+          }),
+        };
+      }
+      if (
+        request === '@/components/layout/Ltr' ||
+        request === '@/components/settings/Toggle' ||
+        request === '@/components/settings/SettingsTabShell' ||
+        request === '@/components/settings/LanPrinterDiscovery' ||
+        request === '@/components/settings/PrinterStatusBadge'
+      ) {
+        return new Proxy({}, { get: () => () => null });
+      }
+      return prevLoad.apply(this, arguments as any);
+    };
+
+    try {
+      (globalThis as any).window = { electronAPI: { platform: 'darwin' } };
+      const printersTabPath =
+        require.resolve('../frontend/src/components/settings/PrintersSettingsTab');
+      delete require.cache[printersTabPath];
+      const { PrintersSettingsTab } = require(printersTabPath);
+
+      const tree = PrintersSettingsTab({
+        isActive: false,
+        canManagePrinters: true,
+        hwPrinters: [
+          {
+            id: 'printer-sole-default',
+            name: 'XP-58',
+            connection_type: 'usb',
+            cash_drawer_pulse_enabled: 0,
+            paper_width: 'cols-32',
+            is_default: 1,
+          },
+        ],
+        setHwPrinters: () => {},
+        printingForm: {
+          printerEnabled: true,
+          printerPaperSize: '80mm',
+          cashDrawerPulseEnabled: false,
+          cashDrawerPulseMethods: [],
+          printMethod: 'escpos',
+          autoPrintKot: false,
+          autoPrintBill: false,
+          whatsappShareEnabled: false,
+          printerUseUnicode: true,
+          printerArabicShaping: false,
+          printerTrimDecimals: false,
+          receiptPrimaryLanguage: 'inherit',
+          receiptSecondLanguage: 'none',
+          zReportPrimaryLanguage: 'inherit',
+          zReportSecondLanguage: 'none',
+          kotLanguage: 'inherit',
+          billShowLogo: true,
+          billShowName: true,
+          billShowAddress: true,
+          billShowPhone: true,
+          billShowTaxId: true,
+          billShowTaxBreakdown: true,
+          billShowCustomerName: true,
+          billShowCustomerPhone: true,
+          billDeliveryShowCustomerPhoneAlways: false,
+          billShowTableNumber: true,
+          billShowLargeOrderNumber: false,
+        },
+        setPrintingForm: () => {},
+        billForm: {
+          billTemplate: 'classic',
+          billTemplateSource: 'core',
+          billFooterMessage: '',
+        },
+        setBillForm: () => {},
+        billTemplateCards: [],
+        kotPrintingEnabledSetting: true,
+        saveKotPrintingEnabled: async () => {},
+        savingKotPrintingEnabled: false,
+        kdsEnabledSetting: false,
+        pulseCustomMethods: [],
+        markHydrationTouched: () => {},
+        confirm: async () => true,
+      });
+
+      const findElement = (node: any, pred: (el: any) => boolean): any => {
+        if (!node || typeof node !== 'object') return null;
+        if (Array.isArray(node)) {
+          for (const child of node) {
+            const hit = findElement(child, pred);
+            if (hit) return hit;
+          }
+          return null;
+        }
+        if (pred(node)) return node;
+        if (node.props?.children !== undefined) {
+          return findElement(node.props.children, pred);
+        }
+        return null;
+      };
+
+      const deleteBtn = findElement(
+        tree,
+        (el) => el.type === 'button' && el.props?.title === 'delete',
+      );
+      assert(deleteBtn && typeof deleteBtn.props?.onClick === 'function', 'delete button renders');
+
+      frontendApi.delete = async () => {
+        throw Object.assign(new Error('Request failed with status code 409'), {
+          isAxiosError: true,
+          response: {
+            status: 409,
+            data: { error: 'Cannot delete the only default printer' },
+          },
+        });
+      };
+      await deleteBtn.props.onClick();
+      assert.equal(
+        toastErrors.at(-1),
+        'printerDeleteFailed: Cannot delete the only default printer',
+        'deletePrinterHw surfaces the backend 409 error reason',
+      );
+
+      frontendApi.delete = async () => {
+        throw new Error('Network error');
+      };
+      await deleteBtn.props.onClick();
+      assert.equal(
+        toastErrors.at(-1),
+        'printerDeleteFailed',
+        'deletePrinterHw falls back to generic translation when error has no API body',
+      );
+      assert.equal(toastSuccesses.length, 0, 'failed delete does not toast success');
+    } finally {
+      (moduleApi as unknown as { _load: (...args: any[]) => any })._load = prevLoad;
+      frontendApi.delete = origDelete;
+      if (origWindow) {
+        Object.defineProperty(globalThis, 'window', origWindow);
+      } else {
+        delete (globalThis as any).window;
+      }
+    }
   } finally {
     if (origIsConnected) {
       Object.defineProperty(printerService, 'isConnected', origIsConnected);

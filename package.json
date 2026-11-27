@@ -80,7 +80,7 @@
     "test:desktop-trailing-slash-routing": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/desktop-trailing-slash-routing.test.ts",
     "test:cors": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/cors-security.test.ts",
     "test:secure-network-certificates": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/secure-network-certificates.test.ts",
-    "test:secure-network-service": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/secure-network-service.test.ts",
+    "test:secure-network-service": "node tests/run-electron-node-test.cjs tests/secure-network-service.test.ts",
     "test:secure-network-lan-integrity": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/secure-network-lan-integrity.test.ts",
     "test:secure-network-windows": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/secure-network-windows.test.ts",
     "test:csp-lan": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/csp-lan-header.test.ts",

@@ -1,7 +1,9 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import path from 'path';
+import tls from 'tls';
 import { WebSocket } from 'ws';
 import {
   clearCaRegeneration,
@@ -121,6 +123,42 @@ function sameSet(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
+export function verifyLoopbackPeerCertificate(
+  peerRaw: Buffer | undefined,
+  expectedLeafDer: Buffer,
+  caCertificateDer: Buffer,
+  now: Date,
+): void {
+  if (!peerRaw || peerRaw.length === 0) {
+    throw new Error('Missing peer certificate');
+  }
+  if (!peerRaw.equals(expectedLeafDer)) {
+    throw new Error('Peer certificate does not match expected leaf');
+  }
+  const peerCert = new crypto.X509Certificate(peerRaw);
+  const caCert = new crypto.X509Certificate(caCertificateDer);
+  if (!peerCert.verify(caCert.publicKey)) {
+    throw new Error('Peer certificate signature verification failed');
+  }
+  if (!peerCert.checkIssued(caCert)) {
+    throw new Error('Peer certificate issuer mismatch');
+  }
+  const nowMs = now.getTime();
+  const notBeforeMs = Date.parse(peerCert.validFrom);
+  const notAfterMs = Date.parse(peerCert.validTo);
+  if (
+    !Number.isFinite(notBeforeMs) ||
+    !Number.isFinite(notAfterMs) ||
+    nowMs < notBeforeMs ||
+    nowMs > notAfterMs
+  ) {
+    throw new Error('Peer certificate is outside its validity window');
+  }
+  if (!peerCert.checkHost('localhost') || !peerCert.checkIP('127.0.0.1')) {
+    throw new Error('Peer certificate SANs do not cover loopback');
+  }
+}
+
 export class SecureNetworkService {
   private readonly deps: SecureNetworkDeps;
   private ca: CaMaterial | null = null;
@@ -184,6 +222,14 @@ export class SecureNetworkService {
     return [...ips].sort();
   }
 
+  private clearCertificateState(): void {
+    this.ca = null;
+    this.caFingerprints = null;
+    this.leaf = null;
+    this.leafKeyPem = null;
+    this.leafIps = [];
+  }
+
   private issueLeaf(): void {
     if (!this.ca) throw new Error('CA not loaded');
     const keys = generateKeyPair();
@@ -232,8 +278,8 @@ export class SecureNetworkService {
         this.ca = loadOrCreateCa(this.caOptions());
         this.caFingerprints = fingerprintsOf(this.ca.certificateDer);
         this.issueLeaf();
-        this.recordIpChange();
       } catch (error) {
+        this.clearCertificateState();
         const code = (error as { code?: string }).code;
         this.errorCode =
           code === 'SECURE_STORAGE_UNAVAILABLE'
@@ -241,6 +287,11 @@ export class SecureNetworkService {
             : 'certificate_failed';
         this.log(`Certificate provisioning failed: ${(error as Error).message}`);
         return;
+      }
+      try {
+        this.recordIpChange();
+      } catch (error) {
+        this.log(`Could not record the address change: ${(error as Error).message}`);
       }
 
       const credentials = this.credentials();
@@ -348,8 +399,7 @@ export class SecureNetworkService {
     } catch (error) {
       this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
     }
-    this.ca = null;
-    this.leaf = null;
+    this.clearCertificateState();
     await this.startInternal();
   }
 
@@ -378,8 +428,7 @@ export class SecureNetworkService {
         } catch (error) {
           this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
         }
-        this.ca = null;
-        this.leaf = null;
+        this.clearCertificateState();
       }
       this.notifyChanged();
     });
@@ -412,8 +461,7 @@ export class SecureNetworkService {
       } catch (error) {
         resetFailure = error;
       }
-      this.ca = null;
-      this.leaf = null;
+      this.clearCertificateState();
       let startFailure: unknown = null;
       try {
         await this.startInternal();
@@ -504,39 +552,80 @@ export class SecureNetworkService {
     };
   }
 
+  private createPinnedLoopbackSocket(port: number): tls.TLSSocket {
+    if (!this.ca || !this.leaf) {
+      throw new Error('TLS certificate material not loaded');
+    }
+    const expectedLeafDer = this.leaf.der;
+    const caCertificateDer = this.ca.certificateDer;
+    const caCertificatePem = this.ca.certificatePem;
+    // Electron BoringSSL rejects GEN_IPADD Name Constraints during x509_vfy, so loopback diagnostics pin the exact leaf and verify its CA chain directly.
+    const socket = tls.connect({
+      host: '127.0.0.1',
+      port,
+      servername: 'localhost',
+      ca: caCertificatePem,
+      rejectUnauthorized: false,
+    });
+    socket.once('secureConnect', () => {
+      try {
+        const peer = socket.getPeerCertificate(true);
+        verifyLoopbackPeerCertificate(peer?.raw, expectedLeafDer, caCertificateDer, this.now());
+      } catch (error) {
+        socket.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    return socket;
+  }
+
   private selfRequest(
     port: number,
     requestPath: string,
     useTls: boolean,
   ): Promise<{ status: number }> {
     return new Promise((resolve, reject) => {
-      const options: https.RequestOptions = {
-        host: '127.0.0.1',
-        port,
-        path: requestPath,
-        method: 'GET',
-        headers: { Host: 'localhost' },
-        timeout: SELF_CHECK_TIMEOUT_MS,
-        ...(useTls ? { ca: this.ca?.certificatePem, servername: 'localhost' } : {}),
-      };
-      const request = useTls ? https.request(options) : http.request(options);
-      request.on('response', (response) => {
-        response.resume();
-        resolve({ status: response.statusCode ?? 0 });
-      });
-      request.on('timeout', () => request.destroy(new Error('timeout')));
-      request.on('error', reject);
-      request.end();
+      try {
+        const options: https.RequestOptions = {
+          host: '127.0.0.1',
+          port,
+          path: requestPath,
+          method: 'GET',
+          headers: { Host: 'localhost' },
+          timeout: SELF_CHECK_TIMEOUT_MS,
+          ...(useTls
+            ? {
+                servername: 'localhost',
+                createConnection: () => this.createPinnedLoopbackSocket(port),
+              }
+            : { agent: false }),
+        };
+        const request = useTls ? https.request(options) : http.request(options);
+        request.on('response', (response) => {
+          response.resume();
+          resolve({ status: response.statusCode ?? 0 });
+        });
+        request.on('timeout', () => request.destroy(new Error('timeout')));
+        request.on('error', reject);
+        request.end();
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
   private websocketCheck(port: number): Promise<'open' | 'rejected' | 'failed'> {
     return new Promise((resolve) => {
-      const socket = new WebSocket(`wss://127.0.0.1:${port}/kds`, {
-        ca: this.ca?.certificatePem,
-        headers: { Host: 'localhost' },
-        handshakeTimeout: SELF_CHECK_TIMEOUT_MS,
-      });
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(`wss://127.0.0.1:${port}/kds`, {
+          headers: { Host: 'localhost' },
+          handshakeTimeout: SELF_CHECK_TIMEOUT_MS,
+          createConnection: () => this.createPinnedLoopbackSocket(port),
+        });
+      } catch {
+        resolve('failed');
+        return;
+      }
       let settled = false;
       const finish = (result: 'open' | 'rejected' | 'failed') => {
         if (settled) return;
@@ -658,16 +747,25 @@ export class SecureNetworkService {
                 ? 'firewall_rule_missing'
                 : 'firewall_unknown',
         });
+        let profileStatus: DiagnosticCheck['status'];
+        let profileCode: string;
+        if (firewall.networkProfile === 'private') {
+          profileStatus = 'ok';
+          profileCode = 'network_profile_ok';
+        } else if (firewall.networkProfile === 'public') {
+          profileStatus = 'warn';
+          profileCode = 'network_profile_public';
+        } else if (firewall.networkProfile === 'domain') {
+          profileStatus = 'warn';
+          profileCode = 'network_profile_domain';
+        } else {
+          profileStatus = 'skipped';
+          profileCode = 'network_profile_unknown';
+        }
         checks.push({
           id: 'network_profile',
-          status:
-            firewall.networkProfile === 'public'
-              ? 'warn'
-              : firewall.networkProfile === 'unknown'
-                ? 'skipped'
-                : 'ok',
-          code:
-            firewall.networkProfile === 'public' ? 'network_profile_public' : 'network_profile_ok',
+          status: profileStatus,
+          code: profileCode,
         });
       }
     }

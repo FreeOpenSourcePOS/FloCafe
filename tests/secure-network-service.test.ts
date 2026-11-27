@@ -10,11 +10,18 @@ import * as path from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { SecretStorage } from '../main/security/lan-tls/ca-store';
 import { isAllowedHostHeader } from '../main/security/lan-tls/https-front';
+import { buildSurfaceAddresses } from '../main/routes/secure-network';
 import {
   SecureNetworkService,
+  verifyLoopbackPeerCertificate,
   type SurfaceDefinition,
   type SurfaceId,
 } from '../main/security/lan-tls/secure-network';
+import {
+  generateKeyPair,
+  issueCaCertificate,
+  issueLeafCertificate,
+} from '../main/security/lan-tls/x509';
 
 const storage: SecretStorage = {
   isAvailable: () => true,
@@ -74,6 +81,48 @@ async function makeSurface(id: SurfaceId, candidatePorts: number[] = [0]): Promi
   return surface;
 }
 
+/**
+ * Connects over TLS under Electron's BoringSSL (which rejects GEN_IPADD Name Constraints during
+ * x509_vfy) while still strictly verifying the presented certificate against the trusted CA,
+ * validity window, and target host/IP SAN.
+ */
+function connectWithCa(options: {
+  host: string;
+  port: number;
+  ca: string;
+  servername?: string;
+}): tls.TLSSocket {
+  const caCert = new crypto.X509Certificate(options.ca);
+  const socket = tls.connect({
+    host: options.host,
+    port: options.port,
+    servername: options.servername,
+    ca: options.ca,
+    rejectUnauthorized: false,
+  });
+  socket.once('secureConnect', () => {
+    try {
+      const peer = socket.getPeerCertificate(true);
+      if (!peer?.raw?.length) throw new Error('missing peer certificate');
+      const cert = new crypto.X509Certificate(peer.raw);
+      if (!cert.verify(caCert.publicKey)) throw new Error('unable to verify certificate signature');
+      if (!cert.checkIssued(caCert)) throw new Error('certificate issuer mismatch');
+      const now = Date.now();
+      if (now < Date.parse(cert.validFrom) || now > Date.parse(cert.validTo)) {
+        throw new Error('certificate expired');
+      }
+      if (options.servername && !cert.checkHost(options.servername)) {
+        throw new Error(`certificate host mismatch for ${options.servername}`);
+      } else if (!options.servername && net.isIP(options.host) && !cert.checkIP(options.host)) {
+        throw new Error(`certificate IP mismatch for ${options.host}`);
+      }
+    } catch (error) {
+      socket.destroy(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+  return socket;
+}
+
 function request(
   port: number,
   options: {
@@ -85,16 +134,27 @@ function request(
   } = {},
 ): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
+    const address = options.address ?? '127.0.0.1';
     const req = https.request(
       {
-        host: options.address ?? '127.0.0.1',
+        host: address,
         port,
         path: options.path ?? '/',
         headers: options.host ? { Host: options.host } : undefined,
         ca: options.ca,
         servername: options.servername,
+        ...(options.ca
+          ? {
+              createConnection: () =>
+                connectWithCa({
+                  host: address,
+                  port,
+                  ca: options.ca!,
+                  servername: options.servername,
+                }),
+            }
+          : { agent: false }),
         timeout: 5000,
-        agent: false,
       },
       (res) => {
         let data = '';
@@ -287,7 +347,10 @@ async function main() {
 
   // ── wss through the front ──────────────────────────────────────────────────
   const message = await new Promise<string>((resolve, reject) => {
-    const socket = new WebSocket(`wss://127.0.0.1:${main.httpsPort}/kds`, { ca: trusted });
+    const socket = new WebSocket(`wss://127.0.0.1:${main.httpsPort}/kds`, {
+      createConnection: () =>
+        connectWithCa({ host: '127.0.0.1', port: main.httpsPort!, ca: trusted }),
+    });
     socket.once('message', (data) => {
       resolve(String(data));
       socket.close();
@@ -302,7 +365,8 @@ async function main() {
   await new Promise<void>((resolve) => {
     const socket = new WebSocket(`wss://127.0.0.1:${main.httpsPort}/kds`, {
       headers: { Host: 'evil.example.com' },
-      ca: trusted,
+      createConnection: () =>
+        connectWithCa({ host: '127.0.0.1', port: main.httpsPort!, ca: trusted }),
     });
     socket.once('error', () => resolve());
     socket.once('unexpected-response', (_req, res) => {
@@ -340,7 +404,12 @@ async function main() {
   cleanups.push(() => plainService.stop());
   const refusal = await new Promise<number>((resolve, reject) => {
     const socket = new WebSocket(`wss://127.0.0.1:${plainHttps}/`, {
-      ca: plainService.getPublicCa()!.pem,
+      createConnection: () =>
+        connectWithCa({
+          host: '127.0.0.1',
+          port: plainHttps!,
+          ca: plainService.getPublicCa()!.pem,
+        }),
       handshakeTimeout: 3000,
     });
     socket.once('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
@@ -397,13 +466,16 @@ async function main() {
   assert.deepEqual(status.ip_change?.current, ['127.0.0.1', '192.168.1.77']);
   assert.ok(status.ip_change?.previous.includes('192.168.1.20'));
   const presented = await new Promise<crypto.X509Certificate>((resolve, reject) => {
-    const socket = tls.connect(
-      { host: '127.0.0.1', port: main.httpsPort!, ca: trusted, servername: 'localhost' },
-      () => {
-        resolve(new crypto.X509Certificate(socket.getPeerCertificate(true).raw));
-        socket.end();
-      },
-    );
+    const socket = connectWithCa({
+      host: '127.0.0.1',
+      port: main.httpsPort!,
+      ca: trusted,
+      servername: 'localhost',
+    });
+    socket.once('secureConnect', () => {
+      resolve(new crypto.X509Certificate(socket.getPeerCertificate(true).raw));
+      socket.end();
+    });
     socket.on('error', reject);
   });
   assert.ok(presented.checkIP('192.168.1.77'), 'the new leaf covers the new address');
@@ -416,7 +488,15 @@ async function main() {
   // ── Disable / enable ───────────────────────────────────────────────────────
   const oldPort = main.httpsPort!;
   await service.setEnabled(false);
-  assert.equal(service.getStatus().state, 'disabled');
+  const disabledStatus = service.getStatus();
+  assert.equal(disabledStatus.state, 'disabled');
+  assert.equal(
+    disabledStatus.certificate.ca_fingerprint_sha256,
+    null,
+    'disabling clears cached CA fingerprint from status',
+  );
+  assert.deepEqual(service.getCertifiedLanIps(), [], 'disabling clears cached certified LAN IPs');
+  assert.equal(service.getPublicCa(), null, 'disabling clears the public CA');
   assert.equal(main.httpsPort, null, 'the published HTTPS port is cleared');
   await expectConnectionFailure(
     request(oldPort, { ca: trusted, servername: 'localhost' }),
@@ -510,13 +590,16 @@ async function main() {
   };
   const presentedFor = async (port: number) =>
     new Promise<crypto.X509Certificate>((resolve, reject) => {
-      const socket = tls.connect(
-        { host: '127.0.0.1', port, ca: pf.getPublicCa()!.pem, servername: 'localhost' },
-        () => {
-          resolve(new crypto.X509Certificate(socket.getPeerCertificate(true).raw));
-          socket.end();
-        },
-      );
+      const socket = connectWithCa({
+        host: '127.0.0.1',
+        port,
+        ca: pf.getPublicCa()!.pem,
+        servername: 'localhost',
+      });
+      socket.once('secureConnect', () => {
+        resolve(new crypto.X509Certificate(socket.getPeerCertificate(true).raw));
+        socket.end();
+      });
       socket.on('error', reject);
     });
   pfIps = ['192.168.1.41'];
@@ -578,10 +661,13 @@ async function main() {
   assert.equal(rbA.httpsPort, null, 'the front that could not be restored is unpublished');
   await assert.rejects(
     new Promise((resolve, reject) => {
-      const socket = tls.connect(
-        { host: '127.0.0.1', port: firstPort, ca: rb.getPublicCa()!.pem, servername: 'localhost' },
-        () => resolve(socket.end()),
-      );
+      const socket = connectWithCa({
+        host: '127.0.0.1',
+        port: firstPort,
+        ca: rb.getPublicCa()!.pem,
+        servername: 'localhost',
+      });
+      socket.once('secureConnect', () => resolve(socket.end()));
       socket.on('error', reject);
     }),
     'the unrestorable front no longer accepts connections',
@@ -720,6 +806,246 @@ async function main() {
     'key-unreadable',
     'the owner is told devices must trust again',
   );
+
+  // ── Pinned loopback verification, surface ports, domain profile, state resets ──
+  // verifyLoopbackPeerCertificate rejects missing, mismatched, rogue-CA, expired, and bad-SAN certs.
+  {
+    const testNow = new Date('2026-06-01T12:00:00Z');
+    const caKeys = generateKeyPair();
+    const caCert = issueCaCertificate(
+      caKeys,
+      { commonName: 'Test CA', organization: 'FloCafe' },
+      testNow,
+    );
+    const otherCaKeys = generateKeyPair();
+    const otherCaCert = issueCaCertificate(
+      otherCaKeys,
+      { commonName: 'Other CA', organization: 'Other' },
+      testNow,
+    );
+    const validLeaf = issueLeafCertificate(
+      generateKeyPair(),
+      { dnsNames: ['flo.local', 'localhost'], ipAddresses: ['127.0.0.1', '192.168.1.20'] },
+      { certificateDer: caCert.der, privateKey: caKeys.privateKey },
+      testNow,
+    );
+    const secondLeaf = issueLeafCertificate(
+      generateKeyPair(),
+      { dnsNames: ['flo.local', 'localhost'], ipAddresses: ['127.0.0.1'] },
+      { certificateDer: caCert.der, privateKey: caKeys.privateKey },
+      testNow,
+    );
+    const rogueLeaf = issueLeafCertificate(
+      generateKeyPair(),
+      { dnsNames: ['flo.local', 'localhost'], ipAddresses: ['127.0.0.1'] },
+      { certificateDer: otherCaCert.der, privateKey: otherCaKeys.privateKey },
+      testNow,
+    );
+    const noLoopbackLeaf = issueLeafCertificate(
+      generateKeyPair(),
+      { dnsNames: ['flo.local'], ipAddresses: ['192.168.1.20'] },
+      { certificateDer: caCert.der, privateKey: caKeys.privateKey },
+      testNow,
+    );
+
+    verifyLoopbackPeerCertificate(validLeaf.der, validLeaf.der, caCert.der, testNow);
+    assert.throws(
+      () => verifyLoopbackPeerCertificate(undefined, validLeaf.der, caCert.der, testNow),
+      /Missing peer certificate/,
+    );
+    assert.throws(
+      () => verifyLoopbackPeerCertificate(secondLeaf.der, validLeaf.der, caCert.der, testNow),
+      /does not match expected leaf/,
+    );
+    assert.throws(
+      () => verifyLoopbackPeerCertificate(rogueLeaf.der, rogueLeaf.der, caCert.der, testNow),
+      /signature verification failed/,
+    );
+    assert.throws(
+      () =>
+        verifyLoopbackPeerCertificate(
+          validLeaf.der,
+          validLeaf.der,
+          caCert.der,
+          new Date(validLeaf.notAfter.getTime() + 60_000),
+        ),
+      /outside its validity window/,
+    );
+    assert.throws(
+      () =>
+        verifyLoopbackPeerCertificate(noLoopbackLeaf.der, noLoopbackLeaf.der, caCert.der, testNow),
+      /SANs do not cover loopback/,
+    );
+
+    // Live negative check: a rogue TLS server on loopback fails pinned HTTPS and WebSocket diagnostics.
+    const rogueKeys = generateKeyPair();
+    const rogueServerLeaf = issueLeafCertificate(
+      rogueKeys,
+      { dnsNames: ['localhost'], ipAddresses: ['127.0.0.1'] },
+      { certificateDer: otherCaCert.der, privateKey: otherCaKeys.privateKey },
+    );
+    const rogueServer = https.createServer(
+      {
+        key: rogueKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }) as string,
+        cert: rogueServerLeaf.pem,
+      },
+      (_req, res) => res.end('rogue'),
+    );
+    const rogueWss = new WebSocketServer({ server: rogueServer });
+    const roguePort = await listen(rogueServer);
+    cleanups.push(
+      () =>
+        new Promise<void>((r) => {
+          rogueWss.close(() => rogueServer.close(() => r()));
+        }),
+    );
+    const internal = service as unknown as {
+      selfRequest: (
+        port: number,
+        requestPath: string,
+        useTls: boolean,
+      ) => Promise<{ status: number }>;
+      websocketCheck: (port: number) => Promise<'open' | 'rejected' | 'failed'>;
+    };
+    await assert.rejects(
+      () => internal.selfRequest(roguePort, '/api/health', true),
+      /does not match expected leaf/,
+      'loopback HTTPS diagnostic rejects a rogue TLS certificate',
+    );
+    assert.equal(
+      await internal.websocketCheck(roguePort),
+      'failed',
+      'loopback WebSocket diagnostic rejects a rogue TLS certificate',
+    );
+  }
+
+  // buildSurfaceAddresses preserves http_port on every surface.
+  {
+    const addresses = buildSurfaceAddresses(service.getStatus(), service.getCertifiedLanIps());
+    assert.equal(addresses.length, 3);
+    assert.equal(
+      addresses.find((s) => s.id === 'main')?.http_port,
+      main.definition.getHttpPort(),
+      'main surface address includes http_port',
+    );
+    assert.equal(
+      addresses.find((s) => s.id === 'kds')?.http_port,
+      kds.definition.getHttpPort(),
+      'kds surface address includes http_port',
+    );
+    assert.equal(
+      addresses.find((s) => s.id === 'serverApp')?.http_port,
+      serverApp.definition.getHttpPort(),
+      'serverApp surface address includes http_port',
+    );
+  }
+
+  // Domain Windows Firewall profile emits warn/network_profile_domain; unknown emits skipped/network_profile_unknown.
+  {
+    const domainSurface = await makeSurface('main');
+    cleanups.push(() => new Promise<void>((r) => domainSurface.http.close(() => r())));
+    let profile: 'domain' | 'unknown' = 'domain';
+    const domainService = new SecureNetworkService({
+      directory: tempDir(),
+      storage,
+      getLanIPs: () => ['192.168.1.25'],
+      surfaces: [domainSurface.definition],
+      bindHost: '127.0.0.1',
+      log: () => {},
+      getFirewallState: async () => ({
+        supported: true,
+        ruleInstalled: true,
+        networkProfile: profile,
+      }),
+    });
+    await domainService.start();
+    cleanups.push(() => domainService.stop());
+    const domainCheck = (await domainService.runDiagnostics()).find(
+      (c) => c.id === 'network_profile',
+    );
+    assert.deepEqual(
+      domainCheck,
+      { id: 'network_profile', status: 'warn', code: 'network_profile_domain' },
+      'Domain profile warns instead of falsely reporting Private',
+    );
+    profile = 'unknown';
+    const unknownCheck = (await domainService.runDiagnostics()).find(
+      (c) => c.id === 'network_profile',
+    );
+    assert.deepEqual(
+      unknownCheck,
+      { id: 'network_profile', status: 'skipped', code: 'network_profile_unknown' },
+      'unknown profile is skipped with network_profile_unknown',
+    );
+  }
+
+  // Unwritable config.json on startup IP change still starts HTTPS fronts, and cert failures clear CA state.
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    const roStartDir = tempDir();
+    const roStartSurface = await makeSurface('main');
+    cleanups.push(() => new Promise<void>((r) => roStartSurface.http.close(() => r())));
+    const seedService = new SecureNetworkService({
+      directory: roStartDir,
+      storage,
+      getLanIPs: () => ['192.168.1.80'],
+      surfaces: [roStartSurface.definition],
+      bindHost: '127.0.0.1',
+      log: () => {},
+    });
+    await seedService.start();
+    await seedService.stop();
+    const configPath = path.join(roStartDir, 'config.json');
+    fs.chmodSync(configPath, 0o444);
+    cleanups.push(() => {
+      try {
+        fs.chmodSync(configPath, 0o600);
+      } catch {}
+    });
+
+    const restartedOnNewIp = new SecureNetworkService({
+      directory: roStartDir,
+      storage,
+      getLanIPs: () => ['192.168.1.81'],
+      surfaces: [roStartSurface.definition],
+      bindHost: '127.0.0.1',
+      log: () => {},
+    });
+    await restartedOnNewIp.start();
+    cleanups.push(() => restartedOnNewIp.stop());
+    assert.equal(
+      restartedOnNewIp.getStatus().state,
+      'running',
+      'read-only config.json on IP change does not abort HTTPS startup',
+    );
+    assert.equal(restartedOnNewIp.getStatus().error_code, null);
+    assert.deepEqual(restartedOnNewIp.getCertifiedLanIps(), ['192.168.1.81']);
+  }
+
+  {
+    const failLeafSurface = await makeSurface('main');
+    cleanups.push(() => new Promise<void>((r) => failLeafSurface.http.close(() => r())));
+    const failLeafService = new SecureNetworkService({
+      directory: tempDir(),
+      storage,
+      getLanIPs: () => ['192.168.1.90'],
+      surfaces: [failLeafSurface.definition],
+      bindHost: '127.0.0.1',
+      log: () => {},
+    });
+    (failLeafService as unknown as { issueLeaf: () => void }).issueLeaf = () => {
+      throw new Error('simulated leaf failure');
+    };
+    await failLeafService.start();
+    assert.equal(failLeafService.getStatus().state, 'unavailable');
+    assert.equal(failLeafService.getStatus().error_code, 'certificate_failed');
+    assert.equal(
+      failLeafService.getPublicCa(),
+      null,
+      'failed certificate provisioning does not leave a public CA exposed',
+    );
+    assert.equal(failLeafService.getStatus().certificate.ca_fingerprint_sha256, null);
+    assert.deepEqual(failLeafService.getCertifiedLanIps(), []);
+  }
 
   // ── Shutdown ───────────────────────────────────────────────────────────────
   await service.stop();

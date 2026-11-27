@@ -25,6 +25,7 @@ export const SECURE_NETWORK_DIAGNOSTIC_KEYS: Record<
   | 'diagFirewallMissing'
   | 'diagProfileOk'
   | 'diagProfilePublic'
+  | 'diagProfileDomain'
   | 'diagDisabled'
   | 'noticeStorage'
 > = {
@@ -46,6 +47,7 @@ export const SECURE_NETWORK_DIAGNOSTIC_KEYS: Record<
   firewall_rule_missing: 'diagFirewallMissing',
   network_profile_ok: 'diagProfileOk',
   network_profile_public: 'diagProfilePublic',
+  network_profile_domain: 'diagProfileDomain',
   disabled: 'diagDisabled',
   secure_storage_unavailable: 'noticeStorage',
 };

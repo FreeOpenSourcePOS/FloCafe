@@ -124,6 +124,20 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
     }
   };
 
+  const repair = async (fixFirewall: boolean) => {
+    await run(async () => {
+      const response = await api.post<{ success: boolean; firewall_fixed: boolean | null }>(
+        '/secure-network/repair',
+        fixFirewall ? { fix_firewall: true } : {},
+      );
+      if (response.data?.firewall_fixed === false) {
+        toast(t('firewallFixFailed'), { icon: '⚠️' });
+      } else {
+        toast.success(t('repairDone'));
+      }
+    });
+  };
+
   const toggle = async (enabled: boolean) => {
     if (!enabled && !(await confirm(t('disableConfirm'), { destructive: true }))) return;
     const mainHttpPort = status?.surfaces.find((surface) => surface.id === 'main')?.http_port;
@@ -384,26 +398,11 @@ export function SecureNetworkCard({ canManage }: { canManage: boolean }) {
           >
             {t('runDiagnostics')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => void run(() => api.post('/secure-network/repair', {}), t('repairDone'))}
-          >
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void repair(false)}>
             {t('repair')}
           </Button>
           {firewallCheck && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void run(
-                  () => api.post('/secure-network/repair', { fix_firewall: true }),
-                  t('repairDone'),
-                )
-              }
-            >
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void repair(true)}>
               {t('fixFirewall')}
             </Button>
           )}

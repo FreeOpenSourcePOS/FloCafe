@@ -8,7 +8,6 @@ import {
   buildDeleteRuleArgs,
   buildElevatedAddRuleScript,
   buildFirewallRepairScript,
-  buildFirewallRepairScript,
   buildShowRuleArgs,
   parseNetworkProfile,
   parseRulePresent,
@@ -115,6 +114,14 @@ assert.ok(inner.endsWith('exit $LASTEXITCODE'), 'the add result decides success'
 const outer = buildElevatedAddRuleScript(exe);
 assert.equal((outer.match(/-Verb RunAs/g) ?? []).length, 1, 'exactly one UAC prompt');
 assert.ok(
+  outer.startsWith("$ErrorActionPreference = 'Stop'; "),
+  'UAC cancellation or elevation errors stop execution instead of continuing silently',
+);
+assert.ok(
+  outer.includes('if (-not $p) { exit 1 }; exit $p.ExitCode'),
+  'a canceled UAC prompt with null process exits non-zero instead of 0',
+);
+assert.ok(
   outer.includes('-PassThru') && outer.endsWith('exit $p.ExitCode'),
   'the elevated exit code is propagated',
 );
@@ -199,12 +206,7 @@ assert.match(
 );
 
 // Certificate validation is never disabled anywhere in the main process.
-for (const file of [
-  'main/index.ts',
-  'main/ipc.ts',
-  'main/security/lan-tls/secure-network.ts',
-  'main/security/lan-tls/https-front.ts',
-]) {
+for (const file of ['main/index.ts', 'main/ipc.ts', 'main/security/lan-tls/https-front.ts']) {
   const text = read(file);
   assert.ok(
     !/ignore-certificate-errors|NODE_TLS_REJECT_UNAUTHORIZED|rejectUnauthorized\s*:\s*false|setCertificateVerifyProc/.test(
@@ -214,6 +216,30 @@ for (const file of [
   );
   assert.ok(!/['"]certificate-error['"]/.test(text), `${file} has no certificate-error override`);
 }
+// Loopback diagnostics in secure-network.ts bypass BoringSSL's GEN_IPADD Name Constraints limitation
+// solely by pinning the exact expected leaf certificate and verifying its CA signature, validity, and SANs.
+const secureNetworkSource = read('main/security/lan-tls/secure-network.ts');
+assert.ok(
+  !/ignore-certificate-errors|NODE_TLS_REJECT_UNAUTHORIZED|setCertificateVerifyProc/.test(
+    secureNetworkSource,
+  ),
+  'main/security/lan-tls/secure-network.ts does not disable process-wide certificate validation',
+);
+assert.ok(
+  !/['"]certificate-error['"]/.test(secureNetworkSource),
+  'main/security/lan-tls/secure-network.ts has no certificate-error override',
+);
+assert.equal(
+  (secureNetworkSource.match(/rejectUnauthorized\s*:\s*false/g) ?? []).length,
+  1,
+  'rejectUnauthorized: false appears only once, inside the pinned loopback self-probe',
+);
+assert.ok(
+  secureNetworkSource.includes('verifyLoopbackPeerCertificate') &&
+    secureNetworkSource.includes('peerRaw.equals(expectedLeafDer)') &&
+    secureNetworkSource.includes('peerCert.verify(caCert.publicKey)'),
+  'the loopback self-probe strictly pins the expected leaf and verifies its CA signature',
+);
 
 // The HTTPS fronts add no HSTS or upgrade-insecure-requests, so plain HTTP keeps working.
 const csp = read('main/csp.ts');

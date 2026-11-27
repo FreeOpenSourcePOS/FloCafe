@@ -70,8 +70,10 @@ export function buildElevatedAddRuleScript(executablePath: string): string {
     'base64',
   );
   return (
+    `$ErrorActionPreference = 'Stop'; ` +
     `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden ` +
-    `-ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}'; exit $p.ExitCode`
+    `-ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}'; ` +
+    `if (-not $p) { exit 1 }; exit $p.ExitCode`
   );
 }
 

@@ -15,7 +15,11 @@ import { tenantCan } from '@/lib/permissions';
 import MoveTableModal from '@/components/tables/MoveTableModal';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
-import { canCheckoutOrder, isOrderItemEditLocked } from '@/lib/order-payment-state';
+import {
+  canCheckoutOrder,
+  isOrderItemEditLocked,
+  isOrderSettledPaid,
+} from '@/lib/order-payment-state';
 import {
   CHECKOUT_PRIMARY_CTA_CLASS,
   CheckoutHeaderChips,
@@ -352,9 +356,10 @@ export default function TableCheckoutModal({
   );
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
   const canCheckout = canCheckoutOrder(order);
+  const isPaidOrder = isOrderSettledPaid(order);
   const itemEditLocked = isOrderItemEditLocked(order);
   const canAddItems = canCheckout && !itemEditLocked;
-  const canCloseTable = !canCheckout && canUpdateOrderStatus;
+  const canCloseTable = isPaidOrder && canUpdateOrderStatus;
   const showPrintBillButton = splitBills.length === 0 && (Boolean(order.bill) || canGenerateBill);
   const printBillButton = showPrintBillButton ? (
     <Button
@@ -378,6 +383,7 @@ export default function TableCheckoutModal({
   };
   const checkoutActionCount = (canAddItems ? 1 : 0) + (showPrintBillButton ? 1 : 0) + 1;
   const closeTableActionCount = (showPrintBillButton ? 1 : 0) + (canCloseTable ? 1 : 0);
+  const nonPayableActionCount = (showPrintBillButton ? 1 : 0) + 1;
   const headerChips: CheckoutHeaderChipItem[] = [
     { key: 'order', label: t('orderNumber', { number: order.order_number }) },
     ...(order.bill?.bill_number
@@ -442,7 +448,7 @@ export default function TableCheckoutModal({
               )}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => dismissHandlerRef.current()}
                 className="touch-target rounded-xl border border-border/75 bg-muted/40 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:border-white/10"
                 aria-label={t('close')}
               >
@@ -601,7 +607,7 @@ export default function TableCheckoutModal({
                   {t('splitCheck')}
                 </Button>
               )}
-            {!canCheckout ? (
+            {isPaidOrder ? (
               <div className="space-y-2">
                 {cartItemCount > 0 && (
                   <p className="text-xs text-muted-foreground text-center">
@@ -630,8 +636,19 @@ export default function TableCheckoutModal({
                   </div>
                 )}
               </div>
+            ) : !canCheckout ? (
+              <div className={`grid ${gridColsClass[nonPayableActionCount]} gap-2`}>
+                {printBillButton}
+                <Button
+                  variant="outline"
+                  onClick={() => dismissHandlerRef.current()}
+                  disabled={closingTable || printingBill}
+                  className="rounded-xl bg-card dark:border-white/10"
+                >
+                  {t('close')}
+                </Button>
+              </div>
             ) : cartItemCount > 0 ? (
-              // Cart has items - show "Add items to order" option when order is editable
               <div className="space-y-2">
                 {canAddItems ? (
                   <Button
@@ -668,7 +685,6 @@ export default function TableCheckoutModal({
                 )}
               </div>
             ) : splitBills.length === 0 ? (
-              // Cart empty - show table actions
               <div className={`grid ${gridColsClass[checkoutActionCount]} gap-2`}>
                 {canAddItems && (
                   <Button

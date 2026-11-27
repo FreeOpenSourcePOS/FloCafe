@@ -6668,7 +6668,16 @@ async function testTableCheckoutPrepaidCloseTable() {
           true,
           `${scenario.name}: Escape consumed while closing`,
         );
-        assert.equal(closeCount, 0, `${scenario.name}: modal stays open while PATCH is in flight`);
+        const headerCloseBtn = harness
+          .findExpanded(tree, (el) => el.type === 'button')
+          .find((b) => b.props?.['aria-label'] === 'close');
+        assert.ok(headerCloseBtn, `${scenario.name}: renders header X close button`);
+        headerCloseBtn.props.onClick();
+        assert.equal(
+          closeCount,
+          0,
+          `${scenario.name}: modal stays open on Escape or X while PATCH is in flight`,
+        );
 
         const busyCloseBtn = harness
           .findExpanded(tree, (el) => el.type === 'button')
@@ -7112,6 +7121,215 @@ async function testTableCheckoutPrepaidCloseTable() {
       void registeredDismiss;
     } finally {
       harness.cleanupAll();
+    }
+  });
+
+  // 15f: Refunded and partially_refunded dine-in orders must NOT enter the already-paid Close table flow
+  await withAliases(async () => {
+    const paymentState = require(
+      path.resolve(ROOT, 'frontend/src/lib/order-payment-state.ts'),
+    ) as typeof import('../frontend/src/lib/order-payment-state');
+
+    assert.equal(
+      paymentState.isOrderSettledPaid(makeDineInOrder()),
+      true,
+      'isOrderSettledPaid returns true for paid zero-balance bill',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(
+        makeDineInOrder({
+          bill: { id: 1, payment_status: 'refunded', total: 25, paid_amount: 25, balance: 0 },
+        }),
+      ),
+      false,
+      'isOrderSettledPaid returns false for refunded bill',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(
+        makeDineInOrder({
+          bill: {
+            id: 1,
+            payment_status: 'partially_refunded',
+            total: 25,
+            paid_amount: 25,
+            balance: 0,
+          },
+        }),
+      ),
+      false,
+      'isOrderSettledPaid returns false for partially_refunded bill',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(
+        makeDineInOrder({
+          bill: undefined,
+          bills: [
+            { id: 1, payment_status: 'paid', total: 12.5, paid_amount: 12.5, balance: 0 },
+            { id: 2, payment_status: 'refunded', total: 12.5, paid_amount: 12.5, balance: 0 },
+          ],
+        }),
+      ),
+      false,
+      'isOrderSettledPaid returns false when any split bill is refunded',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(makeDineInOrder({ status: 'completed' })),
+      false,
+      'isOrderSettledPaid returns false for completed order',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(makeDineInOrder({ bill: undefined, bills: [] })),
+      false,
+      'isOrderSettledPaid returns false when order has no bills',
+    );
+
+    const refundedCases = [
+      {
+        name: 'refunded single-bill order (empty cart)',
+        cartItemCount: 0,
+        order: makeDineInOrder({
+          bill: {
+            id: 9201,
+            bill_number: 'B-9201',
+            total: 25,
+            paid_amount: 25,
+            balance: 0,
+            payment_status: 'refunded',
+          },
+        }),
+      },
+      {
+        name: 'partially_refunded single-bill order (non-empty cart)',
+        cartItemCount: 2,
+        order: makeDineInOrder({
+          bill: {
+            id: 9202,
+            bill_number: 'B-9202',
+            total: 25,
+            paid_amount: 25,
+            balance: 0,
+            payment_status: 'partially_refunded',
+          },
+        }),
+      },
+      {
+        name: 'mixed paid + refunded split-bill order',
+        cartItemCount: 0,
+        order: makeDineInOrder({
+          bill: {
+            id: 9203,
+            bill_number: 'B-9203',
+            split_group_id: 'sg-ref',
+            split_label: 'Guest 1',
+            total: 12.5,
+            paid_amount: 12.5,
+            balance: 0,
+            payment_status: 'paid',
+          },
+          bills: [
+            {
+              id: 9203,
+              bill_number: 'B-9203',
+              split_group_id: 'sg-ref',
+              split_label: 'Guest 1',
+              total: 12.5,
+              paid_amount: 12.5,
+              balance: 0,
+              payment_status: 'paid',
+            },
+            {
+              id: 9204,
+              bill_number: 'B-9204',
+              split_group_id: 'sg-ref',
+              split_label: 'Guest 2',
+              total: 12.5,
+              paid_amount: 12.5,
+              balance: 0,
+              payment_status: 'refunded',
+            },
+          ],
+        }),
+      },
+    ];
+
+    for (const refCase of refundedCases) {
+      const harness = createTreeStatefulHarness();
+      const patchCalls: Array<{ url: string; body: any }> = [];
+      let closeCount = 0;
+
+      try {
+        installCheckoutComponentMocks(harness as any, {
+          role: 'cashier',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return {
+                data: {
+                  table: { id: 't-ref', name: 'T11', activeOrder: { id: refCase.order.id } },
+                },
+              };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order: refCase.order } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'true' } } };
+            }
+            return { data: {} };
+          },
+          apiPatch: async (url: string, body: any) => {
+            patchCalls.push({ url, body });
+            return { data: {} };
+          },
+        });
+
+        const TableCheckoutModal = loadTableCheckoutModal();
+        const props = {
+          table: { id: 't-ref', name: 'T11', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: refCase.cartItemCount,
+          onClose: () => {
+            closeCount++;
+          },
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+        };
+
+        harness.renderAndSettle(TableCheckoutModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+        const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+        const buttonTexts = buttons.map((b) => renderToStaticMarkup(b));
+        const markup = renderToStaticMarkup(tree);
+
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('closeTable')),
+          `${refCase.name}: must NOT render Close table`,
+        );
+        assert.ok(
+          !markup.includes('paidOrderCloseTableHint'),
+          `${refCase.name}: must NOT render paidOrderCloseTableHint`,
+        );
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('>checkout<')),
+          `${refCase.name}: must NOT render Checkout`,
+        );
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('addItems') || txt.includes('addToOrder')),
+          `${refCase.name}: must NOT render Add Items or Add to order`,
+        );
+
+        const closeBtn = buttons.find(
+          (b) => !b.props?.['aria-label'] && renderToStaticMarkup(b).includes('>close<'),
+        );
+        assert.ok(closeBtn, `${refCase.name}: renders neutral Close button`);
+        closeBtn.props.onClick();
+        assert.equal(patchCalls.length, 0, `${refCase.name}: never sends status PATCH`);
+        assert.equal(closeCount, 1, `${refCase.name}: neutral Close button dismisses modal`);
+      } finally {
+        harness.cleanupAll();
+      }
     }
   });
 

@@ -206,7 +206,7 @@ export function PizzaTile({
               className="text-muted-foreground transition-colors group-has-[[data-customize]:enabled:hover]:text-foreground"
             />
           </span>
-          <h3 className="text-[13px] font-semibold leading-tight break-words text-foreground">
+          <h3 className="text-base font-semibold leading-tight break-words text-foreground">
             {product.name}
           </h3>
         </div>

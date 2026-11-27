@@ -302,8 +302,8 @@ test('the pizza list is at most about two screens', async ({ page }) => {
   }));
   measured('pizza list height', content);
   measured('pizza list room', room);
-  // Nine rows of three tiles under the Half & Half row, each row about 100 px.
-  expect(content, 'the list is as long as nine rows of tiles').toBeLessThanOrEqual(1000);
+  // Nine rows of three tiles under the Half & Half row, each row about 100 px, a long name's row more.
+  expect(content, 'the list is as long as nine rows of tiles').toBeLessThanOrEqual(1060);
   expect(content / room, 'screens of list, for a shop with only its menu').toBeLessThanOrEqual(2.1);
 });
 
@@ -653,7 +653,7 @@ test('a wide screen stops at five columns', async ({ page }) => {
   }
 });
 
-test('a long name is shown whole, on two lines at most', async ({ page }) => {
+test('a long name is shown whole, on three lines at most', async ({ page }) => {
   for (const name of LONG.map(nameOf)) {
     const heading = page.getByRole('heading', { name, exact: true });
     await heading.scrollIntoViewIfNeeded();
@@ -671,7 +671,7 @@ test('a long name is shown whole, on two lines at most', async ({ page }) => {
     });
     expect(text).toBe(name);
     expect(clipped, `${name} is not clipped or clamped`).toBe(false);
-    expect(lines, `${name} takes two lines at most`).toBeLessThanOrEqual(2);
+    expect(lines, `${name} takes three lines at most`).toBeLessThanOrEqual(3);
   }
 });
 

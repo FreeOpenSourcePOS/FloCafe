@@ -764,7 +764,7 @@ places and deactivates the cashier and the tables it creates.
 `frontend/e2e/pizza-full-menu.spec.ts` loads a menu of 26 pizzas and 8 deals grown from the sample,
 with three names of 38 or 39 characters, and checks at 1180 × 820 that the half-and-half row and
 twelve pizzas show without scrolling, that the list is about two screens long, that a long name
-shows whole on two lines, that a tap anywhere on a tile's Customize row, down to its lower edge,
+shows whole on three lines at most, that a tap anywhere on a tile's Customize row, down to its lower edge,
 lands on Customize and no size button and opens the sheet, that a search for one pizza shows its
 prices on its size buttons and a search for Half & Half shows no legend, that the legend stays on
 screen at the end of the list, that a Half & Half priced apart from the pizzas shows its own prices

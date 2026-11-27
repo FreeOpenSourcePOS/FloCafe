@@ -1,0 +1,90 @@
+name: Bipelc Windows Preview
+
+on:
+  push:
+    branches:
+      - bipelc/iran-cafe-foundation
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bipelc-windows-preview
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build Windows installer and publish preview
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build desktop frontend
+        run: npm run build:frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Compile Electron main process
+        run: npm run build
+
+      - name: Package Windows NSIS installer
+        run: npx electron-builder --win nsis --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Verify installer exists
+        id: installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path release -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $installer) {
+            throw 'Windows installer was not produced.'
+          }
+          $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+          "SHA256 ($($installer.Name))  $hash" | Out-File -FilePath release/SHA256SUMS.txt -Encoding utf8
+
+      - name: Publish GitHub preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER_PATH: ${{ steps.installer.outputs.path }}
+          INSTALLER_NAME: ${{ steps.installer.outputs.name }}
+          INSTALLER_SHA256: ${{ steps.installer.outputs.sha256 }}
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="bipelc-v${VERSION}-preview.1"
+          NOTES=$(mktemp)
+          {
+            echo "Windows desktop preview build for Bipelc."
+            echo
+            echo "- Installer: ${INSTALLER_NAME}"
+            echo "- SHA-256: ${INSTALLER_SHA256}"
+            echo "- Built from commit: ${GITHUB_SHA}"
+            echo
+            echo "This is an upstream FloCafe-based preview, not yet a customized production release for the Bipelc café. Review and test it before using it with real sales or customer data."
+          } > "$NOTES"
+          gh release create "$TAG" "$INSTALLER_PATH" release/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Bipelc Windows Preview ${VERSION}" \
+            --notes-file "$NOTES" \
+            --prerelease \
+            --target "$GITHUB_SHA"

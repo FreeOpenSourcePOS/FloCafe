@@ -15,7 +15,7 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-posthog-operation-'));
 
 interface RecordedClient {
-  options: { before_send?: (event: unknown) => unknown };
+  options: { beforeSend?: (event: unknown) => unknown };
   events: Array<{
     event: string;
     properties?: Record<string, unknown>;
@@ -46,7 +46,7 @@ Module._load = function (request: string) {
           if (payload.uuid !== undefined && !UUID_RE.test(payload.uuid)) {
             throw new Error(`posthog-node rejects a non-UUID event id: ${payload.uuid}`);
           }
-          const kept = this.options.before_send?.({
+          const kept = this.options.beforeSend?.({
             event: payload.event,
             properties: { ...(payload.properties ?? {}) },
           }) as { properties?: Record<string, unknown> } | null | undefined;

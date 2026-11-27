@@ -438,7 +438,7 @@
     "lint-staged": "17.6.2",
     "markdownlint-cli2": "^0.24.2",
     "node-abi": "^4.40.0",
-    "oxfmt": "0.78.0",
+    "oxfmt": "0.80.0",
     "oxlint": "1.93.0",
     "supertest": "^7.3.2",
     "tsx": "^4.23.15",

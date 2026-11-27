@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Pilih paling ora siji jinis pesenan"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Penutupan ngringkes dodolan lan pembayaran. Laporan produk nyakup sedina bisnis kebak.",
     "aov": "Rata-rata Biji Pesenan",
     "avgPrepTime": "Rata-rata Wektu Panyiapan",
     "avgTableTurn": "Rata-rata Ubengan Meja",
@@ -1799,6 +1800,7 @@
     "success": "Basis dhata kasil dipulihake. Miwiti maneh..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Durung ana staf sing bisa mlebu nganggo PIN. Jaluk manajer nyetel PIN akunmu ing menu Staf.",
     "addToOrder": "Tambahake menyang pesenan",
     "billPrintFailed": "Pesenan kakirim, nanging tagihan ora kacetak",
     "couldNotLoadData": "Ora bisa muat data Server App",

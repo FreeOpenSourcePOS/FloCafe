@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Chọn ít nhất một loại đơn hàng"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "Báo cáo chốt quỹ tóm tắt doanh số và thanh toán. Báo cáo theo sản phẩm bao gồm cả ngày kinh doanh.",
     "aov": "Giá trị đơn hàng trung bình",
     "avgPrepTime": "Thời gian chuẩn bị trung bình",
     "avgTableTurn": "Thời gian trung bình của một bàn",
@@ -1799,6 +1800,7 @@
     "success": "Đã khôi phục cơ sở dữ liệu thành công. Đang khởi động lại..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Chưa có nhân viên nào đăng nhập được bằng mã PIN. Hãy nhờ quản lý đặt mã PIN cho tài khoản của bạn trong mục Nhân viên.",
     "addToOrder": "Thêm vào đơn hàng",
     "billPrintFailed": "Đã gửi đơn hàng nhưng không in được hóa đơn",
     "couldNotLoadData": "Không thể tải dữ liệu Server App",

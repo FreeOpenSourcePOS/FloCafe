@@ -26,6 +26,7 @@ const mockPosSettingsStore = {
     kotLanguagePolicy: null as unknown,
     autoLockMinutes: 0,
     tablesRequired: false,
+    autoPrintBill: false,
     setLanguage(language: string) {
       this.language = language;
     },
@@ -1812,7 +1813,12 @@ async function run() {
     },
     get: async () => ({ data: {} }),
   };
-  await managerPrepaidModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  mockPosSettingsStore.state.autoPrintBill = true;
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  const autoPrintModal = findElement(tree, PrepaidCheckoutModalStub);
+  await autoPrintModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  mockPosSettingsStore.state.autoPrintBill = false;
   assertEqualOrThrow(
     capturedPrintedBills.length,
     1,

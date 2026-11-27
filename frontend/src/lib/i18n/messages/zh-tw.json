@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "請至少選擇一種訂單類型"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "結帳報表彙總銷售與付款。商品報表涵蓋整個營業日。",
     "aov": "客單價",
     "avgPrepTime": "平均出餐時間",
     "avgTableTurn": "平均翻檯率",
@@ -1799,6 +1800,7 @@
     "success": "資料庫復原成功。正在重啟…"
   },
   "serverApp": {
+    "pinRosterEmpty": "目前沒有員工可以使用 PIN 登入。請主管在員工設定中為你的帳號設定 PIN。",
     "addToOrder": "加入訂單",
     "billPrintFailed": "訂單已傳送，但帳單未列印",
     "couldNotLoadData": "無法載入服務員應用程式資料",

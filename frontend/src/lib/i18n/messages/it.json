@@ -300,6 +300,7 @@
     "atLeastOneOrderType": "Seleziona almeno un tipo di ordine"
   },
   "dashboard": {
+    "cashCloseDailySalesHint": "La chiusura riepiloga vendite e pagamenti. Il report per prodotto copre l’intera giornata lavorativa.",
     "aov": "Valore medio ordine",
     "avgPrepTime": "Tempo medio di preparazione",
     "avgTableTurn": "Rotazione media tavolo",
@@ -1799,6 +1800,7 @@
     "success": "Database ripristinato con successo. Riavvio in corso..."
   },
   "serverApp": {
+    "pinRosterEmpty": "Nessun dipendente può ancora accedere con il PIN. Chiedi a un responsabile di impostare il PIN del tuo account in Personale.",
     "addToOrder": "Aggiungi all'ordine",
     "billPrintFailed": "Ordine inviato, ma il conto non è stato stampato",
     "couldNotLoadData": "Impossibile caricare i dati dell'app Server",

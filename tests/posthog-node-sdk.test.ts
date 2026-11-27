@@ -111,9 +111,8 @@ async function main(): Promise<void> {
 
   const requests: RecordedRequest[] = [];
   let fetchMode: 'ok' | 'hold' | 'retry503' = 'ok';
-  let holdStarted: (() => void) | null = null;
+  let holdFetchStarted = false;
   let holdAborted = false;
-  let retryFirstAttemptSeen: (() => void) | null = null;
   let retryFetchCount = 0;
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -124,7 +123,7 @@ async function main(): Promise<void> {
     );
 
     if (fetchMode === 'hold') {
-      holdStarted?.();
+      holdFetchStarted = true;
       await new Promise<void>((resolve) => {
         if (init?.signal?.aborted) {
           holdAborted = true;
@@ -147,8 +146,6 @@ async function main(): Promise<void> {
 
     if (fetchMode === 'retry503') {
       retryFetchCount += 1;
-      retryFirstAttemptSeen?.();
-      retryFirstAttemptSeen = null;
       return new Response('temporarily unavailable', {
         status: 503,
         headers: { 'Retry-After': '30' },
@@ -329,23 +326,18 @@ async function main(): Promise<void> {
     // 3. Flush-suppressed shutdown aborts an in-flight capture cleanly without HTTP 204 warnings.
     upsertSettings({ telemetry_enabled: 'true', product_analytics_level: 'anonymous' });
     fetchMode = 'hold';
+    holdFetchStarted = false;
     holdAborted = false;
-    const inFlightStarted = new Promise<void>((resolve) => {
-      holdStarted = resolve;
-    });
     capturePostHogUsage('app_launch');
-    await inFlightStarted;
+    await waitFor(() => holdFetchStarted, 'in-flight PostHog fetch started');
     await stopPostHog({ flush: false });
     assert.equal(holdAborted, true, 'stopPostHog({ flush: false }) aborts in-flight fetch');
 
     // 4. Flush-suppressed shutdown during a long Retry-After backoff resolves immediately without retries.
     fetchMode = 'retry503';
     retryFetchCount = 0;
-    const retryStarted = new Promise<void>((resolve) => {
-      retryFirstAttemptSeen = resolve;
-    });
     capturePostHogUsage('app_launch');
-    await retryStarted;
+    await waitFor(() => retryFetchCount >= 1, 'initial 503 PostHog fetch attempt');
     await new Promise((resolve) => setTimeout(resolve, 25));
     const stopStartedAt = Date.now();
     await stopPostHog({ flush: false });

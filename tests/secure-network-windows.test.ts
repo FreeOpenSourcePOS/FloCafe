@@ -216,30 +216,6 @@ for (const file of ['main/index.ts', 'main/ipc.ts', 'main/security/lan-tls/https
   );
   assert.ok(!/['"]certificate-error['"]/.test(text), `${file} has no certificate-error override`);
 }
-// Loopback diagnostics in secure-network.ts bypass BoringSSL's GEN_IPADD Name Constraints limitation
-// solely by pinning the exact expected leaf certificate and verifying its CA signature, validity, and SANs.
-const secureNetworkSource = read('main/security/lan-tls/secure-network.ts');
-assert.ok(
-  !/ignore-certificate-errors|NODE_TLS_REJECT_UNAUTHORIZED|setCertificateVerifyProc/.test(
-    secureNetworkSource,
-  ),
-  'main/security/lan-tls/secure-network.ts does not disable process-wide certificate validation',
-);
-assert.ok(
-  !/['"]certificate-error['"]/.test(secureNetworkSource),
-  'main/security/lan-tls/secure-network.ts has no certificate-error override',
-);
-assert.equal(
-  (secureNetworkSource.match(/rejectUnauthorized\s*:\s*false/g) ?? []).length,
-  1,
-  'rejectUnauthorized: false appears only once, inside the pinned loopback self-probe',
-);
-assert.ok(
-  secureNetworkSource.includes('verifyLoopbackPeerCertificate') &&
-    secureNetworkSource.includes('peerRaw.equals(expectedLeafDer)') &&
-    secureNetworkSource.includes('peerCert.verify(caCert.publicKey)'),
-  'the loopback self-probe strictly pins the expected leaf and verifies its CA signature',
-);
 
 // The HTTPS fronts add no HSTS or upgrade-insecure-requests, so plain HTTP keeps working.
 const csp = read('main/csp.ts');

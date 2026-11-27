@@ -64,12 +64,23 @@ async function run(): Promise<void> {
   await claimStartedPromise;
   printerService.setPrintMode('browser');
   releaseClaim();
-  await reconnect;
+  const browserInterruptedResult = await reconnect;
 
+  assert.equal(
+    browserInterruptedResult,
+    false,
+    'tryReconnect must return false when browser mode disconnects mid-claim',
+  );
   assert.notEqual(printerService.status, 'connected', 'browser mode must not report connected');
   assert.equal(printerService.isConnected, false);
   assert.equal(released, 1, 'the claimed interface is released');
   assert.equal(closed, 1, 'the device is closed');
+
+  printerService.setPrintMode('escpos');
+  const cleanReconnect = await printerService.tryReconnect();
+  assert.equal(cleanReconnect, true, 'tryReconnect returns true when USB connection succeeds');
+  assert.equal(printerService.isConnected, true);
+  await printerService.disconnect();
   console.log('✓ switching to Browser Print during a pending claim releases the USB interface');
 }
 

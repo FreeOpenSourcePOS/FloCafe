@@ -199,8 +199,10 @@ async function syncWebUsbPrinterToConnectedDevice(): Promise<void> {
   const current = usePrinterStore.getState().webusbPrinter;
   if (current?.name.trim().toLowerCase() === connectedName) return;
   if (lastResolvedUsbDevice === connectedName) return;
-  lastResolvedUsbDevice = connectedName;
-  await usePrinterStore.getState().refreshHardwarePrinter();
+  const refreshed = await usePrinterStore.getState().refreshHardwarePrinter();
+  if (refreshed) {
+    lastResolvedUsbDevice = connectedName;
+  }
 }
 
 export interface HardwarePrinter {
@@ -229,7 +231,7 @@ interface PrinterState {
   hardwarePrinter: HardwarePrinter | null;
   webusbPrinter: HardwarePrinter | null;
   defaultPrinter: HardwarePrinter | null;
-  refreshHardwarePrinter: () => Promise<void>;
+  refreshHardwarePrinter: () => Promise<boolean>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   printBill: (
@@ -295,8 +297,10 @@ export const usePrinterStore = create<PrinterState>()(
             webusbPrinter,
             defaultPrinter: configuredDefault,
           });
+          return true;
         } catch {
           // Keep the last known printers: a failed refresh must not drop the host fallback.
+          return false;
         }
       },
 
@@ -432,7 +436,6 @@ export const usePrinterStore = create<PrinterState>()(
               : browserWarnings;
           };
 
-          const hw = get().hardwarePrinter;
           const dispatchBillToHost = async (hostPrinter: HardwarePrinter) => {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
@@ -468,21 +471,13 @@ export const usePrinterStore = create<PrinterState>()(
               });
             }
           };
-          const terminalUsbPreferred = prefersTerminalUsbPrinter();
-          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
-            return await dispatchBillToHost(hw);
-          }
-
-          // Await startup silent reconnect before checking isConnected
-          // to avoid premature browser print fallbacks.
+          // Await startup silent reconnect before choosing host vs local WebUSB
+          // or falling back to browser print.
           await printerService.awaitPendingReconnect();
           throwIfTenantChanged();
-          if (
-            hw &&
-            get().printMethod === 'escpos' &&
-            terminalUsbPreferred &&
-            !printerService.isConnected
-          ) {
+          const hw = get().hardwarePrinter;
+          const terminalUsbPreferred = prefersTerminalUsbPrinter();
+          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
             return await dispatchBillToHost(hw);
           }
           await syncWebUsbPrinterToConnectedDevice();
@@ -1180,20 +1175,12 @@ export const usePrinterStore = create<PrinterState>()(
             }
             return null;
           };
-          const terminalUsbPreferred = prefersTerminalUsbPrinter();
-          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
-            const warnings = await dispatchSlipToHost(hw);
-            if (warnings) return warnings;
-          }
-
+          // Await startup silent reconnect before choosing host vs local WebUSB
+          // or falling back to browser print.
           await printerService.awaitPendingReconnect();
           throwIfTenantChanged();
-          if (
-            hw &&
-            get().printMethod === 'escpos' &&
-            terminalUsbPreferred &&
-            !printerService.isConnected
-          ) {
+          const terminalUsbPreferred = prefersTerminalUsbPrinter();
+          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
             const warnings = await dispatchSlipToHost(hw);
             if (warnings) return warnings;
           }

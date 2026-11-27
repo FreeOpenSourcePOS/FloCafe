@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import axios from 'axios';
 import {
   Printer,
   RefreshCw,
@@ -24,8 +23,7 @@ import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { LanPrinterDiscovery } from '@/components/settings/LanPrinterDiscovery';
 import { PrinterStatusBadge } from '@/components/settings/PrinterStatusBadge';
-import { printFailureHint } from '@/lib/printer/print-failure-help';
-import { extractPrintErrorToastOptions } from '@/lib/printer/warnings';
+import { formatPrinterSettingsErrorMessage } from '@/lib/printer/warnings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import {
   isTemplateCardSelected,
@@ -235,18 +233,8 @@ export function PrintersSettingsTab({
     return t('printColumnsShort', { cols });
   };
 
-  const printerErrorMessage = (err: unknown, fallback: string): string => {
-    const hint = printFailureHint(
-      { ...extractPrintErrorToastOptions(err), platform: window.electronAPI?.platform },
-      tAll,
-    );
-    if (hint) return hint;
-    if (axios.isAxiosError(err)) {
-      const apiError = err.response?.data?.error;
-      if (typeof apiError === 'string' && apiError.trim()) return `${fallback}: ${apiError}`;
-    }
-    return fallback;
-  };
+  const printerErrorMessage = (err: unknown, fallback: string): string =>
+    formatPrinterSettingsErrorMessage(err, fallback, tAll, window.electronAPI?.platform);
 
   const fetchPrinters = async (signal?: AbortSignal) => {
     try {

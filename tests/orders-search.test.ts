@@ -2308,6 +2308,29 @@ test('OrdersPage.handlePrint fetches GET /bills/:id when order is absent from ac
       total: 20,
       created_at: '2026-01-01 00:00:00',
       items: [],
+      bill: {
+        id: 607,
+        order_id: 101,
+        total: 20,
+        balance: 20,
+        payment_status: 'unpaid',
+      },
+      bills: [
+        {
+          id: 607,
+          order_id: 101,
+          total: 20,
+          balance: 20,
+          payment_status: 'unpaid',
+        },
+        {
+          id: 608,
+          order_id: 101,
+          total: 20,
+          balance: 20,
+          payment_status: 'unpaid',
+        },
+      ],
     },
   ];
   const activeTenant = { id: 't-1', country: 'US', currency: 'USD', role: 'owner' };
@@ -2411,12 +2434,15 @@ test('OrdersPage.handlePrint fetches GET /bills/:id when order is absent from ac
             if (url === '/bills/605') {
               return { data: { bill: null } };
             }
-            if (url === '/bills/606') {
+            if (url === '/bills/606' || url === '/bills/607') {
               const err = new Error('Request failed with status code 500') as Error & {
                 response?: { status: number; data: { error: string } };
               };
               err.response = { status: 500, data: { error: 'DB busy' } };
               throw err;
+            }
+            if (url === '/bills/608') {
+              return { data: { bill: null } };
             }
           }
           if (url === '/tables') return { data: { tables: [] } };
@@ -2730,6 +2756,48 @@ test('OrdersPage.handlePrint fetches GET /bills/:id when order is absent from ac
         toastErrors,
         ['orders.printReceiptFailed (DB busy)'],
         'Non-404 failure from GET /bills/606 surfaces receipt print error instead of billNotFound',
+      );
+
+      // 5. In-tab order with cached bill 607: non-404 error from GET /bills/607 surfaces printReceiptFailed instead of printing cached bill
+      toastErrors.length = 0;
+      cardEl.props.onPrint(607);
+      tree = renderPage();
+      await findConfirmPrintBtn(tree).props.onClick();
+      assert.deepEqual(
+        printedBillIds,
+        [601],
+        'printBill is not called with cached list bill when GET /bills/607 fails with 500',
+      );
+      assert.equal(
+        reservedWindows[4]?.closed,
+        true,
+        'reservedWindow is closed when GET /bills/607 fails with 500',
+      );
+      assert.deepEqual(
+        toastErrors,
+        ['orders.printReceiptFailed (DB busy)'],
+        'Non-404 failure for an in-tab order surfaces receipt print error without falling back to cached bill',
+      );
+
+      // 6. In-tab order with cached bill 608: 200 with null bill toasts billNotFound instead of printing cached bill
+      toastErrors.length = 0;
+      cardEl.props.onPrint(608);
+      tree = renderPage();
+      await findConfirmPrintBtn(tree).props.onClick();
+      assert.deepEqual(
+        printedBillIds,
+        [601],
+        'printBill is not called with cached list bill when GET /bills/608 returns null bill',
+      );
+      assert.equal(
+        reservedWindows[5]?.closed,
+        true,
+        'reservedWindow is closed when GET /bills/608 returns null bill',
+      );
+      assert.deepEqual(
+        toastErrors,
+        ['orders.billNotFound'],
+        'Missing bill payload for an in-tab order toasts orders.billNotFound without falling back to cached bill',
       );
     } finally {
       for (const entry of effectEntries) {

@@ -1494,8 +1494,6 @@ export default function OrdersPage() {
     const order = candidateOrders.find(
       (o) => o.bill?.id === billId || o.bills?.some((b) => b.id === billId),
     );
-    const matchedBill =
-      order?.bill?.id === billId ? order.bill : order?.bills?.find((b) => b.id === billId);
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
     const startTenant = useAuthStore.getState().currentTenant ?? currentTenant;
     const tenantIdAtStart = startTenant?.id ?? null;
@@ -1504,21 +1502,20 @@ export default function OrdersPage() {
       let rawBill: Bill | undefined;
       try {
         const { data } = await api.get(`/bills/${billId}`);
-        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill ?? matchedBill;
+        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill;
       } catch (err) {
         if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
           return;
         }
-        const status = (err as { response?: { status?: number } })?.response?.status;
-        const fallbackBill = options?.fallbackBill ?? (status === 404 ? undefined : matchedBill);
-        if (!fallbackBill) {
+        if (!options?.fallbackBill) {
+          const status = (err as { response?: { status?: number } })?.response?.status;
           if (status === 404) {
             toast.error(tOrders('billNotFound'));
             return;
           }
           throw err;
         }
-        rawBill = fallbackBill;
+        rawBill = options.fallbackBill;
       }
       if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
         return;

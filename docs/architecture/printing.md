@@ -381,11 +381,16 @@ would put monetary data on the kitchen display.
 
 ## KOT item eligibility
 
-`isKotItemPending()` in `shared/print/document.ts` returns false for `served` and `ready`. Every
-KOT path applies it, so an item that has left the kitchen does not reappear on a reprinted ticket:
+`isKotItemPending()` in `shared/print/document.ts` returns false for `served` and `ready`, and
+`isKitchenItem()` in `shared/order-item-status.ts` excludes ready-made (`requires_kitchen = 0`)
+lines. Every KOT path applies these checks so an item that never goes to the kitchen or has already
+left it does not print on a ticket, and orders with no pending kitchen items skip KOT printing
+without failing (`{ success: true, skipped: true, warnings: [] }` on `/api/printers/print-kot` and
+`[]` in `usePrinter.ts`):
 
 - `shared/print/document.ts`, in `buildKotDocument`
-- `main/routes/printers.ts`, the backend KOT print route
+- `main/routes/printers.ts`, the backend KOT print route and scheduled-order auto-print helper
+- `frontend/src/hooks/usePrinter.ts`, the frontend `printKOT` entry point
 - `frontend/src/lib/printer/print-document.ts`, the browser KOT normalizer
 - `frontend/src/lib/printer/kot-web-print.ts`, the browser KOT HTML path
 - `frontend/src/lib/printer/kot-encoder.ts`, the browser KOT encoder

@@ -118,6 +118,7 @@ async function main() {
     normalizeIpForRateLimit,
     clearInMemoryRevokedTokens,
     loginAuthRateLimit,
+    resetLoginAuthRateLimitForIp,
     authRateLimit,
   } = await import('../main/middleware/security');
   const { startServer, stopServer, getServerPort } = await import('../main/server');
@@ -566,6 +567,40 @@ async function main() {
     // Token must now be rejected on Server App
     const serverMeAfter = await getJson(serverAppBaseUrl, '/api/auth/me', serverAppToken);
     assert.equal(serverMeAfter.status, 401, 'Revoked token rejected on Server App with 401');
+
+    // ── Part 7: Shared Login Volume Limiter Reset For Recovery ───────────────
+    console.log('Testing resetLoginAuthRateLimitForIp across shared listeners...');
+    clearLoginRateLimits();
+    const beforeResetRes = await fetch(`${kdsBaseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'owner@test.com', password: 'WrongPassword1' }),
+    });
+    const remainingBefore = Number(beforeResetRes.headers.get('ratelimit-remaining'));
+    assert(
+      Number.isFinite(remainingBefore) && remainingBefore < 99,
+      `shared loginAuthRateLimit decremented remaining budget across prior tests (${remainingBefore})`,
+    );
+
+    resetLoginAuthRateLimitForIp('127.0.0.1');
+    clearLoginRateLimits();
+
+    const afterResetRes = await fetch(`${serverAppBaseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'owner@test.com', password: 'CorrectPassword123!' }),
+    });
+    assert.equal(
+      afterResetRes.status,
+      200,
+      'login succeeds on Server App after volume budget reset',
+    );
+    const remainingAfter = Number(afterResetRes.headers.get('ratelimit-remaining'));
+    assert.equal(
+      remainingAfter,
+      99,
+      'resetLoginAuthRateLimitForIp restored full shared loginAuthRateLimit budget',
+    );
 
     console.log('All cross-server login rate limit & security checks passed successfully!');
   } finally {

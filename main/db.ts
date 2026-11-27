@@ -11798,7 +11798,8 @@ export const ACTIVE_RELEASED_KDS_ORDER_IDS_SQL = `
   UNION
   SELECT active_o.id FROM orders active_o
   JOIN order_items active_oi ON active_oi.order_id = active_o.id
-    AND active_oi.status NOT IN ('served', 'cancelled')
+    AND active_oi.requires_kitchen = 1
+    AND active_oi.status NOT IN ('served', 'cancelled', 'void_adjustment', 'refunded')
   WHERE active_o.release_status = 'released'
     AND active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
 `;

@@ -377,10 +377,15 @@ export function GeneralSettingsTab({
               <select
                 value={form.serviceModel}
                 onChange={(e) => {
+                  const nextModel = e.target.value as BusinessForm['serviceModel'];
                   markHydrationTouched('serviceModel');
+                  if (nextModel === 'hybrid') {
+                    markHydrationTouched('tablesRequired');
+                  }
                   setForm((p) => ({
                     ...p,
-                    serviceModel: e.target.value as BusinessForm['serviceModel'],
+                    serviceModel: nextModel,
+                    ...(nextModel === 'hybrid' ? { tablesRequired: true } : {}),
                   }));
                 }}
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"

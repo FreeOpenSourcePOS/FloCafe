@@ -4197,7 +4197,17 @@ export default function SettingsPage() {
           }
         }
       }
-      const updatedForm = { ...form, businessPhone: normalizedBusinessPhone };
+      const resolvedTablesRequired =
+        typeof putRes.data?.tables_required === 'boolean'
+          ? putRes.data.tables_required
+          : form.serviceModel === 'hybrid'
+            ? true
+            : form.tablesRequired;
+      const updatedForm = {
+        ...form,
+        businessPhone: normalizedBusinessPhone,
+        tablesRequired: resolvedTablesRequired,
+      };
       setSavedBusiness(updatedForm);
       setForm(updatedForm);
       setTaxIdFormat(resolvedTaxIdFormat);
@@ -4215,7 +4225,7 @@ export default function SettingsPage() {
         business_phone: normalizedBusinessPhone,
         billing_type: form.billingType,
         service_model: form.serviceModel,
-        tables_required: form.tablesRequired,
+        tables_required: resolvedTablesRequired,
         receipt_logo: form.receiptLogo || '',
         receipt_logo_raster: form.receiptLogoRaster || '',
         ...(enableLogoOnSave ? { bill_show_logo: true } : {}),

@@ -6404,8 +6404,8 @@ router.patch(
           INSERT INTO order_items (
             order_id, product_id, product_name, product_sku, unit_price, quantity,
             subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total,
-            variant_selection, modifier_selection, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
+            variant_selection, modifier_selection, requires_kitchen, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'void_adjustment', ?, ?)
         `).run(
             orderId,
             currentItem.product_id,

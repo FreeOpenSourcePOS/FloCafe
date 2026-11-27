@@ -67,6 +67,7 @@ interface OrderItemRow {
   order_id: number | string;
   status: string;
   category_id?: string | null;
+  requires_kitchen?: number | null;
 }
 
 // PATCH /api/order-items/:id/status — update a single item's kitchen status
@@ -271,6 +272,11 @@ router.patch(
         ) {
           throw Object.assign(new Error('TERMINAL_KDS_ITEM'), { diagnosticCode: 'item_terminal' });
         }
+        if (Number(item.requires_kitchen ?? 1) === 0) {
+          throw Object.assign(new Error('NON_KITCHEN_KDS_ITEM'), {
+            diagnosticCode: 'item_immutable',
+          });
+        }
 
         if (
           categoryIds.length > 0 &&
@@ -351,7 +357,7 @@ router.patch(
         SELECT oi.*, p.category_id
         FROM order_items oi
         LEFT JOIN products p ON p.id = oi.product_id
-        WHERE oi.order_id = ?
+        WHERE oi.order_id = ? AND oi.requires_kitchen = 1
       `)
           .all(item.order_id) as any[];
         const visibleItems = rawItems
@@ -469,6 +475,11 @@ router.patch(
           return res
             .status(400)
             .json({ error: 'This terminal item cannot be updated from KDS', ...diagnostic });
+        if (error.message === 'NON_KITCHEN_KDS_ITEM')
+          return res.status(400).json({
+            error: 'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+            ...diagnostic,
+          });
         if (error.message === 'ORPHANED_ORDER_ITEM')
           return res
             .status(404)
@@ -499,6 +510,11 @@ router.patch(
       }
       if (error.message === 'TERMINAL_KDS_ITEM') {
         return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
+      }
+      if (error.message === 'NON_KITCHEN_KDS_ITEM') {
+        return res.status(400).json({
+          error: 'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+        });
       }
       if (error.message === 'ORPHANED_ORDER_ITEM') {
         return res.status(404).json({ error: 'Order item is not attached to an order' });

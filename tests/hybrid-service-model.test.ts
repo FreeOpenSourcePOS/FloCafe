@@ -48,12 +48,16 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
-const { stopKdsServer } = require('../main/kds-server');
+const { startKdsServer, stopKdsServer, getKdsPort } = require('../main/kds-server');
 const { stopScheduledOrderSweep } = require('../main/services/scheduled-orders');
-const { orderHasKitchenWorkSql } = require('../main/db');
+const { ACTIVE_RELEASED_KDS_ORDER_IDS_SQL, orderHasKitchenWorkSql } = require('../main/db');
 const { isOrderPrepaid } = require('../main/services/service-model');
+const { selectBoardEligibleOrderPage } = require('../main/services/customer-display-tokens');
 const { deriveOrderStatusFromItems } = require('../shared/order-item-status');
 const { isKotItemPending } = require('../shared/print/document');
+const bcrypt = require('bcryptjs');
+const { WebSocket } = require('ws');
+const { once } = require('node:events');
 
 function setStoreSetting(db: any, key: string, value: string) {
   db.prepare(
@@ -269,6 +273,438 @@ async function main() {
     assertEqualOrThrow(isOrderPrepaid(db, 'takeaway'), true, 'hybrid counter orders are prepaid');
     assertEqualOrThrow(isOrderPrepaid(db, 'delivery'), true, 'hybrid delivery orders are prepaid');
     assertEqualOrThrow(isOrderPrepaid(db, 'dine_in'), false, 'hybrid table orders are postpaid');
+
+    // F-09: Partial business update and wildcard setting update cannot disable tables_required in hybrid mode
+    const partialBusiness = await req({
+      path: '/api/settings/business',
+      method: 'PUT',
+      body: { tables_required: false },
+    });
+    assertEqualOrThrow(partialBusiness.status, 200, 'partial business update succeeds');
+    assertEqualOrThrow(
+      partialBusiness.body.tables_required,
+      true,
+      'partial PUT /settings/business keeps tables_required=true in hybrid mode',
+    );
+    const wildcardTables = await req({
+      path: '/api/settings/tables_required',
+      method: 'PUT',
+      body: { value: 'false' },
+    });
+    assertEqualOrThrow(wildcardTables.status, 200, 'wildcard tables_required update succeeds');
+    assertEqualOrThrow(
+      wildcardTables.body.setting?.value,
+      'true',
+      'PUT /settings/tables_required coerces to true in hybrid mode',
+    );
+
+    console.log('\n--- 7. Standalone KDS excludes ready-made lines & category routing (F-03) ---');
+    // Flip cola back to ready-made in its own drinks category for station routing checks
+    seedCategory(db, 'cat-drinks', 'Ready Drinks');
+    await req({
+      path: `/api/products/${colaId}`,
+      method: 'PUT',
+      body: { requires_kitchen: false, category_id: 'cat-drinks' },
+    });
+    const water = await req({
+      path: '/api/products',
+      method: 'POST',
+      body: { name: 'Bottled Water', price: 2, category_id: 'cat-drinks', requires_kitchen: false },
+    });
+    assertEqualOrThrow(water.status, 201, 'second ready-made item created');
+    const waterId = water.body.product.id;
+
+    db.prepare(
+      `INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+       VALUES ('st-drinks', 'Drinks Station', ?, 1, ?, ?)`,
+    ).run(JSON.stringify(['cat-drinks']), now(), now());
+    const chefPass = bcrypt.hashSync('ChefPass123!', 10);
+    db.prepare(
+      `INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
+       VALUES ('chef-drinks', 'Drinks Chef', 'drinks-chef@flo.local', ?, 'chef', 1, 1, ?, ?)`,
+    ).run(chefPass, now(), now());
+    db.prepare(
+      `INSERT INTO station_users (user_id, station_id, created_at) VALUES ('chef-drinks', 'st-drinks', ?)`,
+    ).run(now());
+
+    const routedMixed = await req({
+      path: '/api/orders',
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: dishId, quantity: 1 },
+          { product_id: colaId, quantity: 1 },
+        ],
+      },
+    });
+    assertEqualOrThrow(routedMixed.status, 201, 'mixed takeaway order created for KDS checks');
+    const routedMixedId = routedMixed.body.order.id;
+
+    await startKdsServer();
+    const kdsBaseUrl = `http://127.0.0.1:${getKdsPort()}`;
+
+    const standaloneAll = await api(kdsBaseUrl, '/api/kds/orders', { headers: owner.authHeader });
+    assertEqualOrThrow(standaloneAll.status, 200, 'standalone KDS orders load');
+    const standaloneMixed = standaloneAll.data.orders.find(
+      (o: any) => String(o.id) === String(routedMixedId),
+    );
+    assertOrThrow(!!standaloneMixed, 'mixed order appears on standalone KDS');
+    assertEqualOrThrow(
+      JSON.stringify(standaloneMixed.items.map((i: any) => i.product_id)),
+      JSON.stringify([dishId]),
+      'standalone KDS hides ready-made items on mixed orders',
+    );
+    assertOrThrow(
+      !standaloneAll.data.orders.some((o: any) => String(o.id) === String(readyOnlyId)),
+      'standalone KDS hides ready-made-only orders',
+    );
+
+    // Drinks-only station must not match the mixed takeaway order via its ready-made cola
+    const drinksChefLogin = await api(kdsBaseUrl, '/api/auth/login', {
+      method: 'POST',
+      body: { email: 'drinks-chef@flo.local', password: 'ChefPass123!' },
+    });
+    assertEqualOrThrow(drinksChefLogin.status, 200, 'drinks chef logs into standalone KDS');
+    const drinksChefAuth = { Authorization: `Bearer ${drinksChefLogin.data.access_token}` };
+    const standaloneDrinks = await api(kdsBaseUrl, '/api/kds/orders', { headers: drinksChefAuth });
+    assertEqualOrThrow(standaloneDrinks.status, 200, 'drinks chef standalone KDS loads');
+    assertOrThrow(
+      !standaloneDrinks.data.orders.some((o: any) => String(o.id) === String(routedMixedId)),
+      'standalone KDS does not route tableless order by ready-made category',
+    );
+    const mainDrinks = await req({
+      path: '/api/kds/orders?station_id=st-drinks',
+      method: 'GET',
+    });
+    assertEqualOrThrow(mainDrinks.status, 200, 'main KDS station-filtered query loads');
+    assertOrThrow(
+      !mainDrinks.body.orders.some((o: any) => String(o.id) === String(routedMixedId)),
+      'main KDS does not route tableless order by ready-made category',
+    );
+
+    console.log('\n--- 8. Customer Display keeps paid prepaid mixed orders pending (F-04) ---');
+    const prepaidMixed = await req({
+      path: '/api/orders',
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: dishId, quantity: 1 },
+          { product_id: colaId, quantity: 1 },
+        ],
+      },
+    });
+    assertEqualOrThrow(prepaidMixed.status, 201, 'prepaid mixed order created');
+    const prepaidMixedId = prepaidMixed.body.order.id;
+    const prepaidBill = await req({
+      path: '/api/bills/generate',
+      method: 'POST',
+      body: { order_id: prepaidMixedId },
+    });
+    assertEqualOrThrow(prepaidBill.status, 201, 'prepaid mixed bill generated');
+    const prepaidPay = await req({
+      path: `/api/bills/${prepaidBill.body.bill.id}/payment`,
+      method: 'POST',
+      body: { method: 'card', amount: prepaidBill.body.bill.total },
+    });
+    assertEqualOrThrow(prepaidPay.status, 200, 'prepaid mixed bill paid');
+    const boardPage = selectBoardEligibleOrderPage(db, {
+      statuses: ['pending', 'preparing', 'ready'],
+      orderTypes: ['takeaway'],
+      limit: 100,
+    });
+    const projectedPrepaid = boardPage.pageRows.find(
+      (o: any) => String(o.id) === String(prepaidMixedId),
+    );
+    assertEqualOrThrow(
+      projectedPrepaid?.status,
+      'pending',
+      'paid prepaid mixed order projects pending (not preparing) before kitchen starts',
+    );
+
+    console.log('\n--- 9. All 4 KDS status mutation transports reject ready-made items (F-05) ---');
+    const routedItems = db
+      .prepare(
+        'SELECT id, product_id, requires_kitchen, status FROM order_items WHERE order_id = ?',
+      )
+      .all(routedMixedId) as Array<{
+      id: number;
+      product_id: string;
+      requires_kitchen: number;
+      status: string;
+    }>;
+    const readyItemRow = routedItems.find((i) => i.requires_kitchen === 0)!;
+    const kitchenItemRow = routedItems.find((i) => i.requires_kitchen === 1)!;
+
+    const patchOrderItem = await req({
+      path: `/api/order-items/${readyItemRow.id}/status`,
+      method: 'PATCH',
+      body: { status: 'pending' },
+    });
+    assertEqualOrThrow(
+      patchOrderItem.status,
+      400,
+      'PATCH /api/order-items/:id/status rejects ready-made item',
+    );
+
+    const patchMainKds = await req({
+      path: `/api/kds/items/${readyItemRow.id}/status`,
+      method: 'PATCH',
+      body: { status: 'preparing', expected_status: 'served' },
+    });
+    assertEqualOrThrow(
+      patchMainKds.status,
+      400,
+      'PATCH /api/kds/items/:id/status rejects ready-made item',
+    );
+
+    const patchStandaloneKds = await api(kdsBaseUrl, `/api/kds/items/${readyItemRow.id}/status`, {
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { status: 'ready', expected_status: 'served' },
+    });
+    assertEqualOrThrow(
+      patchStandaloneKds.status,
+      400,
+      'standalone PATCH /api/kds/items/:id/status rejects ready-made item',
+    );
+
+    const ownerToken = String(owner.authHeader.Authorization).replace(/^Bearer\s+/, '');
+    const ws = new WebSocket(`ws://127.0.0.1:${getKdsPort()}/kds`);
+    await once(ws, 'open');
+    const wsWaitFor = (types: string[]) =>
+      new Promise<any>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`Timed out waiting for ${types.join('/')}`)),
+          5000,
+        );
+        const onMsg = (raw: any) => {
+          const msg = JSON.parse(raw.toString());
+          if (types.includes(msg.type)) {
+            clearTimeout(timer);
+            ws.off('message', onMsg);
+            resolve(msg);
+          }
+        };
+        ws.on('message', onMsg);
+      });
+    const authOkPromise = wsWaitFor(['auth_success']);
+    ws.send(JSON.stringify({ type: 'auth', token: ownerToken }));
+    await authOkPromise;
+    const wsErrorPromise = wsWaitFor(['error', 'status_updated']);
+    ws.send(
+      JSON.stringify({
+        type: 'status_update',
+        order_item_id: readyItemRow.id,
+        status: 'pending',
+      }),
+    );
+    const wsReply = await wsErrorPromise;
+    ws.close();
+    await once(ws, 'close');
+    assertEqualOrThrow(
+      wsReply.type,
+      'error',
+      'KDS WebSocket status_update rejects ready-made item',
+    );
+
+    const readyAfterAttempts = db
+      .prepare('SELECT status FROM order_items WHERE id = ?')
+      .get(readyItemRow.id) as { status: string };
+    assertEqualOrThrow(
+      readyAfterAttempts.status,
+      'served',
+      'ready-made item remains served after all 4 rejected KDS status writes',
+    );
+
+    const patchKitchenItem = await req({
+      path: `/api/order-items/${kitchenItemRow.id}/status`,
+      method: 'PATCH',
+      body: { status: 'preparing' },
+    });
+    assertEqualOrThrow(patchKitchenItem.status, 200, 'updating kitchen item succeeds');
+    assertEqualOrThrow(
+      JSON.stringify((patchKitchenItem.body.order?.items ?? []).map((i: any) => i.product_id)),
+      JSON.stringify([dishId]),
+      'PATCH /api/order-items/:id/status response omits ready-made items',
+    );
+
+    console.log(
+      '\n--- 10. Backend /api/printers/print-kot skips ready-made-only orders without printer (F-06) ---',
+    );
+    const rmKotRes = await req({
+      path: '/api/printers/print-kot',
+      method: 'POST',
+      body: { orderId: readyOnlyId },
+    });
+    assertEqualOrThrow(
+      rmKotRes.status,
+      200,
+      'ready-made-only print-kot returns 200 without host printer',
+    );
+    assertEqualOrThrow(
+      rmKotRes.body.skipped,
+      true,
+      'ready-made-only print-kot reports skipped: true',
+    );
+
+    const kitchenKotRes = await req({
+      path: '/api/printers/print-kot',
+      method: 'POST',
+      body: { orderId: kitchenOnlyId },
+    });
+    assertEqualOrThrow(
+      kitchenKotRes.status,
+      400,
+      'kitchen order print-kot still requires a configured printer',
+    );
+
+    console.log('\n--- 11. Refund/void adjustment rows stay off KDS (F-07) ---');
+    db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+      bcrypt.hashSync('1234', 10),
+      owner.userId,
+    );
+
+    // 11a. Voiding an in-progress kitchen item sets void_adjustment requires_kitchen = 0
+    const voidRes = await req({
+      path: `/api/orders/${routedMixedId}/items/${kitchenItemRow.id}/cancel`,
+      method: 'PATCH',
+      body: { reason: 'Customer changed mind', override_pin: '1234' },
+    });
+    assertEqualOrThrow(voidRes.status, 200, 'kitchen item void succeeds');
+    const voidAdj = db
+      .prepare(
+        "SELECT requires_kitchen FROM order_items WHERE order_id = ? AND status = 'void_adjustment'",
+      )
+      .get(routedMixedId) as { requires_kitchen: number } | undefined;
+    assertEqualOrThrow(
+      voidAdj?.requires_kitchen,
+      0,
+      'void void_adjustment row has requires_kitchen = 0',
+    );
+
+    // 11b. Refunding 1 line of a 2-line paid ready-made-only order never leaks into KDS or ACTIVE_RELEASED_KDS_ORDER_IDS_SQL
+    const rmTwoLine = await req({
+      path: '/api/orders',
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: colaId, quantity: 2 },
+          { product_id: waterId, quantity: 1 },
+        ],
+      },
+    });
+    assertEqualOrThrow(rmTwoLine.status, 201, '2-line ready-made order created');
+    const rmTwoLineId = rmTwoLine.body.order.id;
+    const rmBill = await req({
+      path: '/api/bills/generate',
+      method: 'POST',
+      body: { order_id: rmTwoLineId },
+    });
+    assertEqualOrThrow(rmBill.status, 201, 'ready-made bill generated');
+    const rmPay = await req({
+      path: `/api/bills/${rmBill.body.bill.id}/payment`,
+      method: 'POST',
+      body: { method: 'card', amount: rmBill.body.bill.total },
+    });
+    assertEqualOrThrow(rmPay.status, 200, 'ready-made bill paid');
+    const rmColaLine = db
+      .prepare('SELECT id, total FROM order_items WHERE order_id = ? AND product_id = ?')
+      .get(rmTwoLineId, colaId) as { id: number; total: number };
+    const rmRefund = await req({
+      path: '/api/refunds',
+      method: 'POST',
+      body: {
+        bill_id: rmBill.body.bill.id,
+        order_item_id: rmColaLine.id,
+        amount: rmColaLine.total,
+        method: 'card',
+        reason: 'Warm drink',
+        approver_id: owner.userId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(rmRefund.status, 201, 'ready-made item refund succeeds');
+    const refundAdj = db
+      .prepare(
+        "SELECT requires_kitchen FROM order_items WHERE order_id = ? AND status = 'void_adjustment'",
+      )
+      .get(rmTwoLineId) as { requires_kitchen: number } | undefined;
+    assertEqualOrThrow(
+      refundAdj?.requires_kitchen,
+      0,
+      'refund void_adjustment row has requires_kitchen = 0',
+    );
+    const hasKitchenAfterRefund = db
+      .prepare(`SELECT id FROM orders o WHERE o.id = ? AND ${orderHasKitchenWorkSql('o')}`)
+      .get(rmTwoLineId);
+    assertOrThrow(
+      !hasKitchenAfterRefund,
+      'orderHasKitchenWorkSql stays false after refunding a ready-made line',
+    );
+    const activeIdsAfterRefund = db
+      .prepare(`SELECT id FROM (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})`)
+      .all()
+      .map((r: any) => String(r.id));
+    assertOrThrow(
+      !activeIdsAfterRefund.includes(String(rmTwoLineId)),
+      'refunded ready-made-only order stays out of ACTIVE_RELEASED_KDS_ORDER_IDS_SQL',
+    );
+    const kdsAfterRefund = await api(kdsBaseUrl, '/api/kds/orders', { headers: owner.authHeader });
+    assertOrThrow(
+      !kdsAfterRefund.data.orders.some((o: any) => String(o.id) === String(rmTwoLineId)),
+      'refunded 2-line ready-made-only order does not leak onto standalone KDS',
+    );
+
+    // 11c. Completed + served + refunded kitchen order stays out of ACTIVE_RELEASED_KDS_ORDER_IDS_SQL
+    const servedKitchenOrder = await req({
+      path: '/api/orders',
+      method: 'POST',
+      body: { type: 'takeaway', items: [{ product_id: dishId, quantity: 1 }] },
+    });
+    const servedKitchenId = servedKitchenOrder.body.order.id;
+    const servedKitchenItem = db
+      .prepare('SELECT id, total FROM order_items WHERE order_id = ?')
+      .get(servedKitchenId) as { id: number; total: number };
+    const servedKitchenBill = await req({
+      path: '/api/bills/generate',
+      method: 'POST',
+      body: { order_id: servedKitchenId },
+    });
+    await req({
+      path: `/api/bills/${servedKitchenBill.body.bill.id}/payment`,
+      method: 'POST',
+      body: { method: 'card', amount: servedKitchenBill.body.bill.total },
+    });
+    await req({
+      path: `/api/kds/items/${servedKitchenItem.id}/status`,
+      method: 'PATCH',
+      body: { status: 'served' },
+    });
+    const kitchenRefund = await req({
+      path: '/api/refunds',
+      method: 'POST',
+      body: {
+        bill_id: servedKitchenBill.body.bill.id,
+        order_item_id: servedKitchenItem.id,
+        amount: servedKitchenItem.total,
+        method: 'card',
+        reason: 'Customer complaint',
+        approver_id: owner.userId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(kitchenRefund.status, 201, 'completed served kitchen order refund succeeds');
+    const activeIdsAfterKitchenRefund = db
+      .prepare(`SELECT id FROM (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})`)
+      .all()
+      .map((r: any) => String(r.id));
+    assertOrThrow(
+      !activeIdsAfterKitchenRefund.includes(String(servedKitchenId)),
+      'completed served refunded kitchen order stays out of ACTIVE_RELEASED_KDS_ORDER_IDS_SQL',
+    );
 
     const results = getResults();
     console.log('\n' + '='.repeat(66));

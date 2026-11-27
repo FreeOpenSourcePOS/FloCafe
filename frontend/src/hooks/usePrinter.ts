@@ -51,6 +51,8 @@ import {
   type PrinterTextSize,
 } from '@print/text-size';
 import { columnsForConfiguredPrinter } from '@print/width';
+import { isKotItemPending } from '@print/document';
+import { isKitchenItem } from '@shared/order-item-status';
 import {
   ensureReceiptSettingsLoaded,
   PrintCancelledOnTenantChangeError,
@@ -852,6 +854,14 @@ export const usePrinterStore = create<PrinterState>()(
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });
           throw err;
+        }
+        const candidateItems = opts?.items ?? order.items;
+        if (
+          Array.isArray(candidateItems) &&
+          candidateItems.length > 0 &&
+          !candidateItems.some((item) => isKitchenItem(item) && isKotItemPending(item?.status))
+        ) {
+          return [];
         }
         try {
           const hw = get().hardwarePrinter;

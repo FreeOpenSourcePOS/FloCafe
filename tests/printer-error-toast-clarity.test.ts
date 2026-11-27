@@ -569,7 +569,7 @@ async function runTests(): Promise<void> {
       'savePrinterHw omits default paper_width on new auto-profile add',
     );
 
-    // 12. F-11: formatPrinterSettingsErrorMessage surfaces plain Error details (e.g. WebUSB errors) sanitized
+    // 12. formatPrinterSettingsErrorMessage surfaces sanitized plain Error details
     const identityTranslator = ((key: string) => key) as any;
     assert.equal(
       formatPrinterSettingsErrorMessage(
@@ -596,8 +596,9 @@ async function runTests(): Promise<void> {
       'Test print failed',
     );
 
-    // 13. FC-04 & F-13: await pending WebUSB reconnect before host fallback, and only cache
-    //     lastResolvedUsbDevice after a successful /printers refresh.
+    // 13. Browser terminals await pending WebUSB reconnect before host fallback, while desktop
+    //     mode dispatches to host immediately; /printers device resolution retries after errors
+    //     and deduplicates concurrent refreshes.
     const origWindow = (globalThis as any).window;
     const origNavigatorDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
     delete (printerService as any).isConnected;
@@ -610,11 +611,14 @@ async function runTests(): Promise<void> {
       signalClaimStarted = resolve;
     });
     const usbTransfers: Uint8Array[] = [];
+    let activeProductName = 'TM-T88V-Test';
     const mockUsbDevice = {
       vendorId: 0x04b8,
       productId: 0x0202,
-      productName: 'TM-T88V-F13-Test',
-      serialNumber: 'sn-fc04',
+      get productName() {
+        return activeProductName;
+      },
+      serialNumber: 'sn-reconnect',
       configuration: { configurationValue: 1 },
       configurations: [
         {
@@ -682,7 +686,7 @@ async function runTests(): Promise<void> {
                 },
                 {
                   id: 'usb-58',
-                  name: 'TM-T88V-F13-Test',
+                  name: activeProductName,
                   connection_type: 'webusb',
                   paper_width: '58mm',
                   is_default: 0,
@@ -713,7 +717,7 @@ async function runTests(): Promise<void> {
 
       const sampleBill = {
         id: 501,
-        bill_number: 'INV-FC04',
+        bill_number: 'INV-RECONNECT',
         subtotal: 10,
         tax_amount: 0,
         discount_amount: 0,
@@ -746,7 +750,7 @@ async function runTests(): Promise<void> {
       assert.equal(hostPosts.length, 0, 'printBill must print to reconnected local WebUSB');
       assert.equal(usbTransfers.length, 1, 'printBill transferred ESC/POS bytes via WebUSB');
 
-      // F-13: first /printers call failed, so webusbPrinter remained null; next print must retry /printers
+      // First /printers call failed, so webusbPrinter remained null; next print must retry /printers
       assert.equal(printerGetCalls, 1);
       assert.equal(usePrinterStore.getState().webusbPrinter, null);
 
@@ -761,21 +765,20 @@ async function runTests(): Promise<void> {
       const reconnectSlipPromise = printerService.tryReconnect();
       await claimStarted;
 
-      const slipPrintPromise = usePrinterStore.getState().printDeliverySlip(
-        {
-          id: 502,
-          order_number: 'ORD-FC04',
-          type: 'delivery',
-          status: 'pending',
-          subtotal: 15,
-          tax_amount: 0,
-          discount_amount: 0,
-          total: 15,
-          created_at: '2026-11-27T12:00:00Z',
-          items: [{ id: 1, product_id: 'p1', product_name: 'Tea', quantity: 1 }],
-        } as any,
-        { name: 'Alice', phone: '555-0101', address: '42 Oak Ave' },
-      );
+      const slipOrder = {
+        id: 502,
+        order_number: 'ORD-RECONNECT',
+        type: 'delivery',
+        status: 'pending',
+        subtotal: 15,
+        tax_amount: 0,
+        discount_amount: 0,
+        total: 15,
+        created_at: '2026-11-27T12:00:00Z',
+        items: [{ id: 1, product_id: 'p1', product_name: 'Tea', quantity: 1 }],
+      } as any;
+      const slipContact = { name: 'Alice', phone: '555-0101', address: '42 Oak Ave' };
+      const slipPrintPromise = usePrinterStore.getState().printDeliverySlip(slipOrder, slipContact);
       await new Promise((resolve) => setTimeout(resolve, 20));
       assert.deepEqual(
         hostPosts,
@@ -792,22 +795,164 @@ async function runTests(): Promise<void> {
         'printDeliverySlip transferred ESC/POS bytes via WebUSB',
       );
 
-      // F-13: second /printers call succeeded, populating webusbPrinter (58mm)
-      assert.equal(printerGetCalls, 2, 'F-13: /printers retried after transient error');
+      // Second /printers call succeeded, populating webusbPrinter (58mm)
+      assert.equal(printerGetCalls, 2, '/printers retried after transient error');
       assert.equal(usePrinterStore.getState().webusbPrinter?.paper_width, '58mm');
 
       // Subsequent print with same connected device should reuse cached resolution (no 3rd GET /printers)
       await usePrinterStore.getState().printBill(sampleBill, sampleTenant, undefined, null);
       assert.equal(printerGetCalls, 2, 'cached device skips redundant /printers refresh');
 
-      // Desktop mode (window.electronAPI present) still dispatches to host even when WebUSB is connected
-      (globalThis as any).window = { electronAPI: { platform: 'darwin' } };
+      // Concurrent prints for an uncached device share one in-flight /printers refresh,
+      // and out-of-order refresh responses cannot overwrite newer printer settings.
+      await printerService.disconnect();
+      activeProductName = 'TM-T88V-Concurrent';
+      claimGate = Promise.resolve();
+      claimStarted = new Promise<void>((resolve) => {
+        signalClaimStarted = resolve;
+      });
+      await printerService.tryReconnect();
+      usePrinterStore.setState({ webusbPrinter: null });
+
+      let resolveConcurrentRefresh!: () => void;
+      const concurrentRefreshGate = new Promise<void>((resolve) => {
+        resolveConcurrentRefresh = resolve;
+      });
+      let concurrentGetCalls = 0;
+      frontendApi.get = async (url: string) => {
+        if (url === '/printers') {
+          concurrentGetCalls += 1;
+          await concurrentRefreshGate;
+          return {
+            data: {
+              printers: [
+                {
+                  id: 'host-1',
+                  name: 'Host Printer',
+                  connection_type: 'network',
+                  is_default: 1,
+                },
+                {
+                  id: 'usb-concurrent',
+                  name: 'TM-T88V-Concurrent',
+                  connection_type: 'webusb',
+                  paper_width: '58mm',
+                  is_default: 0,
+                },
+              ],
+            },
+          };
+        }
+        return { data: {} };
+      };
+      const concurrentPrints = Promise.all([
+        usePrinterStore.getState().printBill(sampleBill, sampleTenant, undefined, null),
+        usePrinterStore.getState().printBill(sampleBill, sampleTenant, undefined, null),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(
+        concurrentGetCalls,
+        1,
+        'concurrent prints share a single in-flight /printers refresh',
+      );
+      resolveConcurrentRefresh();
+      await concurrentPrints;
+      assert.equal(usePrinterStore.getState().webusbPrinter?.paper_width, '58mm');
+
+      // Stale overlapping refreshHardwarePrinter response is discarded when a newer refresh completes first
+      let resolveOlderRefresh!: () => void;
+      const olderRefreshGate = new Promise<void>((resolve) => {
+        resolveOlderRefresh = resolve;
+      });
+      let refreshCallIdx = 0;
+      frontendApi.get = async (url: string) => {
+        if (url === '/printers') {
+          refreshCallIdx += 1;
+          if (refreshCallIdx === 1) {
+            await olderRefreshGate;
+            return {
+              data: {
+                printers: [
+                  {
+                    id: 'usb-stale',
+                    name: 'TM-T88V-Concurrent',
+                    connection_type: 'webusb',
+                    paper_width: '58mm',
+                    is_default: 0,
+                  },
+                ],
+              },
+            };
+          }
+          return {
+            data: {
+              printers: [
+                {
+                  id: 'host-1',
+                  name: 'Host Printer',
+                  connection_type: 'network',
+                  is_default: 1,
+                },
+                {
+                  id: 'usb-fresh',
+                  name: 'TM-T88V-Concurrent',
+                  connection_type: 'webusb',
+                  paper_width: '80mm',
+                  is_default: 0,
+                },
+              ],
+            },
+          };
+        }
+        return { data: {} };
+      };
+      const olderRefresh = usePrinterStore.getState().refreshHardwarePrinter();
+      const newerRefresh = usePrinterStore.getState().refreshHardwarePrinter();
+      assert.equal(await newerRefresh, true);
+      assert.equal(usePrinterStore.getState().webusbPrinter?.paper_width, '80mm');
+      resolveOlderRefresh();
+      assert.equal(
+        await olderRefresh,
+        false,
+        'stale refresh returns false without overwriting state',
+      );
+      assert.equal(
+        usePrinterStore.getState().webusbPrinter?.paper_width,
+        '80mm',
+        'stale refresh response must not overwrite newer printer state',
+      );
+
+      // Desktop mode (window.electronAPI present) dispatches to host immediately without awaiting
+      // pending WebUSB reconnect and still prefers host over connected WebUSB.
+      (globalThis as any).window = {
+        electronAPI: { platform: 'darwin' },
+        open: () => ({ closed: false, close: () => {} }),
+      };
       await usePrinterStore.getState().printBill(sampleBill, sampleTenant, undefined, null);
       assert.deepEqual(
         hostPosts,
         ['/printers/print-bill'],
         'desktop mode preserves host printer priority over local WebUSB',
       );
+
+      await printerService.disconnect();
+      claimGate = new Promise<void>((resolve) => {
+        releaseClaim = resolve;
+      });
+      claimStarted = new Promise<void>((resolve) => {
+        signalClaimStarted = resolve;
+      });
+      const desktopPendingReconnect = printerService.tryReconnect();
+      await claimStarted;
+      await usePrinterStore.getState().printBill(sampleBill, sampleTenant, undefined, null);
+      await usePrinterStore.getState().printDeliverySlip(slipOrder, slipContact);
+      assert.deepEqual(
+        hostPosts,
+        ['/printers/print-bill', '/printers/print-bill', '/printers/print-delivery-slip'],
+        'desktop host prints dispatch immediately without waiting on pending WebUSB reconnect',
+      );
+      releaseClaim();
+      await desktopPendingReconnect;
     } finally {
       await printerService.disconnect();
       if (origWindow === undefined) {

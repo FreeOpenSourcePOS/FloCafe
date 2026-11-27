@@ -12,6 +12,7 @@ import {
 import {
   usePosSettingsStore,
   normalizeAutoLockMinutesValue,
+  resolveSavedTablesRequired,
   type BillTemplate,
 } from '@/store/pos-settings';
 import { clearKdsThemeOverride } from '@/lib/i18n/server-language';
@@ -4197,12 +4198,11 @@ export default function SettingsPage() {
           }
         }
       }
-      const resolvedTablesRequired =
-        typeof putRes.data?.tables_required === 'boolean'
-          ? putRes.data.tables_required
-          : form.serviceModel === 'hybrid'
-            ? true
-            : form.tablesRequired;
+      const resolvedTablesRequired = resolveSavedTablesRequired(
+        putRes.data?.tables_required,
+        form.serviceModel,
+        form.tablesRequired,
+      );
       const updatedForm = {
         ...form,
         businessPhone: normalizedBusinessPhone,

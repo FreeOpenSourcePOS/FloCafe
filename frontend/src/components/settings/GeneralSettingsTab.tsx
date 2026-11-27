@@ -20,7 +20,7 @@ import {
   type CalendarMode,
 } from '@/lib/countries';
 import { dialCodeFor } from '@/lib/phone';
-import { usePosSettingsStore } from '@/store/pos-settings';
+import { applyServiceModelChange, usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
 import { LANGUAGES, TENANT_STATUS_LABEL_KEYS, type Language } from '@/lib/i18n';
 import api from '@/lib/api';
@@ -378,15 +378,11 @@ export function GeneralSettingsTab({
                 value={form.serviceModel}
                 onChange={(e) => {
                   const nextModel = e.target.value as BusinessForm['serviceModel'];
-                  markHydrationTouched('serviceModel');
-                  if (nextModel === 'hybrid') {
-                    markHydrationTouched('tablesRequired');
+                  const { touchedFields } = applyServiceModelChange(form, nextModel);
+                  for (const field of touchedFields) {
+                    markHydrationTouched(field);
                   }
-                  setForm((p) => ({
-                    ...p,
-                    serviceModel: nextModel,
-                    ...(nextModel === 'hybrid' ? { tablesRequired: true } : {}),
-                  }));
+                  setForm((p) => applyServiceModelChange(p, nextModel).nextForm);
                 }}
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
               >

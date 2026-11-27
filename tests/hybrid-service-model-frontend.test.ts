@@ -6,8 +6,6 @@
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 
 const syncModule =
   require('../frontend/src/hooks/useReceiptSettingsSync') as typeof import('../frontend/src/hooks/useReceiptSettingsSync');
@@ -15,7 +13,7 @@ syncModule.ensureReceiptSettingsLoaded = async () => true;
 
 const { usePrinterStore } =
   require('../frontend/src/hooks/usePrinter') as typeof import('../frontend/src/hooks/usePrinter');
-const { usePosSettingsStore } =
+const { applyServiceModelChange, resolveSavedTablesRequired, usePosSettingsStore } =
   require('../frontend/src/store/pos-settings') as typeof import('../frontend/src/store/pos-settings');
 const { printerService } =
   require('../frontend/src/lib/printer/PrinterService') as typeof import('../frontend/src/lib/printer/PrinterService');
@@ -142,25 +140,64 @@ async function run(): Promise<void> {
     assert.ok(browserCalls[0].includes('Grilled Fish'), 'mixed KOT includes the kitchen item');
     assert.ok(!browserCalls[0].includes('Bottled Cola'), 'mixed KOT excludes the ready-made item');
 
-    // 5. F-09 frontend: choosing Hybrid sets tablesRequired=true and saveBusinessInfo hydrates server tables_required
-    const generalTabSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'frontend/src/components/settings/GeneralSettingsTab.tsx'),
-      'utf8',
+    // 5. F-09 frontend: selecting hybrid forces tablesRequired=true and marks it touched
+    const qsrForm = { serviceModel: 'qsr' as const, tablesRequired: false, businessName: 'Cafe' };
+    const hybridTransition = applyServiceModelChange(qsrForm, 'hybrid');
+    assert.equal(hybridTransition.nextForm.serviceModel, 'hybrid');
+    assert.equal(
+      hybridTransition.nextForm.tablesRequired,
+      true,
+      'switching from qsr (tablesRequired=false) to hybrid forces tablesRequired=true',
     );
-    assert.match(
-      generalTabSrc,
-      /nextModel === 'hybrid'[\s\S]*markHydrationTouched\('tablesRequired'\)[\s\S]*tablesRequired:\s*true/,
-      'GeneralSettingsTab forces tablesRequired=true when selecting hybrid',
+    assert.equal(hybridTransition.nextForm.businessName, 'Cafe');
+    assert.deepEqual(
+      hybridTransition.touchedFields,
+      ['serviceModel', 'tablesRequired'],
+      'switching to hybrid marks both serviceModel and tablesRequired hydration-touched',
     );
 
-    const settingsPageSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'frontend/src/app/(dashboard)/settings/page.tsx'),
-      'utf8',
+    const finedineTransition = applyServiceModelChange(qsrForm, 'finedine');
+    assert.equal(finedineTransition.nextForm.serviceModel, 'finedine');
+    assert.equal(
+      finedineTransition.nextForm.tablesRequired,
+      false,
+      'switching to non-hybrid preserves existing tablesRequired value',
     );
-    assert.match(
-      settingsPageSrc,
-      /typeof putRes\.data\?\.tables_required === 'boolean'[\s\S]*tablesRequired:\s*resolvedTablesRequired[\s\S]*tables_required:\s*resolvedTablesRequired/,
-      'settings/page.tsx hydrates tablesRequired from PUT /settings/business response',
+    assert.deepEqual(finedineTransition.touchedFields, ['serviceModel']);
+
+    // 6. F-09 frontend: saving business settings hydrates server-authoritative tables_required
+    assert.equal(
+      resolveSavedTablesRequired(true, 'hybrid', false),
+      true,
+      'server tables_required=true overrides stale local false',
+    );
+    assert.equal(
+      resolveSavedTablesRequired(false, 'qsr', true),
+      false,
+      'server tables_required=false overrides stale local true for non-hybrid',
+    );
+    assert.equal(
+      resolveSavedTablesRequired(undefined, 'hybrid', false),
+      true,
+      'missing server tables_required still enforces true for hybrid',
+    );
+    assert.equal(
+      resolveSavedTablesRequired(undefined, 'qsr', false),
+      false,
+      'missing server tables_required preserves local value for non-hybrid',
+    );
+
+    usePosSettingsStore.setState({ serviceModel: 'qsr', tablesRequired: false });
+    const hydratedTablesRequired = resolveSavedTablesRequired(true, 'hybrid', false);
+    usePosSettingsStore.getState().hydrateReceiptSettings({
+      service_model: 'hybrid',
+      tables_required: hydratedTablesRequired,
+    });
+    assert.equal(usePosSettingsStore.getState().serviceModel, 'hybrid');
+    assert.equal(
+      usePosSettingsStore.getState().tablesRequired,
+      true,
+      'hydrateReceiptSettings updates store tablesRequired from resolved server response',
     );
 
     console.log('✓ All hybrid frontend regressions passed');

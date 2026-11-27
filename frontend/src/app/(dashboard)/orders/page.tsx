@@ -1496,11 +1496,6 @@ export default function OrdersPage() {
     );
     const matchedBill =
       order?.bill?.id === billId ? order.bill : order?.bills?.find((b) => b.id === billId);
-    if ((!order || !matchedBill) && !options?.fallbackBill) {
-      if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
-      toast.error(tOrders('billNotFound'));
-      return;
-    }
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
     const startTenant = useAuthStore.getState().currentTenant ?? currentTenant;
     const tenantIdAtStart = startTenant?.id ?? null;
@@ -1509,19 +1504,28 @@ export default function OrdersPage() {
       let rawBill: Bill | undefined;
       try {
         const { data } = await api.get(`/bills/${billId}`);
-        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill;
+        rawBill = (data?.bill as Bill | undefined) ?? options?.fallbackBill ?? matchedBill;
       } catch (err) {
         if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
           return;
         }
-        if (!options?.fallbackBill) throw err;
-        rawBill = options.fallbackBill;
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        const fallbackBill = options?.fallbackBill ?? (status === 404 ? undefined : matchedBill);
+        if (!fallbackBill) {
+          if (status === 404) {
+            toast.error(tOrders('billNotFound'));
+            return;
+          }
+          throw err;
+        }
+        rawBill = fallbackBill;
       }
       if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
         return;
       }
       if (!rawBill) {
-        throw new Error('Bill not found');
+        toast.error(tOrders('billNotFound'));
+        return;
       }
       const latestBill = preferChildScopedBill(rawBill, order ?? options?.fallbackBill?.order);
       windowTransferred = true;

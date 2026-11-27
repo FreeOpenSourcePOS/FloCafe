@@ -2225,3 +2225,519 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
     moduleApi._resolveFilename = originalResolveFilename;
   }
 });
+
+test('OrdersPage.handlePrint fetches GET /bills/:id when order is absent from active filtered tab and toasts billNotFound on 404', async () => {
+  const root = path.join(__dirname, '..');
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+    _load: (...args: any[]) => any;
+  };
+  const originalResolveFilename = moduleApi._resolveFilename;
+  const originalLoad = moduleApi._load;
+
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
+    if (request.startsWith('@/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(root, 'frontend/src', request.slice(2)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    if (request === '@countries') {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(root, 'main/countries.ts'),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    if (request.startsWith('@print/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(root, 'shared/print', request.slice('@print/'.length)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    if (request.startsWith('@shared/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(root, 'shared', request.slice('@shared/'.length)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    return originalResolveFilename.call(this, request, parent, isMain, options);
+  };
+
+  const reactHooks = {
+    Suspense: 'Suspense',
+    useState: (_initial: unknown): [unknown, (next: unknown) => void] => [
+      undefined,
+      () => undefined,
+    ],
+    useEffect: (_effect: () => unknown, _deps?: unknown[]) => undefined,
+    useRef: (initial: unknown) => ({ current: initial }),
+    useCallback: <T extends (...args: unknown[]) => unknown>(fn: T): T => fn,
+    useMemo: <T>(fn: () => T): T => fn(),
+  };
+
+  const billGetRequests: string[] = [];
+  const toastErrors: string[] = [];
+  const printedBillIds: number[] = [];
+  const printedReservedWindows: unknown[] = [];
+  const reservedWindows: Array<{ closed: boolean; close: () => void }> = [];
+  const activeOrders: Array<Record<string, any>> = [
+    {
+      id: 101,
+      order_number: 'ORD-101',
+      status: 'pending',
+      type: 'dine_in',
+      table_id: 'tbl-42',
+      subtotal: 20,
+      total: 20,
+      created_at: '2026-01-01 00:00:00',
+      items: [],
+    },
+  ];
+  const activeTenant = { id: 't-1', country: 'US', currency: 'USD', role: 'owner' };
+
+  const Icon = () => null;
+  const ButtonStub = (props: Record<string, unknown>) => ({ type: 'button', props });
+  const OrderCardStub = (props: Record<string, unknown>) => ({ type: 'OrderCard', props });
+  const jsxElement = (type: unknown, props: Record<string, unknown>, key?: unknown) => ({
+    type,
+    props,
+    key,
+  });
+
+  const mocks: Record<string, unknown> = {
+    react: reactHooks,
+    'react/jsx-runtime': {
+      jsx: jsxElement,
+      jsxs: jsxElement,
+      Fragment: 'Fragment',
+    },
+    'use-intl': {
+      useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+      useLocale: () => 'en',
+    },
+    'next/navigation': {
+      useRouter: () => ({ push: () => undefined }),
+      useSearchParams: () => new URLSearchParams(),
+    },
+    'react-hot-toast': {
+      __esModule: true,
+      default: {
+        success: () => undefined,
+        error: (msg: string) => {
+          toastErrors.push(msg);
+        },
+      },
+    },
+    'lucide-react': {
+      ArrowRightLeft: Icon,
+      Banknote: Icon,
+      ChevronRight: Icon,
+      Download: Icon,
+      Eye: Icon,
+      LayoutGrid: Icon,
+      List: Icon,
+      Loader2: Icon,
+      MapPin: Icon,
+      MapPinned: Icon,
+      Maximize2: Icon,
+      Minimize2: Icon,
+      MoreHorizontal: Icon,
+      Pencil: Icon,
+      Percent: Icon,
+      Plus: Icon,
+      Printer: Icon,
+      RotateCcw: Icon,
+      Search: Icon,
+      Sparkles: Icon,
+      Table2: Icon,
+      Trash2: Icon,
+      UserPlus: Icon,
+      Users: Icon,
+      X: Icon,
+    },
+    '@/lib/api': {
+      __esModule: true,
+      default: {
+        get: async (url: string) => {
+          if (url === '/orders') {
+            return { data: { orders: activeOrders, nextCursor: null } };
+          }
+          if (/^\/bills\/\d+$/.test(url)) {
+            billGetRequests.push(url);
+            if (url === '/bills/601') {
+              return {
+                data: {
+                  bill: {
+                    id: 601,
+                    order_id: 201,
+                    total: 30,
+                    balance: 0,
+                    payment_status: 'paid',
+                    order: {
+                      id: 201,
+                      order_number: 'ORD-201',
+                      status: 'completed',
+                      type: 'takeaway',
+                      items: [],
+                    },
+                  },
+                },
+              };
+            }
+            if (url === '/bills/604') {
+              const err = new Error('Request failed with status code 404') as Error & {
+                response?: { status: number; data: { error: string } };
+              };
+              err.response = { status: 404, data: { error: 'Bill not found' } };
+              throw err;
+            }
+            if (url === '/bills/605') {
+              return { data: { bill: null } };
+            }
+            if (url === '/bills/606') {
+              const err = new Error('Request failed with status code 500') as Error & {
+                response?: { status: number; data: { error: string } };
+              };
+              err.response = { status: 500, data: { error: 'DB busy' } };
+              throw err;
+            }
+          }
+          if (url === '/tables') return { data: { tables: [] } };
+          if (url === '/settings/business') return { data: { tables_required: true } };
+          if (url === '/settings/discount') {
+            return { data: { discount_mode: 'percentage', discount_requires_approval: false } };
+          }
+          if (url === '/settings/kds_enabled') return { data: { setting: { value: 'false' } } };
+          return { data: {} };
+        },
+        post: async () => ({ data: {} }),
+      },
+      captureClientOperationFailure: async () => undefined,
+      createOperationReference: () => 'op-ref',
+      operationHeaders: () => ({}),
+    },
+    '@/store/auth': {
+      useAuthStore: Object.assign(
+        () => ({
+          currentTenant: activeTenant,
+          user: { id: 'u-1', name: 'Owner' },
+        }),
+        { getState: () => ({ currentTenant: activeTenant }) },
+      ),
+    },
+    '@/store/held-orders': {
+      useHeldOrdersStore: () => ({
+        orders: {},
+        fetchHeldOrders: async () => undefined,
+        restoreOrder: async () => null,
+        removeHeldOrder: async () => false,
+      }),
+    },
+    '@/store/cart': {
+      useCartStore: () => ({
+        items: [],
+        clearCart: () => undefined,
+        setCustomer: () => undefined,
+        setOrderType: () => undefined,
+        setTableId: () => undefined,
+        setDeliveryAddress: () => undefined,
+        loadItems: () => undefined,
+      }),
+    },
+    '@/store/pos-settings': {
+      usePosSettingsStore: () => ({
+        setTablesRequired: () => undefined,
+        autoPrintBill: false,
+        printerUseUnicode: true,
+        printerArabicShaping: false,
+      }),
+    },
+    '@/hooks/usePrinter': {
+      usePrinterStore: Object.assign(
+        () => ({
+          printBill: async (
+            bill: { id: number },
+            _tenant: unknown,
+            _opts: unknown,
+            reservedWindow?: unknown,
+          ) => {
+            printedBillIds.push(bill.id);
+            printedReservedWindows.push(reservedWindow);
+            return [];
+          },
+          printDeliverySlip: async () => [],
+        }),
+        {
+          getState: () => ({
+            printMethod: 'browser',
+            hardwarePrinter: null,
+            status: 'disconnected',
+          }),
+        },
+      ),
+      isPrintCancelledOnTenantChangeError: () => false,
+    },
+    '@/lib/printer/PrinterService': {
+      printerService: {
+        isConnected: false,
+        reserveBrowserPrintWindow: () => {
+          const win = {
+            closed: false,
+            close() {
+              this.closed = true;
+            },
+          };
+          reservedWindows.push(win);
+          return win;
+        },
+      },
+    },
+    '@/hooks/use-confirm': {
+      useConfirm: () => ({ confirm: async () => true, ConfirmDialog: () => null }),
+    },
+    '@/hooks/useCurrencyUnitAdapter': { useCurrencyUnitAdapter: () => ({ maxDecimals: 2 }) },
+    '@/hooks/useFormatCurrency': { useFormatCurrency: () => (v: number) => `$${v}` },
+    '@/hooks/useFormatDate': { useFormatDate: () => ({ formatTime: () => '12:00' }) },
+    '@/hooks/useWhatsAppReady': { useWhatsAppReady: () => false },
+    '@/hooks/useOrdersLayout': { useOrdersLayoutPreference: () => ({ layout: 'cards' }) },
+    '@/components/ui/button': { Button: ButtonStub },
+    '@/components/layout/Ltr': { Ltr: ({ children }: { children: unknown }) => children },
+    '@/components/tables/TableTurnoverBadge': { TableTurnoverBadge: () => null },
+    '@/components/tables/MoveTableModal': { __esModule: true, default: () => null },
+    '@/components/pos/PaymentModal': { __esModule: true, default: () => null },
+    '@/components/pos/CreateCustomerModal': { __esModule: true, default: () => null },
+    '@/components/pos/AddonModal': { __esModule: true, default: () => null },
+    '@/components/orders/RefundModal': { __esModule: true, default: () => null },
+    '@/components/orders/CorrectPaymentMethodModal': { __esModule: true, default: () => null },
+    '@/components/orders/EditOrderItemModal': { __esModule: true, default: () => null },
+    '@/components/orders/PriceOverrideModal': { PriceOverrideModal: () => null },
+    '@/lib/countries': {
+      getCurrencySymbol: () => '$',
+      getCountryByCode: () => ({ locale: 'en-US' }),
+      countryName: () => 'United States',
+    },
+    '@/lib/whatsapp-share': { sendBillViaFlo: async () => undefined },
+    '@/lib/printer/warnings-toast': { showPrintWarningsToast: () => undefined },
+    '@/lib/printer/warnings': {
+      formatReceiptErrorToast: (detail?: string, fallback?: string) =>
+        detail ? `${fallback} (${detail})` : fallback,
+      extractPrinterErrorMessage: (err: any) => err?.response?.data?.error || err?.message || '',
+      extractPrintErrorToastOptions: () => ({}),
+    },
+    '@/lib/printer/tax-components': {
+      preferChildScopedBill: (bill: Record<string, unknown>) => bill,
+    },
+    '@/lib/utils': { cn: (...args: unknown[]) => args.filter(Boolean).join(' ') },
+    '@/components/orders/OrderCard': { OrderCard: OrderCardStub },
+    '@/components/orders/OrdersMasterList': { OrdersMasterList: () => null },
+    '@/components/orders/OrderDetailPanel': { OrderDetailPanel: () => null },
+  };
+
+  moduleApi._load = function (request: string, parent: any, isMain: boolean) {
+    if (request in mocks) return mocks[request];
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    delete require.cache[
+      moduleApi._resolveFilename('../frontend/src/app/(dashboard)/orders/page', module, false)
+    ];
+    const OrdersPage = require('../frontend/src/app/(dashboard)/orders/page').default;
+
+    const states: unknown[] = [];
+    const setters: Array<(next: unknown) => void> = [];
+    const refs: Array<{ current: unknown }> = [];
+    const effectEntries: Array<{
+      deps: unknown[] | undefined;
+      cleanup?: unknown;
+      initialized: boolean;
+    }> = [];
+    const pendingEffects: Array<() => void> = [];
+
+    const renderPage = () => {
+      let stateIndex = 0;
+      let refIndex = 0;
+      let effectIndex = 0;
+
+      reactHooks.useState = (initial: unknown) => {
+        const idx = stateIndex++;
+        if (idx >= states.length) {
+          states.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
+          setters.push((next: unknown) => {
+            states[idx] =
+              typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
+          });
+        }
+        return [states[idx], setters[idx]];
+      };
+      reactHooks.useRef = (initial: unknown) => {
+        const idx = refIndex++;
+        if (idx >= refs.length) refs.push({ current: initial });
+        return refs[idx];
+      };
+      reactHooks.useEffect = (effect: () => unknown, deps?: unknown[]) => {
+        const idx = effectIndex++;
+        const prev = effectEntries[idx];
+        const changed =
+          !prev ||
+          !prev.initialized ||
+          deps === undefined ||
+          prev.deps === undefined ||
+          deps.length !== prev.deps.length ||
+          deps.some((d, i) => !Object.is(d, prev.deps![i]));
+        if (!prev) effectEntries[idx] = { deps, initialized: false };
+        else prev.deps = deps;
+        if (changed) {
+          pendingEffects.push(() => {
+            const entry = effectEntries[idx];
+            if (typeof entry.cleanup === 'function') entry.cleanup();
+            entry.cleanup = effect();
+            entry.initialized = true;
+          });
+        }
+        return undefined;
+      };
+
+      const tree = OrdersPage({});
+      while (pendingEffects.length > 0) {
+        const run = pendingEffects.shift()!;
+        run();
+      }
+      return tree;
+    };
+
+    const findConfirmPrintBtn = (t: unknown) =>
+      collectElements(
+        t,
+        (el) =>
+          el.type === ButtonStub &&
+          Array.isArray(el.props?.children) &&
+          el.props.children.includes('orders.confirmPrint'),
+      )[0];
+
+    try {
+      renderPage();
+      await new Promise((r) => setTimeout(r, 50));
+      let tree = renderPage();
+
+      const cardEl = collectElements(tree, (el) => el.type === OrderCardStub)[0];
+      assert.ok(cardEl, 'OrderCard renders in cards layout on Active tab');
+
+      // 1. Order for bill 601 is absent from filtered `orders`, yet GET /bills/601 returns 200 -> prints
+      cardEl.props.onPrint(601);
+      tree = renderPage();
+      const confirmBtn601 = findConfirmPrintBtn(tree);
+      assert.ok(confirmBtn601, 'Print confirmation modal opens for bill 601');
+      await confirmBtn601.props.onClick();
+      tree = renderPage();
+
+      assert.deepEqual(
+        billGetRequests,
+        ['/bills/601'],
+        'handlePrint fetches GET /bills/601 even when the order is absent from filtered orders',
+      );
+      assert.deepEqual(
+        printedBillIds,
+        [601],
+        'handlePrint prints fetched bill 601 when order is absent from filtered orders',
+      );
+      assert.equal(
+        reservedWindows[0]?.closed,
+        false,
+        'handlePrint transfers reservedWindow to printBill instead of closing it prematurely',
+      );
+      assert.equal(
+        printedReservedWindows[0],
+        reservedWindows[0],
+        'handlePrint forwards reservedWindow to printBill',
+      );
+      assert.deepEqual(toastErrors, [], 'No billNotFound toast when GET /bills/601 succeeds');
+
+      // 2. GET /bills/604 returns 404 with no fallbackBill -> toasts billNotFound and closes reservedWindow
+      cardEl.props.onPrint(604);
+      tree = renderPage();
+      const confirmBtn604 = findConfirmPrintBtn(tree);
+      assert.ok(confirmBtn604, 'Print confirmation modal opens for bill 604');
+      await confirmBtn604.props.onClick();
+      tree = renderPage();
+
+      assert.deepEqual(
+        billGetRequests,
+        ['/bills/601', '/bills/604'],
+        'handlePrint attempts GET /bills/604 before reporting billNotFound',
+      );
+      assert.deepEqual(
+        printedBillIds,
+        [601],
+        'printBill is not called when GET /bills/604 returns 404',
+      );
+      assert.equal(
+        reservedWindows[1]?.closed,
+        true,
+        'reservedWindow is closed when GET /bills/604 returns 404',
+      );
+      assert.deepEqual(
+        toastErrors,
+        ['orders.billNotFound'],
+        '404 from GET /bills/604 with no fallbackBill toasts orders.billNotFound',
+      );
+
+      // 3. GET /bills/605 returns 200 with null bill and no fallbackBill -> toasts billNotFound and closes reservedWindow
+      toastErrors.length = 0;
+      cardEl.props.onPrint(605);
+      tree = renderPage();
+      await findConfirmPrintBtn(tree).props.onClick();
+      tree = renderPage();
+      assert.equal(
+        reservedWindows[2]?.closed,
+        true,
+        'reservedWindow is closed when GET /bills/605 returns empty bill',
+      );
+      assert.deepEqual(
+        toastErrors,
+        ['orders.billNotFound'],
+        'Missing bill payload from GET /bills/605 with no fallbackBill toasts orders.billNotFound',
+      );
+
+      // 4. Non-404 error from GET /bills/606 -> toasts printReceiptFailed and closes reservedWindow
+      toastErrors.length = 0;
+      cardEl.props.onPrint(606);
+      tree = renderPage();
+      await findConfirmPrintBtn(tree).props.onClick();
+      assert.equal(
+        reservedWindows[3]?.closed,
+        true,
+        'reservedWindow is closed when GET /bills/606 fails with 500',
+      );
+      assert.deepEqual(
+        toastErrors,
+        ['orders.printReceiptFailed (DB busy)'],
+        'Non-404 failure from GET /bills/606 surfaces receipt print error instead of billNotFound',
+      );
+    } finally {
+      for (const entry of effectEntries) {
+        if (typeof entry?.cleanup === 'function') entry.cleanup();
+      }
+    }
+  } finally {
+    moduleApi._load = originalLoad;
+    moduleApi._resolveFilename = originalResolveFilename;
+  }
+});

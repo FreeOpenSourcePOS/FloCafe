@@ -452,6 +452,84 @@ async function runTests() {
     assert(login.status === 200, `the promoted owner can log in (got ${login.status})`);
   }
 
+  // ── Test 8c: successful recovery clears IP failed-login lockout ─────────
+  console.log('\nTest 8c: successful recovery clears failed-login IP lockout');
+  {
+    for (let i = 0; i < 4; i++) {
+      const failRes = await request(app).post('/api/auth/login').send({
+        email: 'owner@example.com',
+        password: 'WrongPassword123',
+      });
+      assert(
+        failRes.status === 401 && failRes.body.attempts_remaining === 4 - i,
+        `failed login ${i + 1}/5 returns 401 with ${4 - i} attempts remaining (got ${failRes.status}, ${JSON.stringify(failRes.body)})`,
+      );
+    }
+
+    const fifthFail = await request(app).post('/api/auth/login').send({
+      email: 'owner@example.com',
+      password: 'WrongPassword123',
+    });
+    assert(
+      fifthFail.status === 401 &&
+        fifthFail.body.attempts_remaining === 0 &&
+        fifthFail.body.lockout_minutes === 15,
+      `5th failed login triggers 15-minute IP lockout (got ${fifthFail.status}, ${JSON.stringify(fifthFail.body)})`,
+    );
+
+    const lockedOutLogin = await request(app).post('/api/auth/login').send({
+      email: 'owner@example.com',
+      password: 'RecoveredOwnerPass123',
+    });
+    assert(
+      lockedOutLogin.status === 429,
+      `6th login is blocked with 429 while IP lockout is active (got ${lockedOutLogin.status})`,
+    );
+
+    // Failed Master PIN recovery must NOT clear the failed-login IP lockout.
+    const failedRecovery = await request(app).post('/api/auth/recover-password').send({
+      email: 'owner@example.com',
+      master_pin: '0000',
+      new_password: 'PostLockoutPass123',
+    });
+    assert(
+      failedRecovery.status === 403,
+      `wrong Master PIN during lockout still fails with 403 (got ${failedRecovery.status})`,
+    );
+    const stillLockedLogin = await request(app).post('/api/auth/login').send({
+      email: 'owner@example.com',
+      password: 'RecoveredOwnerPass123',
+    });
+    assert(
+      stillLockedLogin.status === 429,
+      `login remains locked out (429) after a failed recovery attempt (got ${stillLockedLogin.status})`,
+    );
+
+    // Verified Master PIN recovery resets the password and clears the IP login lockout.
+    const recoveryRes = await request(app).post('/api/auth/recover-password').send({
+      email: 'owner@example.com',
+      master_pin: '1234',
+      new_password: 'PostLockoutPass123',
+    });
+    assert(
+      recoveryRes.status === 200,
+      `recovery succeeds while login IP is locked out (got ${recoveryRes.status}, ${JSON.stringify(recoveryRes.body)})`,
+    );
+
+    const immediateLogin = await request(app).post('/api/auth/login').send({
+      email: 'owner@example.com',
+      password: 'PostLockoutPass123',
+    });
+    assert(
+      immediateLogin.status === 200,
+      `immediate login with new password succeeds after recovery without waiting 15 minutes (got ${immediateLogin.status}, ${JSON.stringify(immediateLogin.body)})`,
+    );
+    assert(
+      !!immediateLogin.body.access_token,
+      'immediate post-recovery login returns an access token',
+    );
+  }
+
   // ── Test 9: rate limiting kicks in after repeated wrong-PIN attempts ─────
   console.log('\nTest 9: rate limiting kicks in after repeated wrong-PIN attempts');
   {

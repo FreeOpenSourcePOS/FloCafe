@@ -1430,6 +1430,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     if (!recovery.ok) {
       return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
     }
+    resetSuccessfulLogin(ip);
     const { restoredOwnerAccess } = recovery;
 
     res.json({
@@ -1596,6 +1597,8 @@ router.post(
           'Owner access changed during recovery. This reset approval was used and cannot be reused. Request a new password reset.',
       });
     }
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    resetSuccessfulLogin(ip);
     res.json({
       message: recovery.restoredOwnerAccess
         ? 'Owner access restored. You can now log in with your new password.'

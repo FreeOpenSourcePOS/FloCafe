@@ -247,6 +247,55 @@ async function main() {
   const users = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
   assertEqualOrThrow(users, 1, 'recovery does not add or remove users');
 
+  // ── Issue #1638: Cloud recovery clears IP failed-login lockout ────────────
+  for (let i = 0; i < 4; i++) {
+    const failRes = await login('WrongPassword123');
+    assertEqualOrThrow(failRes.status, 401, `failed login ${i + 1}/5 returns 401`);
+    assertEqualOrThrow(
+      failRes.body.attempts_remaining,
+      4 - i,
+      `failed login ${i + 1}/5 reports ${4 - i} attempts remaining`,
+    );
+  }
+  const fifthFail = await login('WrongPassword123');
+  assertEqualOrThrow(fifthFail.status, 401, '5th failed login returns 401');
+  assertEqualOrThrow(fifthFail.body.attempts_remaining, 0, '5th failed login exhausts attempts');
+  assertEqualOrThrow(fifthFail.body.lockout_minutes, 15, '5th failed login sets 15m lockout');
+  assertEqualOrThrow(
+    (await login(NEW_PASSWORD)).status,
+    429,
+    '6th login is blocked with 429 while IP lockout is active',
+  );
+
+  // An unapproved/failed cloud recovery must NOT clear the failed-login lockout.
+  redeemError = new CloudRequestError('approved first', 409);
+  res = await request(app)
+    .post(`${cloud}/complete`)
+    .send({ reset_id: RESET_ID, new_password: 'PostCloudLockout123' });
+  assertEqualOrThrow(res.status, 409, 'failed cloud complete returns 409');
+  assertEqualOrThrow(
+    (await login(NEW_PASSWORD)).status,
+    429,
+    'login remains locked out (429) after failed cloud recovery',
+  );
+  redeemError = null;
+
+  res = await request(app)
+    .post(`${cloud}/complete`)
+    .send({ reset_id: RESET_ID, new_password: 'PostCloudLockout123' });
+  assertEqualOrThrow(res.status, 200, 'cloud recovery succeeds while IP login is locked out');
+
+  const postCloudRecoveryLogin = await login('PostCloudLockout123');
+  assertEqualOrThrow(
+    postCloudRecoveryLogin.status,
+    200,
+    'immediate login with new password succeeds after cloud recovery',
+  );
+  assertOrThrow(
+    Boolean(postCloudRecoveryLogin.body.access_token),
+    'immediate post-cloud-recovery login returns an access token',
+  );
+
   const upsertSetting = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at

@@ -530,6 +530,95 @@ async function runTests() {
     );
   }
 
+  // ── Test 8d: verified recovery resets shared login volume budget ────────
+  console.log(
+    '\nTest 8d: verified recovery resets shared login volume budget after 10-request exhaustion',
+  );
+  {
+    const { resetSharedLoginAuthRateLimiter } = require('../main/middleware/security');
+    const prevAuthMax = process.env.FLO_AUTH_RATE_LIMIT_MAX;
+    delete process.env.FLO_AUTH_RATE_LIMIT_MAX;
+    resetSharedLoginAuthRateLimiter();
+    delete require.cache[require.resolve('../main/routes/auth')];
+    const { authRoutes: limitedAuthRoutes } = require('../main/routes/auth');
+    const limitedApp = express();
+    limitedApp.use(express.json());
+    limitedApp.use('/api/auth', limitedAuthRoutes);
+
+    try {
+      for (let i = 0; i < 10; i++) {
+        const res = await request(limitedApp).post('/api/auth/login').send({
+          email: 'owner@example.com',
+          password: 'WrongPassword123',
+        });
+        assert(
+          res.status === (i < 5 ? 401 : 429),
+          `pre-exhaustion login ${i + 1}/10 returns ${i < 5 ? 401 : 429} (got ${res.status})`,
+        );
+      }
+
+      const exhaustedRes = await request(limitedApp).post('/api/auth/login').send({
+        email: 'owner@example.com',
+        password: 'PostLockoutPass123',
+      });
+      assert(
+        exhaustedRes.status === 429 &&
+          exhaustedRes.body?.error === 'Too many authentication attempts. Please try again later.',
+        `11th login is blocked by loginAuthRateLimit (got ${exhaustedRes.status}, ${JSON.stringify(exhaustedRes.body)})`,
+      );
+
+      // Failed Master PIN recovery must NOT reset the shared login volume budget.
+      const failedRecovery = await request(limitedApp).post('/api/auth/recover-password').send({
+        email: 'owner@example.com',
+        master_pin: '0000',
+        new_password: 'PostVolumeResetPass123',
+      });
+      assert(
+        failedRecovery.status === 403,
+        `wrong Master PIN returns 403 during volume exhaustion (got ${failedRecovery.status})`,
+      );
+
+      const stillExhaustedRes = await request(limitedApp).post('/api/auth/login').send({
+        email: 'owner@example.com',
+        password: 'PostLockoutPass123',
+      });
+      assert(
+        stillExhaustedRes.status === 429 &&
+          stillExhaustedRes.body?.error ===
+            'Too many authentication attempts. Please try again later.',
+        `failed recovery preserves loginAuthRateLimit exhaustion (got ${stillExhaustedRes.status}, ${JSON.stringify(stillExhaustedRes.body)})`,
+      );
+
+      // Verified Master PIN recovery clears both failed-login lockout and shared login volume budget.
+      const recoveryRes = await request(limitedApp).post('/api/auth/recover-password').send({
+        email: 'owner@example.com',
+        master_pin: '1234',
+        new_password: 'PostVolumeResetPass123',
+      });
+      assert(
+        recoveryRes.status === 200,
+        `verified Master PIN recovery succeeds after volume exhaustion (got ${recoveryRes.status})`,
+      );
+
+      const immediateLogin = await request(limitedApp).post('/api/auth/login').send({
+        email: 'owner@example.com',
+        password: 'PostVolumeResetPass123',
+      });
+      assert(
+        immediateLogin.status === 200 && Boolean(immediateLogin.body.access_token),
+        `immediate login succeeds after volume reset (got ${immediateLogin.status})`,
+      );
+    } finally {
+      if (prevAuthMax === undefined) {
+        delete process.env.FLO_AUTH_RATE_LIMIT_MAX;
+      } else {
+        process.env.FLO_AUTH_RATE_LIMIT_MAX = prevAuthMax;
+      }
+      resetSharedLoginAuthRateLimiter();
+      delete require.cache[require.resolve('../main/routes/auth')];
+    }
+  }
+
   // ── Test 9: rate limiting kicks in after repeated wrong-PIN attempts ─────
   console.log('\nTest 9: rate limiting kicks in after repeated wrong-PIN attempts');
   {

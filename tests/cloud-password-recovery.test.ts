@@ -247,7 +247,7 @@ async function main() {
   const users = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
   assertEqualOrThrow(users, 1, 'recovery does not add or remove users');
 
-  // ── Issue #1638: Cloud recovery clears IP failed-login lockout ────────────
+  // ── Cloud recovery clears IP failed-login lockout ─────────────────────────
   for (let i = 0; i < 4; i++) {
     const failRes = await login('WrongPassword123');
     assertEqualOrThrow(failRes.status, 401, `failed login ${i + 1}/5 returns 401`);
@@ -295,6 +295,99 @@ async function main() {
     Boolean(postCloudRecoveryLogin.body.access_token),
     'immediate post-cloud-recovery login returns an access token',
   );
+
+  // ── Verified cloud recovery resets shared loginAuthRateLimit volume budget ─
+  {
+    const express = require('express');
+    const { resetSharedLoginAuthRateLimiter } = require('../main/middleware/security');
+    const prevAuthMax = process.env.FLO_AUTH_RATE_LIMIT_MAX;
+    delete process.env.FLO_AUTH_RATE_LIMIT_MAX;
+    resetSharedLoginAuthRateLimiter();
+    delete require.cache[require.resolve('../main/routes/auth')];
+    const { authRoutes: limitedAuthRoutes } = require('../main/routes/auth');
+    const limitedApp = express();
+    limitedApp.use(express.json());
+    limitedApp.use('/api/auth', limitedAuthRoutes);
+
+    try {
+      for (let i = 0; i < 10; i++) {
+        const failRes = await request(limitedApp)
+          .post('/api/auth/login')
+          .send({ email: 'owner@example.com', password: 'WrongPassword123' });
+        assertEqualOrThrow(
+          failRes.status,
+          i < 5 ? 401 : 429,
+          `cloud volume pre-exhaustion login ${i + 1}/10 returns ${i < 5 ? 401 : 429}`,
+        );
+      }
+
+      const exhaustedRes = await request(limitedApp)
+        .post('/api/auth/login')
+        .send({ email: 'owner@example.com', password: 'PostCloudLockout123' });
+      assertEqualOrThrow(
+        exhaustedRes.status,
+        429,
+        '11th login is blocked with 429 by loginAuthRateLimit',
+      );
+      assertEqualOrThrow(
+        exhaustedRes.body?.error,
+        'Too many authentication attempts. Please try again later.',
+        '11th login hits shared loginAuthRateLimit volume ceiling',
+      );
+
+      // Failed cloud recovery must NOT reset the shared login volume budget.
+      redeemError = new CloudRequestError('approved first', 409);
+      const failedComplete = await request(limitedApp)
+        .post(`${cloud}/complete`)
+        .send({ reset_id: RESET_ID, new_password: 'PostCloudVolume123' });
+      assertEqualOrThrow(failedComplete.status, 409, 'failed cloud complete returns 409');
+      const stillExhaustedRes = await request(limitedApp)
+        .post('/api/auth/login')
+        .send({ email: 'owner@example.com', password: 'PostCloudLockout123' });
+      assertEqualOrThrow(
+        stillExhaustedRes.status,
+        429,
+        'failed cloud recovery preserves loginAuthRateLimit exhaustion',
+      );
+      assertEqualOrThrow(
+        stillExhaustedRes.body?.error,
+        'Too many authentication attempts. Please try again later.',
+        'failed cloud recovery keeps shared volume ceiling active',
+      );
+      redeemError = null;
+
+      // Verified cloud recovery clears both failed-login lockout and shared login volume budget.
+      const completeRes = await request(limitedApp)
+        .post(`${cloud}/complete`)
+        .send({ reset_id: RESET_ID, new_password: 'PostCloudVolume123' });
+      assertEqualOrThrow(
+        completeRes.status,
+        200,
+        'verified cloud recovery succeeds after volume exhaustion',
+      );
+
+      const postVolumeLogin = await request(limitedApp)
+        .post('/api/auth/login')
+        .send({ email: 'owner@example.com', password: 'PostCloudVolume123' });
+      assertEqualOrThrow(
+        postVolumeLogin.status,
+        200,
+        'immediate login succeeds after cloud recovery volume reset',
+      );
+      assertOrThrow(
+        Boolean(postVolumeLogin.body.access_token),
+        'immediate post-cloud-volume-reset login returns an access token',
+      );
+    } finally {
+      if (prevAuthMax === undefined) {
+        delete process.env.FLO_AUTH_RATE_LIMIT_MAX;
+      } else {
+        process.env.FLO_AUTH_RATE_LIMIT_MAX = prevAuthMax;
+      }
+      resetSharedLoginAuthRateLimiter();
+      delete require.cache[require.resolve('../main/routes/auth')];
+    }
+  }
 
   const upsertSetting = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))

@@ -23,6 +23,7 @@ import {
   loginAuthRateLimit,
   checkLoginRateLimit,
   incrementFailedLogin,
+  resetLoginAuthRateLimitForIp,
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
   normalizeIpForPinRateLimit,
@@ -1431,6 +1432,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
     }
     resetSuccessfulLogin(ip);
+    resetLoginAuthRateLimitForIp(req);
     const { restoredOwnerAccess } = recovery;
 
     res.json({
@@ -1599,6 +1601,7 @@ router.post(
     }
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     resetSuccessfulLogin(ip);
+    resetLoginAuthRateLimitForIp(req);
     res.json({
       message: recovery.restoredOwnerAccess
         ? 'Owner access restored. You can now log in with your new password.'

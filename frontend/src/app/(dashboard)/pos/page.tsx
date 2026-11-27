@@ -276,14 +276,16 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
   }
 };
 
-const fetchScheduledOrdersSnapshot = async (): Promise<{
+const fetchScheduledOrdersSnapshot = async (
+  signal?: AbortSignal,
+): Promise<{
   loadedOrders: Order[];
   nextCursor: string | null;
   scheduledCount: number;
   blockedCount: number;
 } | null> => {
   try {
-    const { data } = await api.get('/orders/scheduled');
+    const { data } = await api.get('/orders/scheduled', signal ? { signal } : undefined);
     const loadedOrders = (data.orders as Order[]) || [];
     return {
       loadedOrders,
@@ -469,6 +471,10 @@ export default function POSPage() {
   const currentStoreIdRef = useRef(currentStoreId);
   const initialStoreIdRef = useRef<string | number>(currentStoreId);
   const previousStoreIdRef = useRef(currentStoreId);
+  const readLiveStoreId = () =>
+    typeof useAuthStore.getState === 'function'
+      ? useAuthStore.getState().currentTenant?.id || 'default'
+      : currentStoreIdRef.current;
   useEffect(() => {
     currentStoreIdRef.current = currentStoreId;
     if (initialStoreIdRef.current === 'default' && currentTenant?.id != null) {
@@ -1533,10 +1539,10 @@ export default function POSPage() {
   }
 
   const refreshScheduledOrders = useCallback(async () => {
-    const originStoreId = currentStoreIdRef.current;
+    const originStoreId = readLiveStoreId();
     if (!canReadOrders) return;
     const snapshot = await fetchScheduledOrdersSnapshot();
-    if (!snapshot || currentStoreIdRef.current !== originStoreId) return;
+    if (!snapshot || readLiveStoreId() !== originStoreId) return;
     setScheduledOrders(snapshot.loadedOrders);
     setNextScheduledCursor(snapshot.nextCursor);
     setScheduledCount(snapshot.scheduledCount);
@@ -1545,13 +1551,13 @@ export default function POSPage() {
 
   const handleLoadMoreScheduledOrders = async () => {
     if (!nextScheduledCursor || loadingMoreScheduled) return;
-    const originStoreId = currentStoreIdRef.current;
+    const originStoreId = readLiveStoreId();
     setLoadingMoreScheduled(true);
     try {
       const { data } = await api.get('/orders/scheduled', {
         params: { cursor: nextScheduledCursor },
       });
-      if (currentStoreIdRef.current !== originStoreId) return;
+      if (readLiveStoreId() !== originStoreId) return;
       const moreOrders = (data.orders as Order[]) || [];
       setScheduledOrders((prev) => {
         const seen = new Set(prev.map((o) => o.id));
@@ -1567,7 +1573,7 @@ export default function POSPage() {
     } catch {
       /* ignore load more failures */
     } finally {
-      if (currentStoreIdRef.current === originStoreId) {
+      if (readLiveStoreId() === originStoreId) {
         setLoadingMoreScheduled(false);
       }
     }
@@ -1575,11 +1581,11 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!canReadOrders) return;
-    let cancelled = false;
+    const controller = new AbortController();
     const loadScheduledOrders = async () => {
       const originStoreId = currentStoreId;
-      const snapshot = await fetchScheduledOrdersSnapshot();
-      if (cancelled || !snapshot || currentStoreIdRef.current !== originStoreId) return;
+      const snapshot = await fetchScheduledOrdersSnapshot(controller.signal);
+      if (controller.signal.aborted || !snapshot || readLiveStoreId() !== originStoreId) return;
       setScheduledOrders(snapshot.loadedOrders);
       setNextScheduledCursor(snapshot.nextCursor);
       setScheduledCount(snapshot.scheduledCount);
@@ -1594,7 +1600,7 @@ export default function POSPage() {
     };
     window.addEventListener('focus', onFocus);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };

@@ -157,6 +157,11 @@ export function useCashClose() {
   // the POST boundary via the unit adapter, and back to display for the
   // preview).
   const [closeOpen, setCloseOpen] = useState(false);
+  useEffect(() => {
+    if (!closeOpen) return;
+    const interval = setInterval(() => setNowInstant(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, [closeOpen]);
   const [entryView, setEntryView] = useState<'x-report' | 'z-report' | null>(null);
   // Bumping this token is how we re-trigger the load effect on each open.
   // Reset of the form fields happens during render via the token comparison
@@ -219,12 +224,7 @@ export function useCashClose() {
 
   useEffect(() => {
     if (!closeOpen) return;
-    // Empty date = "operator hasn't chosen a day yet" (e.g. arrived via
-    // closeAnotherDay). Skip the fetch entirely: no request, no error,
-    // no auto-jump via closed-Z hydration. Step 1 stays on screen until
-    // the operator picks a date. The reset blocks below keep xLoading
-    // false whenever the effective date is empty, so no state update is
-    // needed here.
+    // Empty date is a valid idle state; the reset blocks below keep xLoading false.
     if (!businessDate) {
       return;
     }

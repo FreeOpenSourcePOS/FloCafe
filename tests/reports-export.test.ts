@@ -267,30 +267,116 @@ function pdfTextIncludesToken(pdfInfo: ExtractedPdfInfo, token: string): boolean
   return false;
 }
 
+function findPdfDictEnd(raw: string, dictStart: number): number {
+  let depth = 0;
+  let parenDepth = 0;
+  let inHexString = false;
+  let escaped = false;
+  for (let i = dictStart; i < raw.length; i++) {
+    const ch = raw[i];
+    if (parenDepth > 0) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '(') {
+        parenDepth += 1;
+      } else if (ch === ')') {
+        parenDepth -= 1;
+      }
+      continue;
+    }
+    if (inHexString) {
+      if (ch === '>') {
+        inHexString = false;
+      }
+      continue;
+    }
+    if (ch === '(') {
+      parenDepth = 1;
+      continue;
+    }
+    if (ch === '<' && raw[i + 1] === '<') {
+      depth += 1;
+      i += 1;
+      continue;
+    }
+    if (ch === '<') {
+      inHexString = true;
+      continue;
+    }
+    if (ch === '>' && raw[i + 1] === '>') {
+      depth -= 1;
+      i += 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
 function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
   const raw = buf.toString('latin1');
   const objects = new Map<number, { body: string; streamText: string | null }>();
-  const objRe = /(\d+)\s+0\s+obj\b([\s\S]*?)endobj/g;
-  let m: RegExpExecArray | null;
-  while ((m = objRe.exec(raw)) !== null) {
-    const id = Number(m[1]);
-    const body = m[2];
-    let streamText: string | null = null;
-    const sIdx = body.indexOf('stream');
-    if (sIdx !== -1) {
-      const eIdx = body.lastIndexOf('endstream');
-      if (eIdx > sIdx) {
-        let slice = body.slice(sIdx + 6, eIdx);
-        if (slice.startsWith('\r\n')) slice = slice.slice(2);
-        else if (slice.startsWith('\n')) slice = slice.slice(1);
-        if (slice.endsWith('\r\n')) slice = slice.slice(0, -2);
-        else if (slice.endsWith('\n')) slice = slice.slice(0, -1);
-        try {
-          streamText = zlib.inflateSync(Buffer.from(slice, 'latin1')).toString('latin1');
-        } catch {}
-      }
+  const objHeaderRe = /(\d+)\s+0\s+obj\b/g;
+  let cursor = 0;
+  while (cursor < raw.length) {
+    objHeaderRe.lastIndex = cursor;
+    const hm = objHeaderRe.exec(raw);
+    if (!hm) break;
+    const id = Number(hm[1]);
+    const headerEnd = hm.index + hm[0].length;
+    let bodyStart = headerEnd;
+    while (bodyStart < raw.length && /\s/.test(raw[bodyStart])) bodyStart++;
+
+    let dictEnd = -1;
+    if (raw[bodyStart] === '<' && raw[bodyStart + 1] === '<') {
+      dictEnd = findPdfDictEnd(raw, bodyStart);
     }
-    objects.set(id, { body, streamText });
+
+    const streamPrefix = dictEnd !== -1 ? raw.slice(dictEnd).match(/^\s*stream(?:\r\n|\n)/) : null;
+    if (dictEnd !== -1 && streamPrefix) {
+      const dict = raw.slice(bodyStart, dictEnd);
+      const dataStart = dictEnd + streamPrefix[0].length;
+      const lenMatch = dict.match(/\/Length\s+(\d+)(?!\s+\d+\s+R)\b/);
+      let streamBytes: Buffer;
+      let afterStream: number;
+      if (lenMatch) {
+        const streamLen = Number(lenMatch[1]);
+        streamBytes = buf.subarray(dataStart, dataStart + streamLen);
+        afterStream = dataStart + streamLen;
+      } else {
+        const eIdx = raw.indexOf('endstream', dataStart);
+        const rawEnd = eIdx !== -1 ? eIdx : raw.length;
+        let trimmedEnd = rawEnd;
+        if (
+          trimmedEnd - 2 >= dataStart &&
+          raw[trimmedEnd - 2] === '\r' &&
+          raw[trimmedEnd - 1] === '\n'
+        ) {
+          trimmedEnd -= 2;
+        } else if (trimmedEnd - 1 >= dataStart && raw[trimmedEnd - 1] === '\n') {
+          trimmedEnd -= 1;
+        }
+        streamBytes = buf.subarray(dataStart, trimmedEnd);
+        afterStream = rawEnd;
+      }
+
+      let streamText: string | null = null;
+      if (/\/Filter\s*(?:\/FlateDecode\b|\[\s*\/FlateDecode\s*\])/.test(dict)) {
+        streamText = zlib.inflateSync(streamBytes).toString('latin1');
+      } else if (!/\/Filter\b/.test(dict)) {
+        streamText = streamBytes.toString('latin1');
+      }
+      objects.set(id, { body: dict, streamText });
+      const endObjIdx = raw.indexOf('endobj', afterStream);
+      cursor = endObjIdx !== -1 ? endObjIdx + 6 : afterStream;
+    } else {
+      const searchFrom = dictEnd !== -1 ? dictEnd : headerEnd;
+      const endObjIdx = raw.indexOf('endobj', searchFrom);
+      const bodyEnd = endObjIdx !== -1 ? endObjIdx : raw.length;
+      objects.set(id, { body: raw.slice(headerEnd, bodyEnd), streamText: null });
+      cursor = endObjIdx !== -1 ? endObjIdx + 6 : raw.length;
+    }
   }
 
   function parseCMap(cmapStr: string): { map: Map<number, string>; keyBytes: number } {
@@ -377,10 +463,21 @@ function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
         if (cmap) fontMap.set(fm[1], cmap);
       }
     }
-    const contentsMatch = obj.body.match(/\/Contents\s+(\d+)\s+0\s+R/);
-    const contentStream = contentsMatch
-      ? objects.get(Number(contentsMatch[1]))?.streamText || ''
-      : '';
+    let contentStream = '';
+    const contentsArrayMatch = obj.body.match(/\/Contents\s*\[([\s\S]*?)\]/);
+    if (contentsArrayMatch) {
+      const refRe = /(\d+)\s+0\s+R/g;
+      let rm: RegExpExecArray | null;
+      while ((rm = refRe.exec(contentsArrayMatch[1])) !== null) {
+        const part = objects.get(Number(rm[1]))?.streamText;
+        if (part) contentStream += `${part}\n`;
+      }
+    } else {
+      const contentsMatch = obj.body.match(/\/Contents\s+(\d+)\s+0\s+R/);
+      if (contentsMatch) {
+        contentStream = objects.get(Number(contentsMatch[1]))?.streamText || '';
+      }
+    }
     let currentFont: { map: Map<number, string>; keyBytes: number } | null = null;
     let pageText = '';
     const tokenRe =
@@ -1203,6 +1300,120 @@ async function run(): Promise<void> {
       false,
       'remote https:// URL is rejected',
     );
+
+    // Regression: extractPdfInfo must slice streams using /Length rather than stripping a trailing
+    // \r\n before `endstream`, because FlateDecode streams ending in 0x0d (\r) followed by \nendstream
+    // look like \r\nendstream and otherwise fail zlib.inflateSync with unexpected end of file.
+    {
+      const titleText = 'X Report (Shift #1 - Cashier User) - 2026-09-28';
+      const titleChars = Array.from(titleText);
+      const glyphHex = titleChars.map((_, idx) => (idx + 1).toString(16).padStart(2, '0')).join('');
+      const cmapLines = titleChars
+        .map((ch, idx) => {
+          const code = (idx + 1).toString(16).padStart(2, '0');
+          const ucs = ch.charCodeAt(0).toString(16).padStart(4, '0');
+          return `<${code}> <${ucs}>`;
+        })
+        .join('\n');
+      const cmapRaw = `/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+${titleChars.length} beginbfchar
+${cmapLines}
+endbfchar
+endcmap`;
+      const cmapCompressed = zlib.deflateSync(Buffer.from(cmapRaw, 'latin1'));
+
+      const baseContent = `BT\n/F1 14 Tf\n<${glyphHex}> Tj\nET\n`;
+      let contentCompressed = zlib.deflateSync(Buffer.from(baseContent, 'latin1'));
+      for (
+        let pad = 0;
+        pad < 512 && contentCompressed[contentCompressed.length - 1] !== 0x0d;
+        pad++
+      ) {
+        contentCompressed = zlib.deflateSync(
+          Buffer.from(`${baseContent}% ${'A'.repeat(pad)}\n`, 'latin1'),
+        );
+      }
+      assert.equal(
+        contentCompressed[contentCompressed.length - 1],
+        0x0d,
+        'regression PDF fixture FlateDecode content stream ends with 0x0d',
+      );
+
+      // Also verify binary streams containing literal "endstream" / "endobj" bytes do not truncate
+      const storedWithMarkers = zlib.deflateSync(
+        Buffer.from(`% endstream endobj 7 0 obj\nBT\n/F1 14 Tf\n<010101> Tj\nET\n`, 'latin1'),
+        { level: 0 },
+      );
+
+      const buildPdfWithStreams = (
+        streams: Array<{ buf: Buffer; dictExtras?: string; filter?: string }>,
+        extraObjects = '',
+      ): Buffer => {
+        const parts: Buffer[] = [Buffer.from('%PDF-1.4\n', 'latin1')];
+        parts.push(
+          Buffer.from(
+            `1 0 obj\n<</Type /Catalog /Pages 2 0 R>>\nendobj\n` +
+              `2 0 obj\n<</Type /Pages /Count 1 /Kids [3 0 R]>>\nendobj\n` +
+              `3 0 obj\n<</Type /Page /Resources <</Font <</F1 4 0 R>>>> /MediaBox [0 0 595 842] /Contents ${
+                streams.length === 1
+                  ? '6 0 R'
+                  : `[${streams.map((_, i) => `${6 + i} 0 R`).join(' ')}]`
+              } /Parent 2 0 R>>\nendobj\n` +
+              `4 0 obj\n<</Type /Font /Subtype /Type3 /ToUnicode 5 0 R>>\nendobj\n` +
+              `5 0 obj\n<</Filter /FlateDecode /Length ${cmapCompressed.length}>> stream\n`,
+            'latin1',
+          ),
+        );
+        parts.push(cmapCompressed);
+        parts.push(Buffer.from('\nendstream\nendobj\n', 'latin1'));
+        streams.forEach((s, i) => {
+          const filter = s.filter ?? '/FlateDecode';
+          const extras = s.dictExtras ? ` ${s.dictExtras}` : '';
+          parts.push(
+            Buffer.from(
+              `${6 + i} 0 obj\n<</Filter ${filter} /Length ${s.buf.length}${extras}>> stream\n`,
+              'latin1',
+            ),
+          );
+          parts.push(s.buf);
+          parts.push(Buffer.from('\nendstream\nendobj\n', 'latin1'));
+        });
+        if (extraObjects) {
+          parts.push(Buffer.from(extraObjects, 'latin1'));
+        }
+        parts.push(Buffer.from('%%EOF\n', 'latin1'));
+        return Buffer.concat(parts);
+      };
+
+      const crTerminatedPdf = buildPdfWithStreams([{ buf: contentCompressed }]);
+      const crInfo = extractPdfInfo(crTerminatedPdf);
+      assert.ok(
+        pdfTextIncludesToken(crInfo, titleText),
+        'extractPdfInfo decodes FlateDecode stream ending in 0x0d followed by \\nendstream',
+      );
+
+      const multiStreamPdf = buildPdfWithStreams(
+        [
+          {
+            buf: storedWithMarkers,
+            filter: '[/FlateDecode]',
+            dictExtras: '/Note (Report (Shift #1) >> x) /ID <ABCD>',
+          },
+          { buf: contentCompressed },
+        ],
+        `8 0 obj\n<</Filter [/ASCII85Decode /FlateDecode] /Length 2>> stream\n~>\nendstream\nendobj\n`,
+      );
+      const multiInfo = extractPdfInfo(multiStreamPdf);
+      assert.ok(
+        pdfTextIncludesToken(multiInfo, 'XXX') && pdfTextIncludesToken(multiInfo, titleText),
+        'extractPdfInfo handles /Contents array, dict strings, multi-stage filters, and embedded endstream/endobj',
+      );
+    }
 
     // (3) Execute save-html-as-pdf on X report, Z report, and date-range daily-sales report
     const xPdfPath = path.join(testDir, `x-report-${businessDate}.pdf`);

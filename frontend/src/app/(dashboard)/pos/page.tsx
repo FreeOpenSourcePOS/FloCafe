@@ -276,6 +276,45 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
   }
 };
 
+const fetchScheduledOrdersSnapshot = async (
+  signal?: AbortSignal,
+): Promise<{
+  loadedOrders: Order[];
+  nextCursor: string | null;
+  scheduledCount: number;
+  blockedCount: number;
+} | null> => {
+  try {
+    const { data } = await api.get('/orders/scheduled', signal ? { signal } : undefined);
+    const loadedOrders = (data.orders as Order[]) || [];
+    return {
+      loadedOrders,
+      nextCursor: data.next_cursor || null,
+      scheduledCount:
+        typeof data.scheduled_count === 'number'
+          ? data.scheduled_count
+          : loadedOrders.filter((o) => o.release_status === 'scheduled').length,
+      blockedCount:
+        typeof data.blocked_count === 'number'
+          ? data.blocked_count
+          : loadedOrders.filter((o) => o.release_status === 'blocked').length,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const fetchPaymentQueueCounts = async (): Promise<{ total: number; blocked: number } | null> => {
+  try {
+    const { data } = await api.get('/orders/awaiting-payment', { params: { limit: '1' } });
+    const awaiting = Number(data.awaiting_count) || 0;
+    const blocked = Number(data.blocked_count) || 0;
+    return { total: awaiting + blocked, blocked };
+  } catch {
+    return null;
+  }
+};
+
 export default function POSPage() {
   const { currentTenant, user, token } = useAuthStore();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
@@ -385,11 +424,13 @@ export default function POSPage() {
   const [ticketModalQrDataUrl, setTicketModalQrDataUrl] = useState<string | null>(null);
   const [ticketModalQrPayload, setTicketModalQrPayload] = useState<string | null>(null);
   const isSendingToPaymentRef = useRef(false);
-  useEffect(() => {
+  const [syncedTenantTimezone, setSyncedTenantTimezone] = useState(currentTenant?.timezone);
+  if (currentTenant?.timezone !== syncedTenantTimezone) {
+    setSyncedTenantTimezone(currentTenant?.timezone);
     if (currentTenant?.timezone) {
       setStoreTimezone(currentTenant.timezone);
     }
-  }, [currentTenant?.timezone]);
+  }
   const [supportError, setSupportError] = useState<{
     title: string;
     subject: string;
@@ -428,11 +469,18 @@ export default function POSPage() {
   const activeToken = token ?? null;
   const currentStoreId = currentTenant?.id || 'default';
   const currentStoreIdRef = useRef(currentStoreId);
-  currentStoreIdRef.current = currentStoreId;
   const initialStoreIdRef = useRef<string | number>(currentStoreId);
-  if (initialStoreIdRef.current === 'default' && currentTenant?.id != null) {
-    initialStoreIdRef.current = currentTenant.id;
-  }
+  const previousStoreIdRef = useRef(currentStoreId);
+  const readLiveStoreId = () =>
+    typeof useAuthStore.getState === 'function'
+      ? useAuthStore.getState().currentTenant?.id || 'default'
+      : currentStoreIdRef.current;
+  useEffect(() => {
+    currentStoreIdRef.current = currentStoreId;
+    if (initialStoreIdRef.current === 'default' && currentTenant?.id != null) {
+      initialStoreIdRef.current = currentTenant.id;
+    }
+  }, [currentStoreId, currentTenant?.id]);
   const sessionEpochRef = useRef(0);
   const lastActiveSessionRef = useRef<{
     userId: string | null;
@@ -536,13 +584,37 @@ export default function POSPage() {
     shift.setCloseModalOpen(false);
   }, [activeUserId, activeToken, cashDrawer, shift]);
 
-  useEffect(() => {
-    if (!supportError) return;
-    if (!checkSessionCurrent(supportError.context)) {
-      clearSupportErrorState();
+  // Reset store-scoped state synchronously during render when switching stores.
+  // Keep supportError across the initial 'default' -> hydrated tenant transition.
+  const [syncedStoreId, setSyncedStoreId] = useState(currentStoreId);
+  if (syncedStoreId !== currentStoreId) {
+    const switchedRealStore = syncedStoreId !== 'default';
+    setSyncedStoreId(currentStoreId);
+    setActiveCounter(null);
+    setShowPaymentQueue(false);
+    setCounters([]);
+    setScheduledOrdersEnabled(false);
+    setShowScheduledOrders(false);
+    setScheduledOrders([]);
+    setNextScheduledCursor(null);
+    setScheduledCount(0);
+    setBlockedScheduledCount(0);
+    if (switchedRealStore) {
+      setSupportSubmitting(false);
+      setSupportError(null);
+      setSentTicketId(null);
     }
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportError, currentStoreId, activeUserId, activeToken]);
+  }
+
+  useEffect(() => {
+    const prevStoreId = previousStoreIdRef.current;
+    previousStoreIdRef.current = currentStoreId;
+    if (prevStoreId !== 'default' && prevStoreId !== currentStoreId) {
+      currentSupportTicketRef.current = null;
+      supportSubmitTokenRef.current = null;
+      supportLogSnapshotRef.current = null;
+    }
+  }, [currentStoreId]);
 
   const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
     authToken ? { Authorization: `Bearer ${authToken}` } : {};
@@ -1455,45 +1527,37 @@ export default function POSPage() {
   };
 
   const canReadOrders = tenantCan(currentTenant, 'orders.read');
-  const refreshScheduledOrders = useCallback(async () => {
-    const originStoreId = currentStoreIdRef.current;
+  const [syncedCanReadOrders, setSyncedCanReadOrders] = useState(canReadOrders);
+  if (syncedCanReadOrders !== canReadOrders) {
+    setSyncedCanReadOrders(canReadOrders);
     if (!canReadOrders) {
       setScheduledOrders([]);
       setNextScheduledCursor(null);
       setScheduledCount(0);
       setBlockedScheduledCount(0);
-      return;
     }
-    try {
-      const { data } = await api.get('/orders/scheduled');
-      if (currentStoreIdRef.current !== originStoreId) return;
-      const loadedOrders = (data.orders as Order[]) || [];
-      setScheduledOrders(loadedOrders);
-      setNextScheduledCursor(data.next_cursor || null);
-      if (typeof data.scheduled_count === 'number') {
-        setScheduledCount(data.scheduled_count);
-      } else {
-        setScheduledCount(loadedOrders.filter((o) => o.release_status === 'scheduled').length);
-      }
-      if (typeof data.blocked_count === 'number') {
-        setBlockedScheduledCount(data.blocked_count);
-      } else {
-        setBlockedScheduledCount(loadedOrders.filter((o) => o.release_status === 'blocked').length);
-      }
-    } catch {
-      /* ignore background poll failures */
-    }
+  }
+
+  const refreshScheduledOrders = useCallback(async () => {
+    const originStoreId = readLiveStoreId();
+    if (!canReadOrders) return;
+    const snapshot = await fetchScheduledOrdersSnapshot();
+    if (!snapshot || readLiveStoreId() !== originStoreId) return;
+    setScheduledOrders(snapshot.loadedOrders);
+    setNextScheduledCursor(snapshot.nextCursor);
+    setScheduledCount(snapshot.scheduledCount);
+    setBlockedScheduledCount(snapshot.blockedCount);
   }, [canReadOrders]);
 
   const handleLoadMoreScheduledOrders = async () => {
     if (!nextScheduledCursor || loadingMoreScheduled) return;
-    const originStoreId = currentStoreIdRef.current;
+    const originStoreId = readLiveStoreId();
     setLoadingMoreScheduled(true);
     try {
       const { data } = await api.get('/orders/scheduled', {
         params: { cursor: nextScheduledCursor },
       });
-      if (currentStoreIdRef.current !== originStoreId) return;
+      if (readLiveStoreId() !== originStoreId) return;
       const moreOrders = (data.orders as Order[]) || [];
       setScheduledOrders((prev) => {
         const seen = new Set(prev.map((o) => o.id));
@@ -1509,26 +1573,38 @@ export default function POSPage() {
     } catch {
       /* ignore load more failures */
     } finally {
-      if (currentStoreIdRef.current === originStoreId) {
+      if (readLiveStoreId() === originStoreId) {
         setLoadingMoreScheduled(false);
       }
     }
   };
 
   useEffect(() => {
-    void refreshScheduledOrders();
+    if (!canReadOrders) return;
+    const controller = new AbortController();
+    const loadScheduledOrders = async () => {
+      const originStoreId = currentStoreId;
+      const snapshot = await fetchScheduledOrdersSnapshot(controller.signal);
+      if (controller.signal.aborted || !snapshot || readLiveStoreId() !== originStoreId) return;
+      setScheduledOrders(snapshot.loadedOrders);
+      setNextScheduledCursor(snapshot.nextCursor);
+      setScheduledCount(snapshot.scheduledCount);
+      setBlockedScheduledCount(snapshot.blockedCount);
+    };
+    void loadScheduledOrders();
     const interval = setInterval(() => {
-      void refreshScheduledOrders();
+      void loadScheduledOrders();
     }, 10000);
     const onFocus = () => {
-      void refreshScheduledOrders();
+      void loadScheduledOrders();
     };
     window.addEventListener('focus', onFocus);
     return () => {
+      controller.abort();
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [currentStoreId, refreshScheduledOrders]);
+  }, [canReadOrders, currentStoreId]);
 
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
@@ -1821,15 +1897,6 @@ export default function POSPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setActiveCounter(null);
-    setShowPaymentQueue(false);
-    setCounters([]);
-    setScheduledOrdersEnabled(false);
-    setShowScheduledOrders(false);
-    setScheduledOrders([]);
-    setNextScheduledCursor(null);
-    setScheduledCount(0);
-    setBlockedScheduledCount(0);
 
     api
       .get('/settings/multi_counter_enabled')
@@ -1929,26 +1996,33 @@ export default function POSPage() {
     }
   };
 
-  const refreshPaymentQueueCounts = useCallback(async () => {
-    try {
-      const { data } = await api.get('/orders/awaiting-payment', { params: { limit: '1' } });
-      const awaiting = Number(data.awaiting_count) || 0;
-      const blocked = Number(data.blocked_count) || 0;
-      setPaymentQueueCount(awaiting + blocked);
-      setPaymentQueueBlockedCount(blocked);
-    } catch {
-      // ignore
+  const refreshPaymentQueueCounts = async () => {
+    const counts = await fetchPaymentQueueCounts();
+    if (counts) {
+      setPaymentQueueCount(counts.total);
+      setPaymentQueueBlockedCount(counts.blocked);
     }
-  }, []);
+  };
 
   useEffect(() => {
     if (!multiCounterEnabled) return;
-    void refreshPaymentQueueCounts();
+    let cancelled = false;
+    const loadCounts = async () => {
+      const counts = await fetchPaymentQueueCounts();
+      if (!cancelled && counts) {
+        setPaymentQueueCount(counts.total);
+        setPaymentQueueBlockedCount(counts.blocked);
+      }
+    };
+    void loadCounts();
     const interval = setInterval(() => {
-      void refreshPaymentQueueCounts();
+      void loadCounts();
     }, 15000);
-    return () => clearInterval(interval);
-  }, [multiCounterEnabled, refreshPaymentQueueCounts]);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [multiCounterEnabled]);
 
   const handleLookupAndPayTicket = useCallback(
     async (ticket: string) => {

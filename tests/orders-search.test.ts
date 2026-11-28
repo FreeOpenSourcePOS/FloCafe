@@ -86,6 +86,29 @@ function collectElements(
   return result;
 }
 
+function createCallbackMemoizer() {
+  const entries: Array<{ fn: unknown; deps: unknown[] | undefined }> = [];
+  let cursor = 0;
+  return {
+    reset() {
+      cursor = 0;
+    },
+    useCallback<T extends (...args: unknown[]) => unknown>(fn: T, deps?: unknown[]): T {
+      const idx = cursor++;
+      const prev = entries[idx];
+      const unchanged =
+        prev !== undefined &&
+        deps !== undefined &&
+        prev.deps !== undefined &&
+        deps.length === prev.deps.length &&
+        deps.every((d, i) => Object.is(d, prev.deps![i]));
+      if (unchanged) return prev.fn as T;
+      entries[idx] = { fn, deps };
+      return fn;
+    },
+  };
+}
+
 test('OrdersPage renders Load More and fetches the next page when search is empty on non-held tabs only', async () => {
   const root = path.join(__dirname, '..');
   const moduleApi = require('module') as {
@@ -347,10 +370,13 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
     const refs: Array<{ current: unknown }> = [];
     const effects: Array<() => unknown> = [];
     let effectsCollected = false;
+    const callbackMemoizer = createCallbackMemoizer();
 
     const renderPage = (OrdersPage: () => unknown) => {
       let stateIndex = 0;
       let refIndex = 0;
+      callbackMemoizer.reset();
+      reactHooks.useCallback = callbackMemoizer.useCallback;
       reactHooks.useState = (initial: unknown) => {
         const idx = stateIndex++;
         if (idx >= states.length) {
@@ -798,11 +824,14 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
         initialized: boolean;
       }> = [];
       const pendingEffects: Array<() => void> = [];
+      const callbackMemoizer = createCallbackMemoizer();
 
       const render = <P>(Component: (props: P) => unknown, props: P) => {
         let stateIndex = 0;
         let refIndex = 0;
         let effectIndex = 0;
+        callbackMemoizer.reset();
+        reactHooks.useCallback = callbackMemoizer.useCallback;
 
         reactHooks.useState = (initial: unknown) => {
           const idx = stateIndex++;
@@ -1616,6 +1645,7 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       initialized: boolean;
     }> = [];
     const pendingEffects: Array<() => void> = [];
+    const callbackMemoizer = createCallbackMemoizer();
 
     const originalSetInterval = globalThis.setInterval;
     let backupPollCallback: (() => void) | null = null;
@@ -1630,6 +1660,8 @@ test('OrdersPage unified tabs, conditional table filter, clear filters, cross-ta
       let stateIndex = 0;
       let refIndex = 0;
       let effectIndex = 0;
+      callbackMemoizer.reset();
+      reactHooks.useCallback = callbackMemoizer.useCallback;
 
       reactHooks.useState = (initial: unknown) => {
         const idx = stateIndex++;

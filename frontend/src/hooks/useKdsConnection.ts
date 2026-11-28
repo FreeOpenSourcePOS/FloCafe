@@ -327,11 +327,13 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     () => {},
   );
   const onSessionClearedRef = useRef(onSessionCleared);
-  onSessionClearedRef.current = onSessionCleared;
   const onSessionTokenReplacedRef = useRef(onSessionTokenReplaced);
-  onSessionTokenReplacedRef.current = onSessionTokenReplaced;
   const onSessionAuthenticatedRef = useRef(onSessionAuthenticated);
-  onSessionAuthenticatedRef.current = onSessionAuthenticated;
+  useEffect(() => {
+    onSessionClearedRef.current = onSessionCleared;
+    onSessionTokenReplacedRef.current = onSessionTokenReplaced;
+    onSessionAuthenticatedRef.current = onSessionAuthenticated;
+  }, [onSessionCleared, onSessionTokenReplaced, onSessionAuthenticated]);
   const activeTokenRef = useRef<string | null>(null);
   const clearStoredSession = useCallback((expectedToken?: string | null) => {
     const fallbackToken = expectedToken !== undefined ? expectedToken : activeTokenRef.current;

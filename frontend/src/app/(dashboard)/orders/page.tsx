@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import api, {
   captureClientOperationFailure,
   createOperationReference,
@@ -267,12 +267,36 @@ export default function OrdersPage() {
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '' });
   const ordersFiltersRef = useRef(filters);
-  ordersFiltersRef.current = filters;
   const tabFilterRef = useRef(tabFilter);
-  tabFilterRef.current = tabFilter;
   const ordersFilterKey = JSON.stringify([tabFilter, filters.search, filters.table, filters.type]);
   const ordersFilterKeyRef = useRef(ordersFilterKey);
-  ordersFilterKeyRef.current = ordersFilterKey;
+  useEffect(() => {
+    ordersFiltersRef.current = filters;
+    tabFilterRef.current = tabFilter;
+    ordersFilterKeyRef.current = ordersFilterKey;
+  }, [filters, tabFilter, ordersFilterKey]);
+  const updateTabFilter = useCallback((next: FilterType) => {
+    tabFilterRef.current = next;
+    const currentFilters = ordersFiltersRef.current;
+    ordersFilterKeyRef.current = JSON.stringify([
+      next,
+      currentFilters.search,
+      currentFilters.table,
+      currentFilters.type,
+    ]);
+    setTabFilter(next);
+  }, []);
+  const updateFilters = useCallback((updater: Filters | ((prev: Filters) => Filters)) => {
+    const next = typeof updater === 'function' ? updater(ordersFiltersRef.current) : updater;
+    ordersFiltersRef.current = next;
+    ordersFilterKeyRef.current = JSON.stringify([
+      tabFilterRef.current,
+      next.search,
+      next.table,
+      next.type,
+    ]);
+    setFilters(next);
+  }, []);
   const previousOrdersFilterKeyRef = useRef(ordersFilterKey);
   const ordersFetchIdRef = useRef(0);
   const ordersMutationGenerationRef = useRef(0);
@@ -349,7 +373,9 @@ export default function OrdersPage() {
   const activeUserId = user?.id == null ? null : String(user.id);
   const currentTenantKey = currentTenant?.id == null ? '__default__' : String(currentTenant.id);
   const currentTenantKeyRef = useRef(currentTenantKey);
-  currentTenantKeyRef.current = currentTenantKey;
+  useEffect(() => {
+    currentTenantKeyRef.current = currentTenantKey;
+  }, [currentTenantKey]);
   const kotSettingsReadyTenantRef = useRef<string | null>(null);
   const kotSettingsPromiseRef = useRef<{
     tenantKey: string;
@@ -498,7 +524,9 @@ export default function OrdersPage() {
   const { layout: ordersLayout } = useOrdersLayoutPreference();
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const selectedOrderIdRef = useRef<number | null>(selectedOrderId);
-  selectedOrderIdRef.current = selectedOrderId;
+  useEffect(() => {
+    selectedOrderIdRef.current = selectedOrderId;
+  }, [selectedOrderId]);
   const [selectedOrderSnapshot, setSelectedOrderSnapshot] = useState<Order | null>(null);
   const [selectedOrderNotInCurrentList, setSelectedOrderNotInCurrentList] = useState(false);
   const [selectedOrderMissing, setSelectedOrderMissing] = useState(false);
@@ -511,8 +539,23 @@ export default function OrdersPage() {
     orderId: number;
     snapshot: Order | null;
   } | null>(null);
-  const [crossTabFallbackOrders, setCrossTabFallbackOrders] = useState<Order[] | null>(null);
+  const [crossTabFallbackState, setCrossTabFallbackState] = useState<{
+    filterKey: string;
+    orders: Order[];
+  } | null>(null);
   const [settledOrdersFilterKey, setSettledOrdersFilterKey] = useState<string | null>(null);
+  const trimmedOrdersSearch = filters.search.trim();
+  const shouldQueryCrossTabFallback =
+    !loading &&
+    settledOrdersFilterKey === ordersFilterKey &&
+    tabFilter !== 'all' &&
+    tabFilter !== 'held' &&
+    orders.length === 0 &&
+    trimmedOrdersSearch !== '';
+  const crossTabFallbackOrders =
+    shouldQueryCrossTabFallback && crossTabFallbackState?.filterKey === ordersFilterKey
+      ? crossTabFallbackState.orders
+      : null;
   const selectedOrderLookupIdRef = useRef(0);
   const selectedOrderLookupInProgressRef = useRef<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
@@ -872,7 +915,7 @@ export default function OrdersPage() {
     selectedOrderLookupIdRef.current++;
     selectedOrderLookupInProgressRef.current = null;
     setSettledTransition(null);
-    setCrossTabFallbackOrders(null);
+    setCrossTabFallbackState(null);
     setSettledOrdersFilterKey(null);
     setSelectedOrderId(carried ? carried.orderId : null);
     setSelectedOrderSnapshot(carried ? carried.snapshot : null);
@@ -889,16 +932,7 @@ export default function OrdersPage() {
   }, [ordersFilterKey]);
 
   useEffect(() => {
-    const trimmedSearch = filters.search.trim();
-    if (
-      loading ||
-      settledOrdersFilterKey !== ordersFilterKey ||
-      tabFilter === 'all' ||
-      tabFilter === 'held' ||
-      orders.length > 0 ||
-      trimmedSearch === ''
-    ) {
-      setCrossTabFallbackOrders(null);
+    if (!shouldQueryCrossTabFallback) {
       return;
     }
     let cancelled = false;
@@ -907,23 +941,26 @@ export default function OrdersPage() {
         params: {
           view: 'all',
           per_page: 5,
-          search: trimmedSearch,
+          search: trimmedOrdersSearch,
         },
       })
       .then(({ data }) => {
         if (!cancelled) {
-          setCrossTabFallbackOrders(Array.isArray(data?.orders) ? data.orders : []);
+          setCrossTabFallbackState({
+            filterKey: ordersFilterKey,
+            orders: Array.isArray(data?.orders) ? data.orders : [],
+          });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setCrossTabFallbackOrders(null);
+          setCrossTabFallbackState(null);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [loading, settledOrdersFilterKey, orders.length, tabFilter, filters.search, ordersFilterKey]);
+  }, [shouldQueryCrossTabFallback, trimmedOrdersSearch, ordersFilterKey]);
 
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
@@ -1307,7 +1344,7 @@ export default function OrdersPage() {
       ? { orderId: selectedOrder.id, snapshot: selectedOrder }
       : null;
     setSettledTransition(null);
-    setTabFilter('completed');
+    updateTabFilter('completed');
   };
 
   const handleShowMatchesInAll = () => {
@@ -1315,10 +1352,10 @@ export default function OrdersPage() {
       ordersLayout === 'split' && crossTabFallbackOrders?.length === 1
         ? { orderId: crossTabFallbackOrders[0].id, snapshot: crossTabFallbackOrders[0] }
         : null;
-    setFilters((prev) =>
+    updateFilters((prev) =>
       prev.type === '' && prev.table === '' ? prev : { ...prev, type: '', table: '' },
     );
-    setTabFilter('all');
+    updateTabFilter('all');
   };
 
   const syncOrderBillInState = (orderId: number, billToSync: Bill) => {
@@ -2182,7 +2219,7 @@ export default function OrdersPage() {
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
       <Suspense fallback={null}>
-        <OrdersTableQuerySync onFiltersChange={setFilters} />
+        <OrdersTableQuerySync onFiltersChange={updateFilters} />
       </Suspense>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -2193,7 +2230,7 @@ export default function OrdersPage() {
               key={f}
               type="button"
               aria-pressed={tabFilter === f}
-              onClick={() => setTabFilter(f)}
+              onClick={() => updateTabFilter(f)}
               className={cn(
                 'min-h-[40px] px-3.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors inline-flex items-center gap-1.5',
                 tabFilter === f
@@ -2233,7 +2270,7 @@ export default function OrdersPage() {
               type="text"
               placeholder={tOrders('search')}
               value={filters.search}
-              onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+              onChange={(e) => updateFilters((prev) => ({ ...prev, search: e.target.value }))}
               className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
                 filters.search !== '' ? 'pe-9' : 'pe-3'
               } text-sm outline-none focus:ring-2 focus:ring-brand`}
@@ -2241,7 +2278,7 @@ export default function OrdersPage() {
             {filters.search !== '' && (
               <button
                 type="button"
-                onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+                onClick={() => updateFilters((prev) => ({ ...prev, search: '' }))}
                 aria-label={tCommon('clear')}
                 className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
               >
@@ -2255,7 +2292,7 @@ export default function OrdersPage() {
             value={filters.type}
             onChange={(e) => {
               const nextType = e.target.value;
-              setFilters((prev) => ({
+              updateFilters((prev) => ({
                 ...prev,
                 type: nextType,
                 table: nextType === '' || nextType === 'dine_in' ? prev.table : '',
@@ -2275,7 +2312,7 @@ export default function OrdersPage() {
             (filters.type === '' || filters.type === 'dine_in') && (
               <select
                 value={filters.table}
-                onChange={(e) => setFilters((prev) => ({ ...prev, table: e.target.value }))}
+                onChange={(e) => updateFilters((prev) => ({ ...prev, table: e.target.value }))}
                 className="min-h-[40px] px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
               >
                 <option value="">{tOrders('allTables')}</option>
@@ -2291,7 +2328,7 @@ export default function OrdersPage() {
             <button
               type="button"
               data-testid="orders-clear-filters"
-              onClick={() => setFilters({ search: '', table: '', type: '' })}
+              onClick={() => updateFilters({ search: '', table: '', type: '' })}
               className="min-h-[40px] px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-sm font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
             >
               <X size={14} className="me-0.5" />

@@ -473,6 +473,7 @@ try {
   };
 
   const React = require(path.join(ROOT, 'frontend/node_modules/react'));
+  const toastErrors: string[] = [];
   const mocks: Record<string, unknown> = {
     react: {
       ...React,
@@ -487,7 +488,7 @@ try {
     },
     'react-hot-toast': {
       __esModule: true,
-      default: { error: () => undefined },
+      default: { error: (msg: string) => toastErrors.push(msg) },
     },
     'use-intl': {
       useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
@@ -703,6 +704,61 @@ try {
     [{ product: coffeeProduct, quantity: 3 }],
     'clicking a product card while search is "3*" adds quantity 3',
   );
+
+  // 5b. Fractional multiplier rejection followed by integer multiplier (including live DOM value ahead of render)
+  addedProducts.length = 0;
+  searchUpdates.length = 0;
+  toastErrors.length = 0;
+  const fractionalTree = ProductGrid({
+    categories: [],
+    products: [coffeeProduct],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: '1.5*Coffee',
+    setSearch: (s: string) => searchUpdates.push(s),
+    currency: 'USD',
+    onProductClick: (product: unknown, quantity: number) =>
+      addedProducts.push({ product, quantity }),
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  const fractionalInput = findByTestId(fractionalTree, 'pos-product-search');
+  assert.ok(fractionalInput, 'renders search input for fractional multiplier');
+  (fractionalInput.props.onKeyDown as (e: Record<string, unknown>) => void)({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    currentTarget: { value: '1.5*Coffee' },
+  });
+  assert.strictEqual(
+    addedProducts.length,
+    0,
+    'fractional multiplier 1.5*Coffee must not add integer-only product',
+  );
+  assert.deepStrictEqual(
+    toastErrors,
+    ['pos.orderQuantityInvalid'],
+    'fractional multiplier rejection surfaces invalid-quantity error toast',
+  );
+  assert.strictEqual(
+    searchUpdates.length,
+    0,
+    'fractional multiplier rejection preserves search input',
+  );
+
+  // Simulate Enter firing with live input value "3*Coffee" even before React re-renders search="1.5*Coffee"
+  (fractionalInput.props.onKeyDown as (e: Record<string, unknown>) => void)({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+    currentTarget: { value: '3*Coffee' },
+  });
+  assert.deepStrictEqual(
+    addedProducts,
+    [{ product: coffeeProduct, quantity: 3 }],
+    '3*Coffee Enter uses live input value and adds quantity 3 right after 1.5*Coffee rejection',
+  );
+  assert.deepStrictEqual(searchUpdates, [''], '3*Coffee Enter clears search input');
 
   function countByTestId(node: unknown, testId: string): number {
     if (Array.isArray(node)) {

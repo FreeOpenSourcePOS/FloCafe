@@ -69,6 +69,8 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await setLanguage(page, 'en');
     await page.goto(`${BASE}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    // Wait for catalog hydration so keyboard/multiplier tests never race an empty products list
+    await expect(page.getByTestId('pos-product-card').first()).toBeVisible();
   });
 
   test('? opens keyboard shortcuts modal cheat sheet, Escape closes it', async ({ page }) => {
@@ -118,20 +120,27 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const searchInput = page.getByTestId('pos-product-search');
     await expect(searchInput).toBeFocused();
 
+    // Ensure the catalog card is hydrated before testing search & multiplier Enter
+    await expect(
+      page.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first(),
+    ).toBeVisible();
+
     // Integer-only products must reject fractional multiplier quantities
     await searchInput.fill('1.5*Coffee');
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('cart-item')).toHaveCount(0);
+    await expect(searchInput).toHaveValue('1.5*Coffee');
 
     // Type 3*Coffee to test multiplier search
     await searchInput.fill('3*Coffee');
     await page.keyboard.press('Enter');
 
-    // Cart should now have item with quantity 3
+    // Cart should now have item with quantity 3 and search should clear
     const cartItem = page.getByTestId('cart-item').first();
     await expect(cartItem).toBeVisible({ timeout: 5_000 });
     const qtySpan = cartItem.getByTestId('cart-item-qty');
     await expect(qtySpan).toHaveText('3');
+    await expect(searchInput).toHaveValue('');
 
     await searchInput.fill('2*Coffee');
     await page.getByTestId('pos-product-card').first().click();

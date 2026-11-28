@@ -150,6 +150,21 @@ function isValidProductQuantity(product: Product, quantity: number): boolean {
   return step !== null && Math.abs(quantity / step - Math.round(quantity / step)) <= 1e-8;
 }
 
+function filterProductsByCategoryAndQuery(
+  products: Product[],
+  filterCategoryId: string | null,
+  query: string,
+): Product[] {
+  const normalizedQuery = query.toLowerCase();
+  return products.filter((p) => {
+    const matchCat =
+      filterCategoryId === null ||
+      (p.category_id != null && String(p.category_id) === filterCategoryId);
+    const matchSearch = !normalizedQuery || p.name.toLowerCase().includes(normalizedQuery);
+    return matchCat && matchSearch;
+  });
+}
+
 const CATEGORY_COLORS: Record<
   string,
   {
@@ -400,13 +415,7 @@ export default function ProductGrid({
 
   const sortedProducts = useMemo(() => sortProducts(products, itemSort), [products, itemSort]);
 
-  const filtered = sortedProducts.filter((p) => {
-    const matchCat =
-      filterCategoryId === null ||
-      (p.category_id != null && String(p.category_id) === filterCategoryId);
-    const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  const filtered = filterProductsByCategoryAndQuery(sortedProducts, filterCategoryId, activeQuery);
 
   return (
     <div
@@ -432,14 +441,16 @@ export default function ProductGrid({
               ) {
                 return;
               }
-              if (e.key === 'Escape' && search) {
+              const currentSearch =
+                typeof e.currentTarget?.value === 'string' ? e.currentTarget.value : search;
+              if (e.key === 'Escape' && currentSearch) {
                 e.stopPropagation?.();
                 setSearch('');
                 return;
               }
               if (e.key !== 'Enter' || disabled) return;
               // Typed or pasted barcode, or multiplier search (e.g. 3*latte)
-              const trimmed = search.trim();
+              const trimmed = currentSearch.trim();
               if (!trimmed) return;
               const rawMatch = resolveScannedProduct(trimmed, products);
               const parsedQty = rawMatch ? null : parseQuantitySearch(trimmed);
@@ -463,9 +474,13 @@ export default function ProductGrid({
                 return;
               }
 
+              const liveFiltered =
+                currentSearch === search
+                  ? filtered
+                  : filterProductsByCategoryAndQuery(sortedProducts, filterCategoryId, targetCode);
               const matchedProduct =
-                filtered.find((p) => p.name.toLowerCase() === targetCode.toLowerCase()) ||
-                (filtered.length === 1 ? filtered[0] : null);
+                liveFiltered.find((p) => p.name.toLowerCase() === targetCode.toLowerCase()) ||
+                (liveFiltered.length === 1 ? liveFiltered[0] : null);
 
               if (matchedProduct) {
                 if (!validateSelectionQuantity(matchedProduct, quantityToAdd)) return;

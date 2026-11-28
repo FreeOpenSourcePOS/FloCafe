@@ -269,27 +269,40 @@ function pdfTextIncludesToken(pdfInfo: ExtractedPdfInfo, token: string): boolean
 
 function findPdfDictEnd(raw: string, dictStart: number): number {
   let depth = 0;
-  let inString = false;
+  let parenDepth = 0;
+  let inHexString = false;
   let escaped = false;
   for (let i = dictStart; i < raw.length; i++) {
     const ch = raw[i];
-    if (inString) {
+    if (parenDepth > 0) {
       if (escaped) {
         escaped = false;
       } else if (ch === '\\') {
         escaped = true;
+      } else if (ch === '(') {
+        parenDepth += 1;
       } else if (ch === ')') {
-        inString = false;
+        parenDepth -= 1;
+      }
+      continue;
+    }
+    if (inHexString) {
+      if (ch === '>') {
+        inHexString = false;
       }
       continue;
     }
     if (ch === '(') {
-      inString = true;
+      parenDepth = 1;
       continue;
     }
     if (ch === '<' && raw[i + 1] === '<') {
       depth += 1;
       i += 1;
+      continue;
+    }
+    if (ch === '<') {
+      inHexString = true;
       continue;
     }
     if (ch === '>' && raw[i + 1] === '>') {
@@ -349,7 +362,7 @@ function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
       }
 
       let streamText: string | null = null;
-      if (/\/FlateDecode\b/.test(dict)) {
+      if (/\/Filter\s*(?:\/FlateDecode\b|\[\s*\/FlateDecode\s*\])/.test(dict)) {
         streamText = zlib.inflateSync(streamBytes).toString('latin1');
       } else if (!/\/Filter\b/.test(dict)) {
         streamText = streamBytes.toString('latin1');
@@ -1333,11 +1346,14 @@ endcmap`;
 
       // Also verify binary streams containing literal "endstream" / "endobj" bytes do not truncate
       const storedWithMarkers = zlib.deflateSync(
-        Buffer.from(`% endstream endobj\nBT\n/F1 14 Tf\n<01> Tj\nET\n`, 'latin1'),
+        Buffer.from(`% endstream endobj 7 0 obj\nBT\n/F1 14 Tf\n<010101> Tj\nET\n`, 'latin1'),
         { level: 0 },
       );
 
-      const buildPdfWithStreams = (streams: Buffer[]): Buffer => {
+      const buildPdfWithStreams = (
+        streams: Array<{ buf: Buffer; dictExtras?: string; filter?: string }>,
+        extraObjects = '',
+      ): Buffer => {
         const parts: Buffer[] = [Buffer.from('%PDF-1.4\n', 'latin1')];
         parts.push(
           Buffer.from(
@@ -1355,32 +1371,47 @@ endcmap`;
         );
         parts.push(cmapCompressed);
         parts.push(Buffer.from('\nendstream\nendobj\n', 'latin1'));
-        streams.forEach((sBuf, i) => {
+        streams.forEach((s, i) => {
+          const filter = s.filter ?? '/FlateDecode';
+          const extras = s.dictExtras ? ` ${s.dictExtras}` : '';
           parts.push(
             Buffer.from(
-              `${6 + i} 0 obj\n<</Filter /FlateDecode /Length ${sBuf.length}>> stream\n`,
+              `${6 + i} 0 obj\n<</Filter ${filter} /Length ${s.buf.length}${extras}>> stream\n`,
               'latin1',
             ),
           );
-          parts.push(sBuf);
+          parts.push(s.buf);
           parts.push(Buffer.from('\nendstream\nendobj\n', 'latin1'));
         });
+        if (extraObjects) {
+          parts.push(Buffer.from(extraObjects, 'latin1'));
+        }
         parts.push(Buffer.from('%%EOF\n', 'latin1'));
         return Buffer.concat(parts);
       };
 
-      const crTerminatedPdf = buildPdfWithStreams([contentCompressed]);
+      const crTerminatedPdf = buildPdfWithStreams([{ buf: contentCompressed }]);
       const crInfo = extractPdfInfo(crTerminatedPdf);
       assert.ok(
         pdfTextIncludesToken(crInfo, titleText),
         'extractPdfInfo decodes FlateDecode stream ending in 0x0d followed by \\nendstream',
       );
 
-      const multiStreamPdf = buildPdfWithStreams([contentCompressed, storedWithMarkers]);
+      const multiStreamPdf = buildPdfWithStreams(
+        [
+          {
+            buf: storedWithMarkers,
+            filter: '[/FlateDecode]',
+            dictExtras: '/Note (Report (Shift #1) >> x) /ID <ABCD>',
+          },
+          { buf: contentCompressed },
+        ],
+        `8 0 obj\n<</Filter [/ASCII85Decode /FlateDecode] /Length 2>> stream\n~>\nendstream\nendobj\n`,
+      );
       const multiInfo = extractPdfInfo(multiStreamPdf);
       assert.ok(
-        pdfTextIncludesToken(multiInfo, titleText),
-        'extractPdfInfo handles /Contents array and binary streams containing endstream/endobj',
+        pdfTextIncludesToken(multiInfo, 'XXX') && pdfTextIncludesToken(multiInfo, titleText),
+        'extractPdfInfo handles /Contents array, dict strings, multi-stage filters, and embedded endstream/endobj',
       );
     }
 

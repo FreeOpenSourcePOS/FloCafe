@@ -92,7 +92,9 @@ getDatabase()
 const app = express();
 app.use(express.json());
 let currentUserId = 'owner-1';
-app.use((req: any, _res: any, next: any) => {
+let lastResLocals: Record<string, any> | undefined;
+app.use((req: any, res: any, next: any) => {
+  lastResLocals = res.locals;
   req.user = {
     userId: currentUserId,
     email: currentUserId === 'server-1' ? 'server@flo.local' : 'owner@flo.local',
@@ -322,10 +324,65 @@ async function runTests() {
     }
     const onlyDefault = defaultId();
     assert(onlyDefault !== undefined, 'one printer remains and is default');
-    const refused = await request(app).delete(`/api/printers/${onlyDefault}`);
+
+    const originalConsoleError = console.error;
+    const loggedErrors: string[] = [];
+    console.error = (...args: any[]) => {
+      loggedErrors.push(args.map(String).join(' '));
+    };
+    let refused: any;
+    let unsetRefused: any;
+    let deletePostHogError: unknown;
+    let putPostHogError: unknown;
+    let deleteLoggedErrors: string[] = [];
+    let putLoggedErrors: string[] = [];
+    try {
+      refused = await request(app).delete(`/api/printers/${onlyDefault}`);
+      deletePostHogError = lastResLocals?.postHogError;
+      deleteLoggedErrors = [...loggedErrors];
+
+      loggedErrors.length = 0;
+      unsetRefused = await request(app)
+        .put(`/api/printers/${onlyDefault}`)
+        .send({ is_default: false });
+      putPostHogError = lastResLocals?.postHogError;
+      putLoggedErrors = [...loggedErrors];
+    } finally {
+      console.error = originalConsoleError;
+    }
+
     assert(
       refused.status === 409,
       `deleting the only default printer is refused (got ${refused.status})`,
+    );
+    assert(
+      refused.body?.error === 'Cannot delete the only default printer',
+      'deleting the only default printer returns the expected 409 reason',
+    );
+    assert(
+      deletePostHogError === undefined,
+      'deleting the only default printer does not set res.locals.postHogError',
+    );
+    assert(
+      !deleteLoggedErrors.some((msg) => msg.includes('[API] Internal error')),
+      'expected 409 on DELETE does not log [API] Internal error',
+    );
+
+    assert(
+      unsetRefused.status === 409,
+      `unsetting the only default printer is refused (got ${unsetRefused.status})`,
+    );
+    assert(
+      unsetRefused.body?.error === 'At least one printer must remain default',
+      'unsetting the only default printer returns the expected 409 reason',
+    );
+    assert(
+      putPostHogError === undefined,
+      'unsetting the only default printer does not set res.locals.postHogError',
+    );
+    assert(
+      !putLoggedErrors.some((msg) => msg.includes('[API] Internal error')),
+      'expected 409 on PUT does not log [API] Internal error',
     );
   }
 

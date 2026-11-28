@@ -233,8 +233,10 @@ export function PrintersSettingsTab({
     return t('printColumnsShort', { cols });
   };
 
-  const printerErrorMessage = (err: unknown, fallback: string): string =>
-    formatPrinterSettingsErrorMessage(err, fallback, tAll, window.electronAPI?.platform);
+  const printerErrorMessage = (err: unknown, fallback: string, includePlainError = false): string =>
+    formatPrinterSettingsErrorMessage(err, fallback, tAll, window.electronAPI?.platform, {
+      includePlainError,
+    });
 
   const fetchPrinters = async (signal?: AbortSignal) => {
     try {
@@ -394,8 +396,8 @@ export function PrintersSettingsTab({
       fetchPrinters();
       refreshHardwarePrinter();
       setDiscoveryVersion((version) => version + 1);
-    } catch {
-      toast.error(t('printerDeleteFailed'));
+    } catch (err) {
+      toast.error(printerErrorMessage(err, t('printerDeleteFailed')));
     }
   };
 
@@ -429,7 +431,7 @@ export function PrintersSettingsTab({
       }
       toast.success(t('testPrintSent'));
     } catch (err) {
-      toast.error(printerErrorMessage(err, t('testPrintFailed')));
+      toast.error(printerErrorMessage(err, t('testPrintFailed'), true));
     } finally {
       setTestingPrinterId(null);
       setStatusVersion((version) => version + 1);

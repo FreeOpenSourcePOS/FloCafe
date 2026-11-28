@@ -437,12 +437,13 @@ export function formatKotErrorToast(
   return fallbackTranslation;
 }
 
-/** Formats a settings-tab printer save/test failure toast without dropping plain Error details. */
+/** Formats a settings-tab printer save/delete/test failure toast. */
 export function formatPrinterSettingsErrorMessage(
   err: unknown,
   fallback: string,
   tAll: PrintHintTranslator,
   platform?: string | null,
+  options?: { includePlainError?: boolean },
 ): string {
   const hint = printFailureHint({ ...extractPrintErrorToastOptions(err), platform }, tAll);
   if (hint) return hint;
@@ -453,7 +454,7 @@ export function formatPrinterSettingsErrorMessage(
       if (detail) return detail === fallback ? fallback : `${fallback}: ${detail}`;
     }
   }
-  if (err instanceof Error) {
+  if (options?.includePlainError && err instanceof Error && !axios.isAxiosError(err)) {
     const detail = sanitizePrinterErrorDetail(err.message);
     if (detail) return detail === fallback ? fallback : `${fallback}: ${detail}`;
   }

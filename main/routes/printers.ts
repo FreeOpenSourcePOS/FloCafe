@@ -508,6 +508,9 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
+    if (error?.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -543,6 +546,9 @@ router.delete('/:id', requirePermission('printers.manage'), (req: Request, res: 
     })();
     res.json({ message: 'Printer deleted' });
   } catch (error: any) {
+    if (error?.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });

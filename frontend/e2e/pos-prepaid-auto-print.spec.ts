@@ -13,6 +13,12 @@ async function payPrepaidOrder(page: Page, autoPrintBill: boolean): Promise<numb
     const stored = JSON.parse(localStorage.getItem('pos-settings') || '{"state":{},"version":6}');
     stored.state.autoPrintBill = enabled;
     localStorage.setItem('pos-settings', JSON.stringify(stored));
+    // Isolate from configured host printers left by earlier specs in the serial E2E suite.
+    const printerStored = JSON.parse(
+      localStorage.getItem('flo-printer-settings') || '{"state":{},"version":1}',
+    );
+    printerStored.state.printMethod = 'browser';
+    localStorage.setItem('flo-printer-settings', JSON.stringify(printerStored));
     const probe = window as PrintProbe;
     probe.receiptWindowOpens = 0;
     window.open = (() => {

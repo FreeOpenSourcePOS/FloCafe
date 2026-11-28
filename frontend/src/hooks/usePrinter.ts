@@ -186,11 +186,17 @@ type ReceiptTenant = Pick<
  * A LAN terminal browser with its own USB printer prints there instead of on the host's printer.
  * The desktop app keeps the host route, which owns station routing and the cash drawer pulse.
  */
+function isTerminalBrowserRuntime(): boolean {
+  return typeof window !== 'undefined' && !window.electronAPI;
+}
+
 function prefersTerminalUsbPrinter(): boolean {
-  return printerService.isConnected && typeof window !== 'undefined' && !window.electronAPI;
+  return printerService.isConnected && isTerminalBrowserRuntime();
 }
 
 let lastResolvedUsbDevice: string | null = null;
+let inFlightUsbDeviceRefresh: { deviceName: string; promise: Promise<boolean> } | null = null;
+let hardwarePrinterRefreshSeq = 0;
 
 /** Re-resolves the configured printer once per connected device, not on every print. */
 async function syncWebUsbPrinterToConnectedDevice(): Promise<void> {
@@ -199,8 +205,28 @@ async function syncWebUsbPrinterToConnectedDevice(): Promise<void> {
   const current = usePrinterStore.getState().webusbPrinter;
   if (current?.name.trim().toLowerCase() === connectedName) return;
   if (lastResolvedUsbDevice === connectedName) return;
-  lastResolvedUsbDevice = connectedName;
-  await usePrinterStore.getState().refreshHardwarePrinter();
+  if (inFlightUsbDeviceRefresh?.deviceName === connectedName) {
+    await inFlightUsbDeviceRefresh.promise;
+    return;
+  }
+
+  const refreshPromise = usePrinterStore.getState().refreshHardwarePrinter();
+  const entry = { deviceName: connectedName, promise: refreshPromise };
+  inFlightUsbDeviceRefresh = entry;
+  try {
+    const refreshed = await refreshPromise;
+    if (
+      refreshed &&
+      printerService.isConnected &&
+      printerService.deviceInfo?.productName?.trim().toLowerCase() === connectedName
+    ) {
+      lastResolvedUsbDevice = connectedName;
+    }
+  } finally {
+    if (inFlightUsbDeviceRefresh === entry) {
+      inFlightUsbDeviceRefresh = null;
+    }
+  }
 }
 
 export interface HardwarePrinter {
@@ -229,7 +255,7 @@ interface PrinterState {
   hardwarePrinter: HardwarePrinter | null;
   webusbPrinter: HardwarePrinter | null;
   defaultPrinter: HardwarePrinter | null;
-  refreshHardwarePrinter: () => Promise<void>;
+  refreshHardwarePrinter: () => Promise<boolean>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   printBill: (
@@ -272,8 +298,12 @@ export const usePrinterStore = create<PrinterState>()(
       defaultPrinter: null,
 
       refreshHardwarePrinter: async () => {
+        const requestSeq = ++hardwarePrinterRefreshSeq;
         try {
           const res = await api.get('/printers');
+          if (requestSeq !== hardwarePrinterRefreshSeq) {
+            return false;
+          }
           const list: HardwarePrinter[] = (res.data.printers || []).map(
             (printer: HardwarePrinter) => ({ ...printer, readiness_state: 'configured' }),
           );
@@ -295,8 +325,10 @@ export const usePrinterStore = create<PrinterState>()(
             webusbPrinter,
             defaultPrinter: configuredDefault,
           });
+          return true;
         } catch {
           // Keep the last known printers: a failed refresh must not drop the host fallback.
+          return false;
         }
       },
 
@@ -432,7 +464,6 @@ export const usePrinterStore = create<PrinterState>()(
               : browserWarnings;
           };
 
-          const hw = get().hardwarePrinter;
           const dispatchBillToHost = async (hostPrinter: HardwarePrinter) => {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>(
@@ -468,21 +499,18 @@ export const usePrinterStore = create<PrinterState>()(
               });
             }
           };
-          const terminalUsbPreferred = prefersTerminalUsbPrinter();
-          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
-            return await dispatchBillToHost(hw);
+          const initialHw = get().hardwarePrinter;
+          if (initialHw && get().printMethod === 'escpos' && !isTerminalBrowserRuntime()) {
+            return await dispatchBillToHost(initialHw);
           }
 
-          // Await startup silent reconnect before checking isConnected
-          // to avoid premature browser print fallbacks.
+          // Await startup silent reconnect before choosing host vs local WebUSB
+          // or falling back to browser print.
           await printerService.awaitPendingReconnect();
           throwIfTenantChanged();
-          if (
-            hw &&
-            get().printMethod === 'escpos' &&
-            terminalUsbPreferred &&
-            !printerService.isConnected
-          ) {
+          const hw = get().hardwarePrinter;
+          const terminalUsbPreferred = prefersTerminalUsbPrinter();
+          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
             return await dispatchBillToHost(hw);
           }
           await syncWebUsbPrinterToConnectedDevice();
@@ -1180,19 +1208,23 @@ export const usePrinterStore = create<PrinterState>()(
             }
             return null;
           };
-          const terminalUsbPreferred = prefersTerminalUsbPrinter();
-          if (hw && get().printMethod === 'escpos' && !terminalUsbPreferred) {
+          let hostDispatchAttempted = false;
+          if (hw && get().printMethod === 'escpos' && !isTerminalBrowserRuntime()) {
+            hostDispatchAttempted = true;
             const warnings = await dispatchSlipToHost(hw);
             if (warnings) return warnings;
           }
 
+          // Await startup silent reconnect before choosing host vs local WebUSB
+          // or falling back to browser print.
           await printerService.awaitPendingReconnect();
           throwIfTenantChanged();
+          const terminalUsbPreferred = prefersTerminalUsbPrinter();
           if (
+            !hostDispatchAttempted &&
             hw &&
             get().printMethod === 'escpos' &&
-            terminalUsbPreferred &&
-            !printerService.isConnected
+            !terminalUsbPreferred
           ) {
             const warnings = await dispatchSlipToHost(hw);
             if (warnings) return warnings;

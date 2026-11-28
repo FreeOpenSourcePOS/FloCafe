@@ -279,7 +279,7 @@ class PrinterService {
         if (!previouslyGranted || this._printMode === 'browser') return false;
         this.setStatus('connecting');
         await this.openDevice(previouslyGranted);
-        return true;
+        return this.isConnected;
       } catch (err) {
         console.warn('[PrinterService] Silent reconnect failed:', err);
         this.setStatus('disconnected');

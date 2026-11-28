@@ -4,6 +4,7 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
+import type { EventMessage, PostHog as PostHogSdk, PostHogOptions } from 'posthog-node';
 import * as os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import {
@@ -55,20 +56,8 @@ import {
   type ScrubbableEvent,
 } from '../../shared/posthog-scrub';
 
-interface PostHogClient {
-  capture: (payload: {
-    distinctId: string;
-    event: string;
-    properties?: Record<string, unknown>;
-  }) => void;
-  captureException: (
-    error: Error,
-    distinctId?: string,
-    additionalProperties?: Record<string, unknown>,
-  ) => void;
-  alias: (payload: { distinctId: string; alias: string }) => void;
-  shutdown: (shutdownTimeoutMs?: number) => Promise<void>;
-}
+type PostHogClient = Pick<PostHogSdk, 'capture' | 'captureException' | 'alias' | 'shutdown'> &
+  Partial<Pick<PostHogSdk, 'disable' | 'on'>>;
 
 // Well under SHUTDOWN_TIMEOUT_MS: a timed-out cleanup step aborts the rest, database close included.
 export const POSTHOG_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -335,9 +324,17 @@ export function readDailyUsageSummary(): Record<string, number | boolean | strin
   return { ...summary, ...readStoreProperties() };
 }
 
+// Capture v1 requires a JSON `{ results: {} }` body on 2xx responses; empty 204 fails the batch.
+function suppressedFetchResponse(): globalThis.Response {
+  return new Response(JSON.stringify({ results: {} }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 function createClient(token: string, host: string, abortSignal: AbortSignal): PostHogClient {
   const { PostHog } = require('posthog-node') as {
-    PostHog: new (projectToken: string, options: Record<string, unknown>) => PostHogClient;
+    PostHog: new (projectToken: string, options: PostHogOptions) => PostHogClient;
   };
   return new PostHog(token, {
     host,
@@ -347,30 +344,33 @@ function createClient(token: string, host: string, abortSignal: AbortSignal): Po
     enableLocalEvaluation: false,
     flushAt: 1,
     flushInterval: 0,
-    fetch: async (url: string, options?: RequestInit) => {
+    fetch: async (url, options) => {
       if (abortSignal.aborted || postHogNetworkSuppressed()) {
-        return new Response(null, { status: 204 });
+        return suppressedFetchResponse();
       }
       const signals: AbortSignal[] = [abortSignal, getOfflineModeAbortSignal()];
       if (options?.signal) signals.push(options.signal);
       try {
-        return await globalThis.fetch(url, { ...options, signal: AbortSignal.any(signals) });
+        return await globalThis.fetch(url, {
+          ...(options as RequestInit),
+          signal: AbortSignal.any(signals),
+        });
       } catch (error) {
         if (abortSignal.aborted || postHogNetworkSuppressed()) {
-          return new Response(null, { status: 204 });
+          return suppressedFetchResponse();
         }
         throw error;
       }
     },
-    before_send: (event: ScrubbableEvent | null) => {
+    beforeSend: (event) => {
       const { level, diagnosticsEnabled, environment } = getConsentState();
       if (abortSignal.aborted || environment === null) return null;
-      return scrubPostHogEvent(event, {
+      return scrubPostHogEvent(event as ScrubbableEvent, {
         telemetryEnabled: level !== 'off',
         accountLinked: level === 'full',
         allowExceptions: diagnosticsEnabled,
         exceptionContext: exceptionContext(),
-      });
+      }) as EventMessage | null;
     },
   });
 }
@@ -389,7 +389,11 @@ function activeClient(): PostHogClient | null {
   clientKey = key;
   clientAbort = nextAbort;
   previousAbort?.abort();
-  if (previous) void previous.shutdown(POSTHOG_SHUTDOWN_TIMEOUT_MS).catch(() => {});
+  if (previous) {
+    previous.on?.('error', () => {});
+    void previous.disable?.().catch(() => {});
+    void previous.shutdown(0).catch(() => {});
+  }
   return client;
 }
 
@@ -580,12 +584,11 @@ export async function stopPostHog(options?: { flush?: boolean }): Promise<void> 
   const suppressFlush = options?.flush === false || postHogNetworkSuppressed();
   if (suppressFlush) {
     currentAbort?.abort();
-    const internal = current as unknown as { disabled?: boolean; queue?: unknown[] };
-    internal.disabled = true;
-    if (Array.isArray(internal.queue)) internal.queue.length = 0;
+    current.on?.('error', () => {});
+    await current.disable?.().catch(() => {});
   }
   try {
-    await current.shutdown(POSTHOG_SHUTDOWN_TIMEOUT_MS);
+    await current.shutdown(suppressFlush ? 0 : POSTHOG_SHUTDOWN_TIMEOUT_MS);
   } catch {
     // Drop a failed flush.
   }
@@ -625,12 +628,16 @@ export function capturePostHogException(
     const current = activeClient();
     if (!current) return false;
     const who = identity();
-    current.captureException(scrubbedError(input), who.distinctId, {
-      ...readSuperProperties(who),
-      process_type: 'main',
-      ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
-      ...(properties ?? {}),
-      capture_point: capturePoint,
+    const personless = !who.identified && !who.installRef;
+    current.captureException(scrubbedError(input), {
+      distinctId: who.distinctId,
+      properties: {
+        ...readSuperProperties(who),
+        process_type: 'main',
+        ...(properties ?? {}),
+        capture_point: capturePoint,
+      },
+      ...(personless ? { options: { process_person_profile: false } } : {}),
     });
     return true;
   } catch {
@@ -659,14 +666,15 @@ export function capturePostHogPrintFailure(facts: PrintFailureFacts): void {
     const current = activeClient();
     if (!current) return;
     const who = identity();
+    const personless = !who.identified && !who.installRef;
     current.capture({
       distinctId: who.distinctId,
       event: 'printer_failed',
+      ...(personless ? { options: { process_person_profile: false } } : {}),
       properties: {
         ...readSuperProperties(who),
         ...readOsProperties(),
         process_type: 'main',
-        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
         capture_point: 'printer',
         kind: facts.kind,
         connection_type: facts.connection_type,
@@ -696,15 +704,16 @@ export function capturePostHogPrintRecovered(facts: {
     const current = activeClient();
     if (!current) return;
     const who = identity();
+    const personless = !who.identified && !who.installRef;
     const queueRefusal = queueRefusalFromDetail(facts.detail);
     current.capture({
       distinctId: who.distinctId,
       event: 'printer_recovered',
+      ...(personless ? { options: { process_person_profile: false } } : {}),
       properties: {
         ...readSuperProperties(who),
         ...readOsProperties(),
         process_type: 'main',
-        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
         capture_point: 'printer',
         via: 'direct_tcp',
         kind: facts.kind,
@@ -747,12 +756,14 @@ export function capturePostHogOperationFailure(report: Record<string, unknown>):
         ? report.platform.trim()
         : undefined;
     const who = identity();
+    const personless = !who.identified && !who.installRef;
     current.capture({
       distinctId: who.distinctId,
       event: 'operation_failed',
       // The report id and its last occurrence keep a resend after a restart as one event.
       ...(isOperationReference(reportId) ? { uuid: reportId } : {}),
       ...(occurredAt ? { timestamp: occurredAt } : {}),
+      ...(personless ? { options: { process_person_profile: false } } : {}),
       properties: {
         ...readSuperProperties(who),
         ...(reportAppVersion
@@ -763,7 +774,6 @@ export function capturePostHogOperationFailure(report: Record<string, unknown>):
           : {}),
         ...(reportPlatform ? { platform: reportPlatform } : {}),
         process_type: 'main',
-        ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
         capture_point: capturePoint,
         reason_code: report.reason_code,
         operation: report.operation,

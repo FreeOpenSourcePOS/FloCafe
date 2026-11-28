@@ -14,7 +14,7 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-posthog-fields-'));
 
 interface RecordedClient {
-  options: { before_send?: (event: unknown) => unknown };
+  options: { beforeSend?: (event: unknown) => unknown };
   exceptions: Array<{ properties?: Record<string, unknown>; scrubbed?: Record<string, unknown> }>;
 }
 
@@ -53,7 +53,12 @@ Module._load = function (request: string) {
           clients.push(this);
         }
         capture() {}
-        captureException(error: Error, distinctId?: string, properties?: Record<string, unknown>) {
+        captureException(
+          error: Error,
+          exceptionOptions?: { distinctId?: string; properties?: Record<string, unknown> },
+        ) {
+          const distinctId = exceptionOptions?.distinctId;
+          const properties = exceptionOptions?.properties;
           const event = {
             event: '$exception',
             properties: {
@@ -68,7 +73,7 @@ Module._load = function (request: string) {
               ],
             },
           };
-          const kept = this.options.before_send?.(event) as
+          const kept = this.options.beforeSend?.(event) as
             | { properties?: Record<string, unknown> }
             | null
             | undefined;
@@ -220,7 +225,7 @@ async function mainTest(): Promise<void> {
   requireFields(sent.scrubbed, 'captured exception', process.platform);
 
   // An event the SDK captured itself, with no context at all.
-  const fromSdk = await clients[0].options.before_send?.(brokenEvent);
+  const fromSdk = await clients[0].options.beforeSend?.(brokenEvent);
   assert.ok(fromSdk, 'the SDK event is kept');
   requireFields(
     (fromSdk as { properties?: Record<string, unknown> }).properties,

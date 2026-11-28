@@ -121,7 +121,7 @@
     "test:e2e": "npm run test:e2e:browser",
     "test:release-config": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/release-config.test.ts && tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs && node tests/release-gate.test.cjs",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
-    "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts && node tests/run-electron-node-test.cjs tests/anonymous-diagnostics-delivery.test.ts && node tests/run-electron-node-test.cjs tests/posthog-client.test.ts && node tests/run-electron-node-test.cjs tests/posthog-exception-fields.test.ts && node tests/run-electron-node-test.cjs tests/posthog-printer-failure.test.ts && node tests/run-electron-node-test.cjs tests/posthog-operation-failure.test.ts && node tests/run-electron-node-test.cjs tests/posthog-service.test.ts",
+    "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts && node tests/run-electron-node-test.cjs tests/anonymous-diagnostics-delivery.test.ts && node tests/run-electron-node-test.cjs tests/posthog-client.test.ts && node tests/run-electron-node-test.cjs tests/posthog-node-sdk.test.ts && node tests/run-electron-node-test.cjs tests/posthog-exception-fields.test.ts && node tests/run-electron-node-test.cjs tests/posthog-printer-failure.test.ts && node tests/run-electron-node-test.cjs tests/posthog-operation-failure.test.ts && node tests/run-electron-node-test.cjs tests/posthog-service.test.ts",
     "test:telemetry-install-provenance": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/telemetry-install-provenance.test.ts",
     "test:country-provenance": "node tests/run-electron-node-test.cjs tests/country-provenance.test.ts",
     "test:static-routes": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/path-containment.test.ts && node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",
@@ -461,7 +461,7 @@
     "express-rate-limit": "^8.7.5",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.17",
-    "posthog-node": "^5.73.1",
+    "posthog-node": "^6.0.6",
     "qrcode": "^1.5.3",
     "ws": "^8.23.0"
   },

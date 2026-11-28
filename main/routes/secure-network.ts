@@ -25,6 +25,7 @@ interface SurfaceAddresses {
   label: string;
   listening: boolean;
   https_port: number | null;
+  http_port: number;
   primary_url: string | null;
   fallback_urls: string[];
   error_code: string | null;
@@ -40,6 +41,7 @@ export function buildSurfaceAddresses(
     label: surface.label,
     listening: surface.listening,
     https_port: surface.https_port,
+    http_port: surface.http_port,
     primary_url: surface.https_port ? withPort(MDNS_HOST, surface.https_port) : null,
     fallback_urls: surface.https_port
       ? ips.map((ip) => withPort(ip, surface.https_port as number))

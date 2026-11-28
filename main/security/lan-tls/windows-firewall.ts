@@ -49,8 +49,8 @@ export function parseNetworkProfile(output: string): FirewallState['networkProfi
     .map((line) => line.trim().toLowerCase())
     .filter(Boolean);
   if (categories.includes('public')) return 'public';
-  if (categories.includes('private')) return 'private';
   if (categories.some((c) => c.startsWith('domain'))) return 'domain';
+  if (categories.includes('private')) return 'private';
   return 'unknown';
 }
 
@@ -70,8 +70,10 @@ export function buildElevatedAddRuleScript(executablePath: string): string {
     'base64',
   );
   return (
+    `$ErrorActionPreference = 'Stop'; ` +
     `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden ` +
-    `-ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}'; exit $p.ExitCode`
+    `-ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}'; ` +
+    `if (-not $p) { exit 1 }; exit $p.ExitCode`
   );
 }
 

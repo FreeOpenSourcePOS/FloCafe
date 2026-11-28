@@ -2,6 +2,7 @@ import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import path from 'path';
+import tls from 'tls';
 import { WebSocket } from 'ws';
 import {
   clearCaRegeneration,
@@ -15,6 +16,7 @@ import {
 } from './ca-store';
 import { createHttpsFront, type HttpsFront, type TlsCredentials } from './https-front';
 import {
+  caTrustAnchorPemForNodeTls,
   fingerprintsOf,
   generateKeyPair,
   isPermittedLanIPv4,
@@ -104,10 +106,16 @@ export interface DiagnosticCheck {
   surface?: SurfaceId;
 }
 
+interface IpChangeNotice {
+  previous: string[];
+  current: string[];
+  at: string;
+}
+
 interface ConfigFile {
   enabled?: boolean;
   lastLanIps?: string[];
-  ipChange?: { previous: string[]; current: string[]; at: string } | null;
+  ipChange?: IpChangeNotice | null;
 }
 
 const CONFIG_FILE = 'config.json';
@@ -128,6 +136,8 @@ export class SecureNetworkService {
   private leaf: IssuedCertificate | null = null;
   private leafKeyPem: string | null = null;
   private leafIps: string[] = [];
+  private pendingIpChange: IpChangeNotice | null = null;
+  private pendingLastLanIps: string[] | null = null;
   private fronts = new Map<SurfaceId, HttpsFront>();
   private surfaceErrors = new Map<SurfaceId, SecureNetworkErrorCode>();
   private errorCode: SecureNetworkErrorCode | null = null;
@@ -184,6 +194,14 @@ export class SecureNetworkService {
     return [...ips].sort();
   }
 
+  private clearCertificateState(): void {
+    this.ca = null;
+    this.caFingerprints = null;
+    this.leaf = null;
+    this.leafKeyPem = null;
+    this.leafIps = [];
+  }
+
   private issueLeaf(): void {
     if (!this.ca) throw new Error('CA not loaded');
     const keys = generateKeyPair();
@@ -208,13 +226,28 @@ export class SecureNetworkService {
     const previous = [...(config.lastLanIps ?? [])].sort();
     const current = this.leafIps;
     if (previous.length > 0 && !sameSet(previous, current)) {
+      const notice: IpChangeNotice =
+        this.pendingIpChange &&
+        sameSet(this.pendingIpChange.previous, previous) &&
+        sameSet(this.pendingIpChange.current, current)
+          ? this.pendingIpChange
+          : { previous, current, at: this.now().toISOString() };
+      this.pendingIpChange = notice;
+      this.pendingLastLanIps = current;
       this.writeConfig({
         lastLanIps: current,
-        ipChange: { previous, current, at: this.now().toISOString() },
+        ipChange: notice,
       });
+      this.pendingIpChange = null;
+      this.pendingLastLanIps = null;
       this.log(`LAN address set changed: ${previous.join(', ')} -> ${current.join(', ')}`);
     } else if (previous.length === 0) {
+      this.pendingLastLanIps = current;
       this.writeConfig({ lastLanIps: current });
+      this.pendingLastLanIps = null;
+    } else {
+      this.pendingIpChange = null;
+      this.pendingLastLanIps = null;
     }
   }
 
@@ -232,8 +265,8 @@ export class SecureNetworkService {
         this.ca = loadOrCreateCa(this.caOptions());
         this.caFingerprints = fingerprintsOf(this.ca.certificateDer);
         this.issueLeaf();
-        this.recordIpChange();
       } catch (error) {
+        this.clearCertificateState();
         const code = (error as { code?: string }).code;
         this.errorCode =
           code === 'SECURE_STORAGE_UNAVAILABLE'
@@ -241,6 +274,11 @@ export class SecureNetworkService {
             : 'certificate_failed';
         this.log(`Certificate provisioning failed: ${(error as Error).message}`);
         return;
+      }
+      try {
+        this.recordIpChange();
+      } catch (error) {
+        this.log(`Could not record the address change: ${(error as Error).message}`);
       }
 
       const credentials = this.credentials();
@@ -304,7 +342,16 @@ export class SecureNetworkService {
       if (!this.ca || !this.leaf || this.fronts.size === 0) return false;
       const desired = this.desiredLanIps();
       const renewalDue = this.leaf.notAfter.getTime() - this.now().getTime() < RENEW_LEAF_WITHIN_MS;
-      if (sameSet(desired, this.leafIps) && !renewalDue) return false;
+      if (sameSet(desired, this.leafIps) && !renewalDue) {
+        if (this.pendingIpChange || this.pendingLastLanIps) {
+          try {
+            this.recordIpChange();
+          } catch (error) {
+            this.log(`Could not record the address change: ${(error as Error).message}`);
+          }
+        }
+        return false;
+      }
       const previous = { leaf: this.leaf, key: this.leafKeyPem, ips: this.leafIps };
       const previousCredentials = this.credentials();
       try {
@@ -348,8 +395,7 @@ export class SecureNetworkService {
     } catch (error) {
       this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
     }
-    this.ca = null;
-    this.leaf = null;
+    this.clearCertificateState();
     await this.startInternal();
   }
 
@@ -378,8 +424,7 @@ export class SecureNetworkService {
         } catch (error) {
           this.log(`Stopping HTTPS fronts failed: ${(error as Error).message}`);
         }
-        this.ca = null;
-        this.leaf = null;
+        this.clearCertificateState();
       }
       this.notifyChanged();
     });
@@ -412,8 +457,7 @@ export class SecureNetworkService {
       } catch (error) {
         resetFailure = error;
       }
-      this.ca = null;
-      this.leaf = null;
+      this.clearCertificateState();
       let startFailure: unknown = null;
       try {
         await this.startInternal();
@@ -430,6 +474,7 @@ export class SecureNetworkService {
   /** Clears the address-change and certificate-recreated notices once the owner has seen them. */
   acknowledgeNotices(): void {
     this.writeConfig({ ipChange: null });
+    this.pendingIpChange = null;
     clearCaRegeneration(this.deps.directory);
   }
 
@@ -495,12 +540,34 @@ export class SecureNetworkService {
       },
       lan_ips: this.desiredLanIps().filter((ip) => ip !== '127.0.0.1'),
       surfaces,
-      ip_change: config.ipChange ?? null,
+      ip_change: this.pendingIpChange ?? config.ipChange ?? null,
       // A reset the owner started needs no warning; an unexpected regeneration does.
       ca_regenerated:
         meta?.regeneratedAt && meta.regeneratedBecause && meta.regeneratedBecause !== 'reset'
           ? { reason: meta.regeneratedBecause, at: meta.regeneratedAt }
           : null,
+    };
+  }
+
+  private loopbackTlsOptions(): Pick<
+    tls.ConnectionOptions,
+    'ca' | 'servername' | 'checkServerIdentity'
+  > {
+    if (!this.ca || !this.leaf) {
+      throw new Error('TLS certificate material not loaded');
+    }
+    const expectedLeafDer = this.leaf.der;
+    return {
+      ca: caTrustAnchorPemForNodeTls(this.ca.certificateDer),
+      servername: 'localhost',
+      checkServerIdentity: (hostname, cert) => {
+        const error = tls.checkServerIdentity(hostname, cert);
+        if (error) return error;
+        if (!cert.raw?.equals(expectedLeafDer)) {
+          return new Error('Peer certificate does not match expected leaf');
+        }
+        return undefined;
+      },
     };
   }
 
@@ -510,33 +577,44 @@ export class SecureNetworkService {
     useTls: boolean,
   ): Promise<{ status: number }> {
     return new Promise((resolve, reject) => {
-      const options: https.RequestOptions = {
-        host: '127.0.0.1',
-        port,
-        path: requestPath,
-        method: 'GET',
-        headers: { Host: 'localhost' },
-        timeout: SELF_CHECK_TIMEOUT_MS,
-        ...(useTls ? { ca: this.ca?.certificatePem, servername: 'localhost' } : {}),
-      };
-      const request = useTls ? https.request(options) : http.request(options);
-      request.on('response', (response) => {
-        response.resume();
-        resolve({ status: response.statusCode ?? 0 });
-      });
-      request.on('timeout', () => request.destroy(new Error('timeout')));
-      request.on('error', reject);
-      request.end();
+      try {
+        const options: https.RequestOptions = {
+          host: '127.0.0.1',
+          port,
+          path: requestPath,
+          method: 'GET',
+          headers: { Host: 'localhost' },
+          timeout: SELF_CHECK_TIMEOUT_MS,
+          agent: false,
+          ...(useTls ? this.loopbackTlsOptions() : {}),
+        };
+        const request = useTls ? https.request(options) : http.request(options);
+        request.on('response', (response) => {
+          response.resume();
+          resolve({ status: response.statusCode ?? 0 });
+        });
+        request.on('timeout', () => request.destroy(new Error('timeout')));
+        request.on('error', reject);
+        request.end();
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
   private websocketCheck(port: number): Promise<'open' | 'rejected' | 'failed'> {
     return new Promise((resolve) => {
-      const socket = new WebSocket(`wss://127.0.0.1:${port}/kds`, {
-        ca: this.ca?.certificatePem,
-        headers: { Host: 'localhost' },
-        handshakeTimeout: SELF_CHECK_TIMEOUT_MS,
-      });
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(`wss://127.0.0.1:${port}/kds`, {
+          ...this.loopbackTlsOptions(),
+          headers: { Host: 'localhost' },
+          handshakeTimeout: SELF_CHECK_TIMEOUT_MS,
+        });
+      } catch {
+        resolve('failed');
+        return;
+      }
       let settled = false;
       const finish = (result: 'open' | 'rejected' | 'failed') => {
         if (settled) return;
@@ -658,16 +736,25 @@ export class SecureNetworkService {
                 ? 'firewall_rule_missing'
                 : 'firewall_unknown',
         });
+        let profileStatus: DiagnosticCheck['status'];
+        let profileCode: string;
+        if (firewall.networkProfile === 'private') {
+          profileStatus = 'ok';
+          profileCode = 'network_profile_ok';
+        } else if (firewall.networkProfile === 'public') {
+          profileStatus = 'warn';
+          profileCode = 'network_profile_public';
+        } else if (firewall.networkProfile === 'domain') {
+          profileStatus = 'warn';
+          profileCode = 'network_profile_domain';
+        } else {
+          profileStatus = 'skipped';
+          profileCode = 'network_profile_unknown';
+        }
         checks.push({
           id: 'network_profile',
-          status:
-            firewall.networkProfile === 'public'
-              ? 'warn'
-              : firewall.networkProfile === 'unknown'
-                ? 'skipped'
-                : 'ok',
-          code:
-            firewall.networkProfile === 'public' ? 'network_profile_public' : 'network_profile_ok',
+          status: profileStatus,
+          code: profileCode,
         });
       }
     }

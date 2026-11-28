@@ -360,3 +360,49 @@ export function derFromPem(pem: string): Buffer {
   const body = pem.replace(/-----(BEGIN|END) CERTIFICATE-----/g, '').replace(/\s+/g, '');
   return Buffer.from(body, 'base64');
 }
+
+function derBody(element: Buffer): Buffer {
+  const [header, length] = readHeader(element, 0);
+  if (header + length > element.length) throw new Error('Truncated DER element');
+  return element.subarray(header, header + length);
+}
+
+function splitDerElements(buffer: Buffer): Buffer[] {
+  const items: Buffer[] = [];
+  let offset = 0;
+  while (offset < buffer.length) {
+    const [header, length] = readHeader(buffer, offset);
+    const end = offset + header + length;
+    if (end > buffer.length) throw new Error('Truncated DER element');
+    items.push(buffer.subarray(offset, end));
+    offset = end;
+  }
+  return items;
+}
+
+/**
+ * Returns a PEM trust anchor with Name Constraints omitted so Electron's BoringSSL `x509_vfy`
+ * (which rejects IP Name Constraints) still performs full native TLS verification.
+ */
+export function caTrustAnchorPemForNodeTls(caDer: Buffer): string {
+  const [tbs, sigAlg, sigValue] = splitDerElements(derBody(caDer));
+  const tbsElements = splitDerElements(derBody(tbs));
+  const extIndex = tbsElements.findIndex((el) => el[0] === 0xa3);
+  if (extIndex === -1) return toPem(caDer);
+
+  const extensionsSeq = derBody(tbsElements[extIndex]);
+  const extensions = splitDerElements(derBody(extensionsSeq));
+  const nameConstraintsOid = oid(OID.nameConstraints);
+  const filtered = extensions.filter((ext) => {
+    const [extOid] = splitDerElements(derBody(ext));
+    return !extOid.equals(nameConstraintsOid);
+  });
+  if (filtered.length === extensions.length) return toPem(caDer);
+
+  const updatedTbs = [
+    ...tbsElements.slice(0, extIndex),
+    ...(filtered.length > 0 ? [explicit(3, sequence(...filtered))] : []),
+    ...tbsElements.slice(extIndex + 1),
+  ];
+  return toPem(sequence(sequence(...updatedTbs), sigAlg, sigValue));
+}

@@ -291,6 +291,29 @@ async function main() {
       'the owner at the till (another source address) is not locked out',
     );
 
+    // 3b. Authenticated /api/secure-network/status includes http_port for every surface.
+    const authToken = String(till.body?.access_token ?? '');
+    assert.ok(authToken.length > 0, 'owner login returned a bearer token');
+    const authStatus = await httpsJson(ports.main!, ca, 'GET', '/api/secure-network/status', {
+      address: '127.0.0.1',
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    assert.equal(authStatus.status, 200, 'authenticated status succeeds');
+    const expectedHttpPorts: Record<string, number> = {
+      main: getServerPort(),
+      kds: getKdsPort(),
+      serverApp: getServerAppPort(),
+    };
+    for (const [id, expectedPort] of Object.entries(expectedHttpPorts)) {
+      const surface = (authStatus.body?.surfaces ?? []).find((s: { id: string }) => s.id === id);
+      assert.ok(surface, `/api/secure-network/status includes ${id} surface`);
+      assert.equal(
+        surface.http_port,
+        expectedPort,
+        `/api/secure-network/status ${id} surface preserves http_port`,
+      );
+    }
+
     // 4. Only the public CA is reachable without a login; everything else still needs auth.
     const publicBase = `http://127.0.0.1:${getServerPort()}`;
     const unauth = await fetch(`${publicBase}/api/secure-network/status`);

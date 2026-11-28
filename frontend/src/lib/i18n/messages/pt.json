@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "A Firewall do Windows pode bloquear outros dispositivos. Use o botão da Firewall do Windows.",
     "diagProfileOk": "A rede Wi-Fi está definida como Privada.",
     "diagProfilePublic": "Esta rede está definida como Pública, por isso o Windows pode bloquear outros dispositivos. Defina-a como Privada.",
-    "diagProfileDomain": "Esta rede usa um perfil de Domínio, por isso o Firewall do Windows pode bloquear outros dispositivos. Permita o FloCafe em redes de domínio ou mude para uma rede Privada.",
+    "diagProfileDomain": "Esta rede usa um perfil de Domínio, portanto a regra de firewall privada do FloCafe não será aplicada. Permita o FloCafe em redes de domínio no Firewall do Windows Defender (ou peça à equipe de TI), ou mude para uma rede Privada.",
     "diagDisabled": "A rede segura está desativada.",
     "trustPageTitle": "Configurar este dispositivo",
     "trustPageIntro": "Instale o certificado do FloCafe uma vez para que este dispositivo possa abrir o FloCafe em segurança. O dispositivo vai pedir-lhe que o aprove.",

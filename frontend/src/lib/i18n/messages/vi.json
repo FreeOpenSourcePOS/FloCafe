@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Tường lửa Windows có thể chặn các thiết bị khác. Hãy dùng nút Tường lửa Windows.",
     "diagProfileOk": "Mạng Wi-Fi được đặt là Riêng tư.",
     "diagProfilePublic": "Mạng này được đặt là Công cộng nên Windows có thể chặn các thiết bị khác. Hãy đổi sang Riêng tư.",
-    "diagProfileDomain": "Mạng này dùng hồ sơ Miền (Domain), nên Tường lửa Windows có thể chặn các thiết bị khác. Hãy cho phép FloCafe trên mạng Miền hoặc chuyển sang mạng Riêng tư.",
+    "diagProfileDomain": "Mạng này dùng hồ sơ Miền (Domain), nên quy tắc tường lửa Riêng tư của FloCafe sẽ không áp dụng. Hãy cho phép FloCafe trên mạng Miền trong Windows Defender Firewall (hoặc nhờ bộ phận CNTT), hoặc chuyển sang mạng Riêng tư.",
     "diagDisabled": "Mạng bảo mật đang tắt.",
     "trustPageTitle": "Thiết lập thiết bị này",
     "trustPageIntro": "Cài chứng chỉ FloCafe một lần để thiết bị này mở FloCafe an toàn. Thiết bị sẽ yêu cầu bạn chấp thuận.",

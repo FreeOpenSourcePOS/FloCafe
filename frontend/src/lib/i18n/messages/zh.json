@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Windows 防火墙可能会阻止其他设备。请使用 Windows 防火墙按钮。",
     "diagProfileOk": "Wi-Fi 网络已设置为专用。",
     "diagProfilePublic": "此网络设置为公用，因此 Windows 可能会阻止其他设备。请改为专用。",
-    "diagProfileDomain": "此网络使用域配置文件，因此 Windows 防火墙可能会阻止其他设备。请在域网络中允许 FloCafe，或切换到专用网络。",
+    "diagProfileDomain": "此网络使用域配置文件，因此 FloCafe 的专用防火墙规则不会生效。请在 Windows Defender 防火墙中（或联系 IT 人员）允许 FloCafe 访问域网络，或切换到专用网络。",
     "diagDisabled": "安全网络已关闭。",
     "trustPageTitle": "设置此设备",
     "trustPageIntro": "请安装一次 FloCafe 证书，这台设备即可安全打开 FloCafe。设备会要求您批准。",

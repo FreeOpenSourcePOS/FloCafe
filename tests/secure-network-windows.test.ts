@@ -101,6 +101,21 @@ assert.equal(
   'any Public network is reported',
 );
 assert.equal(parseNetworkProfile('DomainAuthenticated'), 'domain');
+assert.equal(
+  parseNetworkProfile('Private\r\nDomainAuthenticated\r\n'),
+  'domain',
+  'Domain takes precedence over Private because the Private-only firewall rule does not cover Domain',
+);
+assert.equal(
+  parseNetworkProfile('DomainAuthenticated\r\nPrivate\r\n'),
+  'domain',
+  'mixed Domain and Private profiles preserve the Domain warning regardless of order',
+);
+assert.equal(
+  parseNetworkProfile('DomainAuthenticated\r\nPublic\r\n'),
+  'public',
+  'Public remains highest precedence when paired with Domain',
+);
 assert.equal(parseNetworkProfile(''), 'unknown');
 
 // Elevated fix: one elevated process, delete then add, exit code propagated, quoting via encoding.

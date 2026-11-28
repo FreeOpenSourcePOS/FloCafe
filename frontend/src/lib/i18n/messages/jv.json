@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Windows Firewall bisa ngalangi piranti liyane. Gunakake tombol Windows Firewall.",
     "diagProfileOk": "Jaringan Wi-Fi disetel dadi Pribadi.",
     "diagProfilePublic": "Jaringan iki disetel dadi Umum, mula Windows bisa ngalangi piranti liyane. Owahana dadi Pribadi.",
-    "diagProfileDomain": "Jaringan iki nganggo profil Domain, mula Windows Firewall bisa ngalangi piranti liyane. Wenehi idin FloCafe kanggo jaringan Domain utawa ganti menyang jaringan Pribadi.",
+    "diagProfileDomain": "Jaringan iki nganggo profil Domain, mula aturan firewall Pribadi FloCafe ora bakal ditrapake. Wenehi idin FloCafe ing jaringan Domain liwat Windows Defender Firewall (utawa nyuwun tulung IT), utawa ganti menyang jaringan Pribadi.",
     "diagDisabled": "Jaringan Aman dipateni.",
     "trustPageTitle": "Atur piranti iki",
     "trustPageIntro": "Pasang sertifikat FloCafe sepisan supaya piranti iki bisa mbukak FloCafe kanthi aman. Pirantimu bakal njaluk persetujuan.",

@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Maaaring harangin ng Windows Firewall ang ibang device. Gamitin ang button ng Windows Firewall.",
     "diagProfileOk": "Nakatakda sa Private ang Wi-Fi network.",
     "diagProfilePublic": "Nakatakda sa Public ang network na ito, kaya maaaring harangin ng Windows ang ibang device. Gawin itong Private.",
-    "diagProfileDomain": "Gumagamit ng Domain profile ang network na ito, kaya maaaring harangin ng Windows Firewall ang ibang device. Payagan ang FloCafe sa mga Domain network o lumipat sa Private na network.",
+    "diagProfileDomain": "Gumagamit ng Domain profile ang network na ito, kaya hindi gagana ang Private firewall rule ng FloCafe. Payagan ang FloCafe sa mga Domain network sa Windows Defender Firewall (o magpatulong sa IT), o lumipat sa Private na network.",
     "diagDisabled": "Naka-off ang Ligtas na Network.",
     "trustPageTitle": "I-set up ang device na ito",
     "trustPageIntro": "I-install nang isang beses ang certificate ng FloCafe para ligtas na mabuksan ng device na ito ang FloCafe. Hihingi ng pag-apruba ang device mo.",

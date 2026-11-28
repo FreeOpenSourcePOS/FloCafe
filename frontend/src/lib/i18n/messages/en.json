@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Windows Firewall may block other devices. Use the Windows Firewall button.",
     "diagProfileOk": "Wi-Fi network is set to Private.",
     "diagProfilePublic": "This network is set to Public, so Windows may block other devices. Set it to Private.",
-    "diagProfileDomain": "This network uses a Domain profile, so Windows Firewall may block other devices. Allow FloCafe for Domain networks or switch to a Private network.",
+    "diagProfileDomain": "This network uses a Domain profile, so FloCafe's Private firewall rule will not apply. Allow FloCafe on Domain networks in Windows Defender Firewall (or ask IT), or switch to a Private network.",
     "diagDisabled": "Secure Network is turned off.",
     "trustPageTitle": "Set up this device",
     "trustPageIntro": "Install the FloCafe certificate once so this device can open FloCafe securely. Your device will ask you to approve it.",

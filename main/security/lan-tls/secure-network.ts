@@ -106,10 +106,16 @@ export interface DiagnosticCheck {
   surface?: SurfaceId;
 }
 
+interface IpChangeNotice {
+  previous: string[];
+  current: string[];
+  at: string;
+}
+
 interface ConfigFile {
   enabled?: boolean;
   lastLanIps?: string[];
-  ipChange?: { previous: string[]; current: string[]; at: string } | null;
+  ipChange?: IpChangeNotice | null;
 }
 
 const CONFIG_FILE = 'config.json';
@@ -130,6 +136,8 @@ export class SecureNetworkService {
   private leaf: IssuedCertificate | null = null;
   private leafKeyPem: string | null = null;
   private leafIps: string[] = [];
+  private pendingIpChange: IpChangeNotice | null = null;
+  private pendingLastLanIps: string[] | null = null;
   private fronts = new Map<SurfaceId, HttpsFront>();
   private surfaceErrors = new Map<SurfaceId, SecureNetworkErrorCode>();
   private errorCode: SecureNetworkErrorCode | null = null;
@@ -218,13 +226,28 @@ export class SecureNetworkService {
     const previous = [...(config.lastLanIps ?? [])].sort();
     const current = this.leafIps;
     if (previous.length > 0 && !sameSet(previous, current)) {
+      const notice: IpChangeNotice =
+        this.pendingIpChange &&
+        sameSet(this.pendingIpChange.previous, previous) &&
+        sameSet(this.pendingIpChange.current, current)
+          ? this.pendingIpChange
+          : { previous, current, at: this.now().toISOString() };
+      this.pendingIpChange = notice;
+      this.pendingLastLanIps = current;
       this.writeConfig({
         lastLanIps: current,
-        ipChange: { previous, current, at: this.now().toISOString() },
+        ipChange: notice,
       });
+      this.pendingIpChange = null;
+      this.pendingLastLanIps = null;
       this.log(`LAN address set changed: ${previous.join(', ')} -> ${current.join(', ')}`);
     } else if (previous.length === 0) {
+      this.pendingLastLanIps = current;
       this.writeConfig({ lastLanIps: current });
+      this.pendingLastLanIps = null;
+    } else {
+      this.pendingIpChange = null;
+      this.pendingLastLanIps = null;
     }
   }
 
@@ -319,7 +342,16 @@ export class SecureNetworkService {
       if (!this.ca || !this.leaf || this.fronts.size === 0) return false;
       const desired = this.desiredLanIps();
       const renewalDue = this.leaf.notAfter.getTime() - this.now().getTime() < RENEW_LEAF_WITHIN_MS;
-      if (sameSet(desired, this.leafIps) && !renewalDue) return false;
+      if (sameSet(desired, this.leafIps) && !renewalDue) {
+        if (this.pendingIpChange || this.pendingLastLanIps) {
+          try {
+            this.recordIpChange();
+          } catch (error) {
+            this.log(`Could not record the address change: ${(error as Error).message}`);
+          }
+        }
+        return false;
+      }
       const previous = { leaf: this.leaf, key: this.leafKeyPem, ips: this.leafIps };
       const previousCredentials = this.credentials();
       try {
@@ -442,6 +474,7 @@ export class SecureNetworkService {
   /** Clears the address-change and certificate-recreated notices once the owner has seen them. */
   acknowledgeNotices(): void {
     this.writeConfig({ ipChange: null });
+    this.pendingIpChange = null;
     clearCaRegeneration(this.deps.directory);
   }
 
@@ -507,7 +540,7 @@ export class SecureNetworkService {
       },
       lan_ips: this.desiredLanIps().filter((ip) => ip !== '127.0.0.1'),
       surfaces,
-      ip_change: config.ipChange ?? null,
+      ip_change: this.pendingIpChange ?? config.ipChange ?? null,
       // A reset the owner started needs no warning; an unexpected regeneration does.
       ca_regenerated:
         meta?.regeneratedAt && meta.regeneratedBecause && meta.regeneratedBecause !== 'reset'

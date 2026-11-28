@@ -49,8 +49,8 @@ export function parseNetworkProfile(output: string): FirewallState['networkProfi
     .map((line) => line.trim().toLowerCase())
     .filter(Boolean);
   if (categories.includes('public')) return 'public';
-  if (categories.includes('private')) return 'private';
   if (categories.some((c) => c.startsWith('domain'))) return 'domain';
+  if (categories.includes('private')) return 'private';
   return 'unknown';
 }
 

@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Le pare-feu Windows peut bloquer les autres appareils. Utilisez le bouton du pare-feu Windows.",
     "diagProfileOk": "Le réseau Wi-Fi est défini sur Privé.",
     "diagProfilePublic": "Ce réseau est défini sur Public, Windows peut donc bloquer les autres appareils. Passez-le sur Privé.",
-    "diagProfileDomain": "Ce réseau utilise un profil de domaine, le pare-feu Windows peut donc bloquer les autres appareils. Autorisez FloCafe sur les réseaux de domaine ou passez sur un réseau privé.",
+    "diagProfileDomain": "Ce réseau utilise un profil de domaine, la règle de pare-feu privée de FloCafe ne s'applique donc pas. Autorisez FloCafe sur les réseaux de domaine dans le pare-feu Windows Defender (ou demandez à l'équipe informatique), ou passez sur un réseau privé.",
     "diagDisabled": "Le réseau sécurisé est désactivé.",
     "trustPageTitle": "Configurer cet appareil",
     "trustPageIntro": "Installez une seule fois le certificat FloCafe pour que cet appareil puisse ouvrir FloCafe en toute sécurité. Votre appareil vous demandera de l'approuver.",

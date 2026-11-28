@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Windows Firewall blokkeert mogelijk andere apparaten. Gebruik de knop voor Windows Firewall.",
     "diagProfileOk": "Het wifi-netwerk is ingesteld op Privé.",
     "diagProfilePublic": "Dit netwerk is ingesteld op Openbaar, dus Windows blokkeert mogelijk andere apparaten. Stel het in op Privé.",
-    "diagProfileDomain": "Dit netwerk gebruikt een domeinprofiel, dus Windows Firewall blokkeert mogelijk andere apparaten. Sta FloCafe toe op domeinnetwerken of schakel over naar een privénetwerk.",
+    "diagProfileDomain": "Dit netwerk gebruikt een domeinprofiel, waardoor de privé-firewallregel van FloCafe niet van toepassing is. Sta FloCafe toe op domeinnetwerken in Windows Defender Firewall (of vraag IT), of schakel over naar een privénetwerk.",
     "diagDisabled": "Beveiligd netwerk staat uit.",
     "trustPageTitle": "Dit apparaat instellen",
     "trustPageIntro": "Installeer het FloCafe-certificaat één keer zodat dit apparaat FloCafe veilig kan openen. Je apparaat vraagt je om het goed te keuren.",

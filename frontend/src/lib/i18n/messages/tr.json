@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Windows Güvenlik Duvarı diğer cihazları engelleyebilir. Windows Güvenlik Duvarı düğmesini kullanın.",
     "diagProfileOk": "Wi-Fi ağı Özel olarak ayarlı.",
     "diagProfilePublic": "Bu ağ Genel olarak ayarlı, bu nedenle Windows diğer cihazları engelleyebilir. Özel olarak değiştirin.",
-    "diagProfileDomain": "Bu ağ Etki Alanı profili kullanıyor, bu nedenle Windows Güvenlik Duvarı diğer cihazları engelleyebilir. Etki Alanı ağlarında FloCafe'ye izin verin veya Özel ağa geçin.",
+    "diagProfileDomain": "Bu ağ Etki Alanı profili kullanıyor, bu nedenle FloCafe'nin Özel güvenlik duvarı kuralı uygulanmaz. Windows Defender Güvenlik Duvarı'nda (veya BT ekibinden isteyerek) Etki Alanı ağlarında FloCafe'ye izin verin ya da Özel ağa geçin.",
     "diagDisabled": "Güvenli Ağ kapalı.",
     "trustPageTitle": "Bu cihazı kur",
     "trustPageIntro": "Bu cihazın FloCafe'yi güvenle açabilmesi için FloCafe sertifikasını bir kez yükleyin. Cihazınız onay vermenizi isteyecek.",

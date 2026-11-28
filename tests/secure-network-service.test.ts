@@ -918,12 +918,14 @@ async function main() {
       } catch {}
     });
 
+    let roClock = new Date('2026-07-01T10:00:00Z');
     const restartedOnNewIp = new SecureNetworkService({
       directory: roStartDir,
       storage,
       getLanIPs: () => ['192.168.1.81'],
       surfaces: [roStartSurface.definition],
       bindHost: '127.0.0.1',
+      now: () => roClock,
       log: () => {},
     });
     await restartedOnNewIp.start();
@@ -935,6 +937,38 @@ async function main() {
     );
     assert.equal(restartedOnNewIp.getStatus().error_code, null);
     assert.deepEqual(restartedOnNewIp.getCertifiedLanIps(), ['192.168.1.81']);
+    const pendingNotice = restartedOnNewIp.getStatus().ip_change;
+    assert.deepEqual(
+      pendingNotice,
+      {
+        previous: ['127.0.0.1', '192.168.1.80'],
+        current: ['127.0.0.1', '192.168.1.81'],
+        at: '2026-07-01T10:00:00.000Z',
+      },
+      'unpersisted IP-change warning stays visible in status while config.json is unwritable',
+    );
+
+    // Once config.json becomes writable, the next refresh persists the pending IP change with its original timestamp.
+    fs.chmodSync(configPath, 0o600);
+    roClock = new Date('2026-07-01T10:05:00Z');
+    assert.equal(
+      await restartedOnNewIp.refresh(),
+      false,
+      'refresh persists pending IP change without needlessly reissuing the leaf',
+    );
+    const persistedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.deepEqual(persistedConfig.lastLanIps, ['127.0.0.1', '192.168.1.81']);
+    assert.deepEqual(
+      persistedConfig.ipChange,
+      pendingNotice,
+      'persisted IP change preserves the original timestamp',
+    );
+    restartedOnNewIp.acknowledgeNotices();
+    assert.equal(
+      restartedOnNewIp.getStatus().ip_change,
+      null,
+      'acknowledging clears the persisted IP-change notice',
+    );
   }
 
   {

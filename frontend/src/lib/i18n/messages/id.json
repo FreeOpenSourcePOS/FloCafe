@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Windows Firewall mungkin memblokir perangkat lain. Gunakan tombol Windows Firewall.",
     "diagProfileOk": "Jaringan Wi-Fi diatur ke Pribadi.",
     "diagProfilePublic": "Jaringan ini diatur ke Publik, sehingga Windows mungkin memblokir perangkat lain. Ubah ke Pribadi.",
-    "diagProfileDomain": "Jaringan ini menggunakan profil Domain, sehingga Windows Firewall mungkin memblokir perangkat lain. Izinkan FloCafe untuk jaringan Domain atau beralih ke jaringan Pribadi.",
+    "diagProfileDomain": "Jaringan ini menggunakan profil Domain, sehingga aturan firewall Pribadi FloCafe tidak berlaku. Izinkan FloCafe untuk jaringan Domain di Windows Defender Firewall (atau minta bantuan IT), atau beralih ke jaringan Pribadi.",
     "diagDisabled": "Jaringan Aman dimatikan.",
     "trustPageTitle": "Siapkan perangkat ini",
     "trustPageIntro": "Pasang sertifikat FloCafe satu kali agar perangkat ini dapat membuka FloCafe dengan aman. Perangkat Anda akan meminta persetujuan.",

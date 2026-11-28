@@ -3809,7 +3809,7 @@
     "diagFirewallMissing": "Die Windows-Firewall blockiert möglicherweise andere Geräte. Nutzen Sie die Schaltfläche für die Windows-Firewall.",
     "diagProfileOk": "Das WLAN ist auf Privat gestellt.",
     "diagProfilePublic": "Dieses Netzwerk ist auf Öffentlich gestellt, daher blockiert Windows möglicherweise andere Geräte. Stellen Sie es auf Privat.",
-    "diagProfileDomain": "Dieses Netzwerk verwendet ein Domänenprofil, daher blockiert die Windows-Firewall möglicherweise andere Geräte. Erlauben Sie FloCafe für Domänennetzwerke oder wechseln Sie zu einem privaten Netzwerk.",
+    "diagProfileDomain": "Dieses Netzwerk verwendet ein Domänenprofil, sodass die private Firewall-Regel von FloCafe nicht greift. Erlauben Sie FloCafe für Domänennetzwerke in der Windows Defender Firewall (oder fragen Sie die IT), oder wechseln Sie zu einem privaten Netzwerk.",
     "diagDisabled": "Das sichere Netzwerk ist ausgeschaltet.",
     "trustPageTitle": "Dieses Gerät einrichten",
     "trustPageIntro": "Installieren Sie das FloCafe-Zertifikat einmalig, damit dieses Gerät FloCafe sicher öffnen kann. Ihr Gerät bittet Sie um Bestätigung.",

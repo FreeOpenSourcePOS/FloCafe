@@ -639,6 +639,11 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
       if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
         return { error: 'Not authorized to update this item' };
       }
+      if (Number(existingItem.requires_kitchen ?? 1) === 0) {
+        return {
+          error: 'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+        };
+      }
 
       const updatedAt = now();
       const updateResult =
@@ -762,7 +767,7 @@ export function buildActiveOrdersSnapshot(
     const stationPlaceholders = stationIds.map(() => '?').join(',');
     const categoryRoute =
       stationRoutingCategoryIds.length > 0
-        ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
+        ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_oi.requires_kitchen = 1 AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
         : '';
     query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
     orderParams.push(...stationIds, ...stationRoutingCategoryIds);

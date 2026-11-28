@@ -40,7 +40,7 @@ import { buildMenuDocument } from '../printers/document-menu';
 import { detectPrintLanguageDirection } from '../printers/document-classic';
 import type { DeliverySlipPaymentBill } from '../../shared/print';
 import { PRINTER_TEXT_SIZES, normalizePrinterTextSize } from '../../shared/print/text-size';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { isKitchenItem, isTerminalItemStatus } from '../../shared/order-item-status';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -1429,13 +1429,28 @@ router.post(
       }
 
       const db = getDatabase();
-      const preCheckOrder = db
-        .prepare('SELECT id, release_status FROM orders WHERE id = ?')
-        .get(orderId) as { id: number; release_status?: string | null } | undefined;
-      if (preCheckOrder?.release_status && preCheckOrder.release_status !== 'released') {
+      const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+      if (order?.release_status && order.release_status !== 'released') {
         return res.status(409).json({
           error: 'Cannot print KOT for a scheduled order before it is released to the kitchen',
         });
+      }
+
+      const orderItems: any[] = order ? getEffectiveOrderItems(db, orderId) : [];
+      const storedItemsById = new Map<string, Record<string, unknown>>(
+        orderItems
+          .filter((row) => row?.id !== undefined && row?.id !== null)
+          .map((row) => [String(row.id), row]),
+      );
+      const kotSourceItems = (Array.isArray(items) ? items : orderItems).filter((item: any) => {
+        const stored =
+          item?.id !== undefined && item?.id !== null
+            ? storedItemsById.get(String(item.id))
+            : undefined;
+        return isKitchenItem(stored ?? item) && isKotItemPending(item?.status);
+      });
+      if (order && kotSourceItems.length === 0) {
+        return res.json({ success: true, skipped: true, warnings: [] });
       }
 
       const printer = db
@@ -1453,15 +1468,11 @@ router.post(
           .json({ error: 'No default printer configured. Add a printer in Settings.' });
       }
 
-      const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
       }
 
       const kotLanguage = resolveTenantKotLanguage(db);
-
-      // Fetch order items from database
-      const orderItems: any[] = getEffectiveOrderItems(db, orderId);
 
       // Fetch table/customer info if available so backend KOT metadata matches
       // the browser and WebUSB paths.
@@ -1485,9 +1496,6 @@ router.post(
       const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
       let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
       let failedPrinter: any = printer;
-      const kotSourceItems = (Array.isArray(items) ? items : orderItems).filter((item: any) =>
-        isKotItemPending(item?.status),
-      );
 
       if (stationName) {
         const station = stationName || 'Kitchen';
@@ -1969,7 +1977,8 @@ export async function autoPrintReleasedOrderKot(
       arabicShapingSetting !== undefined ? arabicShapingSetting === 'true' : undefined;
 
     const kotSourceItems = getEffectiveOrderItems(db, String(orderId)).filter(
-      (item: { status?: string | null }) => isKotItemPending(item?.status),
+      (item: { status?: string | null; requires_kitchen?: unknown }) =>
+        isKitchenItem(item) && isKotItemPending(item?.status),
     );
     if (kotSourceItems.length === 0) return false;
 

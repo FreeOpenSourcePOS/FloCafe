@@ -51,6 +51,8 @@ import {
   type PrinterTextSize,
 } from '@print/text-size';
 import { columnsForConfiguredPrinter } from '@print/width';
+import { isKotItemPending } from '@print/document';
+import { isKitchenItem } from '@shared/order-item-status';
 import {
   ensureReceiptSettingsLoaded,
   PrintCancelledOnTenantChangeError,
@@ -881,6 +883,13 @@ export const usePrinterStore = create<PrinterState>()(
           set({ lastError: err.message });
           throw err;
         }
+        const candidateItems = opts?.items ?? order.items;
+        const eligibleKotItems = Array.isArray(candidateItems)
+          ? candidateItems.filter((item) => isKitchenItem(item) && isKotItemPending(item?.status))
+          : undefined;
+        if (eligibleKotItems && eligibleKotItems.length === 0) {
+          return [];
+        }
         try {
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
@@ -889,7 +898,7 @@ export const usePrinterStore = create<PrinterState>()(
                 '/printers/print-kot',
                 {
                   orderId: order.id,
-                  items: opts?.items ?? order.items,
+                  items: eligibleKotItems,
                   stationName: opts?.stationName,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,
@@ -919,7 +928,7 @@ export const usePrinterStore = create<PrinterState>()(
           throwIfTenantChanged();
           const hydratedLargeOrderNumber = usePosSettingsStore.getState().billShowLargeOrderNumber;
 
-          const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
+          const orderForPrint = eligibleKotItems ? { ...order, items: eligibleKotItems } : order;
           const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
           const { resolveReadyKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
           throwIfTenantChanged();

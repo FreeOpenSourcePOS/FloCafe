@@ -268,6 +268,7 @@ export interface OrderItem {
   superseded?: boolean;
   edit_version?: number;
   price_overridden?: number | boolean;
+  requires_kitchen?: number | boolean;
   original_unit_price?: number | null;
   price_override_reason?: string | null;
 }

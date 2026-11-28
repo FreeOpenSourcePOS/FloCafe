@@ -678,6 +678,7 @@ export function startKdsServer(): Promise<void> {
           LEFT JOIN tables t ON o.table_id = t.id
           INNER JOIN order_items oi ON oi.order_id = o.id
           WHERE o.id IN (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})
+          AND oi.requires_kitchen = 1
           AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment', 'refunded')
           AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         `;
@@ -686,7 +687,7 @@ export function startKdsServer(): Promise<void> {
           const stationPlaceholders = stationIds.map(() => '?').join(',');
           const categoryRoute =
             stationRoutingCategoryIds.length > 0
-              ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
+              ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_oi.requires_kitchen = 1 AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
               : '';
           query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
           orderParams.push(...stationIds, ...stationRoutingCategoryIds);
@@ -715,7 +716,7 @@ export function startKdsServer(): Promise<void> {
             .prepare(`
             SELECT oi.*, p.category_id
             FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
-            WHERE oi.order_id IN (${placeholders}) ORDER BY oi.order_id, oi.id
+            WHERE oi.order_id IN (${placeholders}) AND oi.requires_kitchen = 1 ORDER BY oi.order_id, oi.id
           `)
             .all(...orderIds) as any[];
           for (const item of rawItems) {
@@ -929,6 +930,13 @@ export function startKdsServer(): Promise<void> {
               !currentCategoryIds.includes(String(item.category_id))
             ) {
               return { statusCode: 403, error: 'Not authorized to update this item' };
+            }
+            if (Number(item.requires_kitchen ?? 1) === 0) {
+              return {
+                statusCode: 400,
+                error:
+                  'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+              };
             }
 
             const updatedAt = now();

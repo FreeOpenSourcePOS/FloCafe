@@ -143,7 +143,7 @@
     "test:order-audit-log": "node tests/run-electron-node-test.cjs tests/order-audit-log.test.ts",
     "test:scheduled-orders": "node tests/run-electron-node-test.cjs tests/issue-360-scheduled-orders.test.ts",
     "test:multi-counter-ordering": "node tests/run-electron-node-test.cjs tests/multi-counter-ordering.test.ts",
-    "test:hybrid-service-model": "node tests/run-electron-node-test.cjs tests/hybrid-service-model.test.ts",
+    "test:hybrid-service-model": "node tests/run-electron-node-test.cjs tests/hybrid-service-model.test.ts && tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/hybrid-service-model-frontend.test.ts",
     "test:authz-phase3": "node tests/run-electron-node-test.cjs tests/authz-matrix-phase3.test.ts",
     "test:authorization-permissions": "tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/permission-label-i18n.test.ts && tsx --tsconfig tests/tsconfig.json -r ./tests/register-tsx.cjs tests/permission-matrix-self-access.test.ts && node tests/run-electron-node-test.cjs tests/authorization-permissions.test.ts && node tests/run-electron-node-test.cjs tests/authorization-api.test.ts && node tests/run-electron-node-test.cjs tests/authorization-static-audit.test.ts && node tests/run-electron-node-test.cjs tests/static-audit-posix-paths.test.ts",
     "test:customer-auth": "node tests/run-electron-node-test.cjs tests/customer-auth.test.ts",

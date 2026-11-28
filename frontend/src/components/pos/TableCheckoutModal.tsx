@@ -16,6 +16,11 @@ import MoveTableModal from '@/components/tables/MoveTableModal';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 import {
+  canCheckoutOrder,
+  isOrderItemEditLocked,
+  isOrderSettledPaid,
+} from '@/lib/order-payment-state';
+import {
   CHECKOUT_PRIMARY_CTA_CLASS,
   CheckoutHeaderChips,
   CheckoutQtyBadge,
@@ -62,6 +67,7 @@ export default function TableCheckoutModal({
   const { currentTenant } = useAuthStore();
   const canMoveTable = tenantCan(currentTenant, 'tables.orders.move');
   const canEditItems = tenantCan(currentTenant, 'orders.item.edit');
+  const canUpdateOrderStatus = tenantCan(currentTenant, 'orders.status.update');
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
@@ -74,6 +80,8 @@ export default function TableCheckoutModal({
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [addingItems, setAddingItems] = useState(false);
+  const [closingTable, setClosingTable] = useState(false);
+  const closingTableRef = useRef(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
   const [splitCheckSaving, setSplitCheckSaving] = useState(false);
@@ -102,6 +110,8 @@ export default function TableCheckoutModal({
       if (
         generating ||
         addingItems ||
+        closingTable ||
+        closingTableRef.current ||
         printingBill ||
         splitCheckSaving ||
         moveTableBusy ||
@@ -193,7 +203,7 @@ export default function TableCheckoutModal({
   const handlePayment = (bill: Bill) => onPayment(bill);
 
   const handleCheckout = async () => {
-    if (!order) return;
+    if (!order || !canCheckoutOrder(order)) return;
     setGenerating(true);
     try {
       if (order.bill) {
@@ -206,6 +216,22 @@ export default function TableCheckoutModal({
       toast.error(t('generateBillFailed'));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleCloseTable = async () => {
+    if (!order || closingTableRef.current) return;
+    closingTableRef.current = true;
+    setClosingTable(true);
+    try {
+      await api.patch(`/orders/${order.id}/status`, { status: 'completed' });
+      onClose();
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      toast.error(typeof message === 'string' && message ? message : t('closeTableFailed'));
+    } finally {
+      closingTableRef.current = false;
+      setClosingTable(false);
     }
   };
 
@@ -329,6 +355,35 @@ export default function TableCheckoutModal({
     (item: OrderItem) => !isTerminalItemStatus(item.status),
   );
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
+  const canCheckout = canCheckoutOrder(order);
+  const isPaidOrder = isOrderSettledPaid(order);
+  const itemEditLocked = isOrderItemEditLocked(order);
+  const canAddItems = canCheckout && !itemEditLocked;
+  const canCloseTable = isPaidOrder && canUpdateOrderStatus;
+  const showPrintBillButton = splitBills.length === 0 && (Boolean(order.bill) || canGenerateBill);
+  const printBillButton = showPrintBillButton ? (
+    <Button
+      variant="outline"
+      onClick={handlePrintBill}
+      disabled={generating || printingBill || closingTable}
+      className="rounded-xl bg-card font-medium dark:border-white/10"
+    >
+      {printingBill ? (
+        <Loader2 size={15} className="animate-spin me-1.5" />
+      ) : (
+        <Printer size={15} className="me-1.5" />
+      )}
+      {tReceipt('printBill')}
+    </Button>
+  ) : null;
+  const gridColsClass: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-2',
+    3: 'grid-cols-3',
+  };
+  const checkoutActionCount = (canAddItems ? 1 : 0) + (showPrintBillButton ? 1 : 0) + 1;
+  const closeTableActionCount = (showPrintBillButton ? 1 : 0) + (canCloseTable ? 1 : 0);
+  const nonPayableActionCount = (showPrintBillButton ? 1 : 0) + 1;
   const headerChips: CheckoutHeaderChipItem[] = [
     { key: 'order', label: t('orderNumber', { number: order.order_number }) },
     ...(order.bill?.bill_number
@@ -393,7 +448,7 @@ export default function TableCheckoutModal({
               )}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => dismissHandlerRef.current()}
                 className="touch-target rounded-xl border border-border/75 bg-muted/40 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:border-white/10"
                 aria-label={t('close')}
               >
@@ -552,58 +607,99 @@ export default function TableCheckoutModal({
                   {t('splitCheck')}
                 </Button>
               )}
-            {cartItemCount > 0 ? (
-              // Cart has items - show "Add items to order" option
+            {isPaidOrder ? (
               <div className="space-y-2">
+                {cartItemCount > 0 && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    {t('paidOrderCloseTableHint')}
+                  </p>
+                )}
+                {closeTableActionCount > 0 && (
+                  <div className={`grid ${gridColsClass[closeTableActionCount]} gap-2`}>
+                    {printBillButton}
+                    {canCloseTable && (
+                      <Button
+                        onClick={handleCloseTable}
+                        disabled={closingTable || printingBill}
+                        className={`rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                      >
+                        {closingTable ? (
+                          <>
+                            <Loader2 size={15} className="animate-spin me-1.5" />
+                            {t('closingTable')}
+                          </>
+                        ) : (
+                          t('closeTable')
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : !canCheckout ? (
+              <div className={`grid ${gridColsClass[nonPayableActionCount]} gap-2`}>
+                {printBillButton}
                 <Button
-                  onClick={handleAddCartToOrder}
-                  disabled={addingItems}
-                  className={`w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
-                  size="lg"
-                >
-                  <ShoppingCart size={16} className="me-2" />
-                  {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
-                </Button>
-                <Button
-                  onClick={handleCheckout}
                   variant="outline"
-                  className="w-full rounded-xl bg-card dark:border-white/10"
-                  disabled={generating}
+                  onClick={() => dismissHandlerRef.current()}
+                  disabled={closingTable || printingBill}
+                  className="rounded-xl bg-card dark:border-white/10"
                 >
-                  {generating ? t('generating') : t('checkoutInstead')}
+                  {t('close')}
                 </Button>
               </div>
-            ) : splitBills.length === 0 ? (
-              // Cart empty - show both options
-              <div
-                className={`grid ${order.bill || canGenerateBill ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}
-              >
-                <Button
-                  variant="outline"
-                  className="rounded-xl bg-card dark:border-white/10"
-                  onClick={() => onAddItems(table, order)}
-                  disabled={generating || printingBill}
-                >
-                  {t('addItems')}
-                </Button>
-                {(order.bill || canGenerateBill) && (
+            ) : cartItemCount > 0 ? (
+              <div className="space-y-2">
+                {canAddItems ? (
                   <Button
-                    variant="outline"
-                    onClick={handlePrintBill}
-                    disabled={generating || printingBill}
-                    className="rounded-xl bg-card font-medium dark:border-white/10"
+                    onClick={handleAddCartToOrder}
+                    disabled={addingItems || generating || printingBill || closingTable}
+                    className={`w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
+                    size="lg"
                   >
-                    {printingBill ? (
-                      <Loader2 size={15} className="animate-spin me-1.5" />
-                    ) : (
-                      <Printer size={15} className="me-1.5" />
-                    )}
-                    {tReceipt('printBill')}
+                    <ShoppingCart size={16} className="me-2" />
+                    {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
+                  </Button>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center">
+                    {t('scheduledEditLockedPaid')}
+                  </p>
+                )}
+                {splitBills.length === 0 && (
+                  <Button
+                    onClick={handleCheckout}
+                    variant={canAddItems ? 'outline' : 'default'}
+                    className={
+                      canAddItems
+                        ? 'w-full rounded-xl bg-card dark:border-white/10'
+                        : `w-full rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`
+                    }
+                    disabled={generating || addingItems || printingBill || closingTable}
+                  >
+                    {generating
+                      ? t('generating')
+                      : canAddItems
+                        ? t('checkoutInstead')
+                        : t('checkout')}
                   </Button>
                 )}
+              </div>
+            ) : splitBills.length === 0 ? (
+              <div className={`grid ${gridColsClass[checkoutActionCount]} gap-2`}>
+                {canAddItems && (
+                  <Button
+                    variant="outline"
+                    className="rounded-xl bg-card dark:border-white/10"
+                    onClick={() => onAddItems(table, order)}
+                    disabled={generating || printingBill || closingTable}
+                  >
+                    {t('addItems')}
+                  </Button>
+                )}
+                {printBillButton}
                 <Button
                   onClick={handleCheckout}
-                  disabled={generating || printingBill}
+                  disabled={generating || printingBill || closingTable}
                   className={`rounded-xl font-semibold ${CHECKOUT_PRIMARY_CTA_CLASS}`}
                 >
                   {generating ? t('generating') : t('checkout')}

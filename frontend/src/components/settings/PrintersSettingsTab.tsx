@@ -406,8 +406,8 @@ export function PrintersSettingsTab({
       fetchPrinters();
       refreshHardwarePrinter();
       setDiscoveryVersion((version) => version + 1);
-    } catch {
-      toast.error(t('printerDeleteFailed'));
+    } catch (err) {
+      toast.error(printerErrorMessage(err, t('printerDeleteFailed')));
     }
   };
 

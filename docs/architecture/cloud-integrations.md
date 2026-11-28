@@ -220,8 +220,9 @@ sent at `anonymous` join the account. The first account key a database derives i
 `posthog_account_ref`, so editing the store email does not split the person; a reinstall derives it
 again from the current email. At `anonymous`, main sets store configuration on the device person
 with a `$set` event and never derives the account key. Moving from `full` to `anonymous` stops new
-links; events already linked stay linked. At `off`, exceptions use the per-launch id with
-`$process_person_profile` set to `false`. Stopping cloud services or requesting cloud deletion
+links; events already linked stay linked. At `off`, exceptions and diagnostic events use the per-launch id with person processing off
+(`options.process_person_profile` set to `false` in `posthog-node` and `$process_person_profile`
+set to `false` in `posthog-js`). Stopping cloud services or requesting cloud deletion
 turns telemetry off and rotates `telemetry_anon_id`, but `posthog_install_seed` does not rotate, so
 a later opt-in on the same database links to the same device again.
 

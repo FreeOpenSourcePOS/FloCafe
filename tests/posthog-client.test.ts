@@ -14,15 +14,21 @@ interface RecordedClient {
     host?: string;
     isServer?: boolean;
     personalApiKey?: string;
-    before_send?: (event: unknown) => unknown;
+    beforeSend?: (event: unknown) => unknown;
   };
-  events: Array<{ distinctId?: string; event?: string; properties?: Record<string, unknown> }>;
+  events: Array<{
+    distinctId?: string;
+    event?: string;
+    properties?: Record<string, unknown>;
+    options?: Record<string, unknown>;
+  }>;
   exceptions: Array<{
     message: string;
     name: string;
     stack: string;
     distinctId?: string;
     properties?: Record<string, unknown>;
+    options?: Record<string, unknown>;
     scrubbed?: Record<string, unknown>;
     cause?: Error;
   }>;
@@ -88,16 +94,27 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
           clients.push(this);
         }
         capture(payload: RecordedClient['events'][number]) {
-          if (this.options.before_send) {
-            const scrubbed = this.options.before_send({
+          if (this.options.beforeSend) {
+            const scrubbed = this.options.beforeSend({
               event: payload.event ?? '',
               properties: { ...(payload.properties ?? {}), distinct_id: payload.distinctId },
+              options: payload.options,
             });
             if (!scrubbed) return;
           }
           this.events.push(payload);
         }
-        captureException(error: Error, distinctId?: string, properties?: Record<string, unknown>) {
+        captureException(
+          error: Error,
+          exceptionOptions?: {
+            distinctId?: string;
+            properties?: Record<string, unknown>;
+            options?: Record<string, unknown>;
+          },
+        ) {
+          const distinctId = exceptionOptions?.distinctId;
+          const properties = exceptionOptions?.properties;
+          const eventOptions = exceptionOptions?.options;
           const event = {
             event: '$exception',
             properties: {
@@ -111,10 +128,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
                 },
               ],
             },
+            options: eventOptions,
           };
           let scrubbed: Record<string, unknown> | undefined;
-          if (this.options.before_send) {
-            const kept = this.options.before_send(event);
+          if (this.options.beforeSend) {
+            const kept = this.options.beforeSend(event);
             if (!kept) return;
             scrubbed = (kept as { properties?: Record<string, unknown> }).properties;
           }
@@ -124,6 +142,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
             stack: error.stack ?? '',
             distinctId,
             properties,
+            options: eventOptions,
             scrubbed,
             cause: error.cause instanceof Error ? error.cause : undefined,
           });
@@ -1646,7 +1665,7 @@ async function main() {
   );
   const offline = latest().exceptions.at(-1);
   assert.match(offline.distinctId ?? '', /^anon_/, 'telemetry off never links to the account');
-  assert.equal(offline.properties?.$process_person_profile, false);
+  assert.equal(offline.options?.process_person_profile, false);
   assert.equal('install_ref' in (offline.properties ?? {}), false);
   assert.equal('store_ref' in (offline.properties ?? {}), false);
   assert.equal(quiet.distinctId, offline.distinctId);

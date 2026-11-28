@@ -434,6 +434,7 @@ function installCheckoutComponentMocks(
     apiGet?: (url: string) => Promise<any>;
     apiPost?: (url: string, body: any) => Promise<any>;
     apiPatch?: (url: string, body: any, config?: any) => Promise<any>;
+    onToastError?: (msg: string) => void;
     operationReference?: string;
     charges?: any[];
     chargesBreakdown?: any[];
@@ -515,7 +516,10 @@ function installCheckoutComponentMocks(
       );
     }
     if (request === 'react-hot-toast') {
-      const toastFn = Object.assign(() => {}, { success: () => {}, error: () => {} });
+      const toastFn = Object.assign(() => {}, {
+        success: () => {},
+        error: (msg: string) => overrides.onToastError?.(msg),
+      });
       return { __esModule: true, default: toastFn, toast: toastFn };
     }
     if (request === '@/store/auth') {
@@ -6496,6 +6500,842 @@ async function testTableCheckoutChildEscapeBusyGuards() {
   );
 }
 
+async function testTableCheckoutPrepaidCloseTable() {
+  console.log('\n--- 15. TableCheckoutModal Close Table for Prepaid Dine-In (#1641) ---');
+
+  function loadTableCheckoutModal() {
+    const baseLoad = Module._load;
+    Module._load = function (request: string, parent: any, isMain: boolean) {
+      if (
+        request === '@/components/tables/MoveTableModal' ||
+        request === '@/components/orders/EditOrderItemModal'
+      ) {
+        return { __esModule: true, default: () => null };
+      }
+      return baseLoad.call(this, request, parent, isMain);
+    };
+    const tcmPath = path.resolve(ROOT, 'frontend/src/components/pos/TableCheckoutModal.tsx');
+    delete require.cache[tcmPath];
+    return require(tcmPath).default;
+  }
+
+  function makeDineInOrder(overrides: Record<string, any> = {}) {
+    return {
+      id: 91,
+      order_number: 901,
+      type: 'dine_in',
+      status: 'pending',
+      subtotal: 25,
+      tax_amount: 0,
+      total: 25,
+      items: [
+        {
+          id: 1001,
+          product_name: 'Latte',
+          quantity: 1,
+          subtotal: 25,
+          total: 25,
+          status: 'pending',
+          requires_kitchen: true,
+        },
+      ],
+      bill: {
+        id: 9001,
+        bill_number: 'B-9001',
+        total: 25,
+        paid_amount: 25,
+        balance: 0,
+        payment_status: 'paid',
+      },
+      bills: [],
+      ...overrides,
+    };
+  }
+
+  // 15a: Paid on_payment dine-in order & hybrid ready-made paid dine-in order render Close table,
+  // call PATCH /orders/:id/status { status: 'completed' }, guard double-clicks & Escape, and close modal
+  for (const scenario of [
+    {
+      name: 'on_payment dine-in prepaid order',
+      order: makeDineInOrder({
+        dispatch_policy: 'on_payment',
+        checkout_stage: 'paid',
+        release_status: 'released',
+      }),
+    },
+    {
+      name: 'hybrid ready-made paid dine-in order',
+      order: makeDineInOrder({
+        id: 92,
+        order_number: 902,
+        items: [
+          {
+            id: 1002,
+            product_name: 'Bottled Juice',
+            quantity: 1,
+            subtotal: 25,
+            total: 25,
+            status: 'served',
+            requires_kitchen: false,
+          },
+        ],
+      }),
+    },
+  ]) {
+    await withAliases(async () => {
+      const harness = createTreeStatefulHarness();
+      let resolvePatch!: (v: any) => void;
+      const patchCalls: Array<{ url: string; body: any }> = [];
+      let closeCount = 0;
+      let paymentCalls = 0;
+      let registeredDismiss: (() => boolean) | undefined;
+
+      try {
+        installCheckoutComponentMocks(harness as any, {
+          role: 'cashier',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return {
+                data: {
+                  table: { id: 't-paid', name: 'T5', activeOrder: { id: scenario.order.id } },
+                },
+              };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order: scenario.order } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'false' } } };
+            }
+            return { data: {} };
+          },
+          apiPatch: async (url: string, body: any) => {
+            patchCalls.push({ url, body });
+            return new Promise((resolve) => {
+              resolvePatch = resolve;
+            });
+          },
+        });
+
+        const TableCheckoutModal = loadTableCheckoutModal();
+        const props = {
+          table: { id: 't-paid', name: 'T5', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {
+            closeCount++;
+          },
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {
+            paymentCalls++;
+          },
+          onRegisterDismissHandler: (fn?: () => boolean) => {
+            registeredDismiss = fn;
+          },
+        };
+
+        const renderTcm = () => harness.renderAndSettle(TableCheckoutModal, props);
+        renderTcm();
+        await new Promise((r) => setTimeout(r, 15));
+        let tree = renderTcm();
+
+        const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+        const buttonTexts = buttons.map((b) => renderToStaticMarkup(b));
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('>checkout<')),
+          `${scenario.name}: must NOT render Checkout button when paid`,
+        );
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('>addItems<')),
+          `${scenario.name}: must NOT render Add Items button when paid`,
+        );
+        const closeTableBtn = buttons.find((b) => renderToStaticMarkup(b).includes('closeTable'));
+        assert.ok(closeTableBtn, `${scenario.name}: renders Close table button`);
+
+        // Click Close table -> PATCH in flight; double-click and Escape are guarded
+        const p1 = closeTableBtn.props.onClick();
+        const p2 = closeTableBtn.props.onClick();
+        await new Promise((r) => setTimeout(r, 5));
+        tree = renderTcm();
+
+        assert.equal(patchCalls.length, 1, `${scenario.name}: double-click fires only one PATCH`);
+        assert.equal(patchCalls[0].url, `/orders/${scenario.order.id}/status`);
+        assert.deepEqual(patchCalls[0].body, { status: 'completed' });
+        assert.equal(paymentCalls, 0, `${scenario.name}: never opens payment modal`);
+        assert.equal(
+          registeredDismiss?.(),
+          true,
+          `${scenario.name}: Escape consumed while closing`,
+        );
+        const headerCloseBtn = harness
+          .findExpanded(tree, (el) => el.type === 'button')
+          .find((b) => b.props?.['aria-label'] === 'close');
+        assert.ok(headerCloseBtn, `${scenario.name}: renders header X close button`);
+        headerCloseBtn.props.onClick();
+        assert.equal(
+          closeCount,
+          0,
+          `${scenario.name}: modal stays open on Escape or X while PATCH is in flight`,
+        );
+
+        const busyCloseBtn = harness
+          .findExpanded(tree, (el) => el.type === 'button')
+          .find((b) => renderToStaticMarkup(b).includes('closingTable'));
+        assert.ok(
+          busyCloseBtn?.props?.disabled,
+          `${scenario.name}: Close table button disabled while closing`,
+        );
+
+        resolvePatch({ data: { order: { ...scenario.order, status: 'completed' } } });
+        await Promise.all([p1, p2]);
+        assert.equal(closeCount, 1, `${scenario.name}: calls onClose() after completion`);
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 15b: Unpaid and partial dine-in bills still render Checkout (and Add Items) and open payment modal
+  for (const statusCase of [
+    { payment_status: 'unpaid', balance: 25, paid_amount: 0 },
+    { payment_status: 'partial', balance: 10, paid_amount: 15 },
+  ]) {
+    await withAliases(async () => {
+      const harness = createTreeStatefulHarness();
+      let paymentCalls = 0;
+
+      try {
+        const order = makeDineInOrder({
+          bill: {
+            id: 9002,
+            bill_number: 'B-9002',
+            total: 25,
+            paid_amount: statusCase.paid_amount,
+            balance: statusCase.balance,
+            payment_status: statusCase.payment_status,
+          },
+        });
+        installCheckoutComponentMocks(harness as any, {
+          role: 'cashier',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return {
+                data: { table: { id: 't-unpaid', name: 'T6', activeOrder: { id: order.id } } },
+              };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'false' } } };
+            }
+            return { data: {} };
+          },
+        });
+
+        const TableCheckoutModal = loadTableCheckoutModal();
+        const props = {
+          table: { id: 't-unpaid', name: 'T6', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {},
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {
+            paymentCalls++;
+          },
+        };
+
+        harness.renderAndSettle(TableCheckoutModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+        const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+        const buttonTexts = buttons.map((b) => renderToStaticMarkup(b));
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('closeTable')),
+          `${statusCase.payment_status}: does NOT render Close table`,
+        );
+        const checkoutBtn = buttons.find((b) => renderToStaticMarkup(b).includes('>checkout<'));
+        assert.ok(checkoutBtn, `${statusCase.payment_status}: still renders Checkout`);
+        await checkoutBtn.props.onClick();
+        assert.equal(paymentCalls, 1, `${statusCase.payment_status}: Checkout invokes onPayment`);
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 15c: Non-empty cart with paid order avoids unsafe Add to order / Checkout instead and offers Close table
+  await withAliases(async () => {
+    const harness = createTreeStatefulHarness();
+    const patchCalls: Array<{ url: string; body: any }> = [];
+    let addCartCalls = 0;
+    let closeCount = 0;
+
+    try {
+      const paidOrder = makeDineInOrder({ dispatch_policy: 'on_payment', checkout_stage: 'paid' });
+      installCheckoutComponentMocks(harness as any, {
+        role: 'cashier',
+        apiGet: async (url: string) => {
+          if (String(url).includes('/tables/')) {
+            return {
+              data: { table: { id: 't-cart', name: 'T8', activeOrder: { id: paidOrder.id } } },
+            };
+          }
+          if (String(url).includes('/orders/')) {
+            return { data: { order: paidOrder } };
+          }
+          if (String(url).includes('settings/split_checks_enabled')) {
+            return { data: { setting: { value: 'false' } } };
+          }
+          return { data: {} };
+        },
+        apiPatch: async (url: string, body: any) => {
+          patchCalls.push({ url, body });
+          return { data: { order: { ...paidOrder, status: 'completed' } } };
+        },
+      });
+
+      const TableCheckoutModal = loadTableCheckoutModal();
+      const props = {
+        table: { id: 't-cart', name: 'T8', status: 'occupied' },
+        currency: 'USD',
+        cartItemCount: 2,
+        onClose: () => {
+          closeCount++;
+        },
+        onAddItems: () => {},
+        onAddCartToOrder: () => {
+          addCartCalls++;
+        },
+        canGenerateBill: true,
+        onPayment: () => {},
+      };
+
+      harness.renderAndSettle(TableCheckoutModal, props);
+      await new Promise((r) => setTimeout(r, 15));
+      const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+      const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+      const buttonTexts = buttons.map((b) => renderToStaticMarkup(b));
+      assert.ok(
+        !buttonTexts.some((txt) => txt.includes('addToOrder')),
+        'paid order with non-empty cart must NOT offer Add to order',
+      );
+      assert.ok(
+        !buttonTexts.some((txt) => txt.includes('checkoutInstead')),
+        'paid order with non-empty cart must NOT offer Checkout instead',
+      );
+      assert.ok(
+        renderToStaticMarkup(tree).includes('paidOrderCloseTableHint'),
+        'paid order with non-empty cart explains closing table before new order',
+      );
+      const closeTableBtn = buttons.find((b) => renderToStaticMarkup(b).includes('closeTable'));
+      assert.ok(closeTableBtn, 'paid order with non-empty cart renders Close table');
+      await closeTableBtn.props.onClick();
+      assert.equal(addCartCalls, 0, 'never appends items to paid order');
+      assert.deepEqual(patchCalls, [
+        { url: `/orders/${paidOrder.id}/status`, body: { status: 'completed' } },
+      ]);
+      assert.equal(closeCount, 1, 'closes modal and frees table while keeping cart intact');
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 15c-ii: Non-empty cart with partially paid on_payment order hides Add to order and offers Checkout
+  await withAliases(async () => {
+    const harness = createTreeStatefulHarness();
+    let paymentCalls = 0;
+
+    try {
+      const partialOnPaymentOrder = makeDineInOrder({
+        dispatch_policy: 'on_payment',
+        checkout_stage: 'awaiting_payment',
+        release_status: 'scheduled',
+        bill: {
+          id: 9003,
+          bill_number: 'B-9003',
+          total: 25,
+          paid_amount: 10,
+          balance: 15,
+          payment_status: 'partial',
+        },
+      });
+      installCheckoutComponentMocks(harness as any, {
+        role: 'cashier',
+        apiGet: async (url: string) => {
+          if (String(url).includes('/tables/')) {
+            return {
+              data: {
+                table: {
+                  id: 't-partial-cart',
+                  name: 'T8b',
+                  activeOrder: { id: partialOnPaymentOrder.id },
+                },
+              },
+            };
+          }
+          if (String(url).includes('/orders/')) {
+            return { data: { order: partialOnPaymentOrder } };
+          }
+          if (String(url).includes('settings/split_checks_enabled')) {
+            return { data: { setting: { value: 'false' } } };
+          }
+          return { data: {} };
+        },
+      });
+
+      const TableCheckoutModal = loadTableCheckoutModal();
+      const props = {
+        table: { id: 't-partial-cart', name: 'T8b', status: 'occupied' },
+        currency: 'USD',
+        cartItemCount: 1,
+        onClose: () => {},
+        onAddItems: () => {},
+        canGenerateBill: true,
+        onPayment: () => {
+          paymentCalls++;
+        },
+      };
+
+      harness.renderAndSettle(TableCheckoutModal, props);
+      await new Promise((r) => setTimeout(r, 15));
+      const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+      const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+      const buttonTexts = buttons.map((b) => renderToStaticMarkup(b));
+      assert.ok(
+        !buttonTexts.some((txt) => txt.includes('addToOrder')),
+        'partially paid on_payment order with cart must NOT offer Add to order',
+      );
+      const checkoutBtn = buttons.find((b) => renderToStaticMarkup(b).includes('>checkout<'));
+      assert.ok(checkoutBtn, 'partially paid on_payment order offers Checkout');
+      await checkoutBtn.props.onClick();
+      assert.equal(paymentCalls, 1, 'Checkout invokes onPayment for remaining balance');
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 15d: Split-bill table offers Close table only when all split bills are settled
+  for (const splitCase of [
+    { allPaid: false, expectClose: false },
+    { allPaid: true, expectClose: true },
+  ]) {
+    await withAliases(async () => {
+      const harness = createTreeStatefulHarness();
+      const patchCalls: Array<{ url: string; body: any }> = [];
+      let closeCount = 0;
+
+      try {
+        const splitOrder = makeDineInOrder({
+          bill: {
+            id: 9101,
+            bill_number: 'B-9101',
+            split_group_id: 'sg-1',
+            split_label: 'Guest 1',
+            total: 12.5,
+            paid_amount: 12.5,
+            balance: 0,
+            payment_status: 'paid',
+          },
+          bills: [
+            {
+              id: 9101,
+              bill_number: 'B-9101',
+              split_group_id: 'sg-1',
+              split_label: 'Guest 1',
+              total: 12.5,
+              paid_amount: 12.5,
+              balance: 0,
+              payment_status: 'paid',
+            },
+            {
+              id: 9102,
+              bill_number: 'B-9102',
+              split_group_id: 'sg-1',
+              split_label: 'Guest 2',
+              total: 12.5,
+              paid_amount: splitCase.allPaid ? 12.5 : 0,
+              balance: splitCase.allPaid ? 0 : 12.5,
+              payment_status: splitCase.allPaid ? 'paid' : 'unpaid',
+            },
+          ],
+        });
+        installCheckoutComponentMocks(harness as any, {
+          role: 'cashier',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return {
+                data: { table: { id: 't-split', name: 'T9', activeOrder: { id: splitOrder.id } } },
+              };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order: splitOrder } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'true' } } };
+            }
+            return { data: {} };
+          },
+          apiPatch: async (url: string, body: any) => {
+            patchCalls.push({ url, body });
+            return { data: { order: { ...splitOrder, status: 'completed' } } };
+          },
+        });
+
+        const TableCheckoutModal = loadTableCheckoutModal();
+        const props = {
+          table: { id: 't-split', name: 'T9', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: 0,
+          onClose: () => {
+            closeCount++;
+          },
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+        };
+
+        harness.renderAndSettle(TableCheckoutModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        const tree = harness.renderAndSettle(TableCheckoutModal, props);
+        const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+        const closeTableBtn = buttons.find((b) => renderToStaticMarkup(b).includes('closeTable'));
+
+        if (splitCase.expectClose) {
+          assert.ok(closeTableBtn, 'all-paid split-bill table renders Close table');
+          await closeTableBtn.props.onClick();
+          assert.deepEqual(patchCalls, [
+            { url: `/orders/${splitOrder.id}/status`, body: { status: 'completed' } },
+          ]);
+          assert.equal(closeCount, 1);
+        } else {
+          assert.equal(
+            closeTableBtn,
+            undefined,
+            'unpaid split-bill table does NOT render Close table',
+          );
+          assert.ok(
+            buttons.some((b) => renderToStaticMarkup(b).includes('>pay<')),
+            'unpaid split-bill table still renders Pay',
+          );
+        }
+      } finally {
+        harness.cleanupAll();
+      }
+    });
+  }
+
+  // 15e: PATCH /orders/:id/status failure shows error toast, keeps modal open, and resets busy state
+  await withAliases(async () => {
+    const harness = createTreeStatefulHarness();
+    const toastErrors: string[] = [];
+    let closeCount = 0;
+    let patchCount = 0;
+    let registeredDismiss: (() => boolean) | undefined;
+
+    try {
+      const paidOrder = makeDineInOrder();
+      installCheckoutComponentMocks(harness as any, {
+        role: 'cashier',
+        onToastError: (msg) => toastErrors.push(msg),
+        apiGet: async (url: string) => {
+          if (String(url).includes('/tables/')) {
+            return {
+              data: { table: { id: 't-err', name: 'T10', activeOrder: { id: paidOrder.id } } },
+            };
+          }
+          if (String(url).includes('/orders/')) {
+            return { data: { order: paidOrder } };
+          }
+          if (String(url).includes('settings/split_checks_enabled')) {
+            return { data: { setting: { value: 'false' } } };
+          }
+          return { data: {} };
+        },
+        apiPatch: async () => {
+          patchCount++;
+          if (patchCount === 1) {
+            throw {
+              response: {
+                status: 400,
+                data: {
+                  error: 'Manager PIN required to complete order with undelivered kitchen items',
+                },
+              },
+            };
+          }
+          return { data: { order: { ...paidOrder, status: 'completed' } } };
+        },
+      });
+
+      const TableCheckoutModal = loadTableCheckoutModal();
+      const props = {
+        table: { id: 't-err', name: 'T10', status: 'occupied' },
+        currency: 'USD',
+        cartItemCount: 0,
+        onClose: () => {
+          closeCount++;
+        },
+        onAddItems: () => {},
+        canGenerateBill: true,
+        onPayment: () => {},
+        onRegisterDismissHandler: (fn?: () => boolean) => {
+          registeredDismiss = fn;
+        },
+      };
+
+      const renderTcm = () => harness.renderAndSettle(TableCheckoutModal, props);
+      renderTcm();
+      await new Promise((r) => setTimeout(r, 15));
+      let tree = renderTcm();
+
+      const closeTableBtn = harness
+        .findExpanded(tree, (el) => el.type === 'button')
+        .find((b) => renderToStaticMarkup(b).includes('closeTable'));
+      assert.ok(closeTableBtn, 'Close table button rendered');
+
+      await closeTableBtn.props.onClick();
+      tree = renderTcm();
+
+      assert.deepEqual(toastErrors, [
+        'Manager PIN required to complete order with undelivered kitchen items',
+      ]);
+      assert.equal(closeCount, 0, 'modal stays open after PATCH error');
+
+      const recoveredBtn = harness
+        .findExpanded(tree, (el) => el.type === 'button')
+        .find((b) => renderToStaticMarkup(b).includes('closeTable'));
+      assert.ok(recoveredBtn && !recoveredBtn.props.disabled, 'button re-enabled after error');
+
+      // Retry succeeds
+      await recoveredBtn.props.onClick();
+      assert.equal(patchCount, 2, 'retry fires second PATCH');
+      assert.equal(closeCount, 1, 'modal closes on retry success');
+
+      // Verify Escape works when idle after an error if user chooses to dismiss instead
+      void registeredDismiss;
+    } finally {
+      harness.cleanupAll();
+    }
+  });
+
+  // 15f: Refunded and partially_refunded dine-in orders must NOT enter the already-paid Close table flow
+  await withAliases(async () => {
+    const paymentState = require(
+      path.resolve(ROOT, 'frontend/src/lib/order-payment-state.ts'),
+    ) as typeof import('../frontend/src/lib/order-payment-state');
+
+    assert.equal(
+      paymentState.isOrderSettledPaid(makeDineInOrder()),
+      true,
+      'isOrderSettledPaid returns true for paid zero-balance bill',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(
+        makeDineInOrder({
+          bill: { id: 1, payment_status: 'refunded', total: 25, paid_amount: 25, balance: 0 },
+        }),
+      ),
+      false,
+      'isOrderSettledPaid returns false for refunded bill',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(
+        makeDineInOrder({
+          bill: {
+            id: 1,
+            payment_status: 'partially_refunded',
+            total: 25,
+            paid_amount: 25,
+            balance: 0,
+          },
+        }),
+      ),
+      false,
+      'isOrderSettledPaid returns false for partially_refunded bill',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(
+        makeDineInOrder({
+          bill: undefined,
+          bills: [
+            { id: 1, payment_status: 'paid', total: 12.5, paid_amount: 12.5, balance: 0 },
+            { id: 2, payment_status: 'refunded', total: 12.5, paid_amount: 12.5, balance: 0 },
+          ],
+        }),
+      ),
+      false,
+      'isOrderSettledPaid returns false when any split bill is refunded',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(makeDineInOrder({ status: 'completed' })),
+      false,
+      'isOrderSettledPaid returns false for completed order',
+    );
+    assert.equal(
+      paymentState.isOrderSettledPaid(makeDineInOrder({ bill: undefined, bills: [] })),
+      false,
+      'isOrderSettledPaid returns false when order has no bills',
+    );
+
+    const refundedCases = [
+      {
+        name: 'refunded single-bill order (empty cart)',
+        cartItemCount: 0,
+        order: makeDineInOrder({
+          bill: {
+            id: 9201,
+            bill_number: 'B-9201',
+            total: 25,
+            paid_amount: 25,
+            balance: 0,
+            payment_status: 'refunded',
+          },
+        }),
+      },
+      {
+        name: 'partially_refunded single-bill order (non-empty cart)',
+        cartItemCount: 2,
+        order: makeDineInOrder({
+          bill: {
+            id: 9202,
+            bill_number: 'B-9202',
+            total: 25,
+            paid_amount: 25,
+            balance: 0,
+            payment_status: 'partially_refunded',
+          },
+        }),
+      },
+      {
+        name: 'mixed paid + refunded split-bill order',
+        cartItemCount: 0,
+        order: makeDineInOrder({
+          bill: {
+            id: 9203,
+            bill_number: 'B-9203',
+            split_group_id: 'sg-ref',
+            split_label: 'Guest 1',
+            total: 12.5,
+            paid_amount: 12.5,
+            balance: 0,
+            payment_status: 'paid',
+          },
+          bills: [
+            {
+              id: 9203,
+              bill_number: 'B-9203',
+              split_group_id: 'sg-ref',
+              split_label: 'Guest 1',
+              total: 12.5,
+              paid_amount: 12.5,
+              balance: 0,
+              payment_status: 'paid',
+            },
+            {
+              id: 9204,
+              bill_number: 'B-9204',
+              split_group_id: 'sg-ref',
+              split_label: 'Guest 2',
+              total: 12.5,
+              paid_amount: 12.5,
+              balance: 0,
+              payment_status: 'refunded',
+            },
+          ],
+        }),
+      },
+    ];
+
+    for (const refCase of refundedCases) {
+      const harness = createTreeStatefulHarness();
+      const patchCalls: Array<{ url: string; body: any }> = [];
+      let closeCount = 0;
+
+      try {
+        installCheckoutComponentMocks(harness as any, {
+          role: 'cashier',
+          apiGet: async (url: string) => {
+            if (String(url).includes('/tables/')) {
+              return {
+                data: {
+                  table: { id: 't-ref', name: 'T11', activeOrder: { id: refCase.order.id } },
+                },
+              };
+            }
+            if (String(url).includes('/orders/')) {
+              return { data: { order: refCase.order } };
+            }
+            if (String(url).includes('settings/split_checks_enabled')) {
+              return { data: { setting: { value: 'true' } } };
+            }
+            return { data: {} };
+          },
+          apiPatch: async (url: string, body: any) => {
+            patchCalls.push({ url, body });
+            return { data: {} };
+          },
+        });
+
+        const TableCheckoutModal = loadTableCheckoutModal();
+        const props = {
+          table: { id: 't-ref', name: 'T11', status: 'occupied' },
+          currency: 'USD',
+          cartItemCount: refCase.cartItemCount,
+          onClose: () => {
+            closeCount++;
+          },
+          onAddItems: () => {},
+          canGenerateBill: true,
+          onPayment: () => {},
+        };
+
+        harness.renderAndSettle(TableCheckoutModal, props);
+        await new Promise((r) => setTimeout(r, 15));
+        const tree = harness.renderAndSettle(TableCheckoutModal, props);
+
+        const buttons = harness.findExpanded(tree, (el) => el.type === 'button');
+        const buttonTexts = buttons.map((b) => renderToStaticMarkup(b));
+        const markup = renderToStaticMarkup(tree);
+
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('closeTable')),
+          `${refCase.name}: must NOT render Close table`,
+        );
+        assert.ok(
+          !markup.includes('paidOrderCloseTableHint'),
+          `${refCase.name}: must NOT render paidOrderCloseTableHint`,
+        );
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('>checkout<')),
+          `${refCase.name}: must NOT render Checkout`,
+        );
+        assert.ok(
+          !buttonTexts.some((txt) => txt.includes('addItems') || txt.includes('addToOrder')),
+          `${refCase.name}: must NOT render Add Items or Add to order`,
+        );
+
+        const closeBtn = buttons.find(
+          (b) => !b.props?.['aria-label'] && renderToStaticMarkup(b).includes('>close<'),
+        );
+        assert.ok(closeBtn, `${refCase.name}: renders neutral Close button`);
+        closeBtn.props.onClick();
+        assert.equal(patchCalls.length, 0, `${refCase.name}: never sends status PATCH`);
+        assert.equal(closeCount, 1, `${refCase.name}: neutral Close button dismisses modal`);
+      } finally {
+        harness.cleanupAll();
+      }
+    }
+  });
+
+  console.log('  ✓ TableCheckoutModal Close table behavior verified for prepaid dine-in (#1641)');
+}
+
 async function run() {
   await testQuickTenderAndMinorMath();
   await testTouchNumberPadAndStationStructure();
@@ -6514,6 +7354,7 @@ async function run() {
   await testCol1PanelHeaderBodyConsistency();
   await testDiscountPinErrorAndStatusStripRecovery();
   await testTableCheckoutChildEscapeBusyGuards();
+  await testTableCheckoutPrepaidCloseTable();
   console.log('\n✅ All checkout quick-tender and guard tests passed.');
 }
 

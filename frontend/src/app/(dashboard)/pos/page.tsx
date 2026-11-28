@@ -1716,16 +1716,20 @@ export default function POSPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 1. Fetch business settings first
-        const settingsRes = await api.get('/settings/business');
-        const d = settingsRes.data;
-        if (typeof d.timezone === 'string' && d.timezone.trim()) {
-          setStoreTimezone(d.timezone.trim());
-        }
-        setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
-        setServiceModel(normalizeServiceModel(d.service_model));
-        const isTablesRequired = typeof d.tables_required === 'boolean' ? d.tables_required : true;
-        setTablesRequired(isTablesRequired);
+        // Fetch settings and menu catalog in parallel so product search/shortcuts
+        // do not wait on a serial settings round-trip before hydrating products.
+        const settingsPromise = api.get('/settings/business').then((settingsRes) => {
+          const d = settingsRes.data;
+          if (typeof d.timezone === 'string' && d.timezone.trim()) {
+            setStoreTimezone(d.timezone.trim());
+          }
+          setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
+          setServiceModel(normalizeServiceModel(d.service_model));
+          const isTablesRequired =
+            typeof d.tables_required === 'boolean' ? d.tables_required : true;
+          setTablesRequired(isTablesRequired);
+          return isTablesRequired;
+        });
 
         api
           .get('/settings/kot_printing_enabled')
@@ -1768,17 +1772,14 @@ export default function POSPage() {
           })
           .catch(() => {});
 
-        // 2. Fetch other menu data
-        const requests: Promise<{ data: Record<string, unknown> }>[] = [
+        const [isTablesRequired, catRes, prodRes, tableRes] = await Promise.all([
+          settingsPromise,
           api.get('/categories?active=1'),
           api.get('/products?active=1'),
-        ];
-
-        if (isRestaurant && isTablesRequired) {
-          requests.push(api.get('/tables?active=1&include_items=1'));
-        }
-
-        const [catRes, prodRes, tableRes] = await Promise.all(requests);
+          settingsPromise.then((tablesReq) =>
+            isRestaurant && tablesReq ? api.get('/tables?active=1&include_items=1') : null,
+          ),
+        ]);
         setCategories((catRes.data.categories as Category[]) || []);
         setProducts((prodRes.data.products as Product[]) || []);
 

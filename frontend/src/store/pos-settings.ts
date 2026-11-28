@@ -15,6 +15,33 @@ export function normalizeServiceModel(value: unknown): ServiceModel {
   return value === 'qsr' || value === 'hybrid' ? value : 'finedine';
 }
 
+export function applyServiceModelChange<
+  T extends { serviceModel: ServiceModel; tablesRequired: boolean },
+>(
+  form: T,
+  nextModel: ServiceModel,
+): { nextForm: T; touchedFields: Array<'serviceModel' | 'tablesRequired'> } {
+  if (nextModel === 'hybrid') {
+    return {
+      nextForm: { ...form, serviceModel: nextModel, tablesRequired: true },
+      touchedFields: ['serviceModel', 'tablesRequired'],
+    };
+  }
+  return {
+    nextForm: { ...form, serviceModel: nextModel },
+    touchedFields: ['serviceModel'],
+  };
+}
+
+export function resolveSavedTablesRequired(
+  serverTablesRequired: unknown,
+  serviceModel: ServiceModel,
+  formTablesRequired: boolean,
+): boolean {
+  if (typeof serverTablesRequired === 'boolean') return serverTablesRequired;
+  return serviceModel === 'hybrid' ? true : formTablesRequired;
+}
+
 /** Hybrid venues pay after service only at the table; the global billing type governs every other mode. */
 export function isPrepaidBilling(
   billingType: 'postpaid' | 'prepaid',

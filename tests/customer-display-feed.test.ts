@@ -400,6 +400,45 @@ async function main(): Promise<void> {
     .set(owner)
     .send({ statuses: ['pending', 'preparing', 'ready'], refresh_seconds: 3, show_updated: true });
 
+  // Prepaid mixed order (pending kitchen item + served ready-made item) stays 'pending' until kitchen starts.
+  const mixedPrepaidStamp = utcFromAnchor(-2 * 3600);
+  const mixedPrepaidInsert = db
+    .prepare(
+      `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+       VALUES ('PREPAID-MIX-001', 'feed-customer', 'feed-owner', 'takeaway', 'completed', 21, 21, ?, ?, ?)`,
+    )
+    .run(mixedPrepaidStamp, mixedPrepaidStamp, mixedPrepaidStamp);
+  const mixedPrepaidOrderId = Number(mixedPrepaidInsert.lastInsertRowid);
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+     VALUES ('BILL-PREPAID-MIX-001', ?, 21, 0, 21, 21, 0, 'paid', ?, ?, ?)`,
+  ).run(mixedPrepaidOrderId, mixedPrepaidStamp, mixedPrepaidStamp, mixedPrepaidStamp);
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, requires_kitchen, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-1', 'Espresso', 18, 1, 18, 0, 18, 1, 'pending', ?, ?),
+            (?, 'feed-prod-2', 'Bottled Cola', 3, 1, 3, 0, 3, 0, 'served', ?, ?)`,
+  ).run(
+    mixedPrepaidOrderId,
+    mixedPrepaidStamp,
+    mixedPrepaidStamp,
+    mixedPrepaidOrderId,
+    mixedPrepaidStamp,
+    mixedPrepaidStamp,
+  );
+  const mixedPrepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(mixedPrepaidFeed.status, 200);
+  const mixedPrepaidEntry = mixedPrepaidFeed.body.orders.find(
+    (o: any) => o.id === mixedPrepaidOrderId,
+  );
+  assert.deepEqual(
+    mixedPrepaidEntry,
+    { id: mixedPrepaidOrderId, number: 'BILL-PREPAID-MIX-001', status: 'pending' },
+    'prepaid completed mixed order stays pending until kitchen work starts (served ready-made line ignored)',
+  );
+  db.prepare('DELETE FROM bills WHERE order_id = ?').run(mixedPrepaidOrderId);
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(mixedPrepaidOrderId);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(mixedPrepaidOrderId);
+
   // Verify bounded index usage on completed-candidate batch query, zero closed-history scan on FROM orders o,
   // zero inspection of >24h completed orders, and bills lookup strictly bounded to final pageRows (<= 100).
   let capturedCompletedBatchSql = '';

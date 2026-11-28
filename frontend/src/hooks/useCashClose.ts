@@ -143,8 +143,9 @@ export function useCashClose() {
   const fmt = useFormatCurrency();
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dayStartTime = currentTenant?.business_day_start_time || '00:00';
+  const [nowInstant, setNowInstant] = useState(() => new Date());
   const todayLocal = businessDateForInstant({
-    instant: new Date(),
+    instant: nowInstant,
     timezone: timeZone,
     startTime: dayStartTime,
   });
@@ -156,6 +157,11 @@ export function useCashClose() {
   // the POST boundary via the unit adapter, and back to display for the
   // preview).
   const [closeOpen, setCloseOpen] = useState(false);
+  useEffect(() => {
+    if (!closeOpen) return;
+    const interval = setInterval(() => setNowInstant(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, [closeOpen]);
   const [entryView, setEntryView] = useState<'x-report' | 'z-report' | null>(null);
   // Bumping this token is how we re-trigger the load effect on each open.
   // Reset of the form fields happens during render via the token comparison
@@ -218,19 +224,8 @@ export function useCashClose() {
 
   useEffect(() => {
     if (!closeOpen) return;
-    // Empty date = "operator hasn't chosen a day yet" (e.g. arrived via
-    // closeAnotherDay). Skip the fetch entirely: no request, no error,
-    // no auto-jump via closed-Z hydration. Step 1 stays on screen until
-    // the operator picks a date. Form state already starts null/empty
-    // so no state reset is needed here. Clear xLoading here too: the
-    // reset block above sets it true on each open, and an empty-date
-    // early-return without this would leave the modal stuck on
-    // "Cargando..." with a disabled Continue (correctly disabled, but
-    // for the wrong reason). Empty date is a valid idle state, not an
-    // error, so xReport/xError stay null.
-    // oxlint-disable-next-line react-hooks/set-state-in-effect -- mirrors the reset-block pattern immediately below this effect.
+    // Empty date is a valid idle state; the reset blocks below keep xLoading false.
     if (!businessDate) {
-      setXLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -343,15 +338,17 @@ export function useCashClose() {
   // a class component's `getDerivedStateFromProps`; mirrors the existing
   // `syncKey` / `setSyncedKey` pattern in this file).
   const [resetToken, setResetToken] = useState(0);
-  if (closeOpen && resetToken !== openToken) {
+  const isFreshOpenReset = closeOpen && resetToken !== openToken;
+  const nextBusinessDate = isFreshOpenReset ? (dateOverride ?? todayLocal) : businessDate;
+  if (isFreshOpenReset) {
     setResetToken(openToken);
-    setXLoading(true);
+    setXLoading(Boolean(nextBusinessDate));
     setXError(null);
     setXReport(null);
     // (priorFloatCents removed: the backend's xReport.priorBusinessDate is
     // the unambiguous source of truth for the no-prior-close hint.)
     setAlreadyClosedOverride(false);
-    setBusinessDate(dateOverride ?? todayLocal);
+    setBusinessDate(nextBusinessDate);
     setDateOverride(null);
     setSelectedSessionId(null);
     setOpeningFloatInput('');
@@ -372,7 +369,7 @@ export function useCashClose() {
   // and so changing dates after closing day A leaves no stale Z in view (F2).
   if (closeOpen && xToken !== refXToken) {
     setRefXToken(xToken);
-    setXLoading(true);
+    setXLoading(Boolean(nextBusinessDate));
     setXError(null);
     setXReport(null);
     setCountedInput('');
@@ -402,6 +399,7 @@ export function useCashClose() {
   }
 
   const openCloseModal = useCallback((view: 'x-report' | 'z-report' | null = null) => {
+    setNowInstant(new Date());
     setEntryView(view);
     setOpenToken((n) => n + 1);
     setCloseOpen(true);
@@ -414,6 +412,7 @@ export function useCashClose() {
   // resets to todayLocal, matching the open-from-header behavior — the
   // operator then uses the existing step-1 date picker to navigate back.
   const closeAnotherDay = () => {
+    setNowInstant(new Date());
     setEntryView(null);
     setDateOverride('');
     setOpenToken((n) => n + 1);

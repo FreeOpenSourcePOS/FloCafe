@@ -1,4 +1,5 @@
 /** Shared logic to skip unsupported characters and preserve printing on ESC/POS encoders. */
+import axios from 'axios';
 import { createTranslator } from 'use-intl/core';
 import { normalizeCurrencyToAscii, normalizeThermalText, stripCurrencyTokens } from './unicode';
 import {
@@ -21,7 +22,11 @@ import { displayCellWidth, wrapToDisplayCells } from '@print/width';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES } from '@/lib/i18n/languages';
 import { sanitizePrinterErrorDetail } from '../operation-failure';
-import { currentHintPlatform, printFailureHint } from './print-failure-help';
+import {
+  currentHintPlatform,
+  printFailureHint,
+  type PrintHintTranslator,
+} from './print-failure-help';
 
 export interface PrintErrorToastOptions {
   /** `failure_class` from the printer error. */
@@ -430,4 +435,28 @@ export function formatKotErrorToast(
     return `${fallbackTranslation}: ${msg}`;
   }
   return fallbackTranslation;
+}
+
+/** Formats a settings-tab printer save/delete/test failure toast. */
+export function formatPrinterSettingsErrorMessage(
+  err: unknown,
+  fallback: string,
+  tAll: PrintHintTranslator,
+  platform?: string | null,
+  options?: { includePlainError?: boolean },
+): string {
+  const hint = printFailureHint({ ...extractPrintErrorToastOptions(err), platform }, tAll);
+  if (hint) return hint;
+  if (axios.isAxiosError(err)) {
+    const apiError = err.response?.data?.error;
+    if (typeof apiError === 'string' && apiError.trim()) {
+      const detail = sanitizePrinterErrorDetail(apiError);
+      if (detail) return detail === fallback ? fallback : `${fallback}: ${detail}`;
+    }
+  }
+  if (options?.includePlainError && err instanceof Error && !axios.isAxiosError(err)) {
+    const detail = sanitizePrinterErrorDetail(err.message);
+    if (detail) return detail === fallback ? fallback : `${fallback}: ${detail}`;
+  }
+  return fallback;
 }

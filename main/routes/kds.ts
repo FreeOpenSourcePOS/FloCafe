@@ -184,7 +184,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       const stationPlaceholders = userStationIds.map(() => '?').join(',');
       const categoryRoute =
         stationRoutingCategoryIds.length > 0
-          ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
+          ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_oi.requires_kitchen = 1 AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
           : '';
       query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
       params.push(...userStationIds, ...stationRoutingCategoryIds);
@@ -192,7 +192,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (stationId) {
       const categoryRoute =
         requestedRoutingCategoryIds.length > 0
-          ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND requested_p.category_id IN (${requestedRoutingCategoryIds.map(() => '?').join(',')}))`
+          ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND requested_oi.requires_kitchen = 1 AND t.kitchen_station_id IS NULL AND requested_p.category_id IN (${requestedRoutingCategoryIds.map(() => '?').join(',')}))`
           : '';
       query += ` AND (t.kitchen_station_id = ?${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
       params.push(stationId, ...requestedRoutingCategoryIds);
@@ -631,6 +631,9 @@ router.patch(
             throw new Error('STATION_FORBIDDEN');
           }
         }
+        if (Number(item.requires_kitchen ?? 1) === 0) {
+          throw new Error('NON_KITCHEN_KDS_ITEM');
+        }
 
         const updatedAt = now();
         const updateResult =
@@ -699,6 +702,11 @@ router.patch(
       }
       if (error.message === 'TERMINAL_KDS_ITEM') {
         return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
+      }
+      if (error.message === 'NON_KITCHEN_KDS_ITEM') {
+        return res.status(400).json({
+          error: 'Ready-made items do not go through the kitchen and cannot be updated from KDS',
+        });
       }
       if (error.message === 'ORPHANED_ORDER_ITEM') {
         return res.status(404).json({ error: 'Order item is not attached to an order' });

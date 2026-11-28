@@ -259,7 +259,7 @@ function collectProjectedCompletedRows(
     const idPlaceholders = batch.map(() => '?').join(', ');
     const itemRows = db
       .prepare(
-        `SELECT order_id, status, quantity
+        `SELECT order_id, status, quantity, requires_kitchen
            FROM order_items
            WHERE order_id IN (${idPlaceholders})`,
       )
@@ -267,10 +267,11 @@ function collectProjectedCompletedRows(
       order_id: number;
       status: string | null;
       quantity: number | null;
+      requires_kitchen: number | null;
     }>;
     const itemsByOrderId = new Map<
       number,
-      Array<{ status: string | null; quantity: number | null }>
+      Array<{ status: string | null; quantity: number | null; requires_kitchen: number | null }>
     >();
     for (const item of itemRows) {
       let bucket = itemsByOrderId.get(item.order_id);

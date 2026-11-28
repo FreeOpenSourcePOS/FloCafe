@@ -604,9 +604,11 @@ service and every other order type is prepaid. `billing_type` governs every othe
 Neither section may force the other into its mode, and an item that is handed over immediately must
 not wait for a kitchen that never sees it.
 
-**Enforced by:** `main/routes/orders.ts` (`insertOrderItems` and `POST /api/orders` set the status and
-the snapshot), `main/db.ts` (`orderHasKitchenWorkSql`, `ACTIVE_RELEASED_KDS_ORDER_IDS_SQL`),
-`main/routes/kds.ts`, `main/services/kds.ts`, `main/routes/kitchen.ts`,
+**Enforced by:** `main/routes/orders.ts` (`insertOrderItems`, `POST /api/orders`, and void adjustments
+setting `requires_kitchen = 0`), `main/services/refund.ts` (refund void adjustments), `main/db.ts`
+(`orderHasKitchenWorkSql`, `ACTIVE_RELEASED_KDS_ORDER_IDS_SQL`), `main/routes/kds.ts`,
+`main/kds-server.ts`, `main/services/kds.ts`, `main/routes/order-items.ts`, `main/routes/kitchen.ts`,
+`main/routes/printers.ts`, `frontend/src/hooks/usePrinter.ts`,
 `main/services/customer-display-tokens.ts`, `shared/order-item-status.ts` (`isKitchenItem`), and
 `main/services/service-model.ts` (`isOrderPrepaid`).
 

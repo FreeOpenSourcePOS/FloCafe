@@ -143,6 +143,14 @@ export function canCheckoutOrder(order: Pick<Order, 'status' | 'bill' | 'bills'>
   return bills.some(isBillPayableForCheckout);
 }
 
+/** True only when the active order has at least one bill and every bill is fully settled as paid. */
+export function isOrderSettledPaid(order: Pick<Order, 'status' | 'bill' | 'bills'>): boolean {
+  if (order.status === 'completed' || order.status === 'cancelled') return false;
+  const bills = getOrderBills(order);
+  if (bills.length === 0) return false;
+  return bills.every((b) => b.payment_status === 'paid' && Number(b.balance ?? 0) <= 0);
+}
+
 export function isOrderCustomerEditLocked(
   order: Pick<Order, 'status' | 'scheduled_for' | 'release_status' | 'bill' | 'bills'>,
 ): boolean {

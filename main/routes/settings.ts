@@ -514,6 +514,8 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       normalizedPhone = phoneRes.e164 || '';
     }
 
+    const effectiveServiceModel = service_model ?? currentSettings.service_model;
+
     upsertSettings(db, {
       business_name,
       timezone,
@@ -533,7 +535,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       instagram_handle: normalizedInstagramHandle,
       billing_type,
       service_model,
-      tables_required: service_model === 'hybrid' ? true : tables_required,
+      tables_required: effectiveServiceModel === 'hybrid' ? true : tables_required,
       tax_registered,
       bill_show_name,
       bill_show_address,
@@ -2547,6 +2549,10 @@ router.put(
           return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
         }
         valueToPersist = phoneRes.e164 || '';
+      }
+
+      if (req.params.key === 'tables_required' && getAllSettings(db).service_model === 'hybrid') {
+        valueToPersist = 'true';
       }
 
       // Invalidate outstanding pairing tokens when KDS is disabled.
